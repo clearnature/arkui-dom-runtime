@@ -5,7 +5,8 @@
 已完成的机制说明见 `docs/ARCHITECTURE.md`；怎么改见 `docs/DEVELOPING.md`。
 
 **当前状态**：`npm run check` 全绿（preflight + 生成物一致 + 浏览器 15 用例 + Electron 14 用例）。
-v1/v2 状态管理（含 v1 深度观测）已落地。**下一步优先级：R5（许可证，需决策）→ R9/R10（Grid、Tabs 真实语义）→ R14（多层锚链）。**
+v1/v2 状态管理（含 v1 深度观测）已落地。**下一步优先级：R9/R10（Grid、Tabs 真实语义）→ R14（多层锚链）。**
+R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分发前才需决定。
 
 ---
 
@@ -52,7 +53,8 @@ v1/v2 状态管理（含 v1 深度观测）已落地。**下一步优先级：R5
 | | 任务 | 影响 | 成本 |
 |---|---|---|---|
 | P0 | ~~R1–R4 工程化地基~~ **已完成** | — | — |
-| P0 | **R5 许可证与 CHANGELOG** | 低但**阻塞对外发布**，且需决策 | 低 |
+| P0 | ~~R5a 入向合规：第三方许可清单~~ **已完成** | 中（分发前必须） | 低 |
+| — | R5b 出向授权（`LICENSE`）——**本地开发不需要，降级到"分发前"** | 无（现在） | 低 |
 | P1 | ~~R6–R8 状态管理 v2 + V1 深度观测~~ **R6/R7/R8 已完成** | 高 → 已拿到 | — |
 | P2 | R9–R13 组件视觉语义 | 中（85 个骨架只有 `data-*`） | 中 |
 | P3 | R14–R17 布局引擎 | 中高（真实页面一定踩） | 高 |
@@ -113,20 +115,45 @@ Chrome、Electron、**入口脚本可执行位**、核心文件齐备、fixtures
 
 ---
 
-### R5 — `LICENSE` + `CHANGELOG.md`
+### ~~R5a — 入向合规：第三方组件与许可清单~~ ✅ 已完成
 
-**内容**：定许可证 + `CHANGELOG.md`（Keep a Changelog 格式）。
+**产出**：`THIRD-PARTY-NOTICES.md` —— 记录我们**消费/派生**了什么、各自许可状态如何，附可复核命令。
 
-**⚠️ 需要项目所有者决策**：本仓库**复用 HarmonyOS CLT 的组件元数据与产物形态**
-（`fixtures/` 是 `ets-loader` 的输出，`generated-components.js` 由 CLT 的 JSON 生成）。
-自研部分（`runtime/`、`tools/`）的授权需要与"对官方工具链产物的依赖"区分说明。
-**不在代码里替用户选许可证。**
+**核验结果（7/7 与期望一致）**：
+- 自研代码（`runtime/`、`tools/`、`test/`、`run.sh`、`electron/` 源码）**无任何第三方版权头**
+- `fixtures/` 无版权头（ets-loader 输出时剥掉了输入头部）
+- **`ets/component/*.d.ts`：121/121 声明 Apache-2.0** ← 真开源，可放心引用接口形状
+- **`ets-loader` 本体：`package.json` 的 `license` 为 `None`，无 LICENSE 文件** ← 未声明许可
+- **`ets-loader/components/*.json`（150 个）：无 `license`/`copyright` 字段** ← 未声明许可
+- **CLT 顶层 `LICENSE.txt` 是《HUAWEI DevEco Studio 使用协议》（专有 EULA）**，其 1.6 条把授权限定为
+  "仅为开发运行于 OpenHarmony 兼容设备/HarmonyOS 的应用"
 
-**依赖**：无。
+→ 因此 `runtime/generated-components.js`（派生自未声明许可的元数据）**不得标注为 Apache-2.0**。
+→ **纯本地开发不受影响**；对外分发前需先厘清第 4/5 两点。
 
-**验收**：文件存在；`CHANGELOG.md` 含 `## [Unreleased]`；`LICENSE` 与 `docs/ARCHITECTURE.md` §9 的依赖说明一致。
+**依赖**：无。**此项不含法律判断**，只记录可核验事实。
 
-**触及**：`LICENSE`、`CHANGELOG.md`（新）、`README.md`
+---
+
+### R5b — 出向授权（本项目的 `LICENSE`）——**降级：本地开发不需要**
+
+**内容**：给本仓库选一个许可证。
+
+**为什么降级**（原先把入向合规与出向授权混成了一件，是判断失误）：
+- 入向合规 = 遵守**别人**的许可 → 做法是**署名清单**（R5a，已完成）
+- 出向授权 = **我们**允许别人怎么用 → **只在对外分发时才需要**
+
+**当前状态**：**有意不设** `LICENSE`（`package.json` 已 `"private": true`）。不对外分发就没有需要授权的对象；
+仓库内文件默认"保留所有权利"。且选择会受 R5a 查出的上游状态影响，**不宜在厘清前先定**。
+
+**触发条件（满足任一即回到待办）**：
+- 要把仓库推送到公开托管 / 交给第三方
+- 要作为依赖被别的项目引用
+- 要打包成对外发布的产品
+
+**验收（触发后）**：`LICENSE` 存在且与 `THIRD-PARTY-NOTICES.md` §5/§6 的结论一致。
+
+**触及**：`LICENSE`（新）、`README.md`、`docs/ARCHITECTURE.md` §9
 
 ---
 

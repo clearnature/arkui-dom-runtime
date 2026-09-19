@@ -407,8 +407,7 @@ PASS 替换 item.child 整体（@Observed 的字段写入）触发重渲染：'m
 
 **权威清单在 `docs/ROADMAP.md`**（每项带可复现的验收命令）。当前优先：
 
-1. **R5 许可证** —— 需要项目所有者决策（本仓库复用 CLT 的组件元数据与产物形态，自研部分的授权需与之区分）
-2. **R9/R10** `Grid` 真实布局、`Tabs`/`TabContent` 切换（85 个骨架组件目前只落 `data-*`）
+1. **R9/R10** `Grid` 真实布局、`Tabs`/`TabContent` 切换（85 个骨架组件目前只落 `data-*`）
 4. **R14** 多层锚链 + `Guideline` + `bias`（`alignRules` 目前只支持一层）
 
 **仍未覆盖**：动画/手势、`Navigation`/`Swiper` 切换语义、`@ohos:media`/`notification`、

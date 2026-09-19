@@ -117,7 +117,7 @@ const TRACKED_FILES = [
   'tools/extract.mjs', 'tools/gen-components.mjs', 'tools/serve.py', 'tools/stats.mjs',
   'tools/preflight.mjs', 'tools/check-all.sh',
   'run.sh', 'electron/run.sh', 'electron/main.js', 'electron/preload.js',
-  'package.json', '.gitignore', 'README.md',
+  'package.json', '.gitignore', 'README.md', 'THIRD-PARTY-NOTICES.md',
   'docs/ARCHITECTURE.md', 'docs/CAPABILITY.md', 'docs/DEVELOPING.md',
   'docs/ROADMAP.md', 'docs/surface-measurement.md',
 ];

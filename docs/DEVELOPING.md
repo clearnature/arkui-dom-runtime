@@ -404,6 +404,8 @@ git status --short fixtures/
 **文档纪律**：`ARCHITECTURE.md` §6 的数字是 `tools/stats.mjs` 的**实测输出**，不是手写估计值。
 改了覆盖范围就重跑 `stats.mjs` 并同步那个引用块——否则文档会先于代码腐烂。
 
-**没做但已登记的工程缺口**（见 `ROADMAP.md` P0）：
-`LICENSE` 与 `CHANGELOG.md` 尚未建立——许可证需要项目所有者决定（本仓库复用 HarmonyOS CLT 的
-组件元数据与产物形态，自研部分的授权需与之区分开）。
+**许可证相关**（见 `THIRD-PARTY-NOTICES.md`）：
+入向合规已落地（第三方组件与许可清单，含可复核命令）。**本仓库有意不设 `LICENSE`**——
+本地开发不需要出向授权，且上游 `ets-loader` 与 `components/*.json` **未声明 OSS 许可**
+（CLT 顶层是 DevEco EULA），对外分发前需先厘清。注意：`runtime/generated-components.js`
+派生自未声明许可的元数据，**不得**标注为 Apache-2.0。
