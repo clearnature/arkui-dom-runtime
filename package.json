@@ -13,6 +13,8 @@
     "test:electron": "bash electron/run.sh all",
     "stats": "node tools/stats.mjs",
     "stats:json": "node tools/stats.mjs --json",
+    "stats:check-doc": "node tools/stats.mjs --check-doc",
+    "stats:write-doc": "node tools/stats.mjs --write-doc",
     "check:gen": "node tools/gen-components.mjs --check",
     "gen": "node tools/gen-components.mjs",
     "extract": "node tools/extract.mjs"

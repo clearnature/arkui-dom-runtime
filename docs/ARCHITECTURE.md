@@ -615,6 +615,10 @@ app.ability.AbilityConstant  app.ability.ConfigurationConstant
 
 ## 6. 覆盖范围（可复现的数字）
 
+**本块有守卫**：`npm run check` 的第 3 步（`stats --check-doc`）会逐行比对下面这块与
+`node tools/stats.mjs` 的实际输出，漂移即非 0 退出；修复用 `npm run stats:write-doc`（就地重写）。
+改完本文档就要重跑一次——**本块含文档自身的体积，是自引用**（收敛性见 `tools/stats.mjs` 的注释）。
+
 `node tools/stats.mjs` 的实测输出：
 
 ```
@@ -654,9 +658,9 @@ app.ability.AbilityConstant  app.ability.ConfigurationConstant
 == 体积（源码，不含产物/Electron 运行时）==
   runtime          156.1 KB
   test             78.6 KB
-  tools            33.3 KB
+  tools            37.4 KB
   electron(src)    14.9 KB
-  docs             115.3 KB
+  docs             116.6 KB
   fixtures         90.8 KB
 
 == 逐文件（文档"文件职责"表的来源）==
@@ -666,20 +670,20 @@ app.ability.AbilityConstant  app.ability.ConfigurationConstant
   tools/extract.mjs                  6457 B  6.3 KB
   tools/gen-components.mjs           7775 B  7.6 KB
   tools/serve.py                     2559 B  2.5 KB
-  tools/stats.mjs                    9367 B  9.1 KB
+  tools/stats.mjs                   13207 B  12.9 KB
   tools/preflight.mjs                5108 B  5.0 KB
-  tools/check-all.sh                 2792 B  2.7 KB
+  tools/check-all.sh                 3171 B  3.1 KB
   run.sh                             9432 B  9.2 KB
   electron/run.sh                    6256 B  6.1 KB
   electron/main.js                   6795 B  6.6 KB
   electron/preload.js                1961 B  1.9 KB
-  package.json                       1089 B  1.1 KB
+  package.json                       1207 B  1.2 KB
   .gitignore                          674 B  0.7 KB
-  README.md                         26644 B  26.0 KB
+  README.md                         26799 B  26.2 KB
   THIRD-PARTY-NOTICES.md             8256 B  8.1 KB
-  docs/ARCHITECTURE.md              50806 B  49.6 KB
+  docs/ARCHITECTURE.md              51174 B  50.0 KB
   docs/CAPABILITY.md                15109 B  14.8 KB
-  docs/DEVELOPING.md                24218 B  23.7 KB
+  docs/DEVELOPING.md                25148 B  24.6 KB
   docs/ROADMAP.md                   21445 B  20.9 KB
   docs/surface-measurement.md        6496 B  6.3 KB
   fixtures/pages/AsyncIO.ts          6206 B  6.1 KB

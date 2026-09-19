@@ -412,6 +412,21 @@ git status --short fixtures/
 **文档纪律**：`ARCHITECTURE.md` §6 的数字是 `tools/stats.mjs` 的**实测输出**，不是手写估计值。
 改了覆盖范围就重跑 `stats.mjs` 并同步那个引用块——否则文档会先于代码腐烂。
 
+**这条纪律现在有守卫了**（`npm run check` 的第 3 步）：
+
+```bash
+npm run stats:check-doc     # 只比对，漂移即 exit 1 并逐行打印差异
+npm run stats:write-doc     # 就地重写那个块（内部迭代到收敛）
+```
+
+**为什么需要守卫**：那个块有 94 行，且**包含文档自身的体积**（自引用）。历史上靠人肉同步，
+R5a 提交就漏更新了一行（`THIRD-PARTY-NOTICES.md`），事后才发现。守卫的校验方式是
+**跑一遍 `stats.mjs` 自身**再逐行比对——不重新实现一遍渲染逻辑，避免"校验器和渲染器各写一套、
+各自漂移"（同一个坑在本项目出现过：`--check` 曾只在注释里声明却没实现）。
+
+→ **改完 `ARCHITECTURE.md` 里的任何内容都要重跑一次 `npm run stats:write-doc`**（体积变了），
+否则 `npm run check` 会在第 3 步拦下你。这不是噪音，是它该做的事。
+
 **许可证相关**（见 `THIRD-PARTY-NOTICES.md`）：
 入向合规已落地（第三方组件与许可清单，含可复核命令）。**本仓库有意不设 `LICENSE`**——
 本地开发不需要出向授权，且上游 `ets-loader` 与 `components/*.json` **未声明 OSS 许可**

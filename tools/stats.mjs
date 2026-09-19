@@ -2,10 +2,20 @@
  * 项目自检统计：组件覆盖、运行时 API 面、平台模块、用例矩阵。
  * 用途：写文档/评审时用实际数字，而不是凭印象。
  *
- * 用法: node tools/stats.mjs
+ * 用法:
+ *   node tools/stats.mjs              打印统计
+ *   node tools/stats.mjs --json       机器可读
+ *   node tools/stats.mjs --check-doc  只校验 ARCHITECTURE.md §6 的引用块与本脚本输出一致（不落盘）
+ *   node tools/stats.mjs --write-doc  就地重写那个引用块（迭代到收敛）
+ *
+ * 为什么需要 --check-doc：§6 那个引用块是 94 行实测数字，过去靠人肉同步 ——
+ * R5a 提交就漏更新了一行（THIRD-PARTY-NOTICES.md），事后才发现。与 gen-components
+ * 的 --check 同构：文档里的数字必须有守卫，否则会先于代码腐烂。
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
@@ -161,6 +171,69 @@ if (process.argv.includes('--json')) {
   process.exit(0);
 }
 
+// ────────────────────── 文档守卫 ──────────────────────
+//
+// ARCHITECTURE.md §6 把本脚本的输出整块嵌进了文档。那个块会随代码/文档漂移，
+// 而且它【包含文档自身的体积】——存在自引用。收敛性论证：块里写的是定宽数字，
+// 改数字不改字节数 → 重写一次后再算出来的输出不变 → 一轮即收敛；若数字位数变了
+// （如 99999 → 100000）则再迭代一轮。故 --write-doc 循环上限取 5，足够。
+//
+// 校验方式是【跑一遍自己】并把 stdout 与文档块逐行比对 —— 不重新实现一遍渲染逻辑，
+// 避免"校验器和渲染器各写一套、各自漂移"。
+//
+// 必须在打印报告【之前】处理并退出：否则 --check-doc 会顺带把整份报告吐到终端，
+// 而打印出来的报告又会被 renderedBlock() 的子进程再打印一遍（曾实测到满屏噪音）。
+const DOC_FILE = 'docs/ARCHITECTURE.md';
+const DOC_ANCHOR = /(`node tools\/stats\.mjs` 的实测输出：\n\n```\n)([\s\S]*?)(\n```)/;
+const DOC_MODE = process.argv.includes('--write-doc') ? 'write'
+  : process.argv.includes('--check-doc') ? 'check' : null;
+
+const renderedBlock = () => execFileSync(process.execPath, [fileURLToPath(import.meta.url)], { encoding: 'utf8' })
+  .replace(/\n+$/, '');
+const docBlockOf = () => {
+  const m = read(DOC_FILE).match(DOC_ANCHOR);
+  return m ? m[2] : null;
+};
+const writeDocBlock = (block) => fs.writeFileSync(
+  path.join(ROOT, DOC_FILE),
+  read(DOC_FILE).replace(DOC_ANCHOR, (_s, head, _old, tail) => head + block + tail),
+);
+
+if (DOC_MODE) {
+  if (docBlockOf() === null) {
+    console.error(`❌ ${DOC_FILE} 里找不到 stats 引用块`);
+    console.error('   期望锚点：`node tools/stats.mjs` 的实测输出： 后跟一个 ``` 围栏块');
+    process.exit(1);
+  }
+  let want = renderedBlock();
+  if (DOC_MODE === 'write') {
+    for (let i = 0; i < 5; i++) {
+      if (docBlockOf() === want) break;      // 已收敛
+      writeDocBlock(want);
+      want = renderedBlock();                // 文档体积变了 → 重算
+    }
+  }
+  const have = docBlockOf();
+  if (have === want) {
+    const lines = want.split('\n').length;
+    console.log(`✅ ${DOC_FILE} §6 的引用块与本脚本输出逐行一致（${lines} 行）`
+      + (DOC_MODE === 'write' ? '，已按需重写' : ''));
+    process.exit(0);
+  }
+  const a = have.split('\n'), b = want.split('\n');
+  const diffs = [];
+  for (let i = 0; i < Math.max(a.length, b.length); i++) if (a[i] !== b[i]) diffs.push([i, a[i], b[i]]);
+  console.error(`❌ ${DOC_FILE} §6 的引用块已漂移（${diffs.length} 行不一致）`);
+  for (const [i, x, y] of diffs.slice(0, 12)) {
+    console.error(`   第 ${i + 1} 行：`);
+    console.error(`     文档    ${JSON.stringify(x ?? '<缺>')}`);
+    console.error(`     应生成  ${JSON.stringify(y ?? '<缺>')}`);
+  }
+  if (diffs.length > 12) console.error(`   …还有 ${diffs.length - 12} 行`);
+  console.error('   修复： node tools/stats.mjs --write-doc');
+  process.exit(1);
+}
+
 console.log('== 组件库 ==');
 console.log(`  ets-loader 注册名    ${names.length}`);
 console.log(`  手写实现（真布局语义）${HANDWRITTEN.length}：${HANDWRITTEN.join(' ')}`);
@@ -203,3 +276,4 @@ const width = Math.max(...Object.keys(fileBytes).map((f) => f.length));
 for (const [f, b] of Object.entries(fileBytes)) {
   console.log(`  ${f.padEnd(width)}  ${b === null ? '（不存在）' : `${String(b).padStart(6)} B  ${kb(b)}`}`);
 }
+

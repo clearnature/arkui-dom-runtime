@@ -441,6 +441,7 @@ PASS 越界已记入 layoutWarnings（0 → 1）            ← 负向断言
 | 环境自检 | `npm run preflight` | 缺 CLT/Chrome/Electron **或脚本缺 `+x`** 都会明确报错 |
 | 统一验收 | `npm run check` | **退出码只看被调命令**，绝不用 `grep`/`wc` 数日志行 |
 | 生成物守门 | `npm run check:gen` | `--check` 只比对不落盘，漂移即非 0 退出 |
+| 文档数字守门 | `npm run stats:check-doc` | `ARCHITECTURE.md` §6 的 94 行实测数字，漂移即非 0 退出；`stats:write-doc` 就地重写 |
 | 覆盖统计 | `npm run stats` | 文档里的所有数字都由它产出（`--json` 机器可读） |
 
 `npm run check` 当前：**浏览器 16 用例 + Electron 15 用例全绿**。
