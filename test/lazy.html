@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>V1/V2 虚拟滚动 · LazyForEach</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 360px; height: 260px; border: 1px solid #ccc; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>虚拟滚动：1000 项只渲染视口窗口</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../build/lazy.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const comp = (n) => [...root.querySelectorAll('*')].find((e) => e.__arkuiComp === n);
+    const items = () => root.querySelectorAll('[data-arkui-comp="ListItem"]');
+    const texts = () => [...items()].map((e) => e.textContent);
+
+    try {
+      __arkui_dom_loadRoute('pages/Lazy', root);
+      await tick(80);
+      check((root.textContent || '').includes('Lazy'), 'Lazy 页面已渲染');
+
+      const listEl = comp('List');
+      const holder = root.querySelector('[data-arkui-lazyforeach]');
+      check(!!listEl && !!holder, 'List 与 LazyForEach 容器已挂载');
+
+      // ── V2：只渲染窗口，不是 1000 项
+      const n0 = items().length;
+      check(n0 > 0 && n0 <= 40, `初始只渲染 ${n0} 项（1000 项中，窗口化生效）`);
+      lines.push(`WINDOW n0=${n0} estItemH 校正后 scrollHeight=${listEl && listEl.scrollHeight}`);
+
+      // spacer 撑出总高度（1000 项 × 行高 ≈ 24~26k px）
+      check(listEl && listEl.scrollHeight > 20000,
+        `spacer 撑出总高度 scrollHeight=${listEl && listEl.scrollHeight}（1000 项）`);
+
+      // 初始窗口应包含第 0 项、不含第 500 项
+      const t0 = texts();
+      check(t0.includes('item-0'), `窗口含首项（${t0[0]} … ${t0[t0.length - 1]}）`);
+      check(!t0.includes('item-500'), '第 500 项未渲染（虚拟滚动的意义所在）');
+
+      // ── V1：scrollToIndex 到未渲染的目标（必须靠 estimate 换算）
+      const btn = [...root.querySelectorAll('button')].find((b) => b.textContent === 'toIndex500');
+      check(!!btn, 'toIndex500 按钮存在');
+      btn.click();
+      // 轮询而不是固定等待：窗口更新是异步的（事件合并），固定 tick 会偶发抢跑
+      for (let k = 0; k < 40; k++) {
+        if (texts().some((t) => /^item-5\d\d$/.test(t))) break;
+        await tick(25);
+      }
+      const after = texts();
+      const scrolled = listEl ? listEl.scrollTop : 0;
+      check(scrolled > 10000, `scrollTop 跳到 ${scrolled}（未渲染目标靠 estimate 换算）`);
+      check(after.some((t) => /^item-5\d\d$/.test(t)),
+        `滚动后窗口进入 500 段：${after.slice(0, 3).join(',')} … ${after.slice(-2).join(',')}`);
+      check(!after.includes('item-0'), '首项已移出窗口（窗口被替换，不是累积）');
+      const n1 = items().length;
+      check(n1 <= 40, `滚动后仍只渲染 ${n1} 项（无累积）`);
+
+      // ── 手动滚到中部，验证窗口跟随
+      if (listEl) { listEl.scrollTop = 12000; listEl.dispatchEvent(new Event('scroll')); }
+      await tick(150);
+      const t2 = texts();
+      check(t2.some((t) => /^item-\d+$/.test(t)), `手动滚动后仍渲染内容：${t2.slice(0, 2).join(',')}`);
+      check(items().length <= 40, `手动滚动后仍只 ${items().length} 项`);
+
+      const warns = __arkui_dom_layout_warnings || [];
+      check(warns.length === 0, `布局告警为空（${warns.length}${warns.length ? ': ' + warns[0] : ''}）`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const el = document.getElementById('result');
+    el.textContent = lines.join('\n');
+    el.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>⑥ file.fs（真实落盘）+ net.http（真 fetch）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 320px; height: 170px; border: 1px solid #ccc; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>file.fs（真实落盘）+ net.http（真 fetch）+ 跨进程持久化</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/netfile-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const txt = () => root.textContent || '';
+    const clickText = (label) => {
+      const b = [...root.querySelectorAll('button,div')].find((e) => e.textContent === label);
+      if (!b) throw new Error('找不到可点击元素: ' + label);
+      b.click();
+      return b;
+    };
+
+    const phase = new URLSearchParams(location.search).get('phase') || '1';
+    const FILE = '/vfs/files/demo.txt';
+    const EXPECT = 'hello from arkts';
+
+    try {
+      // OPFS 后端需要先等水合完成（把持久层读回镜像），否则会看到"空"文件系统
+      await __arkui_dom_fs.ready;
+      lines.push(`PHASE ${phase} | fs 后端=${__arkui_dom_fs.backend} | 根=${__arkui_dom_fs.root} | 水合=${__arkui_dom_fs.hydrated()}`);
+      check(['node-fs', 'opfs', 'localStorage'].includes(__arkui_dom_fs.backend),
+        `文件后端是持久化的（${__arkui_dom_fs.backend}），不是内存`);
+      if (__arkui_dom_fs.backend === 'node-fs') {
+        lines.push(`REAL_PATH ${__arkui_dom_fs.realPathOf(FILE)}`);
+      }
+
+      __arkui_dom_requireModule('NetFile');
+
+      if (phase === '2') {
+        // ── 关键：本进程【什么都没写】，先看上一进程留下的数据是否还在
+        check(__arkui_dom_fs.existsSync(FILE), `上次会话写入的文件仍存在：${FILE}`);
+        check(__arkui_dom_fs.readTextSync(FILE) === EXPECT,
+          `内容一致：'${__arkui_dom_fs.readTextSync(FILE)}' ← 跨进程持久化成立`);
+        const prefs = __arkui_dom_require('@ohos:data.preferences');
+        const st = await prefs.getPreferences(null, 'persist_probe');
+        const marker = await st.get('marker', '(丢失)');
+        check(marker === 'm1', `preferences 也跨进程保留：marker='${marker}'`);
+      }
+
+      __arkui_dom_loadRoute('pages/NetFile', root);
+      await tick(30);
+      check(txt().includes('NetFile'), `页面已渲染`);
+
+      if (phase === '1') {
+        // ── 写文件（真落盘）
+        clickText('write');
+        await tick(30);
+        check(txt().includes('file=written'), 'fs 写入成功（openSync/writeSync/closeSync）');
+        check(__arkui_dom_fs.existsSync(FILE), '写入后文件在后端中存在');
+
+        // ── 写 preferences（真落盘）
+        const prefs = __arkui_dom_require('@ohos:data.preferences');
+        const st = await prefs.getPreferences(null, 'persist_probe');
+        await st.put('marker', 'm1');
+        await st.flush();
+        const flushLog = __arkui_dom_logs.filter((l) => l.t === 'preferences.flush').pop();
+        check(!!flushLog && flushLog.bytes > 0,
+          `preferences.flush 已落盘（${flushLog && flushLog.bytes} 字节，后端 ${flushLog && flushLog.backend}）`);
+
+        // 等落盘队列排空：OPFS 是异步写，不等就可能"进程已退出、数据还没落"
+        await __arkui_dom_fs.pending();
+        check(!__arkui_dom_logs.some((l) => l.t === 'fs.persistFailed'), '落盘队列无失败');
+      }
+
+      // ── 读文件（两条 phase 都验证应用侧读得到）
+      clickText('read');
+      await tick(30);
+      check(txt().includes('file=' + EXPECT), `应用读回一致：'${(txt().match(/file=[^h]*hello from arkts/) || [''])[0].trim()}'`);
+
+      // ── net.http：真 fetch
+      clickText('fetch');
+      await tick(200);
+      const m = txt().match(/http=code=(\d+) len=(\d+)/);
+      check(!!m && m[1] === '200', `HTTP 请求成功：'${m ? m[0] : '(无)'}'`);
+      check(__arkui_dom_logs.some((l) => l.t === 'http.request' && l.code === 200), 'net.http 请求留痕 code=200');
+      check(__arkui_dom_logs.some((l) => l.t === 'http.destroy'), 'http.destroy 被调用');
+
+      const kinds = [...new Set(__arkui_dom_logs.map((l) => l.t))].sort();
+      lines.push('LOGS ' + kinds.join('/'));
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const el = document.getElementById('result');
+    el.textContent = lines.join('\n');
+    el.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

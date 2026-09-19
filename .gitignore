@@ -1,0 +1,21 @@
+# ── 产物 ──
+# build/ 里是 extract.mjs 的输出、Electron 截图、check-all.sh 的日志、以及
+# 持久化用例的 Chrome profile（为了跨进程保持同一 origin 而刻意保留的目录）。
+build/
+
+# ── Electron 运行时（283 MB，不要提交）──
+# 来源: ~/.cache/electron/electron-v44.2.0-linux-x64.zip 解包到这里。
+# 缺失时 tools/preflight.mjs 会明确报错并给出这条路径。
+electron/runtime/
+
+# ── Electron 的"真实落盘"根目录（测试产物，每次用例前会被 rm -rf 重建）──
+electron/data/
+
+# ── Node ──
+node_modules/
+npm-debug.log*
+
+# ── 杂项 ──
+*.log
+*.tmp
+.DS_Store

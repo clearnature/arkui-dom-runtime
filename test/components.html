@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>T1 组件骨架 · 覆盖率 + 原生控件映射</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 340px; height: 320px; border: 1px solid #ccc; overflow: auto; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>T1 组件骨架：149 个生成组件 + 原生控件参数映射</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../build/widgets.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+
+    try {
+      // ── 覆盖率：元数据里的每个组件都必须在运行时注册到
+      const metaNames = Object.keys(window.__ARKUI_COMPONENTS || {});
+      const runtimeNames = __arkui_dom_componentNames();
+      const missing = metaNames.filter((n) => !runtimeNames.includes(n));
+      check(metaNames.length >= 149, `元数据组件数 = ${metaNames.length}（≥149）`);
+      check(missing.length === 0, `全部已注册到运行时（缺失 ${missing.length}${missing.length ? ': ' + missing.join(',') : ''}）`);
+      check(runtimeNames.length >= 149, `运行时组件总数 = ${runtimeNames.length}`);
+      lines.push(`COVERAGE meta=${metaNames.length} runtime=${runtimeNames.length}`);
+
+      // ── 渲染 Widgets 页面（使用此前未实现的组件）
+      __arkui_dom_loadRoute('pages/Widgets', root);
+      await tick(50);
+      check((root.textContent || '').includes('Widgets'), 'Widgets 页面已渲染');
+
+      // ── 原生控件参数映射
+      const textInput = root.querySelector('input[type=text]');
+      check(!!textInput, 'TextInput → <input type=text>');
+      check(textInput && textInput.placeholder === 'name' && textInput.value === 'abc',
+        `TextInput 参数落位：placeholder='${textInput && textInput.placeholder}' value='${textInput && textInput.value}'`);
+
+      const slider = root.querySelector('input[type=range]');
+      check(!!slider, 'Slider → <input type=range>');
+      check(slider && slider.min === '0' && slider.max === '100' && slider.step === '5' && slider.value === '30',
+        `Slider 参数落位：min=${slider && slider.min} max=${slider && slider.max} step=${slider && slider.step} value=${slider && slider.value}`);
+
+      const prog = root.querySelector('progress');
+      check(!!prog && prog.value === 40 && prog.max === 100,
+        `Progress → <progress> value=${prog && prog.value} max=${prog && prog.max}`);
+
+      const hr = root.querySelector('hr');
+      check(!!hr, 'Divider → <hr>');
+
+      const img = root.querySelector('img');
+      check(!!img && (img.getAttribute('src') || '').endsWith('img.png'),
+        `Image → <img src='${img && img.getAttribute('src')}'>`);
+
+      // ── Grid：columnsTemplate 落到 CSS grid
+      const gridEl = [...root.querySelectorAll('*')].find((e) => e.__arkuiComp === 'Grid');
+      check(!!gridEl && gridEl.style.gridTemplateColumns === '1fr 1fr',
+        `Grid columnsTemplate → gridTemplateColumns='${gridEl && gridEl.style.gridTemplateColumns}'`);
+      const gridItems = [...root.querySelectorAll('*')].filter((e) => e.__arkuiComp === 'GridItem');
+      check(gridItems.length === 2, `GridItem 深渲染出 ${gridItems.length} 个（含子 Text g1/g2）`);
+      check((root.textContent || '').includes('g1') && (root.textContent || '').includes('g2'),
+        'GridItem 子内容已渲染');
+
+      // ── 其余新组件
+      check(!![...root.querySelectorAll('*')].find((e) => e.__arkuiComp === 'Scroll'), 'Scroll 已创建');
+      check(!![...root.querySelectorAll('*')].find((e) => e.__arkuiComp === 'LoadingProgress'), 'LoadingProgress 已创建');
+      check(!![...root.querySelectorAll('*')].find((e) => e.__arkuiComp === 'Blank'), 'Blank 已创建');
+      const qr = [...root.querySelectorAll('*')].find((e) => e.__arkuiComp === 'QRCode');
+      check(!!qr && qr.dataset.content === 'hello',
+        `QRCode 的字符串参数未丢（data-content='${qr && qr.dataset.content}'）`);
+
+      lines.push(`ELMT ${__arkui_dom_elmtRecords.size}`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const el = document.getElementById('result');
+    el.textContent = lines.join('\n');
+    el.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

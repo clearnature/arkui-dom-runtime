@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>⑫ @Provide/@Consume + @Watch</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 340px; height: 240px; border: 1px solid #ccc; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>@Provide/@Consume（跨层传递）+ @Watch（值变更回调）</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../build/provide.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const txt = () => root.textContent || '';
+    const clickText = (label) => {
+      const b = [...root.querySelectorAll('button')].find((e) => e.textContent === label);
+      if (!b) throw new Error('找不到按钮: ' + label);
+      b.click();
+      return b;
+    };
+    const poll = async (pred, ms) => {
+      for (let k = 0; k < ms / 25; k++) { if (pred()) return true; await tick(25); }
+      return pred();
+    };
+
+    try {
+      const view = __arkui_dom_loadRoute('pages/Provide', root);
+      await tick(50);
+      check(txt().includes('Provide'), 'ProvideDemo 页面已渲染');
+
+      // ── @Consume 初值来自祖先 @Provide
+      check(txt().includes('theme=dark'), `父视图 theme=dark`);
+      check(txt().includes('child:dark'), '@Consume 拿到祖先的初值（child:dark）');
+
+      // ── 关键：consume 解析到的【就是提供者的同一个属性实例】
+      const childView = (() => {
+        // 子组件视图是在 ViewPU.create 时挂载的：从 elmtRecords 里找带 childView 的记录
+        for (const [, rec] of __arkui_dom_elmtRecords) {
+          if (rec.childView && rec.childView.__theme) return rec.childView;
+        }
+        return null;
+      })();
+      check(!!childView && childView.__theme === view.__theme,
+        `@Consume 与 @Provide 指向同一属性实例（${!!childView && childView.__theme === view.__theme}）`);
+
+      // ── 点 flip：改 @Provide → @Consume 侧文本应跟着变（无 props 传递）
+      clickText('flip');
+      const flipped = await poll(() => txt().includes('child:light'), 1000);
+      check(flipped, `改 @Provide 后 @Consume 侧自动更新：'${(txt().match(/child:\w+/) || [''])[0]}'`);
+      check(txt().includes('theme=light'), '父视图自身也更新为 light');
+
+      // ── 点 bump：@Watch 回调触发（回调里给 log 追加 'w'）
+      const before = (txt().match(/log=(\w*)/) || ['', ''])[1];
+      clickText('bump');
+      const watched = await poll(() => ((txt().match(/log=(\w*)/) || ['', ''])[1] || '').length > before.length, 1000);
+      const after = (txt().match(/log=(\w*)/) || ['', ''])[1];
+      check(watched, `@Watch 回调被触发：log '${before}' → '${after}'`);
+      check(txt().includes('watched=1'), `watched 值已更新（watched=1）`);
+
+      // 再点一次，确认回调持续生效
+      clickText('bump');
+      const twice = await poll(() => ((txt().match(/log=(\w*)/) || ['', ''])[1] || '').length >= 2, 1000);
+      check(twice, `@Watch 持续生效：log='${(txt().match(/log=(\w*)/) || ['', ''])[1]}'`);
+
+      const warns = (__arkui_dom_layout_warnings || []).filter((w) => /Provide|Consume|Watch/.test(w));
+      check(warns.length === 0, `无 Provide/Consume/Watch 告警（${warns.length}${warns.length ? ': ' + warns[0] : ''}）`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const el = document.getElementById('result');
+    el.textContent = lines.join('\n');
+    el.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

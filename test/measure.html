@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>L1–L4 布局保真：alignRules / 文本截断 / Stack 叠放 / Scroller</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 360px; height: 420px; border: 1px solid #ccc; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>布局保真：alignRules 几何 / maxLines+textOverflow / Stack.alignContent / Scroller</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../build/measure.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const near = (a, b, tol) => Math.abs(a - b) <= (tol === undefined ? 1.5 : tol);
+    const comp = (name) => [...root.querySelectorAll('*')].find((e) => e.__arkuiComp === name);
+
+    try {
+      __arkui_dom_loadRoute('pages/Measure', root);
+      await tick(50);
+      check((root.textContent || '').includes('Measure'), 'Measure 页面已渲染');
+
+      // ── L1：alignRules（容器锚点）—— 用几何量断言，不看截图
+      const rc = comp('RelativeContainer');
+      const tl = root.querySelector('#tl'), cc = root.querySelector('#cc'), br = root.querySelector('#br');
+      check(!!rc && !!tl && !!cc && !!br, 'RelativeContainer 与三个锚定子项都存在');
+      const R = rc.getBoundingClientRect();
+      const T = tl.getBoundingClientRect(), C = cc.getBoundingClientRect(), B = br.getBoundingClientRect();
+      lines.push(`RC=(${R.width}x${R.height}) tl=(${T.left - R.left},${T.top - R.top}) `
+        + `cc中心Δ=(${((C.left + C.width / 2) - (R.left + R.width / 2)).toFixed(1)},`
+        + `${((C.top + C.height / 2) - (R.top + R.height / 2)).toFixed(1)}) `
+        + `br边距=(${(R.right - B.right).toFixed(1)},${(R.bottom - B.bottom).toFixed(1)})`);
+
+      check(near(T.left - R.left, 0) && near(T.top - R.top, 0),
+        `top/left=Start → 贴左上角（Δ=${(T.left - R.left).toFixed(1)},${(T.top - R.top).toFixed(1)}）`);
+      const cdX = (C.left + C.width / 2) - (R.left + R.width / 2);
+      const cdY = (C.top + C.height / 2) - (R.top + R.height / 2);
+      check(near(cdX, 0) && near(cdY, 0), `Top/Left=Center → 居中对齐（Δ=${cdX.toFixed(1)},${cdY.toFixed(1)}）`);
+      check(near(R.right - B.right, 0) && near(R.bottom - B.bottom, 0),
+        `bottom/right=End → 贴右下角（Δ=${(R.right - B.right).toFixed(1)},${(R.bottom - B.bottom).toFixed(1)}）`);
+
+      // ── L3：maxLines(1) + textOverflow(Ellipsis)
+      const clipped = [...root.querySelectorAll('*')].find((e) => e.textContent && e.textContent.indexOf('今宵') === 0);
+      const cs = clipped ? getComputedStyle(clipped) : {};
+      check(!!clipped && cs.whiteSpace === 'nowrap' && cs.textOverflow === 'ellipsis' && cs.overflow === 'hidden',
+        `文本截断：white-space=${cs.whiteSpace} text-overflow=${cs.textOverflow} overflow=${cs.overflow}`);
+      check(!!clipped && clipped.scrollWidth > clipped.clientWidth,
+        `内容确实溢出被裁（scrollW=${clipped && clipped.scrollWidth} > clientW=${clipped && clipped.clientWidth}）`);
+
+      // ── L4：Stack({alignContent: Alignment.TopStart}) → 叠放 + 左上对齐
+      const st = comp('Stack');
+      const scs = st ? getComputedStyle(st) : {};
+      check(!!st && scs.display === 'grid', `Stack 叠放用 grid（display=${scs.display}）`);
+      check(!!st && scs.alignItems === 'start' && scs.justifyItems === 'start',
+        `alignContent=TopStart → align-items=${scs.alignItems} justify-items=${scs.justifyItems}`);
+      const stKids = st ? [...st.children] : [];
+      check(stKids.length === 2 && stKids.every((k) => k.style.gridArea === '1 / 1'),
+        `Stack 子项同格叠放（${stKids.length} 项，gridArea=${stKids.map((k) => k.style.gridArea).join('/')}）`);
+
+      // ── L2：Scroller.scrollToIndex 真实滚动
+      const listEl = comp('List');
+      check(!!listEl && getComputedStyle(listEl).overflow === 'auto', 'List 可滚动（overflow=auto）');
+      const before = listEl ? listEl.scrollTop : -1;
+      const btn = [...root.querySelectorAll('button')].find((b) => b.textContent === 'scrollToIndex');
+      check(!!btn, 'scrollToIndex 按钮存在');
+      btn.click();
+      await tick(60);
+      const after = listEl ? listEl.scrollTop : -1;
+      check(after > before, `scrollToIndex(3) 真的滚动：scrollTop ${before} → ${after}`);
+      // 正确语义：滚到该项顶部，但会被容器的最大滚动量截断（scrollHeight - clientHeight）
+      const li = listEl ? listEl.querySelectorAll('[data-arkui-comp="ListItem"]') : [];
+      const maxScroll = listEl ? Math.max(0, listEl.scrollHeight - listEl.clientHeight) : 0;
+      const want = li[3] ? Math.min(li[3].offsetTop, maxScroll) : -1;
+      check(li.length >= 4 && after === want,
+        `scrollTop=${after} == min(第4项 offsetTop=${li[3] && li[3].offsetTop}, 最大滚动=${maxScroll})`);
+
+      // ── 未支持项必须留痕（不许静默忽略）
+      const warns = __arkui_dom_layout_warnings || [];
+      check(warns.length === 0, `布局告警为空（${warns.length} 条${warns.length ? ': ' + warns.slice(0, 2).join('; ') : ''}）`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const el = document.getElementById('result');
+    el.textContent = lines.join('\n');
+    el.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,25 @@
+{
+  "name": "arkui-dom-runtime",
+  "version": "0.1.0",
+  "description": "让 ArkTS/ArkUI 跑在浏览器与 Electron 上：复用官方 ets-loader 的转换产物，在 DOM/CSS 上实现 ArkUI 运行时",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "bash tools/check-all.sh",
+    "check:quick": "bash tools/check-all.sh --quick",
+    "preflight": "node tools/preflight.mjs",
+    "test": "bash tools/check-all.sh",
+    "test:browser": "bash run.sh all",
+    "test:electron": "bash electron/run.sh all",
+    "stats": "node tools/stats.mjs",
+    "stats:json": "node tools/stats.mjs --json",
+    "check:gen": "node tools/gen-components.mjs --check",
+    "gen": "node tools/gen-components.mjs",
+    "extract": "node tools/extract.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "//": "本项目没有 npm 依赖：TypeScript 直接用 ets-loader 自带的 4.9.5（见 tools/extract.mjs）。",
+  "//node": "run.sh / electron/run.sh 里硬编码的是 CLT 自带的 node（tool/node/bin/node），以保证与工具链一致；npm scripts 里用的是当前 node。"
+}

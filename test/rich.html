@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Rich 页面 · ② 机制验证</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 360px; min-height: 180px; border: 1px solid #ccc; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>Rich.ets 的转换产物在 DOM 上执行（自定义组件 / @Prop / @Link / If / ForEach）</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../build/rich.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); return c; };
+    const root = document.getElementById('root');
+    const txt = () => root.textContent || '';
+    const hasExact = (t) => [...root.querySelectorAll('*')].some((e) => e.textContent === t
+      && [...e.childNodes].every((n) => n.nodeType === 3));
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+
+    try {
+      const view = __arkui_dom_loadRoute('pages/Rich', root);
+      await tick(30);
+
+      // ── 机制 1：自定义组件挂载（ItemRow 被挂进 Column）
+      check(!!root.querySelector('[data-arkui-child-view="true"]'), '自定义组件容器已挂载（ItemRow）');
+
+      // ── 机制 3：@Prop 初值 + 机制 2：@Link 初值（两者都渲染成文本）
+      check(hasExact('clicks'), "@Prop label 初值渲染 = 'clicks'");
+      check(hasExact('0'), "@Link count 初值渲染 = '0'");
+
+      // ── 机制 7：@Builder（header）被调用
+      check(txt().includes('Rich Page'), "@Builder header 渲染 = 'Rich Page'");
+
+      // ── 机制 5：ForEach + List/ListItem 深渲染
+      const items = ['alpha', 'beta', 'gamma'];
+      check(items.every((i) => hasExact(i)), `ForEach 生成 3 项：${items.join('/')}`);
+      check(root.querySelectorAll('[data-arkui-comp], div').length >= 3, 'ListItem 子树已生成');
+
+      // ── 机制 4：If 分支（count=0 → else 分支）
+      check(txt().includes('no clicks'), "If else 分支 = 'no clicks'（count=0）");
+      check(!txt().includes('has clicks'), "If then 分支未出现");
+
+      // ── 核心：点击 Button → @State count++ → 四处联动
+      const btn = root.querySelector('button');
+      check(!!btn, "Button 由 createWithLabel 生成（文本 'add'）");
+      check((btn?.textContent || '') === 'add', `Button 文本 = '${btn?.textContent}'`);
+
+      btn.click();
+      await tick(30);
+      check(hasExact('1'), "@Link 双向：ItemRow 内计数变 '1'（父状态变更传导到子）");
+      check(txt().includes('has clicks'), "If 分支切换：出现 'has clicks'");
+      check(!txt().includes('no clicks'), "If 旧分支已销毁：'no clicks' 消失");
+      check(view.count === 1, `父视图状态 count = ${view.count}`);
+
+      btn.click();
+      await tick(30);
+      check(hasExact('2'), "@Link 再次同步：计数变 '2'");
+      check(!lines.some((l) => l.startsWith('FAIL')), '两次点击后无累积错误');
+
+      lines.push('ELMT_COUNT ' + __arkui_dom_elmtRecords.size);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const el = document.getElementById('result');
+    el.textContent = lines.join('\n');
+    el.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

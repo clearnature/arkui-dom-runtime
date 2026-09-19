@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>版式语义验证 · Layout 页面</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 300px; height: 240px; border: 1px solid #ccc; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>版式语义：space→gap / justifyContent / alignItems / textAlign / padding / Color</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../build/layout.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const root = document.getElementById('root');
+    const cs = (el) => getComputedStyle(el);
+
+    try {
+      const view = __arkui_dom_loadRoute('pages/Layout', root);
+      await new Promise((r) => setTimeout(r, 30));
+
+      // 用运行时打在节点上的 __arkuiComp 标记定位（顺带验证标记正确）
+      const all = [...root.querySelectorAll('*')];
+      const pick = (n) => all.filter((e) => e.__arkuiComp === n);
+      const col = pick('Column')[0], row = pick('Row')[0];
+      const texts = pick('Text'), btn = pick('Button')[0];
+
+      check(!!col && !!row && texts.length === 4 && !!btn,
+        `组件节点齐备（Column×1 Row×1 Text×${texts.length} Button×1）`);
+
+      // ── 容器：Column({space:8}) + width/height/padding + justifyContent/alignItems
+      check(cs(col).rowGap === '8px', `Column space:8 → rowGap = ${cs(col).rowGap}`);
+      check(col.style.width === '100%' && col.style.height === '100%',
+        `Column 百分比尺寸 = ${col.style.width} / ${col.style.height}`);
+      check(cs(col).padding === '12px', `Column padding(12) = ${cs(col).padding}`);
+      check(cs(col).justifyContent === 'center', `Column justifyContent(FlexAlign.Center) = ${cs(col).justifyContent}`);
+      check(cs(col).alignItems === 'center', `Column alignItems(HorizontalAlign.Center) = ${cs(col).alignItems}`);
+
+      // ── Row({space:6}) + justifyContent(SpaceBetween)
+      check(cs(row).columnGap === '6px', `Row space:6 → columnGap = ${cs(row).columnGap}`);
+      check(cs(row).justifyContent === 'space-between',
+        `Row justifyContent(FlexAlign.SpaceBetween) = ${cs(row).justifyContent}`);
+
+      // ── Text：textAlign / padding / backgroundColor(Color.Yellow)
+      const top = texts.find((e) => e.textContent === 'top');
+      const box = texts.find((e) => e.textContent === 'box');
+      check(!!top && cs(top).textAlign === 'center', `Text textAlign(TextAlign.Center) = ${top && cs(top).textAlign}`);
+      check(!!top && top.style.width === '100%', `Text width('100%') = ${top && top.style.width}`);
+      check(!!box && cs(box).padding === '6px', `Text padding(6) = ${box && cs(box).padding}`);
+      check(!!box && cs(box).backgroundColor === 'rgb(255, 255, 0)',
+        `Text backgroundColor(Color.Yellow) = ${box && cs(box).backgroundColor}`);
+
+      // ── Button：createWithLabel + 三元表达式随 @State 变化
+      check(btn.textContent === 'off', `Button 初值 = '${btn.textContent}'（this.on=false）`);
+      btn.click();
+      await new Promise((r) => setTimeout(r, 30));
+      check(btn.textContent === 'on', `点击后 Button = '${btn.textContent}'（@State 驱动内容更新）`);
+      check(view.on === true, `视图状态 on = ${view.on}`);
+
+      lines.push(`ELMT_COUNT ${__arkui_dom_elmtRecords.size}`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const el = document.getElementById('result');
+    el.textContent = lines.join('\n');
+    el.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>T3/T4 异步 fs + net.http 完整面</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 340px; height: 220px; border: 1px solid #ccc; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>T3 异步 file.fs（Promise 语义） + T4 net.http（POST / header / 超时 / 二进制）</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/asyncio-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const txt = () => root.textContent || '';
+    const clickText = (label) => {
+      const b = [...root.querySelectorAll('button,div')].find((e) => e.textContent === label);
+      if (!b) throw new Error('找不到可点击元素: ' + label);
+      b.click();
+      return b;
+    };
+
+    try {
+      await __arkui_dom_fs.ready;
+      __arkui_dom_requireModule('AsyncIO');
+      __arkui_dom_loadRoute('pages/AsyncIO', root);
+      await tick(30);
+      check(txt().includes('AsyncIO'), `页面已渲染 | fs 后端=${__arkui_dom_fs.backend}`);
+
+      // ── T3：异步 fs（await 即已落盘）
+      clickText('saveAsync');
+      await tick(120);
+      check(txt().includes('msg=saved-async'), "异步 fs.saveAsync：fs.open/write/close 均 await 成功");
+      const AF = '/vfs/files/async.txt';
+      check(__arkui_dom_fs.existsSync(AF) && __arkui_dom_fs.readTextSync(AF) === 'async-payload',
+        `异步写入已落盘：'${__arkui_dom_fs.existsSync(AF) ? __arkui_dom_fs.readTextSync(AF) : '(不存在)'}'`);
+
+      clickText('loadAsync');
+      await tick(120);
+      check(txt().includes('msg=async-payload'), '异步 fs.readText 读回一致');
+
+      // ── T4：POST + 自定义 header + body（服务端回显）
+      clickText('post');
+      await tick(250);
+      // 注意：页面里多个 Text 是兄弟节点，textContent 拼接【无分隔符】，
+      // 所以要用 'timeout=' 当右边界精确切片，不能直接 JSON.parse 整行。
+      const m2 = txt().match(/post=code=(\d+) body=([\s\S]*?)timeout=/);
+      check(!!m2 && m2[1] === '200', `POST 返回 200（code=${m2 && m2[1]}）`);
+      let echoed = null;
+      try { echoed = m2 ? JSON.parse(m2[2]) : null; } catch (_) { /* 由下面的断言暴露 */ }
+      check(!!echoed && echoed.method === 'POST', `服务端确认收到 POST（method=${echoed && echoed.method}）`);
+      check(!!echoed && echoed.xProbe === 'probe-1', `自定义 header 送达（X-Probe=${echoed && echoed.xProbe}）`);
+      check(!!echoed && echoed.body === '{"n":1}', `extraData 送达（body=${echoed && echoed.body}）`);
+      check(!!echoed && echoed.contentType === 'application/json', `Content-Type 送达（${echoed && echoed.contentType}）`);
+
+      // ── T4：readTimeout
+      // 只在 Electron 里严格断言：Chrome 的 --virtual-time-budget 会在 fetch 挂起时【暂停虚拟时间】，
+      // 导致 abort 定时器永不触发（实测：请求反而正常返回 code=0）→ 浏览器侧不可判定。
+      // Electron 用真实定时器，同一份断言在那里执行。
+      const httpMod = __arkui_dom_require('@ohos:net.http');
+      if (/Electron/.test(navigator.userAgent)) {
+        const rt = httpMod.createHttp();
+        let tCode = 0;
+        try { await rt.request('/slow', { method: 'GET', readTimeout: 400 }); } catch (e) { tCode = e.code; }
+        check(tCode === 2300028, `readTimeout 生效：慢响应被中止并抛错 code=${tCode}（官方 2300028）`);
+        const failed = __arkui_dom_logs.filter((l) => l.t === 'http.requestFailed');
+        check(failed.length >= 1 && failed[failed.length - 1].timedOut === true,
+          `超时留痕：${failed.length ? failed[failed.length - 1].message : '(无)'}`);
+        rt.destroy();
+      } else {
+        lines.push('SKIP readTimeout 严格断言（Chrome 虚拟时间下不可判定）—— 由 electron: async 用例验证');
+      }
+      check(__arkui_dom_logs.some((l) => l.t === 'http.request' && l.method === 'POST' && l.hasBody),
+        'POST 请求留痕含 hasBody=true');
+
+      // ── 直接探垫片：destroy 后请求应抛错；二进制响应
+      const r1 = httpMod.createHttp();
+      r1.destroy();
+      let code = 0;
+      try { await r1.request('/runtime/ohos-shims.js', { method: 'GET' }); } catch (e) { code = e.code; }
+      check(code === 2300035, `destroy 后请求抛错且带 code=${code}（官方 2300035）`);
+
+      const r2 = httpMod.createHttp();
+      const resp = await r2.request('/runtime/ohos-shims.js', { method: 'GET', expectDataType: 2 });
+      check(resp.result instanceof ArrayBuffer && resp.result.byteLength > 1000,
+        `expectDataType=ARRAY_BUFFER → ArrayBuffer(${resp.result && resp.result.byteLength} 字节)`);
+      r2.destroy();
+
+      const kinds = [...new Set(__arkui_dom_logs.map((l) => l.t))].sort().filter((k) => k.startsWith('http') || k.startsWith('file'));
+      lines.push('LOGS ' + kinds.join('/'));
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const el = document.getElementById('result');
+    el.textContent = lines.join('\n');
+    el.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>④ @ohos 别名层 + ability 启动路径</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 300px; height: 160px; border: 1px solid #ccc; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>④ 平台别名层：EntryAbility(onCreate→onWindowStageCreate→loadContent) 在 DOM 上跑通</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <!-- 1) 运行时（含 require 垫片 / CJS 装载 / ability 启动） -->
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <!-- 2) @ohos:* 平台模块实现 -->
+  <script src="../runtime/ohos-shims.js"></script>
+  <!-- 3) 页面（registerNamedRoute(pages/Index)） -->
+  <script src="../build/app.js"></script>
+  <!-- 4) EntryAbility 的 CommonJS 模块（含 @ohos: import → require 垫片解析） -->
+  <script src="../build/ability-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+
+    try {
+      // ── 1. CJS 模块装载：require 垫片必须把 @ohos: 解析成真实实现
+      const mod = __arkui_dom_requireModule('EntryAbility');
+      const Ability = mod.default;
+      check(typeof Ability === 'function', `模块装载：default 是类（${Ability && Ability.name}）`);
+      check(Object.keys(mod).length >= 1, `模块导出面：${Object.keys(mod).join(', ')}`);
+
+      // ── 2. 平台模块解析
+      const hilog = __arkui_dom_require('@ohos:hilog');
+      check(typeof hilog.info === 'function', '@ohos:hilog 解析为带 info/error 的实现');
+      check(Object.keys(hilog).includes('default'), 'require 返回值兼容 TS 的 default interop');
+
+      // ── 3. 启动 ability：onCreate → onWindowStageCreate → loadContent
+      const { logs } = __arkui_dom_startAbility(Ability, { pagePath: 'pages/Index', rootEl: root });
+      await tick(30);
+
+      const hilogMsgs = logs.filter((l) => l.t === 'hilog').map((l) => l.message);
+      check(hilogMsgs.some((m) => m.includes('Ability onCreate')), `hilog 记录到 onCreate：${hilogMsgs.find((m) => m.includes('onCreate')) || '(无)'}`);
+      check(hilogMsgs.some((m) => m.includes('Ability onWindowStageCreate')), 'hilog 记录到 onWindowStageCreate');
+      check(!hilogMsgs.some((m) => m.includes('%{public}')),
+        'hilog 的 %{public}s 占位符已被格式化（无残留）');
+
+      // ── 4. ConfigurationConstant 生效（setColorMode 收到 COLOR_MODE_NOT_SET = -1）
+      const cm = logs.find((l) => l.t === 'setColorMode');
+      check(!!cm && cm.mode === -1, `this.context.getApplicationContext().setColorMode(${cm && cm.mode})`);
+
+      // ── 5. loadContent 真的把页面渲染出来了（端到端）
+      const lc = logs.find((l) => l.t === 'loadContent');
+      check(!!lc && lc.page === 'pages/Index', `windowStage.loadContent('${lc && lc.page}')`);
+      check(root.textContent.includes('Hello World'),
+        `loadContent 后页面已渲染：textContent='${root.textContent.trim().slice(0, 24)}'`);
+      check(hilogMsgs.some((m) => m.includes('Succeeded in loading the content')),
+        'loadContent 回调（成功分支）被调用');
+
+      // ── 6. 负面：未实现的平台模块要给出可操作报错
+      // 注意：探测名必须是【永远不会被实现】的模块——早先这里用的是 @ohos:net.http，
+      // 等它真被实现后这条断言就失效了（负面测试的经典维护坑）。
+      let errMsg = '';
+      try { __arkui_dom_require('@ohos:this.module.does.not.exist'); } catch (e) { errMsg = e.message; }
+      check(errMsg.includes('未实现的平台模块') && errMsg.includes('已实现'),
+        '未实现模块报错可操作（列出已实现项 + 指路）');
+
+      lines.push(`LOGS ${logs.length} 条：${logs.map((l) => l.t).join('/')}`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const el = document.getElementById('result');
+    el.textContent = lines.join('\n');
+    el.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

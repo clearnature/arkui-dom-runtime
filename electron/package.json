@@ -1,0 +1,7 @@
+{
+  "name": "arkui-dom-electron",
+  "version": "0.1.0",
+  "description": "用 Electron 加载 arkui-dom-runtime 的断言页，验证 ArkTS/ArkUI 转换产物在 Electron 中运行",
+  "main": "main.js",
+  "private": true
+}

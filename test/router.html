@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>⑤ @ohos:router + @ohos:data.preferences</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 300px; height: 160px; border: 1px solid #ccc; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>router 跳转/返回 + preferences 跨页读写 + aboutToAppear 生命周期</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <!-- 两个页面的 CJS 模块（require 时执行 registerNamedRoute） -->
+  <script src="../build/home-module.js"></script>
+  <script src="../build/detail-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const txt = () => root.textContent || '';
+    const clickText = (label) => {
+      const b = [...root.querySelectorAll('button,div')].find((e) => e.textContent === label);
+      if (!b) throw new Error('找不到可点击元素: ' + label);
+      b.click();
+      return b;
+    };
+
+    try {
+      // require 时执行模块体 → registerNamedRoute 注册页面
+      __arkui_dom_requireModule('Home');
+      __arkui_dom_requireModule('Detail');
+
+      // ── 初始页：Home
+      __arkui_dom_loadRoute('pages/Home', root);
+      await tick(30);
+      check(txt().includes('Home'), `Home 已渲染：'${txt().trim().slice(0, 30)}'`);
+      check(txt().includes('status=idle'), 'Home 初值 status=idle');
+      check(__arkui_dom_pageStack.length === 1, `页面栈深 = ${__arkui_dom_pageStack.length}`);
+
+      // ── 点击『save & go』：preferences 写入 → router.pushUrl 跳转
+      clickText('save & go');
+      await tick(80);
+
+      check(__arkui_dom_pageStack.length === 2,
+        `跳转后页面栈 = [${__arkui_dom_pageStack.join(' → ')}]`);
+      check(txt().includes('Detail'), `Detail 已渲染：'${txt().trim().slice(0, 40)}'`);
+      // aboutToAppear → load() 从 preferences 读回；能显示 abc123 说明写读都通了
+      check(txt().includes('token=abc123'),
+        `preferences 跨页读回成功：'${(txt().match(/token=\S+/) || ['(无)'])[0]}'`);
+      const PREF_FILE = '/vfs/files/pref_demo_store.json';
+      const prefRaw = __arkui_dom_fs.existsSync(PREF_FILE) ? __arkui_dom_fs.readTextSync(PREF_FILE) : '';
+      check(prefRaw.includes('"token":"abc123"'),
+        `preferences 已真实落盘（后端 ${__arkui_dom_fs.backend}）：${prefRaw || '(文件不存在)'}`);
+
+      // ── 点击『back』：回到 Home，且状态保留
+      clickText('back');
+      await tick(50);
+      check(__arkui_dom_pageStack.length === 1, `返回后页面栈 = [${__arkui_dom_pageStack.join(' → ')}]`);
+      check(txt().includes('status=saved'), `返回 Home 且状态保留：'${(txt().match(/status=\S+/) || ['(无)'])[0]}'`);
+
+      // ── 平台侧日志（router/preferences 的实际调用留痕）
+      const kinds = [...new Set(__arkui_dom_logs.map((l) => l.t))].sort();
+      check(kinds.includes('router.pushUrl') && kinds.includes('router.back'),
+        `router 调用留痕：${kinds.filter((k) => k.startsWith('router')).join(', ')}`);
+      check(kinds.includes('preferences.getPreferences') && kinds.includes('preferences.flush'),
+        `preferences 调用留痕：${kinds.filter((k) => k.startsWith('preferences')).join(', ')}`);
+      lines.push('LOGS ' + kinds.join('/'));
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const el = document.getElementById('result');
+    el.textContent = lines.join('\n');
+    el.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>泄漏探测 · purgeDetachedRecords 是否真回收</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 360px; min-height: 120px; border: 1px solid #ccc; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>泄漏探测：反复切换 If 分支 / churn ForEach 数组</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../build/rich.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = () => new Promise((r) => setTimeout(r, 0));
+    const root = document.getElementById('root');
+    const txt = () => root.textContent || '';
+    const nodes = () => root.querySelectorAll('*').length;
+    const recs = () => __arkui_dom_elmtRecords.size;
+
+    const ROUNDS = 100;
+    try {
+      const view = __arkui_dom_loadRoute('pages/Rich', root);
+      await tick();
+
+      // ── 基线
+      const r0 = recs(), n0 = nodes();
+      lines.push(`BASE elmtRecords=${r0} domNodes=${n0}`);
+
+      // ── 连续切换 If 分支：count 在 0/1 之间来回，逐次校验分支内容与状态一致
+      let mismatches = 0;
+      for (let i = 0; i < ROUNDS; i++) {
+        view.count = (i % 2 === 0) ? 1 : 0;
+        await tick();
+        const want = view.count > 0 ? 'has clicks' : 'no clicks';
+        const got = txt();
+        if (!got.includes(want) || got.includes(want === 'has clicks' ? 'no clicks' : 'has clicks')) {
+          mismatches++;
+        }
+      }
+      const r1 = recs(), n1 = nodes();
+      lines.push(`IF_TOGGLE x${ROUNDS} elmtRecords=${r1} domNodes=${n1}（Δrec=${r1 - r0} Δnode=${n1 - n0}）`);
+      check(r1 - r0 <= 4, `If 分支切换 ${ROUNDS} 次后 elmtId 记录收敛（Δ=${r1 - r0} ≤ 4）`);
+      check(n1 - n0 <= 4, `If 分支切换后 DOM 节点未累积（Δ=${n1 - n0}）`);
+      check(mismatches === 0, `100 次切换中分支内容始终与状态一致（不一致 ${mismatches} 次）`);
+
+      // ── churn ForEach 数组：另一个 purge 站点
+      const shapes = [['a', 'b', 'c'], ['x'], ['p', 'q', 'r', 's'], []];
+      for (let i = 0; i < ROUNDS; i++) {
+        view.items = shapes[i % shapes.length].slice();
+        await tick();
+      }
+      const r2 = recs(), n2 = nodes();
+      lines.push(`FOREACH_CHURN x${ROUNDS} elmtRecords=${r2} domNodes=${n2}（Δrec=${r2 - r1} Δnode=${n2 - n1}）`);
+      check(r2 - r1 <= 8, `ForEach churn ${ROUNDS} 次后 elmtId 记录收敛（Δ=${r2 - r1} ≤ 8）`);
+      check(n2 - n1 <= 8, `ForEach churn 后 DOM 节点未累积（Δ=${n2 - n1}）`);
+
+      // ── 最终一致性：数组为空，应无列表项；再设回 3 项应正确渲染
+      view.items = ['alpha', 'beta', 'gamma'];
+      await tick();
+      const okItems = ['alpha', 'beta', 'gamma'].every((t) =>
+        [...root.querySelectorAll('*')].some((e) => e.textContent === t));
+      check(okItems, 'churn 之后仍能正确渲染 3 项（无残留/重复）');
+
+      // ── 依赖表是否也收敛（propDeps 不泄漏）
+      lines.push(`FINAL elmtRecords=${recs()} domNodes=${nodes()}`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const el = document.getElementById('result');
+    el.textContent = lines.join('\n');
+    el.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

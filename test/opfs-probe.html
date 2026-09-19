@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>OPFS probe</title></head>
+<body>
+<div id="result">running…</div>
+<script>
+(async function () {
+  const out = [];
+  const put = () => { document.getElementById('result').textContent = out.join('\n'); };
+  const race = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout ' + ms + 'ms')), ms))]);
+  try {
+    out.push('origin=' + location.origin);
+    out.push('isSecureContext=' + window.isSecureContext);
+    out.push('navigator.storage=' + typeof navigator.storage);
+    out.push('getDirectory=' + (navigator.storage ? typeof navigator.storage.getDirectory : 'n/a'));
+    put();
+    if (!navigator.storage || !navigator.storage.getDirectory) { out.push('=> OPFS 不可用'); put(); return; }
+    const root = await race(navigator.storage.getDirectory(), 5000);
+    out.push('getDirectory() OK, kind=' + root.kind + ' name=' + root.name);
+    put();
+    const fh = await race(root.getFileHandle('probe.txt', { create: true }), 5000);
+    out.push('getFileHandle OK kind=' + fh.kind);
+    put();
+    const w = await race(fh.createWritable(), 5000);
+    await w.write('opfs-probe');
+    await w.close();
+    out.push('write OK');
+    put();
+    const f2 = await race(root.getFileHandle('probe.txt'), 5000);
+    out.push('readback=' + (await (await f2.getFile()).text()));
+    out.push('entries()=' + (typeof root.entries));
+    out.push('=> ALL PASS');
+  } catch (e) {
+    out.push('=> FAIL ' + e.message);
+  }
+  put();
+  document.title = out.join('|').includes('ALL PASS') ? 'PASS' : 'FAIL';
+})();
+</script>
+</body></html>

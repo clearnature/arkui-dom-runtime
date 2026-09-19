@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>ArkUI DOM 运行时 · 第①步验证</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 320px; height: 200px; border: 1px solid #ccc; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>ArkUI → DOM（ets-loader 转换产物原样执行）</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <!-- 1) 运行时骨架（安装 ArkUI 全局） -->
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <!-- 2) ets-loader 的转换产物（去类型后，内容未改动） -->
+  <script src="../build/app.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    const ok = (c, m) => { lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); return c; };
+    let allPass = true;
+    const check = (c, m) => { allPass = ok(c, m) && allPass; };
+
+    try {
+      // 走与真机一致的路由入口：registerNamedRoute 注册的工厂被调用
+      const view = __arkui_dom_loadRoute('pages/Index', document.getElementById('root'));
+
+      const root = document.getElementById('root');
+      // 必须按 id 选 Text 节点：RelativeContainer 同样是 div，querySelector('div') 会选中容器
+      const textNode = root.querySelector('#HelloWorld');
+
+      check(!!textNode, 'Text 组件已生成 DOM 节点');
+      check(
+        (textNode?.textContent || '').includes('Hello World'),
+        `初始文本 = '${textNode?.textContent}'（期望含 Hello World）`
+      );
+      check(
+        textNode?.style.fontSize === '16px',
+        `fontSize 资源对象已解析 = '${textNode?.style.fontSize}'（type 10002 兜底 16px）`
+      );
+      check(
+        textNode?.style.fontWeight === '700',
+        `fontWeight(FontWeight.Bold) = '${textNode?.style.fontWeight}'`
+      );
+      // alignRules 现在【真实生效】（绝对定位 + 居中位移），不再只是落 data-*。
+      // Index.ets 用的是 center(水平居中) + middle(垂直居中) —— 注意 ArkUI 的键就是这样分的。
+      const hw = root.querySelector('#HelloWorld');
+      const hwCs = hw ? getComputedStyle(hw) : {};
+      check(!!hw && hwCs.position === 'absolute' && hwCs.transform !== 'none',
+        `alignRules 已生效（position=${hwCs.position} transform=${hwCs.transform}）`);
+
+      // 关键心跳：点击触发 @State 变更 → 依赖该 elmtId 的重渲染
+      const before = textNode?.textContent;
+      textNode?.click();
+      await new Promise((r) => setTimeout(r, 50)); // 等一次微任务批刷
+      const after = document.getElementById('root').querySelector('#HelloWorld')?.textContent;
+      check(
+        after === 'Welcome',
+        `点击后文本 '${before}' → '${after}'（期望 Welcome）`
+      );
+      check(view.message === 'Welcome', `视图状态 message = '${view.message}'`);
+      lines.push('ELMT_COUNT ' + __arkui_dom_elmtRecords.size + '（分配的 elmtId 数）');
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const el = document.getElementById('result');
+    el.textContent = lines.join('\n');
+    el.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>
