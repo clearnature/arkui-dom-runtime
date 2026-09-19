@@ -221,6 +221,106 @@ catch { node.dataset[prop] = String(value); }
 >
 > 另外 `Stack` 的 `alignContent` 是 **create 选项**不是 setter，必须走 `applyCreateArgs`（L364），不是 `applyAttr`。
 
+### 3.4 状态管理 v2 的契约（与 v1 机制完全不同）
+
+v1 和 v2 **不是"版本号不同"，是两套机制**：
+
+| | v1（`@Component`） | v2（`@ComponentV2`） |
+|---|---|---|
+| 基类 | `class X extends ViewPU` | `class X extends ViewV2` |
+| `super(...)` | `super(parent, __localStorage, elmtId, extraInfo)` | `super(parent, elmtId, extraInfo)` ← **少一个参数** |
+| 状态承载 | **包装对象**：`this.__theme = new ObservedPropertySimplePU('dark', this, "theme")` | **裸字段**：`this.count = 0` |
+| 观测来源 | 状态类的 `get/set` | **装饰器在原型上装的访问器** |
+| `@Provide` | `this.addProvidedVar("theme", this.__theme, false)` | `@Provider('v2theme') theme` |
+| `@Consume` | `this.__theme = this.initializeConsume('theme', "theme")` | `@Consumer('v2theme') theme` + `this.resetConsumer(...)` |
+| `@Watch` | `this.declareWatch("watched", this.onWatchedChange)` | `@Monitor('count')` 放在**方法**上 |
+| 判脏 | `propDeps` 以状态对象为键 | `propDeps` 以**每实例每字段的单元**为键 |
+
+所以 **v2 不是"再加几个状态类"，而是要实现一整个装饰器层**。
+
+#### 产物的装饰器调用形态（`__decorate` 助手的形状决定）
+
+ts 4.9 编译出的 `__decorate(decorators, target, key, desc)` 会按实参个数分派：
+
+```js
+// 属性：4 个实参 → 装饰器收到 (proto, "label", undefined)
+__decorate([Param], V2Child.prototype, "label", void 0);
+
+// 方法/访问器：desc === null → 助手先取真实描述符，装饰器收到 (proto, key, desc)
+__decorate([Monitor('inner')], V2Child.prototype, "onInnerChange", null);
+__decorate([Computed], V2Child.prototype, "doubled", null);   // desc = {get, set, ...}
+
+// 类：只有 2 个实参 → 装饰器收到 (Cls)，且【必须返回该类】
+TaskItem = __decorate([ObservedV2], TaskItem);
+```
+
+对应运行时的 11 个装饰器（`arkui-dom-runtime.js`，状态管理 v2 段）：
+
+| 装饰器 | 形态 | 实现要点 |
+|---|---|---|
+| `Param` / `Local` / `Once` | 属性 | 在原型上装 getter/setter，值存 `this['__v2slot_' + key]` |
+| `Event` | 属性 | 同上，但**不记依赖、不发通知**（纯回调槽） |
+| `Trace` | 属性 | 与 `Local` 同一套访问器；用在 `@ObservedV2` 类上做深度观测 |
+| `Provider(name)` | 工厂 → 属性 | 装访问器 + 登记 `name`，由 `ViewV2.finalizeConstruction` 注册到 `__providedVars` |
+| `Consumer(name)` | 工厂 → 属性 | 装访问器 + 登记；`finalizeConstruction` 里沿 `__parent` 绑定到提供者的**字段** |
+| `Monitor(...keys)` | 工厂 → 方法 | 登记 `key → 方法名`；字段变更时回调 |
+| `Computed` | 访问器 | **不缓存**：直接返回原描述符（理由见下） |
+| `ObservedV2` | 类 | `v2Info(target.prototype)` 后**返回 target** |
+
+#### `ViewV2` 的方法契约
+
+产物会调这些名字（全部实测得到）：
+
+```
+initParam(name, v)          resetParam(name, v)      updateParam(name, v)
+resetConsumer(name, def)    resetComputed(name)      resetMonitorsOnReuse()
+resetStateVarsOnReuse(p)    finalizeConstruction()   observeComponentCreation2(...)
+updateStateVarsOfChildByElmtId(...)                  static create(childView)
+```
+
+`ViewV2` **继承** `ViewPU` 并补 `super(parent, undefined, elmtId, extraInfo)`——组件栈、elmtId 依赖追踪、批量重渲染、子视图挂载全部复用。这是 v2 能用 ~200 行实现的原因。
+
+#### 两个刻意的设计决定
+
+**① `@Computed` 不缓存。** getter 体求值时正处在目标 elmtId 的渲染上下文里（`currentNodeElmtId`），它读到的每个字段都会**直接把依赖记到那个 elmtId 上**——"传递依赖"因此天然成立，也就不需要缓存与失效逻辑。代价是每次重渲染都重算；用性能换了"不可能算错"。`resetComputed(name)` 因此是空实现。
+
+**② 装饰器不挂 global。** `Event` 既是 v2 装饰器名，**也是浏览器全局**——而 runtime 自己（`Scroller` 里的 `new Event('scroll')`）和 `test/lazy.html` 都在用 `new Event(...)`。挂到 global 会把滚动事件直接打断。
+所以运行时只导出装饰器表 `__arkui_dom_decorators`，由 `tools/extract.mjs` 在产物里生成**作用域内**的绑定前奏：
+
+```js
+// build/v2.js 的开头（自动生成）
+(function () {
+const { ViewV2, Param, Local, Once, Event, Monitor, Computed, Provider, Consumer, ObservedV2, Trace } = (globalThis.__arkui_dom_decorators || {});
+if (typeof ViewV2 === 'undefined') { throw new Error('[arkui-dom] 需要先加载 runtime/arkui-dom-runtime.js（提供 __arkui_dom_decorators）'); }
+...
+})();
+```
+
+门禁用 `__decorate(` 是否出现在**编译产物**里——它只在源码用了装饰器时才被 ts 发出，所以 11 个 v1 页面的产物（实测 `__decorate` 出现 0 次）完全不受影响；拿到前奏的页面才多包一层 IIFE，让 `const` 不外泄。
+
+#### `IMonitor` 的形状以 SDK 的 `.d.ts` 为准
+
+`@Monitor` 回调的入参**不是**随手设计的对象。权威定义在
+`<CLT>/sdk/default/openharmony/ets/build-tools/ets-loader/declarations/common.d.ts`：
+
+```ts
+declare interface IMonitor {
+  dirty: Array<string>;                                    // 变更的路径（键名）
+  value<T>(path?: string): IMonitorValue<T> | undefined;    // 不传 path 时返回 dirty[0] 的值对
+}
+declare interface IMonitorValue<T> { before: T; now: T; path: string; }
+```
+
+> 我最初按 `{dirty: [{path, value, before, kind}]}` 实现，被 ArkTS 编译器当场判错
+> （`Property 'value' does not exist on type 'string'`）。**这类形状问题不该靠猜——SDK 里有 `.d.ts`，去读它。**
+>
+> 已知简化：一次赋值只产生一条 `dirty`（ArkUI 会把同一批变更合并），且 `path` 是字段名而非 `items.0.name` 这样的点分路径。
+
+#### `@Once` 必须同时是 `@Param`
+
+由 ArkTS 编译器强制（`When a variable decorated with '@Once', it must also be decorated with '@Param'`）。
+写成 `@Once mode` 会**构建失败**。正确写法：`@Once @Param mode: string`。
+
 ---
 
 ## 4. 核心机制
@@ -257,7 +357,32 @@ get() {
 
 > `@Consume` 的关键实现是**返回提供者的属性实例本身**（`initializeConsume` → `_findProvided` 沿 `__parent` 上溯）。这样依赖追踪**天然生效**：子组件 `get()` 时记录的是自己的 elmtId，但属性是同一个对象，父改它也脏。找不到祖先时退化为本地占位属性并记 `layoutWarnings`，**不抛异常**——一个页面里的装饰器误用不该让整页白屏。
 
-### 4.3 布局：`alignRules` 六键语义
+### 4.3 v2 的观测：原型访问器 + 每实例每字段的依赖单元
+
+v1 的依赖键是**状态对象**（每个实例每个字段一个 `ObservedPropertySimplePU`）。v2 没有状态对象，所以：
+
+```
+v2Cell(inst, key)  →  一个 {__v2: true, __name: key} 单元，存在 v2InstCells: WeakMap<inst, Map<key, cell>>
+```
+
+- 装在哪：`Object.defineProperty(proto, key, {get, set})`，值存实例上的 `this['__v2slot_' + key]`
+- `get()`：`recordDep(v2Cell(this, key))` → 复用 v1 的 `propDeps` / `markDependentsDirty` / `flush` **全套**
+- `set(v)`：写槽 → `markDependentsDirty(cell)` → 值真变则 `fireV2Monitors`
+- 粒度选**实例 × 字段**而不是原型 × 字段：后者会让同类的多个实例互相触发多余重渲染（正确但有性能与可预测性代价）
+
+**为什么 `@Trace` 是选择性的**（有测试断言这一点）：
+
+```
+@ObservedV2 class TaskItem { @Trace name: string;  id: number; }
+item.name = 'x'   → 装了访问器 → 记过依赖的 elmtId 变脏 → 重渲染 ✅
+item.id = 99      → 没装访问器 → 无人变脏 → 不重渲染 ✅（不是"漏了"，是设计如此）
+```
+
+**`@Provider`/`@Consumer` 的绑定时机**：产物在普通构造路径里**根本不调** `resetConsumer`（只在 `resetStateVarsOnReuse` 里调）。所以绑定必须由运行时主动做，位置就在 `ViewV2.finalizeConstruction()`——产物在每个子类构造函数末尾调它，此刻祖先实例已存在、本实例字段也已赋值。**这个时机是实测出来的，不是设计出来的。**
+
+注册到 `__providedVars` 的对象同时提供 `get`/`set`，所以 **v1 的 `@Consume` 和 v2 的 `@Consumer` 可以互相解析**（v1 的 `initializeConsume` 期望拿到带 `get/set` 的 prop 对象）。
+
+### 4.4 布局：`alignRules` 六键语义
 
 ArkUI 的 `RelativeContainer` 用 6 个键，**分两组**（极易记错）：
 
@@ -277,7 +402,7 @@ const isEnd   = (a) => a === 'end'   || a === 'bottom';
 - 容器需要 `position: relative`，否则 `offsetTop` 基准错（踩过：`scrollToIndex` 因此偏 100px）
 - 只支持**一层**锚链，无约束求解器、无 `Guideline`、无 `bias`
 
-### 4.4 `LazyForEach` 虚拟滚动
+### 4.5 `LazyForEach` 虚拟滚动
 
 产物：
 
@@ -295,7 +420,7 @@ LazyForEach.pop();
 - `scrollToIndex` 到未渲染目标：先用 `lazyMeta` 估算 → `meta.flush()` **同步**补齐，然后才滚动
 - 实测：**1000 项 → 11 个真实 DOM 节点**
 
-### 4.5 平台层：`@ohos:*` 别名层 + CommonJS 装载
+### 4.6 平台层：`@ohos:*` 别名层 + CommonJS 装载
 
 产物里的 `import x from "@ohos:xxx"` 经 `--cjs` 转译后是 `require("@ohos:xxx").default`。
 
@@ -314,7 +439,7 @@ app.ability.AbilityConstant  app.ability.ConfigurationConstant
 
 `net.http` 是**真 fetch**；`file.fs` 是**真落盘**（见下）。
 
-### 4.6 持久化：三级后端，按优先级降级
+### 4.7 持久化：三级后端，按优先级降级
 
 ```
 ① Node 真 fs      Electron: preload.js 经 contextBridge 暴露 __arkui_dom_nodeFs
@@ -331,7 +456,7 @@ app.ability.AbilityConstant  app.ability.ConfigurationConstant
 
 > **为什么要两级验证**：浏览器 `localStorage` 是"看起来持久化"。用户明确要求"**不能存内存，断电就丢**"。所以 Electron 侧做**三阶段**验证：① 页面内断言写入成功 → ② 跨进程重新加载后再读 → ③ **shell 层面直接检查磁盘文件内容**。第 ③ 步是唯一有说服力的证据。
 
-### 4.7 页面栈与导航
+### 4.8 页面栈与导航
 
 - `pageStack` 存 `{ path, view }`——**存 view 是为了保留页面实例**（状态不丢）
 - `navigateTo`：push 新页
@@ -353,6 +478,9 @@ app.ability.AbilityConstant  app.ability.ConfigurationConstant
 6. **测试必须真断言，不能 grep 文本**。`grep 'ALL PASS'` 曾匹配到 `<script>` 源码里的字符串常量而永远通过（踩过）。
 7. **重渲染路径必须确定性**。合并调度用 `setTimeout(0)`，关键路径允许同步 `flush()`。不用 rAF。
 8. **每一步都要有可复现的验收命令**。文档里的数字必须能由 `tools/stats.mjs` 复现。
+9. **装饰器不挂 global**，一律走 `__arkui_dom_decorators` + 抽取时生成的作用域内绑定。理由：`Event` 与浏览器全局同名（见 §3.4）。
+10. **形状以官方声明为准，不靠猜**。`IMonitor`/`IMonitorValue` 这类接口，权威定义在 SDK 的 `.d.ts` 里；组件工厂名、方法契约以 `ets-loader` 的产物为准。
+11. **v2 的表现必须可自省**。测试除了断言渲染结果，还应断言"装饰器确实在原型上装了访问器"（`__arkui_dom_v2Introspect()`）——否则"渲染碰巧对了"和"机制正确"分不开。
 
 ---
 
@@ -372,48 +500,56 @@ app.ability.AbilityConstant  app.ability.ConfigurationConstant
   属性元数据总数       1211（平均 8.1／组件，最多 TextInput=70）
 
 == 运行时 API ==
-  global 导出        44 个
-  状态类            ObservedPropertySimplePU ObservedPropertyObjectPU
-                    SynchedPropertySimpleOneWayPU SynchedPropertySimpleTwoWayPU
+  global 导出        48 个
+  状态类            ObservedPropertySimplePU ObservedPropertyObjectPU SynchedPropertySimpleOneWayPU SynchedPropertySimpleTwoWayPU
   内置组件          Text Button Column Row Stack List ListItem If ForEach LazyForEach RelativeContainer
-  内部钩子 __arkui_dom_*  15 个
+  内部钩子 __arkui_dom_*  17 个
+
+== 状态管理 ==
+  v1  状态类        4 个（包装对象模型）
+  v2  基类          ViewV2 已实现（extends ViewPU）
+  v2  装饰器        11 个：ViewV2 Param Local Once Event Monitor Computed Provider Consumer ObservedV2 Trace
+  v2  注入方式      作用域内绑定（__arkui_dom_decorators），不挂 global —— 见 ARCHITECTURE.md §3.4
 
 == 平台模块（@ohos:*）==
-  10 个：app.ability.AbilityConstant app.ability.ConfigurationConstant app.ability.UIAbility
-        app.ability.Want data.preferences file.fs hilog net.http router window
+  10 个：app.ability.AbilityConstant app.ability.ConfigurationConstant app.ability.UIAbility app.ability.Want data.preferences file.fs hilog net.http router window
 
 == 用例矩阵 ==
-  浏览器 run.sh     13 个：index rich leak layout widgets measure lazy provide async ability router netfile persist
-  Electron          12 个：netfile layout rich index leak ability router widgets measure lazy provide async
-  测试页            13 个
-  fixtures 转换产物  11 个：AsyncIO Detail Home Index Layout Lazy Measure NetFile Provide Rich Widgets
+  浏览器 run.sh     14 个：index rich leak layout widgets measure lazy provide v2 async ability router netfile persist
+  Electron          13 个：netfile layout rich index leak ability router widgets measure lazy provide async v2
+  测试页            14 个
+  fixtures 转换产物  12 个：AsyncIO Detail Home Index Layout Lazy Measure NetFile Provide Rich V2 Widgets
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          125.3 KB
-  test             55.6 KB
-  tools            20.4 KB
+  runtime          137.8 KB
+  test             62.7 KB
+  tools            31.2 KB
   electron(src)    14.7 KB
-  docs             56.1 KB
-  fixtures         55.7 KB
+  docs             81.4 KB
+  fixtures         68.9 KB
 
-== 逐文件 ==
-  runtime/arkui-dom-runtime.js      47662 B  46.5 KB
+== 逐文件（文档"文件职责"表的来源）==
+  runtime/arkui-dom-runtime.js      60450 B  59.0 KB
   runtime/generated-components.js   57617 B  56.3 KB
   runtime/ohos-shims.js             23066 B  22.5 KB
-  tools/extract.mjs                  3507 B   3.4 KB
-  tools/gen-components.mjs           7499 B   7.3 KB
-  tools/serve.py                     2559 B   2.5 KB
-  tools/stats.mjs                    7316 B   7.1 KB
-  run.sh                             8880 B   8.7 KB
-  electron/run.sh                    6070 B   5.9 KB
-  electron/main.js                   6795 B   6.6 KB
-  electron/preload.js                1961 B   1.9 KB
+  tools/extract.mjs                  5384 B  5.3 KB
+  tools/gen-components.mjs           7775 B  7.6 KB
+  tools/serve.py                     2559 B  2.5 KB
+  tools/stats.mjs                    8297 B  8.1 KB
+  tools/preflight.mjs                5108 B  5.0 KB
+  tools/check-all.sh                 2792 B  2.7 KB
+  run.sh                             9030 B  8.8 KB
+  electron/run.sh                    6079 B  5.9 KB
+  electron/main.js                   6795 B  6.6 KB
+  electron/preload.js                1961 B  1.9 KB
+  package.json                       1089 B  1.1 KB
+  .gitignore                          674 B  0.7 KB
   README.md                         18754 B  18.3 KB
-  docs/ARCHITECTURE.md              28093 B  27.4 KB
-  docs/CAPABILITY.md                 9310 B   9.1 KB
+  docs/ARCHITECTURE.md              37594 B  36.7 KB
+  docs/CAPABILITY.md                 9310 B  9.1 KB
   docs/DEVELOPING.md                13544 B  13.2 KB
-  docs/ROADMAP.md                    （本文件写完后存在）
-  docs/surface-measurement.md        6496 B   6.3 KB
+  docs/ROADMAP.md                   16366 B  16.0 KB
+  docs/surface-measurement.md        6496 B  6.3 KB
 ```
 
 **"149 / 149" 的准确含义**：149 个组件**名字**都能建出 DOM 节点（不崩、有基础标签/样式）。其中 **64 个有真实 DOM 画像**（8 手写 + 56 骨架），**85 个只落 `data-*`**（能建出来但视觉上是个 `div`）。这不等于"实现了 149 个组件"。
@@ -423,15 +559,16 @@ app.ability.AbilityConstant  app.ability.ConfigurationConstant
 | 维度 | 状态 |
 |---|---|
 | ArkTS 语法（装饰器/struct/build/控制流） | ✅ 官方产物完整覆盖 |
-| 状态管理 v1（`@State/@Prop/@Link/@Provide/@Consume/@Watch`） | ✅ 有测试 |
-| 状态管理 v2（`@ComponentV2/@Local/@Param/@Once/@Event`） | ❌ 未实现 |
+| 状态管理 v1（`@State/@Prop/@Link/@Provide/@Consume/@Watch`） | ✅ 有测试（`run.sh provide`） |
+| 状态管理 v2（`@ComponentV2/@Local/@Param/@Once/@Event/@Monitor/@Provider/@Consumer/@ObservedV2/@Trace/@Computed`） | ✅ 有测试（`run.sh v2`，26 条断言，浏览器 + Electron 双通过） |
+| v2 的已知简化 | ⚠️ `@Computed` 不缓存；`IMonitor.dirty` 每次赋值一条且 `path` 非点分路径；`@Reusable` 复用路径未实测 |
 | 布局 | ⚠️ 部分：`alignRules` 仅一层锚链，无约束求解器 |
 | 虚拟滚动 | ✅ 1000 项 → 11 节点 |
 | 平台模块 | ⚠️ 10 个实现了；`media`/`notification`/`startAbilityForResult` 等未实现 |
 | 持久化 | ✅ Electron 真磁盘（shell 级验证）；浏览器 `localStorage` |
 | 动画 / 手势 | ❌ 未实现 |
 | `Navigation` / `Tabs` 切换 / `Swiper` | ⚠️ 骨架可建，无切换语义 |
-| 90+ 骨架组件的视觉语义 | ❌ 仅 `data-*` |
+| 85 个骨架组件的视觉语义 | ❌ 仅 `data-*` |
 
 ---
 
@@ -439,26 +576,28 @@ app.ability.AbilityConstant  app.ability.ConfigurationConstant
 
 | 文件 | 体积 | 职责 | 改它的时机 |
 |---|---|---|---|
-| `runtime/arkui-dom-runtime.js` | 46.5 KB | 状态系统、`ViewPU`、组件栈、布局、`LazyForEach`、路由 | 实现新语义（**手写优先**） |
+| `runtime/arkui-dom-runtime.js` | 59.0 KB | v1 状态类、`ViewPU`/`ViewV2`、v2 装饰器层、组件栈、布局、`LazyForEach`、路由 | 实现新语义（**手写优先**） |
 | `runtime/generated-components.js` | 56.3 KB | 149 个组件骨架（**生成物**） | **不手改**；改 `tools/gen-components.mjs` 后重新生成，`--check` 会守门 |
 | `runtime/ohos-shims.js` | 22.5 KB | `@ohos:*` 模块 + 持久化后端 | 新增平台模块 |
-| `tools/extract.mjs` | 3.4 KB | hvigor 缓存 `.ts` → 可执行 `.js` | 产物形态变化时 |
-| `tools/gen-components.mjs` | 7.3 KB | ets-loader 组件 JSON → 骨架注册表（`--check` 只校验不写） | 组件元数据/画像规则更新时 |
+| `tools/extract.mjs` | 5.3 KB | hvigor 缓存 `.ts` → 可执行 `.js`；**v2 装饰器作用域内绑定前奏**（§3.4） | 产物形态变化时 |
+| `tools/gen-components.mjs` | 7.6 KB | ets-loader 组件 JSON → 骨架注册表（`--check` 只校验不写） | 组件元数据/画像规则更新时 |
 | `tools/serve.py` | 2.5 KB | 静态服务 + `/echo` + `/slow`（测超时） | 需要新测试端点时 |
-| `tools/stats.mjs` | 7.1 KB | 本文档所有数字的来源（`--json` 机器可读） | 覆盖范围变化时 |
-| `run.sh` | 8.7 KB | 浏览器 13 用例驱动 | 新增用例 |
-| `electron/run.sh` | 5.9 KB | Electron 12 用例 + 磁盘验证 | 新增用例 |
+| `tools/stats.mjs` | 8.1 KB | 本文档所有数字的来源（`--json` 机器可读） | 覆盖范围变化时 |
+| `tools/preflight.mjs` | 5.0 KB | 环境自检（工具链/宿主/可执行位） | 外部依赖变化时 |
+| `tools/check-all.sh` | 2.7 KB | 一条命令做完验收，退出码只看被调命令 | 新增验收步骤时 |
+| `run.sh` | 8.8 KB | 浏览器 14 用例驱动 | 新增用例 |
+| `electron/run.sh` | 5.9 KB | Electron 13 用例 + 磁盘验证 | 新增用例 |
 | `electron/main.js` | 6.6 KB | 主进程：offscreen 截图、**像素级**空白检测 | 截图/验证策略变化时 |
 | `electron/preload.js` | 1.9 KB | `contextBridge` 暴露 Node fs | 宿主能力变化时 |
-| `fixtures/pages/*.ts` | 55.7 KB | **冻结的**官方转换产物 | 几乎不改（见不变量 5） |
-| `test/*.html` | 55.6 KB | 断言页（读 `#result` 节点文本） | 新增用例 |
+| `fixtures/pages/*.ts` | 68.9 KB | **冻结的**官方转换产物（含 `V2.ts`） | 几乎不改（见不变量 5） |
+| `test/*.html` | 62.7 KB | 断言页（读 `#result` 节点文本） | 新增用例 |
 
 ---
 
 ## 8. 相关文档
 
 - `docs/CAPABILITY.md` —— 能力矩阵与已知限制（面向使用者）
-- `docs/DEVELOPING.md` —— 开发指南：怎么加组件、加模块、加用例，以及**踩过的 21 个坑**
+- `docs/DEVELOPING.md` —— 开发指南：怎么加组件、加模块、加用例，以及**踩过的坑**
 - `docs/ROADMAP.md` —— 原子任务清单，每项带验收命令
 - `docs/surface-measurement.md` —— ①.5 阶段的接口面测量（历史记录）
 - `README.md` —— 快速开始
@@ -468,6 +607,8 @@ app.ability.AbilityConstant  app.ability.ConfigurationConstant
 | 依赖 | 位置 | 说明 |
 |---|---|---|
 | HarmonyOS CLT 26.0.0.821 | `/data/training/cli/commandline-tools-linux-x64-26.0.0.821/command-line-tools` | `ets-loader` 与其自带 TypeScript 4.9.5 |
+| **SDK 的 `.d.ts` 声明** | `<CLT>/sdk/default/openharmony/ets/build-tools/ets-loader/declarations/` | `IMonitor`/`IMonitorValue` 等接口的**权威形状**来源 |
+| **组件元数据** | `<CLT>/.../ets-loader/components/*.json` | 150 个文件 → 149 个组件注册表 |
 | Electron 44.2.0 | `~/.cache/electron/electron-v44.2.0-linux-x64.zip` | 启动需 `--no-sandbox --disable-gpu` |
 | `libhilog.so` / `libshared_libz.so` | `/data/training/cli/arkts-shim/lib/` | 补 CLT 缺失库，使 `ark_aot_compiler` 可用 |
 | `arkts-shim` 分析 | `/data/training/cli/arkts-shim/README.md` | 含"Linux 预览器被 45 字节桩阻塞"的 `objdump` 证据 |

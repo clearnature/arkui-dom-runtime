@@ -6,9 +6,14 @@
 
 ```bash
 cd /data/training/cli/arkui-dom-runtime
-./run.sh all                    # 浏览器侧：10 个用例（Chrome headless）
-./electron/run.sh all           # Electron 侧：9 个用例 + 真实磁盘核验
+npm run check                   # 全部验收：preflight + 生成物一致 + 浏览器 + Electron（退出码可信）
+npm run check:quick             # 跳过 Electron
+./run.sh all                    # 浏览器侧：14 个用例（Chrome headless）
+./electron/run.sh all           # Electron 侧：13 个用例 + 真实磁盘核验
+npm run stats                   # 覆盖范围统计（本文档的数字都来自它）
+npm run preflight               # 环境自检（缺工具链/宿主/可执行位会明确报错）
 node tools/gen-components.mjs   # 重新生成 149 个组件骨架
+node tools/gen-components.mjs --check   # 只校验生成物与生成器是否一致（不落盘）
 ```
 
 ## 一、运行时（语言/框架语义）
@@ -36,6 +41,16 @@ node tools/gen-components.mjs   # 重新生成 149 个组件骨架
 | **`Scroller.scrollToIndex` 支持未渲染目标**：靠 estimate 行高换算 + 同步刷新窗口 | ✅ | lazy（跳到 500 → scrollTop 14500） |
 | **`@Provide`/`@Consume`**：按名字沿视图链解析；consume 返回的**就是提供者的属性实例** | ✅ | provide（实例相等 + 跨层自动更新） |
 | **`@Watch`**：`declareWatch` 挂回调，值变更时触发（回调收到属性名） | ✅ | provide（log 随 bump 增长） |
+| **状态管理 v2 —— `@ComponentV2` 基类 `ViewV2`**（`super(parent, elmtId, extraInfo)`，与 v1 签名不同） | ✅ | v2 |
+| **v2 `@Local`**：裸字段 + 原型访问器，改值触发重渲染 | ✅ | v2 |
+| **v2 `@Param` / `@Once`**：父→子；`@Once` 只取首次传入（编译器要求必须同时写 `@Param`） | ✅ | v2 |
+| **v2 `@Event`**：子→父回调；**不参与观测**（不自省为 observed） | ✅ | v2 |
+| **v2 `@Monitor(...)`**：字段变更派发回调；入参形状 = SDK `.d.ts` 的 `IMonitor`（`dirty: string[]` + `value(path?)`） | ✅ | v2（`now`/`before`/`dirty.length` 三项都断言） |
+| **v2 `@Provider` / `@Consumer`**：按名跨层解析；绑定发生在 `finalizeConstruction`（产物在普通构造路径**不调** `resetConsumer`） | ✅ | v2（改提供者 → 消费者自动更新） |
+| **v2 `@ObservedV2` + `@Trace`**：字段级深度观测（数组元素内部字段变更也触发重渲染） | ✅ | v2 |
+| **`@Trace` 是选择性的**：未标 `@Trace` 的字段变更**不**触发重渲染 | ✅ | v2（负向断言） |
+| **v2 `@Computed`**：不缓存实现，靠"getter 体在渲染上下文里执行 ⇒ 传递依赖天然成立"保证正确 | ✅ | v2 |
+| **v1 与 v2 互通**：v2 的 `@Provider` 注册的对象带 `get/set`，v1 的 `@Consume` 可解析（反之亦可） | ✅ | v2 |
 
 ## 二、组件库（149 个骨架）
 
@@ -100,10 +115,13 @@ node tools/gen-components.mjs   # 重新生成 149 个组件骨架
 - 版本：`./run.sh measure` 的 16 条几何断言是当前布局能力的**可复现基线**——改布局相关代码后必须重跑。
 
 ## 未实现的框架语义
-- `LazyForEach`、`Repeat`、`@ComponentV2/@Local/@Param`（状态管理 v2）
-  （`@Provide`/`@Consume`/`@Watch` 已实现，见上表）
+- `Repeat`、`@LocalBuilder`、`@Reusable`（组件复用）——状态管理 v2 的**核心**已实现（见上表），
+  但 `@Reusable` 的复用路径**未实测**（产物里有 `resetStateVarsOnReuse`/`resetComputed`/`resetMonitorsOnReuse` 调用，运行时提供了空实现）
+- v2 的已知简化：`@Computed` **不缓存**；`@Monitor` 一次赋值只产生一条 `dirty`，且 `path` 是字段名而非
+  `items.0.name` 这样的**点分路径**（嵌套对象的 `@Trace` 变更能触发重渲染，但回调里的路径不精确）
+- `@Observed`/`@ObjectLink`（**v1** 的深度观测）：v2 的 `@Trace` 已具备等价能力，v1 语法路径仍缺
 - `Navigation`、`Tabs`/`TabContent` 的切换语义、`Swiper`、动画/过渡、手势（`gesture`/`panGesture`）、`Refresh`
-- 组件复用（`@Reusable`）、`If` 分支的 elmtId 复用优化
+- `If` 分支的 elmtId 复用优化
 - 父组件重渲染时**子视图内部 elmtId 迁移**未处理（深嵌套自定义组件可能出问题）
 
 ## 平台 API

@@ -4,6 +4,9 @@
 
 已完成的机制说明见 `docs/ARCHITECTURE.md`；怎么改见 `docs/DEVELOPING.md`。
 
+**当前状态**：`npm run check` 全绿（preflight + 生成物一致 + 浏览器 14 用例 + Electron 13 用例）。
+v2 状态管理已落地。**下一步优先级：R5（许可证，需决策）→ R9/R10（Grid、Tabs 真实语义）→ R14（多层锚链）。**
+
 ---
 
 ## 0. 已完成基线
@@ -20,13 +23,18 @@
 | ② | 测量接口对齐 | `bash run.sh measure` |
 | ③ | `LazyForEach` 虚拟滚动（1000 项 → 11 节点） | `bash run.sh lazy` |
 | ③ | `@Provide` / `@Consume` / `@Watch` | `bash run.sh provide` |
+| ③ | **状态管理 v2**（`ViewV2` + 11 个装饰器） | `bash run.sh v2`（26 条断言，浏览器 + Electron 双通过） |
 | ③ | `@ohos:*` 别名层 + CommonJS 装载 + 真 fetch | `bash run.sh async` |
 | ③ | `UIAbility` 启动链路 | `bash run.sh ability` |
 | ③ | `router` 页面栈（返回时保留状态） | `bash run.sh router` |
 | ③ | **真落盘**（Electron Node fs + shell 级验证） | `bash electron/run.sh persist` |
 | ②.5 | CLT 缺库补齐（`libhilog.so` / `libshared_libz.so`） | `/data/training/cli/arkts-shim/README.md` |
+| **P0** | git 仓库 + `.gitignore`（287 MB → 跟踪 484 KB） | `git log`，`git ls-files` |
+| **P0** | 环境 preflight 自检 | `npm run preflight` |
+| **P0** | 统一验收门禁（退出码可信） | `npm run check`；制造漂移 → exit 1 |
+| **P0** | `--check` 真正只校验不落盘 | `node tools/gen-components.mjs --check` |
 
-当前：**浏览器 13 用例 + Electron 12 用例全绿**（`exit 0`）。
+当前：**浏览器 14 用例 + Electron 13 用例全绿**（`npm run check` → `exit 0`）。
 
 ---
 
@@ -42,8 +50,9 @@
 
 | | 任务 | 影响 | 成本 |
 |---|---|---|---|
-| P0 | R1–R5 工程化地基 | — | 低 |
-| P1 | R6–R8 状态管理 v2 | **高**（v2 语法的页面目前完全跑不了） | 中 |
+| P0 | ~~R1–R4 工程化地基~~ **已完成** | — | — |
+| P0 | **R5 许可证与 CHANGELOG** | 低但**阻塞对外发布**，且需决策 | 低 |
+| P1 | ~~R6–R8 状态管理 v2~~ **R6/R7 已完成**，R8 待做 | 高 → 已拿到 | — |
 | P2 | R9–R13 组件视觉语义 | 中（85 个骨架只有 `data-*`） | 中 |
 | P3 | R14–R17 布局引擎 | 中高（真实页面一定踩） | 高 |
 | P4 | R18–R21 平台模块 | 中 | 低–中 |
@@ -54,160 +63,112 @@
 
 ## P0 工程化地基
 
-### R1 — 建 git 仓库 + `.gitignore`
+### ~~R1 — 建 git 仓库 + `.gitignore`~~ ✅ 已完成
 
-**内容**：`git init`，写 `.gitignore` 排除：`build/`、`electron/runtime/`、`electron/data/`、`*.log`、`node_modules/`。首次提交前确认 `git status` 里**没有** 283 MB 的 Electron 运行时而只有约 4 MB 源码。
+`git init` + `.gitignore`（排除 `build/`、`electron/runtime/`(283 MB)、`electron/data/`）。
+被跟踪 **47 个文件 / 484 KB**（磁盘 287 MB）。首次提交 `708cbd1`。
 
-**依赖**：无。
-
-**验收**：
+**验收（已执行）**：
 ```bash
-git rev-parse --is-inside-work-tree                       # true
-git status --porcelain | wc -l                            # 首次 add 后为空
-du -sh .git                                               # < 20 MB（证明 Electron 没进去）
-git ls-files | grep -c 'electron/runtime' || echo 0       # 必须是 0
+git ls-files | grep -c '^electron/runtime/'   # 0
+git ls-files | grep -c '^build/'              # 0
+du -sh .git                                   # 648K
 ```
-
-**触及**：`.gitignore`（新）
 
 ---
 
-### R2 — `package.json` + 统一入口
+### ~~R2 — `package.json` + 统一入口~~ ✅ 已完成
 
-**内容**：根级 `package.json`（`private: true`），把现有命令收成 scripts，并声明 node 版本要求（CLT 自带 node，避免"用系统 node 跑出不同结果"）：
-
-```json
-{
-  "scripts": {
-    "test":         "bash run.sh all && bash electron/run.sh all",
-    "test:browser": "bash run.sh all",
-    "test:electron":"bash electron/run.sh all",
-    "stats":        "node tools/stats.mjs",
-    "check:gen":    "node tools/gen-components.mjs --check",
-    "check":        "bash tools/check-all.sh"
-  },
-  "engines": { "node": ">=18" }
-}
-```
-
-**依赖**：R1（要能提交）。
-
-**验收**：
-```bash
-npm run stats        # 输出与 node tools/stats.mjs 一致
-npm run check:gen    # exit 0
-```
-
-**触及**：`package.json`（新）
+`npm run check` / `check:quick` / `preflight` / `test:*` / `stats` / `check:gen` / `gen`。
+**无 npm 依赖**：TypeScript 直接用 `ets-loader` 自带的 4.9.5。
 
 ---
 
-### R3 — `tools/check-all.sh`：一条命令做完所有验收
+### ~~R3 — `tools/check-all.sh`：一条命令做完所有验收~~ ✅ 已完成
 
-**内容**：把散落的验收合成一条命令，**退出码可信**（任何一步失败即非 0）：
+5 步：preflight → 生成物一致 → 浏览器 → Electron → 统计（留档，不影响退出码）。
 
-1. 环境 preflight（见 R4）
-2. `node tools/gen-components.mjs --check`（生成物与生成器一致）
-3. `bash run.sh all`
-4. `bash electron/run.sh all`
-5. `node tools/stats.mjs`（输出留档，供文档比对）
+**设计约定**：成败**只看被调命令的退出码**，绝不用 `grep`/`wc` 数日志行。
+逐次失败会打印输出尾部并保留完整日志到 `build/check-logs/`。
 
-注意 **不能用 `wc -l`/`grep` 判成败**——见"已有的 4 次假通过"。
-
-**依赖**：R2。
-
-**验收**：故意改坏一处（如临时改 `runtime/arkui-dom-runtime.js` 里一个属性映射）→ `npm run check` 必须 **exit ≠ 0**；还原 → exit 0。
-
-**触及**：`tools/check-all.sh`（新）
+**验收（已执行）**：
+```bash
+bash tools/check-all.sh            # exit 0
+# 制造生成物漂移后重跑：
+#   ❌ gen-components --check (exit 1) → 汇总列出失败步骤 → exit 1
+```
 
 ---
 
-### R4 — 环境 preflight 自检
+### ~~R4 — 环境 preflight 自检~~ ✅ 已完成
 
-**内容**：`tools/preflight.mjs` 检查外部依赖存在且可用，缺失时**明确报错**（而不是后面静默失败）：
-- CLT 路径 + `${CLT}/tool/node/bin/node` 可执行
-- `${CLT}/.../ets-loader/node_modules/typescript` 存在
-- `${CLT}/.../ets-loader/components/` 下 JSON 数量 ≥ 150
-- `/opt/google/chrome/chrome` 存在
-- `electron/runtime/electron` 存在且可执行
-- 各脚本有可执行位（`run.sh` / `electron/run.sh` / `tools/*.mjs` / `tools/serve.py`）
+`tools/preflight.mjs` 检查：CLT node、`ets-loader` 的 TypeScript、组件元数据数量（≥150）、
+Chrome、Electron、**入口脚本可执行位**、核心文件齐备、fixtures 数量。
 
-最后一项对应已踩的坑：**没 `chmod +x` 导致用户 `./run.sh` 得到"权限不够"**。
+**首次运行就抓出真实缺陷**：`tools/gen-components.mjs` 与 `tools/stats.mjs` 缺 `+x`
+——正是此前让用户报"无法运行"的同类型问题。
 
-**依赖**：无（放最前面）。
-
-**验收**：
-```bash
-node tools/preflight.mjs; echo $?                    # 0
-chmod -x run.sh && node tools/preflight.mjs; echo $? # 非 0 且指出 run.sh
-chmod +x run.sh
-```
-
-**触及**：`tools/preflight.mjs`（新）
+**验收（已执行）**：`chmod -x run.sh` → exit 1 并给出修复命令；还原 → exit 0。
 
 ---
 
 ### R5 — `LICENSE` + `CHANGELOG.md`
 
-**内容**：决定许可证（**需用户确认**：本项目复用官方 `ets-loader` 的**元数据**与产物形态，`LICENSE.txt` 在 CLT 里；自研部分可独立授权，但要说明与 HarmonyOS CLT 的关系）。`CHANGELOG.md` 起 Keep-a-Changelog 格式。
+**内容**：定许可证 + `CHANGELOG.md`（Keep a Changelog 格式）。
 
-**依赖**：无。**此项含决策，需用户拍板**。
+**⚠️ 需要项目所有者决策**：本仓库**复用 HarmonyOS CLT 的组件元数据与产物形态**
+（`fixtures/` 是 `ets-loader` 的输出，`generated-components.js` 由 CLT 的 JSON 生成）。
+自研部分（`runtime/`、`tools/`）的授权需要与"对官方工具链产物的依赖"区分说明。
+**不在代码里替用户选许可证。**
 
-**验收**：文件存在且 `CHANGELOG.md` 含 `## [Unreleased]`。
+**依赖**：无。
 
-**触及**：`LICENSE`、`CHANGELOG.md`（新）
+**验收**：文件存在；`CHANGELOG.md` 含 `## [Unreleased]`；`LICENSE` 与 `docs/ARCHITECTURE.md` §9 的依赖说明一致。
 
----
-
-## P1 状态管理 v2（`@ComponentV2`）
-
-> **为什么优先级最高**：`@ComponentV2` / `@Local` / `@Param` / `@Once` / `@Event` / `@Monitor` 是 ArkTS 的**现行推荐写法**。用 v2 写的页面在本项目里**一行都跑不了**（`ViewPU` 的子类不是 `ViewV2`，状态类名也不同）。这不是"细节缺失"，是"整整一代语法不支持"。
-
-### R6 — 测量 v2 产物形态（不改运行时代码）
-
-**内容**：写一个用全套 v2 装饰器的 `.ets` 页面 → `devecocli build` → 把 hvigor cache 里的 `.ts` 固化到 `fixtures/pages/V2.ts`。**只做测量**，把产物要求的 API 逐条列出来（像 ARCHITECTURE.md §3 那样）。
-
-**依赖**：无（但需要 HarmonyOS 工程，工程在 `/tmp/hmtest/app` 且 `/tmp` 会被清——**先确认它还在，不在就重建**）。
-
-**验收**：
-```bash
-node tools/extract.mjs fixtures/pages/V2.ts build/v2.js && grep -n "ViewV2\|ObservedV2\|Trace\|Local\|Param" fixtures/pages/V2.ts | head -30
-```
-产物里能看到 v2 的类名与注册调用，即为测量成功。
-
-**产出**：ARCHITECTURE.md 新增一节"状态管理 v2 契约"。
-
-**触及**：`fixtures/pages/V2.ts`（新，需工具链）
+**触及**：`LICENSE`、`CHANGELOG.md`（新）、`README.md`
 
 ---
 
-### R7 — 实现 `@ComponentV2` 运行时
+## P1 状态管理 v2
 
-**内容**：按 R6 测出的契约实现 `ViewV2` 基类与 v2 状态类（`@Local`/`@Param`/`@Once`/`@Event`/`@Monitor`/`@Provider`/`@Consumer`）。关键差异：v2 用**显式** `@Trace` 标记可观测字段，依赖收集粒度更细。
+### ~~R6 — 测量 v2 产物形态~~ ✅ 已完成
 
-**依赖**：R6。
+产出 `fixtures/pages/V2.ts`（12.7 KB，24 处 `__decorate`）+ `ARCHITECTURE.md` §3.4 的完整契约表。
 
-**验收**：
-```bash
-bash run.sh v2              # 新用例：@Local 改值触发重渲染
-bash electron/run.sh v2
-node tools/stats.mjs        # 状态类计数上升，确认统计跟上
-```
-断言至少覆盖：`@Local` 变更重渲染、`@Param` 父→子、`@Once` 不跟随、`@Monitor` 回调、`@Event` 回调。
-
-**触及**：`runtime/arkui-dom-runtime.js`、`test/v2.html`（新）、`run.sh`、`electron/run.sh`、`fixtures/pages/V2.ts`
+**关键测量结果**（全部实测，不是推断）：
+- `ViewV2` 的 `super(parent, elmtId, extraInfo)` 比 `ViewPU` **少一个参数**
+- v2 状态是**裸字段**，观测靠**装饰器装在原型上的访问器**
+- 11 个装饰器 + `ViewV2` 的 11 个方法名
+- **`IMonitor` 的权威形状在 SDK 的 `.d.ts`**（`dirty: string[]` + `value(path?)`）
 
 ---
 
-### R8 — `@Observed` / `@ObjectLink` 深度观测
+### ~~R7 — 实现 `@ComponentV2` 运行时~~ ✅ 已完成
 
-**内容**：v1 的 `@Observed` 类 + `@ObjectLink` 引用（数组/对象的**元素级**变更触发重渲染）。目前只在数组长度变化时重建。
+`ViewV2 extends ViewPU` + 装饰器层（访问器安装、`v2Cell` 每实例每字段依赖单元、
+`@Monitor` 派发、`@Provider`/`@Consumer` 在 `finalizeConstruction` 绑定、
+`@Computed` 不缓存实现、`@ObservedV2`/`@Trace` 深度观测）。
 
-**依赖**：无（可与 R7 并行，但都改同一核心文件 → **串行做**）。
+**验收（已执行）**：`bash run.sh v2` + `bash electron/run.sh v2` → **26 条断言双通过**，
+其中包含"机制正确"类断言（`@Event` 不参与观测、非 `@Trace` 字段不触发重渲染、
+装饰器确实装上了访问器）。
 
-**验收**：新断言——改 `arr[2].name`（长度不变）必须触发重渲染；当前会失败，实现后通过。
+**已知简化**（写进 `ARCHITECTURE.md` §6 能力表）：`@Computed` 不缓存；
+`IMonitor.dirty` 一次赋值一条且 `path` 非点分路径；`@Reusable` 复用路径未实测。
 
-**触及**：`runtime/arkui-dom-runtime.js`、`test/rich.html`
+---
+
+### R8 — `@Observed` / `@ObjectLink`（**v1** 的深度观测）
+
+**内容**：v1 的 `@Observed` 类 + `@ObjectLink` 引用——目前 `ForEach` 只在**数组长度变化**时重建，
+元素内部字段变更不触发重渲染。v2 的 `@Trace` 已具备等价能力（见 R7），但 **v1 语法路径仍缺**。
+
+**依赖**：无（`ViewPU` 一侧，与 v2 实现互不干扰）。
+
+**验收**：新断言——v1 页面里改 `arr[2].name`（长度不变）必须触发重渲染。
+**当前会失败，实现后通过**（先确认它会失败，再实现——否则说明断言没测到东西）。
+
+**触及**：`runtime/arkui-dom-runtime.js`（`forEachUpdateFunction` / 新增 v1 深度观测）、`test/rich.html`
 
 ---
 

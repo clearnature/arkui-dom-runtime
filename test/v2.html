@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>⑬ 状态管理 v2（@ComponentV2/@Local/@Param/@Once/@Event/@Monitor/@Provider/@Consumer/@ObservedV2/@Trace/@Computed）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 340px; height: 420px; border: 1px solid #ccc; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>状态管理 v2：语法可用 + 语义正确</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../build/v2.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    // 只读 #result 之外的具体节点：全页 textContent 会带上 <script> 源码
+    const byId = (id) => document.getElementById(id);
+    const val = (id) => { const e = byId(id); return e ? (e.textContent || '') : '<无此节点:' + id + '>'; };
+    const click = (id) => {
+      const e = byId(id);
+      if (!e) throw new Error('找不到按钮 #' + id);
+      e.click();
+      return e;
+    };
+    const poll = async (pred, ms) => {
+      for (let k = 0; k < ms / 25; k++) { if (pred()) return true; await tick(25); }
+      return pred();
+    };
+
+    try {
+      const view = __arkui_dom_loadRoute('pages/V2', root);
+      await tick(60);
+
+      // ── ① 渲染出来了（能跑 v2 语法的前提）
+      check(!!view, '页面视图已创建');
+      check(val('v2summary') === 'count=0,items=2', `@Computed 初值：'${val('v2summary')}'`);
+
+      // ── ② @Param / @Once / @Event 通过子组件
+      check(val('v2child-label') === 'child/fixed', `@Param+@Once 传入子组件：'${val('v2child-label')}'`);
+      check(val('v2child-inner') === '0', `@Local 子组件初值：'${val('v2child-inner')}'`);
+      check(val('v2child-doubled') === '0', `@Computed 子组件初值：'${val('v2child-doubled')}'`);
+
+      // ── ③ @Provider / @Consumer：初值来自祖先
+      check(val('v2consume') === 'consume=dark', `@Consumer 拿到祖先 @Provider 初值：'${val('v2consume')}'`);
+
+      // ── ④ @Local 改值 → 触发重渲染 + @Computed 跟着变 + @Monitor 回调
+      click('v2inc');
+      await poll(() => val('v2summary') === 'count=1,items=2', 1000);
+      check(val('v2summary') === 'count=1,items=2', `@Local 改值触发重渲染：'${val('v2summary')}'`);
+      check(val('v2parenthits') === '1', `@Monitor('count') 回调触发：hits='${val('v2parenthits')}'`);
+
+      // ── ⑤ IMonitor 入参形状对齐 SDK 的 .d.ts：
+      //      dirty: string[];  value<T>(): {before, now, path} | undefined
+      check(val('v2monitornow') === '1', `IMonitor.value().now = '${val('v2monitornow')}'（期望 1）`);
+      check(val('v2monitorbefore') === '0', `IMonitor.value().before = '${val('v2monitorbefore')}'（期望 0）`);
+      check(val('v2monitordirty') === '1', `IMonitor.dirty.length = '${val('v2monitordirty')}'（期望 1）`);
+
+      // ── ⑥ 子组件 @Local + @Computed + @Monitor + @Event（子→父回调）
+      click('v2ping-btn');
+      await poll(() => val('v2child-inner') === '1', 1000);
+      check(val('v2child-inner') === '1', `子组件 @Local 改值：'${val('v2child-inner')}'`);
+      check(val('v2child-doubled') === '2', `子组件 @Computed 跟随：'${val('v2child-doubled')}'`);
+      check(val('v2child-hits') === '1', `子组件 @Monitor('inner') 触发：hits='${val('v2child-hits')}'`);
+      check(val('v2ping') === '1', `@Event 子→父回调：父收到 '${val('v2ping')}'`);
+
+      // ── ⑦ @ObservedV2 + @Trace：改【数组元素的字段】（长度不变）也要重渲染
+      const beforeRename = val('v2item1');
+      check(beforeRename.indexOf('a') >= 0, `改名前的元素文本：'${beforeRename}'`);
+      click('v2rename');
+      const renamed = await poll(() => val('v2item1').indexOf('renamed') >= 0, 1000);
+      check(renamed, `@Trace 字段变更触发重渲染：'${beforeRename}' → '${val('v2item1')}'`);
+
+      // ── ⑧ @Trace 是【选择性】的：改没标 @Trace 的字段不应触发重渲染
+      const beforeId = val('v2item1');
+      click('v2touchid');                       // 把 items[0].id 改成 99
+      await tick(120);
+      check(val('v2item1') === beforeId,
+        `非 @Trace 字段(id)变更【未】触发重渲染：仍为 '${val('v2item1')}'（若变成 '99:…' 说明观测过宽）`);
+
+      // ── ⑨ @Provider 改值 → @Consumer 侧跟着变（无 props 传递）
+      click('v2theme');
+      const themed = await poll(() => val('v2consume') === 'consume=light', 1000);
+      check(themed, `改 @Provider 后 @Consumer 自动更新：'${val('v2consume')}'`);
+
+      // ── ⑩ 装饰器确实在原型上装了访问器（不只看渲染结果）
+      const intro = __arkui_dom_v2Introspect();
+      const observed = intro.observedOf(view.constructor);
+      check(observed.indexOf('count') >= 0 && observed.indexOf('items') >= 0 && observed.indexOf('theme') >= 0,
+        `V2 的 @Local/@Provider 字段都装了访问器：[${observed.join(',')}]`);
+      check(intro.monitorsOf(view.constructor).join(',').indexOf('count→onCountChange') >= 0,
+        `@Monitor 已登记：${intro.monitorsOf(view.constructor).join(',')}`);
+      check(intro.computedOf(view.constructor).indexOf('summary') >= 0,
+        `@Computed 已登记：${intro.computedOf(view.constructor).join(',')}`);
+
+      // ── ⑪ @Event 回调槽不该参与观测（否则每次渲染都会多触发一轮）
+      const childView = (() => {
+        for (const [, rec] of __arkui_dom_elmtRecords) {
+          if (rec.childView && typeof rec.childView.initialRender === 'function'
+              && rec.childView.constructor.name === 'V2Child') return rec.childView;
+        }
+        return null;
+      })();
+      check(!!childView, '找到了 V2Child 子视图实例');
+      if (childView) {
+        const childObs = intro.observedOf(childView.constructor);
+        check(childObs.indexOf('onPing') < 0,
+          `@Event 字段未装观测访问器：[${childObs.join(',')}]`);
+      }
+
+      // ── ⑫ 没有退化为"找不到祖先"的告警
+      const warns = (__arkui_dom_layout_warnings || []).filter((w) => /Consumer|Provider|Monitor|v2/.test(w));
+      check(warns.length === 0, `无 v2 相关告警（${warns.length}${warns.length ? ': ' + warns[0] : ''}）`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const el = document.getElementById('result');
+    el.textContent = lines.join('\n');
+    el.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

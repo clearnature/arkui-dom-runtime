@@ -58,12 +58,42 @@ const result = ts.transpileModule(source, {
 });
 
 let output = result.outputText;
+
+// ── 状态管理 v2 的装饰器前奏 ──
+// V2 产物把装饰器保留成 __decorate([Param], Proto, "label", void 0) —— 这些名字在
+// 产物里是【自由变量】。但其中 `Event` 与浏览器全局同名，而 runtime 自己
+// （Scroller 里的 new Event('scroll')）与 test/lazy.html 都在用 new Event(...)。
+// 所以不能把装饰器挂到 global，改为在产物作用域内做绑定。
+//
+// 门禁用 __decorate( —— 它【只】在源码用了装饰器时才会被 TS 发出来，所以 V1 页面
+// 完全不受影响（实测：11 个 V1 fixture 的产物里 __decorate 出现 0 次）。
+// 名字匹配故意用宽口径（词边界，不判断后随字符）：漏绑是致命错误（ReferenceError），
+// 多绑一个用不到的名字只是多一次解构赋值，没有副作用。
+const V2_DECORATORS = ['ViewV2', 'Param', 'Local', 'Once', 'Event', 'Monitor',
+  'Computed', 'Provider', 'Consumer', 'ObservedV2', 'Trace'];
+const hasDecorators = output.includes('__decorate(');
+const usedDecorators = hasDecorators
+  ? V2_DECORATORS.filter((d) => new RegExp(`\\b${d}\\b`).test(output))
+  : [];
+const decoratorPrelude = usedDecorators.length
+  ? `// 自动生成：状态管理 v2 装饰器的作用域内绑定（避免与浏览器全局 Event 等撞名）\n` +
+    `const { ${usedDecorators.join(', ')} } = (globalThis.__arkui_dom_decorators || {});\n` +
+    (usedDecorators.includes('ViewV2')
+      ? `if (typeof ViewV2 === 'undefined') { throw new Error('[arkui-dom] 需要先加载 runtime/arkui-dom-runtime.js（提供 __arkui_dom_decorators）'); }\n`
+      : '')
+  : '';
+
+if (decoratorPrelude) output = decoratorPrelude + output;
+
 if (registerId) {
   output =
     `// 自动生成：把 ${path.basename(src)} 注册为 CommonJS 模块 "${registerId}"\n` +
     `__arkui_dom_defineCommonJS(${JSON.stringify(registerId)}, function (require, exports, module) {\n` +
     output +
     `\n});\n`;
+} else if (decoratorPrelude) {
+  // 经典脚本：包一层 IIFE，让前奏里的 const 不外泄（避免污染全局作用域）
+  output = `(function () {\n${output}\n})();\n`;
 }
 
 fs.mkdirSync(path.dirname(out), { recursive: true });

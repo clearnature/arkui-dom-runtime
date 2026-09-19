@@ -122,6 +122,8 @@ case "${1:-index}" in
     echo
     run_one provide "$(src_of pages/Provide.ts)" build/provide.js test/provide.html || rc=1
     echo
+    run_one v2 "$(src_of pages/V2.ts)" build/v2.js test/v2.html || rc=1
+    echo
     run_one async "$(src_of pages/AsyncIO.ts)" build/asyncio-module.js test/async.html \
       "--cjs --register AsyncIO" || rc=1
     echo
@@ -149,6 +151,7 @@ case "${1:-index}" in
   measure) run_one measure "$(src_of pages/Measure.ts)" build/measure.js test/measure.html ;;
   lazy) run_one lazy "$(src_of pages/Lazy.ts)" build/lazy.js test/lazy.html ;;
   provide) run_one provide "$(src_of pages/Provide.ts)" build/provide.js test/provide.html ;;
+  v2) run_one v2 "$(src_of pages/V2.ts)" build/v2.js test/v2.html ;;
   async)
     run_one async "$(src_of pages/AsyncIO.ts)" build/asyncio-module.js test/async.html \
       "--cjs --register AsyncIO" ;;

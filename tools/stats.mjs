@@ -59,6 +59,13 @@ const BUILTIN_COMPONENTS = ['Text', 'Button', 'Column', 'Row', 'Stack', 'List', 
   'If', 'ForEach', 'LazyForEach', 'RelativeContainer'].filter((c) => globals.includes(c));
 const INTERNAL = globals.filter((g) => g.startsWith('__arkui_dom_'));
 
+// 状态管理 v2：装饰器表（V2 的能力由装饰器提供，不由状态类提供）
+const decBlock = rt.match(/const decorators = \{([\s\S]*?)\n  \};/);
+const V2_DECORATORS = decBlock
+  ? decBlock[1].split(',').map((s) => s.trim()).filter((s) => /^[A-Za-z_$][\w$]*$/.test(s))
+  : [];
+const hasV2Base = /\bclass ViewV2 extends ViewPU\b/.test(rt);
+
 // ── 平台模块 ──
 const shims = read('runtime/ohos-shims.js');
 const modules = [...shims.matchAll(/define\(\s*'([a-zA-Z.]+)'/g)].map((m) => m[1]).sort();
@@ -103,8 +110,10 @@ const sizes = {
 const TRACKED_FILES = [
   'runtime/arkui-dom-runtime.js', 'runtime/generated-components.js', 'runtime/ohos-shims.js',
   'tools/extract.mjs', 'tools/gen-components.mjs', 'tools/serve.py', 'tools/stats.mjs',
+  'tools/preflight.mjs', 'tools/check-all.sh',
   'run.sh', 'electron/run.sh', 'electron/main.js', 'electron/preload.js',
-  'README.md', 'docs/ARCHITECTURE.md', 'docs/CAPABILITY.md', 'docs/DEVELOPING.md',
+  'package.json', '.gitignore', 'README.md',
+  'docs/ARCHITECTURE.md', 'docs/CAPABILITY.md', 'docs/DEVELOPING.md',
   'docs/ROADMAP.md', 'docs/surface-measurement.md',
 ];
 const fileBytes = {};
@@ -124,7 +133,11 @@ const report = {
     containerProfiled, leafProfiled, inputs,
     attrTotal, attrMax, attrMaxName,
   },
-  runtime: { globalExports: globals.length, stateClasses: STATE_CLASSES, builtinComponents: BUILTIN_COMPONENTS, internalHooks: INTERNAL.length },
+  runtime: {
+    globalExports: globals.length, stateClasses: STATE_CLASSES,
+    builtinComponents: BUILTIN_COMPONENTS, internalHooks: INTERNAL.length,
+    stateV2: { hasViewV2Base: hasV2Base, decorators: V2_DECORATORS },
+  },
   platformModules: modules,
   tests: { browserCases: cases, electronCases: elCases, pages: tests, fixtures },
   sizes,
@@ -151,6 +164,12 @@ console.log(`  global 导出        ${globals.length} 个`);
 console.log(`  状态类            ${STATE_CLASSES.join(' ')}`);
 console.log(`  内置组件          ${BUILTIN_COMPONENTS.join(' ')}`);
 console.log(`  内部钩子 __arkui_dom_*  ${INTERNAL.length} 个`);
+
+console.log('\n== 状态管理 ==');
+console.log(`  v1  状态类        ${STATE_CLASSES.length} 个（包装对象模型）`);
+console.log(`  v2  基类          ViewV2 ${hasV2Base ? '已实现' : '缺失'}（extends ViewPU）`);
+console.log(`  v2  装饰器        ${V2_DECORATORS.length} 个：${V2_DECORATORS.join(' ')}`);
+console.log(`  v2  注入方式      作用域内绑定（__arkui_dom_decorators），不挂 global —— 见 ARCHITECTURE.md §3.4`);
 
 console.log('\n== 平台模块（@ohos:*）==');
 console.log(`  ${modules.length} 个：${modules.join(' ')}`);

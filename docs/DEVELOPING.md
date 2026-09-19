@@ -170,9 +170,72 @@ node tools/stats.mjs --json | python3 -m json.tool
 
 ---
 
-## 6. 任务 C：新增一个测试用例
+## 6. 任务 C：新增一个 v2 装饰器 / 修 v2 语义
 
-1. 在 `fixtures/pages/` 放页面产物（见第 7 节如何生成）
+v2 与 v1 是**两套机制**（见 `ARCHITECTURE.md` §3.4）：v1 靠状态类包装，v2 靠**画在原型上的访问器**，而访问器由装饰器函数安装。
+
+### 步骤
+
+1. **先测量产物**。新装饰器（或新版本的工具链）改了产物形态时，**不要猜**。改一个 `.ets`、构建、然后看编译产物：
+
+   ```bash
+   cd /tmp/hmtest/app && timeout 560 /data/training/cli/commandline-tools-linux-x64-26.0.0.821/command-line-tools/bin/hvigorw \
+     --mode module -p product=default -p module=entry@default -p buildMode=debug assembleHap --no-daemon
+   grep -n "__decorate" /tmp/hmtest/app/entry/build/default/cache/default/default@CompileArkTS/esmodule/debug/entry/src/main/ets/pages/V2.ts
+   cp /tmp/hmtest/app/entry/build/default/cache/default/default@CompileArkTS/esmodule/debug/entry/src/main/ets/pages/V2.ts fixtures/pages/V2.ts
+   ```
+
+   `__decorate([X], Proto, "k", null)` 的 `key`/`desc` 形态决定了你的装饰器会收到几个参数、能不能返回改写后的描述符。**这是唯一可靠的依据。**
+
+2. **接口形状去读 SDK 的 `.d.ts`**，不要凭印象：
+
+   ```bash
+   grep -n "interface IMonitor" -A 30 \
+     /data/training/cli/commandline-tools-linux-x64-26.0.0.821/command-line-tools/sdk/default/openharmony/ets/build-tools/ets-loader/declarations/common.d.ts
+   ```
+
+   曾经把 `IMonitor` 猜成 `{dirty: [{path,value,before,kind}]}`，被编译器当场判错。
+
+3. **在 `runtime/arkui-dom-runtime.js` 的"状态管理 v2"段实现**，需要装访问器就复用 `installV2Accessor(proto, key, kind)`。
+
+4. **加进装饰器表**——否则产物里绑不上：
+
+   ```js
+   const decorators = { ViewV2, Param, Local, /* ... */ 新名字 };
+   ```
+
+   同时在 `tools/extract.mjs` 的 `V2_DECORATORS` 里加上名字，否则前奏不会绑它。
+
+5. **断言要包含"机制正确"，不只是"渲染对了"**。用 `__arkui_dom_v2Introspect()`：
+
+   ```js
+   const intro = __arkui_dom_v2Introspect();
+   check(intro.observedOf(view.constructor).includes('count'), '@Local 已装访问器');
+   check(intro.monitorsOf(view.constructor).join().includes('count→onCountChange'), '@Monitor 已登记');
+   check(intro.observedOf(V2Child).indexOf('onPing') < 0, '@Event 不参与观测');
+   ```
+
+   否则"渲染碰巧对了"和"机制正确"分不开。
+
+6. **验收**：
+
+   ```bash
+   bash run.sh v2 && bash electron/run.sh v2
+   node tools/stats.mjs | sed -n '/状态管理/,/注入方式/p'
+   ```
+
+### 硬约束
+
+- **`@Once` 必须写成 `@Once @Param`**，否则 ArkTS 构建失败。
+- **装饰器不能挂 global**。`Event` 与浏览器全局同名，挂上去会打断 `new Event('scroll')`（runtime 的 `Scroller` 和 `test/lazy.html` 都在用）。走 `__arkui_dom_decorators` + 抽取前奏。
+- **回调抛错不能炸整页**。`@Monitor` 的调用已经在 `try/catch` 里并把错误记进 `layoutWarnings`，保持这个行为。
+- **`@Computed` 不引入缓存**。当前实现靠"getter 体在渲染上下文里执行 ⇒ 传递依赖天然成立"来保证正确性；加缓存就必须同时实现失效逻辑，否则会出现"值对了但没重渲染"。
+
+---
+
+## 7. 任务 D：新增一个测试用例
+
+1. 在 `fixtures/pages/` 放页面产物（见第 8 节如何生成）
 2. 在 `test/` 建 `<name>.html`，结构照抄现有用例：
    - `<script src="../runtime/arkui-dom-runtime.js">` → `generated-components.js` → `ohos-shims.js`
    - 再引入 `../build/<name>.js`
@@ -191,7 +254,7 @@ const text = document.getElementById('result').textContent;
 
 ---
 
-## 7. 重新生成 fixtures（需要 HarmonyOS 工具链）
+## 8. 重新生成 fixtures（需要 HarmonyOS 工具链）
 
 只有新增/修改 `.ets` 页面时才需要。
 
@@ -214,7 +277,7 @@ node tools/extract.mjs fixtures/pages/NewPage.ts build/newpage.js --cjs --regist
 
 ---
 
-## 8. 调试手段
+## 9. 调试手段
 
 | 手段 | 用法 |
 |---|---|
@@ -224,12 +287,14 @@ node tools/extract.mjs fixtures/pages/NewPage.ts build/newpage.js --cjs --regist
 | 依赖同步 | `__arkui_dom_syncAlignRules(rootEl)` 手动重算 `alignRules` |
 | 组件名 | `__arkui_dom_componentNames()` |
 | 覆盖冲突 | `__arkui_dom_overwrittenGlobals` |
+| **v2 装饰器自省** | `__arkui_dom_v2Introspect().observedOf(V2类)` / `.monitorsOf(...)` / `.computedOf(...)` |
+| **v2 装饰器表** | `__arkui_dom_decorators`（产物里的绑定前奏从这里取） |
 | 后端强制 | `global.__arkui_dom_force_backend = 'opfs'`；`__arkui_dom_enable_opfs = true` |
 | 截图 | `electron/main.js` 用 offscreen 模式 + **像素级非白比例**判断是否真的画出来了 |
 
 ---
 
-## 9. 已知陷阱（都真踩过）
+## 10. 已知陷阱（都真踩过）
 
 按"改代码时最可能再犯"排序。
 
@@ -254,6 +319,13 @@ node tools/extract.mjs fixtures/pages/NewPage.ts build/newpage.js --cjs --regist
 | ⑭ | `scrollToIndex` 目标是**孙节点**（`ForEach` 包裹层是 `display:contents`），且滚动容器缺 `position` 导致 `offsetTop` 基准错 | 容器 `position:relative` + 用 `data-arkui-comp` 标记定位 |
 | ⑮ | `struct` 名叫 `Provide` → 与 `@Provide` 装饰器冲突：`Cannot redeclare block-scoped variable 'Provide'` | 改名（`ProvideDemo`） |
 | ③ | 用 `sed -i` 改代码文件（违反自己的规则） | 用 `edit` 工具逐行精确改 |
+| ㉒ | **把 `IMonitor` 的形状猜成** `{dirty:[{path,value,before,kind}]}` → ArkTS 编译器判错 `Property 'value' does not exist on type 'string'` | 去读 SDK 的 `declarations/common.d.ts`。正确形状：`dirty: string[]` + `value(path?): {before, now, path}` |
+| ㉓ | **v2 装饰器想挂 global** → 会覆盖浏览器全局 `Event`，直接打断 `new Event('scroll')`（`Scroller` 与 `test/lazy.html` 都在用） | 走 `__arkui_dom_decorators` + `extract.mjs` 生成的作用域内绑定前奏 |
+| ㉔ | **`@Once mode` 单独写** → 构建失败 `When a variable decorated with '@Once', it must also be decorated with '@Param'` | 写 `@Once @Param mode` |
+| ㉕ | **`WeakMap` 上调 `.keys()`**（写自省函数时）→ `TypeError: v2ProtoMeta.keys is not a function` | WeakMap 不可枚举，只能按 key 查询 |
+| ㉖ | **把 `string.length` 当字节数** → 生成器报告"文件比生成物长 48 字节"，其实是 banner 里中文的 UTF-16 码元 vs UTF-8 字节之差 | 报告体积用 `Buffer.byteLength(s, 'utf8')`，或直接 `fs.statSync().size` |
+| ㉗ | **`pkill -f "serve.py 41891"`** → 模式匹配到了自己所在的命令行，把执行中的 shell 杀了（`Signal: 15`，命令无声中断） | 先 `ps -eo pid,args \| grep "[s]erve\.py"` 取 PID 再 `kill` |
+| ㉘ | **`--check` 只在注释里声明、代码里没实现** → 加进验收清单后它其实在**覆写**生成物 | `--check` 必须做到"只比对、不落盘、不一致时非 0 退出"。加进清单前先验证失败路径 |
 
 ### 确定性与时序
 
@@ -276,23 +348,30 @@ node tools/extract.mjs fixtures/pages/NewPage.ts build/newpage.js --cjs --regist
 
 ---
 
-## 10. 提交前检查清单
+## 11. 提交前检查清单
 
 ```bash
-# 1. 两套 runner 全绿
-bash run.sh all && echo "browser OK"
-bash electron/run.sh all && echo "electron OK"
+# 1. 一条命令做完所有验收（preflight + 生成物一致 + 浏览器 + Electron）
+npm run check          # 或 bash tools/check-all.sh
+npm run check:quick    # 跳过 Electron
 
 # 2. 统计与文档一致（改了覆盖范围就更新 ARCHITECTURE.md §6 的引用块）
 node tools/stats.mjs
 
-# 3. 生成物与生成器同步
-node tools/gen-components.mjs --check
+# 3. 新增/修改的脚本有可执行位（preflight 会查，这里再确认一次）
+ls -l run.sh electron/run.sh tools/*.mjs tools/*.py tools/*.sh
 
-# 4. 新增/修改的脚本有可执行位
-ls -l run.sh electron/run.sh tools/*.mjs tools/*.py
-
-# 5. 没改 fixtures（除非工具链升级）
+# 4. 没改 fixtures（除非工具链升级）
+git status --short fixtures/
 ```
 
-**文档纪律**：`ARCHITECTURE.md` §6 里的数字是**引用的实测输出**，不是手写估计值。改了覆盖范围就重跑 `stats.mjs` 并同步那个引用块——否则文档会先于代码腐烂。
+**为什么成败一律看退出码、不 grep 日志**：`check-all.sh` 只依据被调命令的退出码判定。
+用文本搜索判成败会把已经出现过 4 次的"假通过"重新引进来（`grep 'ALL PASS'` 匹配到 `<script>` 源码、
+纯白图被判非空、404 页面读空串、负向断言被后续实现静默失效）。
+
+**文档纪律**：`ARCHITECTURE.md` §6 的数字是 `tools/stats.mjs` 的**实测输出**，不是手写估计值。
+改了覆盖范围就重跑 `stats.mjs` 并同步那个引用块——否则文档会先于代码腐烂。
+
+**没做但已登记的工程缺口**（见 `ROADMAP.md` P0）：
+`LICENSE` 与 `CHANGELOG.md` 尚未建立——许可证需要项目所有者决定（本仓库复用 HarmonyOS CLT 的
+组件元数据与产物形态，自研部分的授权需与之区分开）。

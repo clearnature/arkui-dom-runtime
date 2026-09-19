@@ -72,19 +72,44 @@ PASS 100 次切换中分支内容始终与状态一致（不一致 0 次）
 ## 目录
 
 ```
-runtime/arkui-dom-runtime.js   运行时骨架（经典脚本，加载后安装全部 ArkUI 全局）
-tools/extract.mjs              从 hvigor cache 抽转换产物 + 去 TS 类型（用 ets-loader 自带 TS，零新依赖）
+runtime/arkui-dom-runtime.js   运行时核心（经典脚本，加载后安装全部 ArkUI 全局）
+  ├ v1 状态类（ObservedPropertySimplePU / SynchedProperty*PU）
+  ├ ViewPU（组件栈、elmtId 依赖追踪、批量重渲染、If/ForEach、自定义组件挂载）
+  ├ ViewV2 + 11 个 v2 装饰器（@ComponentV2 全套）
+  ├ 布局（alignRules 六键 / 文本截断 / Stack 叠放 / Scroller）、LazyForEach 虚拟滚动
+  └ 页面栈与路由
+runtime/generated-components.js 149 个组件骨架（生成物，不要手改）
+runtime/ohos-shims.js          10 个 @ohos:* 平台模块 + 持久化三级后端
+tools/extract.mjs              从 hvigor cache 抽转换产物 + 去 TS 类型 + v2 装饰器绑定前奏
+tools/gen-components.mjs       由 ets-loader 的组件 JSON 生成骨架（--check 只校验不写）
 tools/serve.py                 极简静态服务（端口由 OS 分配，避免冲突）
-test/index.html                断言页：渲染 → 属性校验 → 点击 → 校验文本变化
-run.sh                         一键：抽取 → 起服务 → headless Chrome 断言 → 截图 → 判定
-build/                         生成物（app.js、step1.png）
+tools/preflight.mjs            环境自检（工具链 / 宿主 / 可执行位）
+tools/check-all.sh             一条命令做完所有验收
+tools/stats.mjs                覆盖范围统计（文档里的数字都来自它）
+test/*.html                    断言页（14 个用例）
+fixtures/                      冻结的 ets-loader 转换产物（12 个，测试的输入）
+run.sh                         浏览器 14 用例驱动
+electron/run.sh                Electron 13 用例 + 真实磁盘验证
+docs/                          ARCHITECTURE / DEVELOPING / ROADMAP / CAPABILITY
 ```
 
 ## 用法
 
 ```bash
-bash run.sh                                  # 用默认的 Index.ts
-bash run.sh <任意 .ts 转换产物> <输出 .js>     # 换输入
+# 一条命令做完所有验收（preflight + 生成物一致 + 浏览器 + Electron）
+npm run check
+npm run check:quick                # 跳过 Electron
+
+# 单个用例
+bash run.sh layout                 # 浏览器
+bash electron/run.sh layout        # Electron
+
+# 统计当前覆盖范围（文档里的数字来源）
+npm run stats
+npm run stats:json                 # 机器可读
+
+# 环境自检（缺什么会明确报出来）
+npm run preflight
 ```
 
 ## 原理：怎么让生成的代码原样跑起来
@@ -303,23 +328,72 @@ phase 1 超时降级写进了 localStorage，phase 2 却真的用上了 OPFS →
 `@ohos:net.http` —— 等 `net.http` 真被实现后，这条断言就**失效了**（不再抛错）。
 负面探测必须钉在**永远不会被实现**的名字上（现改为 `@ohos:this.module.does.not.exist`）。
 
-## 下一步 — ③ 剩余
+## 状态管理 v2 ✅（`@ComponentV2` 全套）
+
+v1 与 v2 是**两套机制**：v1 把状态包成对象（`new ObservedPropertySimplePU(...)`），
+v2 是**裸字段 + 装饰器画在原型上的访问器**。所以 v2 不是"再加几个状态类"，而是要实现整个装饰器层。
 
 ```
-③ 组件库代码生成：从 ets-loader/components/*.json（150 个，{name, children, attrs[]}）
-   生成 create/pop/attrs 骨架 + 手补 Column/Row/Stack/Text/Button/List 的布局语义
-   · 工厂名要按组件声明枚举（已发现 Button 用 createWithLabel）；/^create/ 只是兜底
-④ @ohos:* 模块别名层：hilog→console、window→BrowserWindow、router→自研
-   → 验证：EntryAbility.onWindowStageCreate → loadContent('pages/Rich') 能拉起页面
-⑤ 在 Electron 里跑通（当前只在 Chrome headless 验证过，架构等价但未证）
+$ bash run.sh v2
+=== ALL PASS ===
+PASS @Computed 初值：'count=0,items=2'
+PASS @Param+@Once 传入子组件：'child/fixed'
+PASS @Consumer 拿到祖先 @Provider 初值：'consume=dark'
+PASS @Local 改值触发重渲染：'count=1,items=2'
+PASS @Monitor('count') 回调触发：hits='1'
+PASS IMonitor.value().now = '1'（期望 1）          ← 形状取自 SDK 的 .d.ts
+PASS IMonitor.value().before = '0'（期望 0）
+PASS 子组件 @Monitor('inner') 触发：hits='1'
+PASS @Event 子→父回调：父收到 '1'
+PASS @Trace 字段变更触发重渲染：'1:aN' → '1:renamedN'
+PASS 非 @Trace 字段(id)变更【未】触发重渲染         ← @Trace 是选择性的，不是全观测
+PASS 改 @Provider 后 @Consumer 自动更新：'consume=light'
+PASS V2 的 @Local/@Provider 字段都装了访问器：[count,items,…,theme,lastPing]
+PASS @Event 字段未装观测访问器：[label,seed,mode,inner,hitCount]
+PASS 无 v2 相关告警（0）
 ```
+
+26 条断言在**浏览器与 Electron 双通过**。完整契约（11 个装饰器、`ViewV2` 的 11 个方法、
+`IMonitor` 的权威形状）见 `docs/ARCHITECTURE.md` §3.4。
+
+**一个必须记住的设计约束**：v2 装饰器**不能挂 global**——`Event` 既是装饰器名也是浏览器全局，
+而 runtime 的 `Scroller` 与 `test/lazy.html` 都在用 `new Event('scroll')`。
+所以改走 `__arkui_dom_decorators` + `extract.mjs` 生成的**作用域内绑定前奏**。
+
+## 工程化 ✅
+
+项目最初不是 git 仓库（287 MB 里 283 MB 是解压的 Electron），改动不可审计、回归不可复现。
+现已补齐：
+
+| 能力 | 入口 | 说明 |
+|---|---|---|
+| 版本控制 | `git log` | 被跟踪 47 个文件 / 484 KB（`.gitignore` 排除 Electron 运行时与产物） |
+| 环境自检 | `npm run preflight` | 缺 CLT/Chrome/Electron **或脚本缺 `+x`** 都会明确报错 |
+| 统一验收 | `npm run check` | **退出码只看被调命令**，绝不用 `grep`/`wc` 数日志行 |
+| 生成物守门 | `npm run check:gen` | `--check` 只比对不落盘，漂移即非 0 退出 |
+| 覆盖统计 | `npm run stats` | 文档里的所有数字都由它产出（`--json` 机器可读） |
+
+`npm run check` 当前：**浏览器 14 用例 + Electron 13 用例全绿**。
+
+## 下一步
+
+**权威清单在 `docs/ROADMAP.md`**（每项带可复现的验收命令）。当前优先：
+
+1. **R5 许可证** —— 需要项目所有者决策（本仓库复用 CLT 的组件元数据与产物形态，自研部分的授权需与之区分）
+2. **R8** v1 的 `@Observed`/`@ObjectLink` 深度观测（v2 的 `@Trace` 已有等价能力，v1 路径仍缺）
+3. **R9/R10** `Grid` 真实布局、`Tabs`/`TabContent` 切换（85 个骨架组件目前只落 `data-*`）
+4. **R14** 多层锚链 + `Guideline` + `bias`（`alignRules` 目前只支持一层）
+
+**仍未覆盖**：动画/手势、`Navigation`/`Swiper` 切换语义、`@ohos:media`/`notification`、
+浏览器侧真文件系统（OPFS 在 headless Chrome 会挂起，现用 `localStorage` 兜底）。
+**别把没验的当结论**——`docs/CAPABILITY.md` 里有逐项的能力矩阵。
 
 **② 留下的已知待办（别当已完成）**：
 
-- `ForEach` 现在是「数组变了就整体重建」，**没有键级 diff**（`LazyForEach` 更没有）
+- `ForEach` 现在是「数组变了就整体重建」，**没有键级 diff**
 - 父组件重渲染时参数推送走 `updateStateVarsOfChildByElmtId`，但**子视图内部的 elmtId 迁移未处理**（复杂嵌套可能出问题）
-- `Repeat` / **状态管理 v2**（`@ComponentV2/@Local/@Param`）/ `@Provide/@Consume` / `Navigation` / 动画 / `Grid` / `Swiper` **全未覆盖**
-- **布局语义仍接近于零**：`Column/Row` 只是 flex 盒子，没有 ArkUI 的 measure/layout 规则；`alignRules` 只落盘不实现
+- `Repeat` / `Navigation` / 动画 / `Grid` 自适应 / `Swiper` **未覆盖**
+- **布局语义仍不完整**：没有约束求解器，`alignRules` 只支持一层锚链
 
 ---
 
