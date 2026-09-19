@@ -440,6 +440,8 @@
     width: 'width', height: 'height', borderWidth: 'borderWidth',
     borderRadius: 'borderRadius', padding: 'padding', margin: 'margin',
     letterSpacing: 'letterSpacing', lineHeight: 'lineHeight',
+    // Grid 的双向间距（Length → px）。缺这两个时它们只会落进 data-*，版式静默错。
+    columnsGap: 'columnGap', rowsGap: 'rowGap',
   };
   const cssPropRaw = {
     fontWeight: 'fontWeight', opacity: 'opacity', zIndex: 'zIndex',
@@ -451,8 +453,26 @@
     alignContent: 'alignContent', textAlign: 'textAlign', fontStyle: 'fontStyle',
     textTransform: 'textTransform', whiteSpace: 'whiteSpace', position: 'position',
     textDecoration: 'textDecoration', overflow: 'overflow', visibility: 'visibility',
-    columnsTemplate: 'gridTemplateColumns', rowsTemplate: 'gridTemplateRows',
   };
+
+  // ── Grid 轨道模板 ──
+  // ArkUI 的轨道尺寸里【裸数字是 vp】，而 CSS 必须带单位 —— 直接透传会得到
+  // 'grid-template-columns: 100 1fr'，浏览器整条声明作废（不报错、只是没生效，最难查）。
+  // 归一化：vp/fp/lpx → px；裸数字 → px；1fr/auto/%/minmax()/repeat() 原样保留。
+  // 注：vp→px 是 1:1 近似（本项目一贯做法，密度≠1 的设备上会有偏差）。
+  const normalizeTrackList = (v) => String(v === undefined || v === null ? '' : v)
+    .replace(/(\d+(?:\.\d+)?)(vp|fp|lpx)\b/g, '$1px')
+    .replace(/(?<![\w.%-])(\d+(?:\.\d+)?)(?![\w.%-])/g, '$1px');
+  const GRID_TRACK_PROPS = { columnsTemplate: 'gridTemplateColumns', rowsTemplate: 'gridTemplateRows' };
+  // Grid 的"无模板"布局参数：cellLength/maxCount/minCount/layoutDirection 决定轨道如何划分，
+  // 本实现不做 —— 静默忽略会让页面版式错得看不出原因，所以显式记诊断（值仍落 data-*）。
+  const GRID_UNSUPPORTED = new Set(['cellLength', 'maxCount', 'minCount', 'layoutDirection']);
+
+  // 切多面板：只显示 active 那一项（Tabs 与后续 Swiper 共用）
+  const onlyOneVisible = (entries, active) => {
+    entries.forEach((e, k) => { e.el.style.display = k === active ? 'block' : 'none'; });
+  };
+
 
   // create({ space: n }) —— ArkUI 容器的 space 语义映射为 flex gap
   function applyCreateArgs(node, args) {
@@ -485,8 +505,8 @@
       if (a.value !== undefined) el.value = Number(a.value);
       if (a.total !== undefined) el.max = Number(a.total);
     }
-    if (a.columnsTemplate !== undefined) el.style.gridTemplateColumns = String(a.columnsTemplate);
-    if (a.rowsTemplate !== undefined) el.style.gridTemplateRows = String(a.rowsTemplate);
+    if (a.columnsTemplate !== undefined) el.style.gridTemplateColumns = normalizeTrackList(a.columnsTemplate);
+    if (a.rowsTemplate !== undefined) el.style.gridTemplateRows = normalizeTrackList(a.rowsTemplate);
   }
 
   // ────────────────────── 布局：alignRules / 文本截断 / 叠放 / Scroller ──────────────────────
@@ -625,14 +645,207 @@
     return node;
   }
 
+  // ────────────────── Tabs / TabContent（多面板切换）──────────────────
+  //
+  // 产物形式（实测 fixtures/pages/TabsGrid.ts）：
+  //   Tabs.create({ barPosition: BarPosition.Start, index: 0, controller: this.tabCtrl });
+  //   Tabs.onChange((i) => {…});  Tabs.width(…);  Tabs.height(…);  Tabs.id(…);
+  //   TabContent.create(deepFn);   ← 子构建器【当构造参数传】（与 GridItem/ListItem 的
+  //                                  create(()=>{}, false) + 外部 observedDeepRender 不同）
+  //   TabContent.tabBar('T0');  TabContent.pop();  …  Tabs.pop();
+  //
+  // DOM 结构（Tabs 自身在组件栈上，属性/Tabs.pop 都作用于它）：
+  //   <div data-arkui-comp="Tabs">           flex column
+  //     <div data-arkui-tabs-bar>            barPosition=Start 在前 / End 在后
+  //     <div data-arkui-tabs-content>        TabContent 挂在这里（不是 Tabs 本身）
+  //
+  // 为什么 TabContent 要"跳过"父节点另挂：若直接挂进 Tabs 包装元素，就会和 tab bar 同级，
+  // 且 Tabs.width()/height() 会作用到内容区而不是整体。故由 TabContent 主动认领内容区。
+  const BarPosition = { Start: 'start', End: 'end' };
+  const BarMode = { Fixed: 'fixed', Scrollable: 'scrollable' };
+
+  // Tabs 的语义性属性里本实现未覆盖的部分。回调类尤其不能静默——写上去却永远不触发，
+  // 比报错更难查。纯外观项（颜色/模糊/divider/fadingEdge）不在此列。
+  const TABS_UNSUPPORTED = new Set([
+    'vertical', 'barMode', 'barWidth', 'barHeight', 'barOverlap', 'barGridAlign',
+    'animationDuration', 'animationMode', 'animationCurve', 'customContentTransition',
+    'pageFlipMode', 'edgeEffect', 'cachedMaxCount',
+    'onTabBarClick', 'onSelected', 'onUnselected',
+    'onAnimationStart', 'onAnimationEnd', 'onGestureSwipe', 'onContentWillChange',
+  ]);
+
+  let tabsSeq = 0;
+  class TabsController {
+    constructor() { this._id = ++tabsSeq; this._state = null; }
+    changeIndex(i) {
+      const st = this._state;
+      if (!st) { layoutWarnings.push('TabsController.changeIndex: 尚未绑定到任何 Tabs'); return false; }
+      return setActiveTab(st, Number(i), true);
+    }
+    preloadItems() {
+      // 本实现里所有 TabContent 都是即时构建的（无懒加载），无需预载——语义等价，故不报警告。
+      return Promise.resolve();
+    }
+  }
+
+  function createTabsState(node, opt) {
+    const st = {
+      node, index: 0, barPosition: 'start', controller: null,
+      contents: [], onChange: [], barEl: null, contentEl: null,
+    };
+    node.__tabsState = st;
+    node.style.display = 'flex';
+    node.style.flexDirection = 'column';
+    node.style.overflow = 'hidden';
+
+    st.barEl = document.createElement('div');
+    st.barEl.setAttribute('data-arkui-tabs-bar', st.barPosition);
+    st.barEl.style.display = 'flex';
+    st.barEl.style.flexDirection = 'row';
+    st.barEl.style.flex = 'none';
+
+    st.contentEl = document.createElement('div');
+    st.contentEl.setAttribute('data-arkui-tabs-content', '');
+    st.contentEl.style.flex = '1 1 auto';
+    st.contentEl.style.position = 'relative';
+    st.contentEl.style.overflow = 'hidden';
+
+    node.appendChild(st.barEl);
+    node.appendChild(st.contentEl);
+    applyTabsOptions(st, opt);
+    return st;
+  }
+
+  function applyTabsOptions(st, opt) {
+    if (!opt || typeof opt !== 'object') return;
+    if (opt.barPosition !== undefined) {
+      st.barPosition = String(resolveResource(opt.barPosition));
+      st.barEl.setAttribute('data-arkui-tabs-bar', st.barPosition);
+    }
+    if (opt.index !== undefined) st.index = Number(resolveResource(opt.index)) || 0;
+    if (opt.controller) {
+      if (opt.controller._state && opt.controller._state !== st) {
+        layoutWarnings.push('同一个 TabsController 被绑定到多个 Tabs（后绑定的生效）');
+      }
+      opt.controller._state = st;
+      st.controller = opt.controller;
+    }
+  }
+
+  function setActiveTab(st, i, fire) {
+    const n = st.contents.length;
+    if (!n || !Number.isInteger(i) || i < 0 || i >= n) {
+      layoutWarnings.push(`Tabs.changeIndex(${i}): 越界（共 ${n} 个 TabContent）`);
+      return false;
+    }
+    st.index = i;
+    onlyOneVisible(st.contents, i);
+    [...st.barEl.children].forEach((b, k) => {
+      b.setAttribute('data-arkui-tabbar-active', k === i ? 'true' : 'false');
+    });
+    if (fire) {
+      for (const cb of st.onChange) {
+        try { cb(i); } catch (e) { layoutWarnings.push(`Tabs.onChange 抛错：${e && e.message}`); }
+      }
+    }
+    return true;
+  }
+
+  // Tabs.pop() 之后才知道有几个 TabContent、各自的标签是什么 → 那时才建 bar
+  function finalizeTabs(st) {
+    const n = st.node;
+    if (st.barPosition === 'end') {
+      if (n.lastElementChild !== st.barEl) n.appendChild(st.barEl);
+    } else if (n.firstElementChild !== st.barEl) {
+      n.insertBefore(st.barEl, st.contentEl);
+    }
+    st.barEl.textContent = '';                       // 重建（重渲染时不会残留旧项）
+    st.contents.forEach((c, i) => {
+      const item = document.createElement('div');
+      item.setAttribute('data-arkui-tabbar-item', String(i));
+      item.setAttribute('data-arkui-tabbar-active', 'false');
+      item.textContent = c.label === undefined || c.label === null ? '' : String(c.label);
+      item.style.flex = '1';
+      item.style.textAlign = 'center';
+      item.style.cursor = 'pointer';
+      item.addEventListener('click', () => setActiveTab(st, i, true));
+      st.barEl.appendChild(item);
+    });
+    const idx = Math.min(Math.max(0, st.index), Math.max(0, st.contents.length - 1));
+    if (!st.contents.length) {
+      layoutWarnings.push('Tabs 内没有任何 TabContent，无法确定活动面板');
+      return;
+    }
+    setActiveTab(st, idx, false);
+  }
+
+  function applyTabBar(node, value) {
+    const st = node.__tabContentOf;
+    if (!st) { layoutWarnings.push('TabContent.tabBar: 未找到所属 Tabs'); return; }
+    const entry = st.contents.find((c) => c.el === node);
+    if (typeof value === 'string' || typeof value === 'number') {
+      const label = String(resolveResource(value));
+      node.__tabBarLabel = label;             // 同时记在节点上，供重渲染后补登记
+      if (entry) entry.label = label;
+      return;
+    }
+    layoutWarnings.push('TabContent.tabBar 目前只支持字符串标签'
+      + '（SubTabBarStyle / BottomTabBarStyle / 自定义 builder 未实现）');
+    node.__tabBarLabel = '';
+    if (entry) entry.label = '';
+  }
+
+  // TabContent 挂载：认领所属 Tabs 的内容区（不压栈——压栈由 create 统一收尾，与 ListItem 一致）
+  function mountTabContent(rec) {
+    let node = rec && rec.node && rec.node.__arkuiComp === 'TabContent' ? rec.node : null;
+    if (!node) {
+      node = document.createElement('div');
+      node.__arkuiComp = 'TabContent';
+      // mountNode 会打这个标记；这里走的是自定义挂载点，必须自己打（否则外部查不到该组件）
+      node.setAttribute('data-arkui-comp', 'TabContent');
+      node.style.display = 'block';
+      node.style.height = '100%';
+      const parent = parentOfTop();
+      const host = parent && parent.__tabsContentEl ? parent.__tabsContentEl : parent;
+      const st = parent && parent.__tabsState;
+      if (st) node.__tabContentOf = st;
+      else layoutWarnings.push('TabContent 的父节点不是 Tabs（ArkUI 要求 TabContent 只能放在 Tabs 内）');
+      // rec.parentNode 必须指向【内容区】：重渲染时靠它恢复挂载点，指错会重建整个 bar
+      if (rec) { rec.node = node; rec.parentNode = host; }
+      host.appendChild(node);
+    }
+    // Tabs 重渲染会清空 contents，此处在复用路径上补登记，避免标签/可见性丢失
+    const st = node.__tabContentOf;
+    if (st && !st.contents.some((c) => c.el === node)) {
+      st.contents.push({ el: node, label: node.__tabBarLabel === undefined ? '' : node.__tabBarLabel });
+    }
+    return node;
+  }
+
   function applyAttr(node, prop, value) {
     if (!node) return;
+    // Tabs 的 onChange 要由 Tabs 自己收集并在切换时派发，不能落成 DOM 事件 ——
+    // 必须拦在通用事件分支【之前】，否则会变成永不触发的 'change' 监听器（静默失效）。
+    if (prop === 'onChange' && node.__tabsState) { node.__tabsState.onChange.push(value); return; }
     if (typeof value === 'function') {          // 事件类（onClick/onChange…）
       const ev = prop.replace(/^on/, '').toLowerCase() || 'click';
       node.addEventListener(ev, value);
       return;
     }
     if (prop === 'id') { node.id = String(resolveResource(value)); return; }
+    if (prop === 'tabBar') { applyTabBar(node, value); return; }
+    // Grid 轨道模板要过单位归一化，所以不能走 cssPropEnum 的原样透传
+    if (GRID_TRACK_PROPS[prop]) {
+      node.style[GRID_TRACK_PROPS[prop]] = normalizeTrackList(resolveResource(value));
+      return;
+    }
+    // 未实现的 Grid/Tabs 语义项：不 return，继续落 data-*，但同时留下诊断
+    if (node.__arkuiComp === 'Grid' && GRID_UNSUPPORTED.has(prop)) {
+      layoutWarnings.push(`Grid.${prop} 未实现（无模板时的轨道划分）：版式会与设备不一致`);
+    }
+    if (node.__tabsState && TABS_UNSUPPORTED.has(prop)) {
+      layoutWarnings.push(`Tabs.${prop} 未实现，已忽略`);
+    }
     // 注意：这些必须在 cssPropEnum 之前拦掉 —— 例如 ArkUI 的 alignContent 语义
     // 是"叠放子项的对齐"，与 CSS 的 align-content（内容分布）不是一回事。
     if (prop === 'alignRules') { node.__alignRules = value; applyAlignRules(node); return; }
@@ -721,6 +934,59 @@
       };
     }
 
+    // Tabs：DOM 结构见 createTabsState。栈顶是【包装元素】，所以 Tabs.width/height/onChange
+    // 全部作用在整体上；TabContent 由 mountTabContent 认领内容区。
+    if (name === 'Tabs') {
+      C.create = function (...args) {
+        const rec = elmtRecords.get(currentNodeElmtId);
+        let node;
+        if (rec && rec.node && rec.node.__arkuiComp === 'Tabs') {
+          node = rec.node;
+          node.__tabsState.contents = [];        // 重渲染：子项会重新登记，bar 在 pop 时重建
+          applyTabsOptions(node.__tabsState, args && args[0]);
+        } else {
+          node = document.createElement('div');
+          node.__arkuiComp = 'Tabs';
+          createTabsState(node, args && args[0]);
+          mountNode(node, rec);
+        }
+        ViewStackProcessor.push(node);
+        return node;
+      };
+      // 只有到 pop 才知道有几个 TabContent、各叫什么标签
+      C.pop = function () {
+        const top = ViewStackProcessor.top();
+        ViewStackProcessor.pop();
+        const st = top && top.__tabsState;
+        if (st) finalizeTabs(st);
+      };
+    }
+
+    // TabContent：子构建器是【构造参数】，首次构建时立即展开（同 ListItem 的深渲染，防递归再入）
+    if (name === 'TabContent') {
+      C.create = function (deepFn) {
+        const elmtId = currentNodeElmtId;
+        const rec = elmtRecords.get(elmtId);
+        const node = mountTabContent(rec);
+        if (!node.__tabContentRendered) {
+          if (typeof deepFn === 'function' && !deepRendering.has(elmtId)) {
+            deepRendering.add(elmtId);
+            const saved = ViewStackProcessor.snapshot();
+            const savedElmt = currentNodeElmtId;
+            ViewStackProcessor.push(node);
+            currentNodeElmtId = elmtId;
+            deepFn(elmtId, true);
+            ViewStackProcessor.restore(saved);
+            currentNodeElmtId = savedElmt;
+            deepRendering.delete(elmtId);
+          }
+          node.__tabContentRendered = true;
+        }
+        ViewStackProcessor.push(node);
+        return node;
+      };
+    }
+
     components[name] = new Proxy(C, {
       get(target, key) {
         if (key in target) return target[key];
@@ -788,6 +1054,11 @@
   const List = ensureComponent('List',
     defaultDom('div', { display: 'flex', flexDirection: 'column', overflow: 'auto', position: 'relative' }));
   const ListItem = ensureComponent('ListItem', defaultDom('div', { display: 'block' }));
+
+  // Tabs/TabContent 必须手写：生成的骨架只会建一个 <div>，既没有切换语义也没有 TabsController。
+  // 它们各自的 create/pop 在 ensureComponent 里按组件名分派（见 name === 'Tabs' / 'TabContent'）。
+  const Tabs = ensureComponent('Tabs', () => document.createElement('div'));
+  const TabContent = ensureComponent('TabContent', () => document.createElement('div'));
 
   // 容器类（If / ForEach）：display:contents 让它们不参与布局
   const If = ensureComponent('If',
@@ -1369,6 +1640,7 @@
     SynchedPropertyNesedObjectPU,
     SubscriberManager, registerNamedRoute, ViewStackProcessor,
     Text, Button, Column, Row, Stack, List, ListItem, If, ForEach, LazyForEach, RelativeContainer,
+    Tabs, TabContent, TabsController, BarPosition, BarMode,
     FontWeight, VerticalAlign, HorizontalAlign, FlexAlign, TextAlign, ItemAlign, Color,
     TextOverflow, Alignment, Scroller,
     __arkui_dom_syncAlignRules: syncAlignRules,
@@ -1396,6 +1668,20 @@
     // V1 深度观测自省：断言"@Observed 确实产出了可观测代理"，而不只看渲染结果。
     // （Meta 这类非 @Observed 的嵌套对象必须返回 false —— 这是负向断言的依据。）
     __arkui_dom_isObserved: (v) => !!observedCells.get(v),
+    // Tabs 自省：证明"控制器真绑上了、标签真来自 tabBar、活动索引真的变了"，
+    // 而不是只看"某个 div 的 display 恰好是 none"。
+    __arkui_dom_tabsState: (el) => {
+      const st = el && el.__tabsState;
+      if (!st) return null;
+      return {
+        index: st.index,
+        count: st.contents.length,
+        labels: st.contents.map((c) => c.label),
+        barPosition: st.barPosition,
+        hasController: !!st.controller,
+        controller: st.controller,
+      };
+    },
     // 只读自省：供测试断言"装饰器确实在原型上装了访问器"，而不是只看渲染结果。
     // 注意 v2ProtoMeta 是 WeakMap（不可枚举，没有 keys()），所以只按类查询。
     __arkui_dom_v2Introspect: () => ({

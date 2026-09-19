@@ -212,15 +212,21 @@ catch { node.dataset[prop] = String(value); }
 |---|---|---|
 | 函数值 | `addEventListener(prop.replace(/^on/,'').toLowerCase(), fn)` | `onClick` → `click` |
 | `id` | `node.id` | 测试靠它定位 |
-| **语义分歧的**（必须抢在 CSS 同名前） | 专用处理函数 | `alignRules`、`maxLines`、`textOverflow`、`alignContent` |
-| 尺寸类 `cssPropSize` | `toCssSize`（number → `px`）| `fontSize/width/height/padding/margin/borderRadius` |
+| **语义分歧的**（必须抢在 CSS 同名前） | 专用处理函数 | `alignRules`、`maxLines`、`textOverflow`、`alignContent`、`tabBar`、**`Tabs.onChange`** |
+| **`Grid` 轨道模板** `GRID_TRACK_PROPS` | `normalizeTrackList`（ArkUI 裸数字 = vp → CSS 必须带 `px`） | `columnsTemplate`、`rowsTemplate` |
+| 尺寸类 `cssPropSize` | `toCssSize`（number → `px`）| `fontSize/width/height/padding/margin/borderRadius`、**`columnsGap`/`rowsGap`** |
 | 原样透传 `cssPropRaw` | `String(resolveResource(v))` | `fontWeight/opacity/zIndex/flexGrow/aspectRatio` |
-| 枚举类 `cssPropEnum` | 枚举值本身即 CSS 值 | `justifyContent/alignItems/textAlign/position/columnsTemplate` |
+| 枚举类 `cssPropEnum` | 枚举值本身即 CSS 值 | `justifyContent/alignItems/textAlign/position` |
+| **已识别但未实现** | 记 `layoutWarnings` 后**不 return**（语义丢失但值仍落 `data-*`） | `Grid.cellLength/maxCount/minCount/layoutDirection`、`Tabs.vertical/barMode/动画/回调…` |
 | **兜底** | `data-*` | 其余全部 |
 
-> ⚠️ `alignContent` 的 ArkUI 语义是"**叠放子项的对齐**"（即 `Stack({alignContent})`），与 CSS 的 `align-content`（多行内容分布）**完全不是一回事**。所以它必须在 `cssPropEnum` **之前**被拦掉。同理 `alignRules`、`maxLines`、`textOverflow`。
+> ⚠️ `alignContent` 的 ArkUI 语义是"**叠放子项的对齐**"（即 `Stack({alignContent})`），与 CSS 的 `align-content`（多行内容分布）**完全不是一回事**。所以它必须在 `cssPropEnum` **之前**被拦掉。同理 `alignRules`、`maxLines`、`textOverflow`、`tabBar`。
 >
 > 另外 `Stack` 的 `alignContent` 是 **create 选项**不是 setter，必须走 `applyCreateArgs`（L364），不是 `applyAttr`。
+>
+> ⚠️ **`onChange` 是分叉的**：`Slider` 之类是 DOM 事件，而 `Tabs` 的切换只能由运行时派发 → 必须按"栈顶节点有没有 `__tabsState`"分流。落成 `addEventListener('change')` 会得到一个**永不触发**的监听器（静默失效，比报错更难查）。
+>
+> ⚠️ **轨道模板的裸数字陷阱**：`columnsTemplate('100 1fr')` 直传会写出 `grid-template-columns: 100 1fr`——浏览器**整条声明作废且不报错**，表现为"Grid 完全没有列"。`normalizeTrackList` 把 `100`→`100px`、`50vp`→`50px`，同时保留 `1fr`/`auto`/`%`/`repeat()`/`minmax()`。断言不能只看字符串（`'100 1fr'` → `'100px 1fr'` 是字符串级），还要看**几何**（第 0 列真占 100px）——字符串对了但轨道没生效是可能的。
 
 ### 3.4 状态管理 v2 的契约（与 v1 机制完全不同）
 
@@ -374,6 +380,60 @@ item.child.label = 'x'   → 不通知 ✗（Meta 内部，未观测）
 ```
 最后一条不是 bug，是与真机一致的语义。它同样是**不静默**的：`@ObjectLink` 绑到非 `@Observed`
 对象上时，`SynchedPropertyNesedObjectPU.set` 会往 `layoutWarnings` 里写一条明确说明。
+
+### 3.6 `Grid` / `Tabs` 的契约（R9/R10，实测产物）
+
+**`Grid` / `GridItem`**（`fixtures/pages/TabsGrid.ts`）：
+
+```ts
+Grid.create();
+Grid.columnsTemplate('1fr 1fr 1fr');  Grid.rowsGap(4);  Grid.columnsGap(6);
+Grid.width('100%');  Grid.height(120);  Grid.id('gridA');
+{ /* GridItem.create(() => {}, false) + observedDeepRender()，同 ListItem */ }
+Grid.pop();
+```
+
+`GridItem` 走的是 `ListItem` 那套 **deep-render** 特例（`create(deepFn, false)` + 外部 `observedDeepRender`），
+轨道落位靠 CSS grid 的自动排布（ArkUI 默认 `GridDirection.Row`，与 CSS 的 row-major 一致）。
+
+**`Tabs` / `TabContent`**（注意与 `GridItem` 的形态**不同**）：
+
+```ts
+Tabs.create({ barPosition: BarPosition.Start, index: 0, controller: this.tabCtrl });
+Tabs.onChange((i: number) => { this.activeIdx = i; });
+Tabs.width('100%');  Tabs.height(100);
+
+TabContent.create(deepFn);        // ← 子构建器【当构造参数传】，不是 create() + 外部 deepRender
+TabContent.tabBar('T0');
+TabContent.pop();
+// × 3 …
+Tabs.pop();
+```
+
+落地的 DOM 结构（`Tabs` 自身在组件栈上，所以 `Tabs.width/height/onChange` 作用于**整体**）：
+
+```
+<div data-arkui-comp="Tabs">          flex column
+  <div data-arkui-tabs-bar>           barPosition=Start 在前 / End 在后（Tabs.pop 时才定序并建项）
+  <div data-arkui-tabs-content>       TabContent 挂这里 —— 不是 Tabs 自己
+```
+
+**为什么 `TabContent` 要"跳过"父节点另挂**：若直接挂进 `Tabs` 包装元素，它会和 tab bar 同级，
+且 `Tabs.width()/height()` 会作用到内容区而不是整体。所以由 `TabContent` 认领 `__tabsContentEl`，
+并把 `rec.parentNode` 也改指到内容区——**这一条不改会导致每次重渲染重建整个 bar**。
+另外它是**自定义挂载点**，所以必须自己补 `data-arkui-comp` 标记（`mountNode` 才会打；本步漏掉时
+`querySelectorAll('[data-arkui-comp="TabContent"]')` 返回 0——已实测踩过）。
+
+**切面板的公共实现** `onlyOneVisible(entries, active)`：只显示活动项（`R11 Swiper` 将复用同一机制）。
+`Tabs.pop()` 时才 `finalizeTabs`：按 `barPosition` 排定 bar 位置、按 `contents` 的标签重建 bar 项、
+应用初始 `index`。切换路径有两条，都汇到 `setActiveTab(st, i, fire)`：`TabsController.changeIndex(n)`
+与点击 bar 项；`fire=true` 时派发 `onChange`。
+
+**语义要点**：切走的面板**不销毁**（ArkUI 保留实例，与 `router` 的页面栈同理）——
+实现是 `display:none`，不是移除节点。越界 `changeIndex` 返回 `false` 并记 `layoutWarnings`，不静默。
+
+**自省钩子** `__arkui_dom_tabsState(el)` → `{index, count, labels, barPosition, hasController, controller}`：
+让断言能证明"控制器真绑上了、标签真来自 `tabBar`"，而不是只看"某个 div 的 `display` 恰好是 `none`"。
 
 ---
 
@@ -542,6 +602,14 @@ app.ability.AbilityConstant  app.ability.ConfigurationConstant
 13. **V1 深度观测的边界要与真机一致**，不要"顺手扩大"：`@Observed` 只观测该类的自身字段，
     嵌套的非 `@Observed` 对象内部变更**不应**触发重渲染。这条有负向断言守着；
     遇到绑定失败要记 `layoutWarnings`，不静默。
+14. **`on<X>` 不一定是 DOM 事件**。凡是有内部状态容器的节点（`Tabs`），其回调必须在通用事件分支
+    **之前**被拦截、由运行时自行派发。退化成 `addEventListener('change')` 会得到一个**永不触发**的
+    监听器——页面看着正常，回调从不执行（比报错难查得多）。
+15. **自定义挂载点要自己维护两条不变量**：① 打上 `data-arkui-comp` 标记（`mountNode` 会打，绕过它就得自己打，
+    否则外部 `querySelectorAll` 查不到，表现为"组件不存在"）；② `rec.parentNode` 指向**真实**挂载点
+    （重渲染靠它恢复位置，指错会重建整棵兄弟结构，如 `Tabs` 的 tab bar）。
+16. **单位必须显式归一化**。ArkUI 的裸数字是 vp，CSS 无单位数值会让**整条声明作废且不报错**。
+    凡是把 ArkUI 值透传成 CSS 语法的地方（轨道模板、长度），都要显式转换，并用**几何断言**兜底。
 
 ---
 
@@ -552,19 +620,19 @@ app.ability.AbilityConstant  app.ability.ConfigurationConstant
 ```
 == 组件库 ==
   ets-loader 注册名    149
-  手写实现（真布局语义）8：Text Button Column Row Stack List ListItem RelativeContainer
+  手写实现（真布局语义）10：Text Button Column Row Stack List ListItem RelativeContainer Tabs TabContent
   控制流宏（非组件）    3：If ForEach LazyForEach
-  骨架·有 DOM 画像     56（容器 26 / 叶子 30）
+  骨架·有 DOM 画像     54（容器 24 / 叶子 30）
   骨架·仅 data-*       85
   ⇒ 可建出的组件名      149 / 149
   原生输入类控件       6
-  属性元数据总数       1211（平均 8.1／组件，最多 TextInput=70）
+  属性元数据总数       1180（平均 7.9／组件，最多 TextInput=70）
 
 == 运行时 API ==
-  global 导出        50 个
+  global 导出        61 个
   状态类            ObservedPropertySimplePU ObservedPropertyObjectPU SynchedPropertySimpleOneWayPU SynchedPropertySimpleTwoWayPU SynchedPropertyNesedObjectPU
-  内置组件          Text Button Column Row Stack List ListItem If ForEach LazyForEach RelativeContainer
-  内部钩子 __arkui_dom_*  18 个
+  内置组件          Text Button Column Row Stack List ListItem If ForEach LazyForEach RelativeContainer Tabs TabContent
+  内部钩子 __arkui_dom_*  19 个
 
 == 状态管理 ==
   v1  状态类        5 个（包装对象模型）
@@ -578,40 +646,41 @@ app.ability.AbilityConstant  app.ability.ConfigurationConstant
   10 个：app.ability.AbilityConstant app.ability.ConfigurationConstant app.ability.UIAbility app.ability.Want data.preferences file.fs hilog net.http router window
 
 == 用例矩阵 ==
-  浏览器 run.sh     15 个：index rich leak layout widgets measure lazy provide v2 observe async ability router netfile persist
-  Electron          14 个：netfile layout rich index leak ability router widgets measure lazy provide async v2 observe
-  测试页            15 个
-  fixtures 转换产物  13 个：AsyncIO Detail Home Index Layout Lazy Measure NetFile Observe Provide Rich V2 Widgets
+  浏览器 run.sh     16 个：index rich leak layout widgets tabgrid measure lazy provide v2 observe async ability router netfile persist
+  Electron          15 个：netfile layout rich index leak ability router widgets tabgrid measure lazy provide async v2 observe
+  测试页            16 个
+  fixtures 转换产物  14 个：AsyncIO Detail Home Index Layout Lazy Measure NetFile Observe Provide Rich TabsGrid V2 Widgets
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          142.7 KB
-  test             68.8 KB
-  tools            33.2 KB
-  electron(src)    14.7 KB
-  docs             93.6 KB
-  fixtures         80.5 KB
+  runtime          156.1 KB
+  test             78.6 KB
+  tools            33.3 KB
+  electron(src)    14.9 KB
+  docs             115.3 KB
+  fixtures         90.8 KB
 
 == 逐文件（文档"文件职责"表的来源）==
-  runtime/arkui-dom-runtime.js      65444 B  63.9 KB
+  runtime/arkui-dom-runtime.js      79162 B  77.3 KB
   runtime/generated-components.js   57617 B  56.3 KB
   runtime/ohos-shims.js             23066 B  22.5 KB
   tools/extract.mjs                  6457 B  6.3 KB
   tools/gen-components.mjs           7775 B  7.6 KB
   tools/serve.py                     2559 B  2.5 KB
-  tools/stats.mjs                    9295 B  9.1 KB
+  tools/stats.mjs                    9367 B  9.1 KB
   tools/preflight.mjs                5108 B  5.0 KB
   tools/check-all.sh                 2792 B  2.7 KB
-  run.sh                             9225 B  9.0 KB
-  electron/run.sh                    6103 B  6.0 KB
+  run.sh                             9432 B  9.2 KB
+  electron/run.sh                    6256 B  6.1 KB
   electron/main.js                   6795 B  6.6 KB
   electron/preload.js                1961 B  1.9 KB
   package.json                       1089 B  1.1 KB
   .gitignore                          674 B  0.7 KB
-  README.md                         22654 B  22.1 KB
-  docs/ARCHITECTURE.md              42708 B  41.7 KB
-  docs/CAPABILITY.md                11641 B  11.4 KB
-  docs/DEVELOPING.md                19253 B  18.8 KB
-  docs/ROADMAP.md                   15725 B  15.4 KB
+  README.md                         26644 B  26.0 KB
+  THIRD-PARTY-NOTICES.md             8256 B  8.1 KB
+  docs/ARCHITECTURE.md              50806 B  49.6 KB
+  docs/CAPABILITY.md                15109 B  14.8 KB
+  docs/DEVELOPING.md                24218 B  23.7 KB
+  docs/ROADMAP.md                   21445 B  20.9 KB
   docs/surface-measurement.md        6496 B  6.3 KB
   fixtures/pages/AsyncIO.ts          6206 B  6.1 KB
   fixtures/pages/Detail.ts           3097 B  3.0 KB
@@ -624,6 +693,7 @@ app.ability.AbilityConstant  app.ability.ConfigurationConstant
   fixtures/pages/Observe.ts         11906 B  11.6 KB
   fixtures/pages/Provide.ts          6731 B  6.6 KB
   fixtures/pages/Rich.ts             9256 B  9.0 KB
+  fixtures/pages/TabsGrid.ts        10513 B  10.3 KB
   fixtures/pages/V2.ts              13447 B  13.1 KB
   fixtures/pages/Widgets.ts          4600 B  4.5 KB
   test/ability.html                  4695 B  4.6 KB
@@ -640,10 +710,11 @@ app.ability.AbilityConstant  app.ability.ConfigurationConstant
   test/provide.html                  4238 B  4.1 KB
   test/rich.html                     3794 B  3.7 KB
   test/router.html                   4288 B  4.2 KB
+  test/tabgrid.html                 10096 B  9.9 KB
   test/v2.html                       7235 B  7.1 KB
 ```
 
-**"149 / 149" 的准确含义**：149 个组件**名字**都能建出 DOM 节点（不崩、有基础标签/样式）。其中 **64 个有真实 DOM 画像**（8 手写 + 56 骨架），**85 个只落 `data-*`**（能建出来但视觉上是个 `div`）。这不等于"实现了 149 个组件"。
+**"149 / 149" 的准确含义**：149 个组件**名字**都能建出 DOM 节点（不崩、有基础标签/样式）。其中 **64 个有真实 DOM 画像**（10 手写 + 54 骨架），**85 个只落 `data-*`**（能建出来但视觉上是个 `div`）。这不等于"实现了 149 个组件"。
 
 **诚实的能力边界**（详见 `docs/CAPABILITY.md`）：
 
@@ -655,11 +726,13 @@ app.ability.AbilityConstant  app.ability.ConfigurationConstant
 | 状态管理 v2（`@ComponentV2/@Local/@Param/@Once/@Event/@Monitor/@Provider/@Consumer/@ObservedV2/@Trace/@Computed`） | ✅ 有测试（`run.sh v2`，26 条断言，浏览器 + Electron 双通过） |
 | v2 的已知简化 | ⚠️ `@Computed` 不缓存；`IMonitor.dirty` 每次赋值一条且 `path` 非点分路径；`@Reusable` 复用路径未实测 |
 | 布局 | ⚠️ 部分：`alignRules` 仅一层锚链，无约束求解器 |
+| `Grid` / `GridItem` 轨道布局 | ✅ 有测试（`run.sh tabgrid`）：`columnsTemplate`/`rowsTemplate` 真实轨道（含 ArkUI 裸数字 vp→px 归一化）、`columnsGap`/`rowsGap`、跨行换行（几何断言） |
+| `Tabs` / `TabContent` 切换 | ✅ 有测试（`run.sh tabgrid`）：`barPosition`、`index`、`TabsController.changeIndex`、`onChange`、点击 bar 切换、切走的面板不销毁 |
 | 虚拟滚动 | ✅ 1000 项 → 11 节点 |
 | 平台模块 | ⚠️ 10 个实现了；`media`/`notification`/`startAbilityForResult` 等未实现 |
 | 持久化 | ✅ Electron 真磁盘（shell 级验证）；浏览器 `localStorage` |
 | 动画 / 手势 | ❌ 未实现 |
-| `Navigation` / `Tabs` 切换 / `Swiper` | ⚠️ 骨架可建，无切换语义 |
+| `Navigation` / `Swiper` | ⚠️ 骨架可建，无切换语义（`Swiper` 待 R11，将复用 `onlyOneVisible`） |
 | 85 个骨架组件的视觉语义 | ❌ 仅 `data-*` |
 
 ---
@@ -668,21 +741,21 @@ app.ability.AbilityConstant  app.ability.ConfigurationConstant
 
 | 文件 | 体积 | 职责 | 改它的时机 |
 |---|---|---|---|
-| `runtime/arkui-dom-runtime.js` | 63.9 KB | v1 状态类 + 深度观测（`@Observed`/`@ObjectLink`）、`ViewPU`/`ViewV2`、装饰器层、组件栈、布局、`LazyForEach`、路由 | 实现新语义（**手写优先**） |
+| `runtime/arkui-dom-runtime.js` | 77.3 KB | v1 状态类 + 深度观测（`@Observed`/`@ObjectLink`）、`ViewPU`/`ViewV2`、装饰器层、组件栈、布局（含 `Grid` 轨道）、`Tabs`/`TabContent` 与 `TabsController`、`LazyForEach`、路由 | 实现新语义（**手写优先**） |
 | `runtime/generated-components.js` | 56.3 KB | 149 个组件骨架（**生成物**） | **不手改**；改 `tools/gen-components.mjs` 后重新生成，`--check` 会守门 |
 | `runtime/ohos-shims.js` | 22.5 KB | `@ohos:*` 模块 + 持久化后端 | 新增平台模块 |
 | `tools/extract.mjs` | 6.3 KB | hvigor 缓存 `.ts` → 可执行 `.js`；**装饰器作用域内绑定前奏 + 未就绪守卫**（§3.4） | 产物形态/装饰器集合变化时 |
 | `tools/gen-components.mjs` | 7.6 KB | ets-loader 组件 JSON → 骨架注册表（`--check` 只校验不写） | 组件元数据/画像规则更新时 |
 | `tools/serve.py` | 2.5 KB | 静态服务 + `/echo` + `/slow`（测超时） | 需要新测试端点时 |
-| `tools/stats.mjs` | 8.3 KB | 本文档所有数字的来源（`--json` 机器可读） | 覆盖范围变化时 |
+| `tools/stats.mjs` | 9.1 KB | 本文档所有数字的来源（`--json` 机器可读） | 覆盖范围变化时 |
 | `tools/preflight.mjs` | 5.0 KB | 环境自检（工具链/宿主/可执行位） | 外部依赖变化时 |
 | `tools/check-all.sh` | 2.7 KB | 一条命令做完验收，退出码只看被调命令 | 新增验收步骤时 |
-| `run.sh` | 9.0 KB | 浏览器 15 用例驱动 | 新增用例 |
-| `electron/run.sh` | 6.0 KB | Electron 14 用例 + 磁盘验证 | 新增用例 |
+| `run.sh` | 9.2 KB | 浏览器 16 用例驱动 | 新增用例 |
+| `electron/run.sh` | 6.1 KB | Electron 15 用例 + 磁盘验证 | 新增用例 |
 | `electron/main.js` | 6.6 KB | 主进程：offscreen 截图、**像素级**空白检测 | 截图/验证策略变化时 |
 | `electron/preload.js` | 1.9 KB | `contextBridge` 暴露 Node fs | 宿主能力变化时 |
-| `fixtures/pages/*.ts` | 80.5 KB | **冻结的**官方转换产物（13 个，含 `V2.ts`/`Observe.ts`） | 几乎不改（见不变量 5） |
-| `test/*.html` | 68.8 KB | 断言页（读 `#result` 节点文本） | 新增用例 |
+| `fixtures/pages/*.ts` | 90.8 KB | **冻结的**官方转换产物（14 个，含 `V2.ts`/`Observe.ts`/`TabsGrid.ts`） | 几乎不改（见不变量 5） |
+| `test/*.html` | 78.6 KB | 断言页（读 `#result` 节点文本） | 新增用例 |
 
 ---
 

@@ -40,6 +40,7 @@ prepare() {
     rich|leak) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/Rich.ts" "$ROOT/build/rich.js" >/dev/null || return 1 ;;
     layout) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/Layout.ts" "$ROOT/build/layout.js" >/dev/null || return 1 ;;
     widgets) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/Widgets.ts" "$ROOT/build/widgets.js" >/dev/null || return 1 ;;
+    tabgrid) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/TabsGrid.ts" "$ROOT/build/tabsgrid.js" >/dev/null || return 1 ;;
     measure) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/Measure.ts" "$ROOT/build/measure.js" >/dev/null || return 1 ;;
     lazy) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/Lazy.ts" "$ROOT/build/lazy.js" >/dev/null || return 1 ;;
     provide) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/Provide.ts" "$ROOT/build/provide.js" >/dev/null || return 1 ;;
@@ -107,7 +108,7 @@ case "${1:-layout}" in
   all)
     rc=0
     # 全矩阵：每个用例都是独立 Electron 进程
-    for t in index rich layout widgets measure lazy provide v2 observe ability router async; do
+    for t in index rich layout widgets tabgrid measure lazy provide v2 observe ability router async; do
       run_one "$t" || rc=1
       echo
     done
@@ -127,6 +128,6 @@ case "${1:-layout}" in
     run_one netfile "?phase=2" netfile-2 || exit 1
     echo
     verify_disk ;;
-  layout|rich|index|leak|ability|router|widgets|measure|lazy|provide|async|v2|observe) run_one "$1" ;;
-  *) echo "用法: bash electron/run.sh [layout|rich|index|leak|ability|router|widgets|measure|lazy|provide|async|v2|observe|netfile|all]"; exit 2 ;;
+  layout|rich|index|leak|ability|router|widgets|tabgrid|measure|lazy|provide|async|v2|observe) run_one "$1" ;;
+  *) echo "用法: bash electron/run.sh [layout|rich|index|leak|ability|router|widgets|tabgrid|measure|lazy|provide|async|v2|observe|netfile|all]"; exit 2 ;;
 esac

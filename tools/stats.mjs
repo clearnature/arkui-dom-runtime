@@ -13,7 +13,8 @@ const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 // ── 组件画像 ──
 // 注意：generated 里的条目**不是**全都生效——registerGeneratedComponents 里
 // `if (components[name]) continue` 让手写实现优先。所以覆盖数必须减掉手写的那批。
-const HANDWRITTEN = ['Text', 'Button', 'Column', 'Row', 'Stack', 'List', 'ListItem', 'RelativeContainer'];
+const HANDWRITTEN = ['Text', 'Button', 'Column', 'Row', 'Stack', 'List', 'ListItem', 'RelativeContainer',
+  'Tabs', 'TabContent'];
 const CONTROL_FLOW = ['If', 'ForEach', 'LazyForEach'];   // 不在 149 注册表内，单独实现
 
 const gen = read('runtime/generated-components.js');
@@ -56,7 +57,7 @@ const globals = assignBlock
   .filter((s) => /^[A-Za-z_$][\w$]*$/.test(s));
 const STATE_CLASSES = globals.filter((g) => /Property.*PU$/.test(g));
 const BUILTIN_COMPONENTS = ['Text', 'Button', 'Column', 'Row', 'Stack', 'List', 'ListItem',
-  'If', 'ForEach', 'LazyForEach', 'RelativeContainer'].filter((c) => globals.includes(c));
+  'If', 'ForEach', 'LazyForEach', 'RelativeContainer', 'Tabs', 'TabContent'].filter((c) => globals.includes(c));
 const INTERNAL = globals.filter((g) => g.startsWith('__arkui_dom_'));
 
 // 状态管理 v2：装饰器表（V2 的能力由装饰器提供，不由状态类提供）

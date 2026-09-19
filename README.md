@@ -86,10 +86,10 @@ tools/serve.py                 极简静态服务（端口由 OS 分配，避免
 tools/preflight.mjs            环境自检（工具链 / 宿主 / 可执行位）
 tools/check-all.sh             一条命令做完所有验收
 tools/stats.mjs                覆盖范围统计（文档里的数字都来自它）
-test/*.html                    断言页（15 个用例）
-fixtures/                      冻结的 ets-loader 转换产物（13 个，测试的输入）
-run.sh                         浏览器 15 用例驱动
-electron/run.sh                Electron 14 用例 + 真实磁盘验证
+test/*.html                    断言页（16 个用例）
+fixtures/                      冻结的 ets-loader 转换产物（14 个，测试的输入）
+run.sh                         浏览器 16 用例驱动
+electron/run.sh                Electron 15 用例 + 真实磁盘验证
 docs/                          ARCHITECTURE / DEVELOPING / ROADMAP / CAPABILITY
 ```
 
@@ -388,6 +388,48 @@ PASS 替换 item.child 整体（@Observed 的字段写入）触发重渲染：'m
 > （`__decorate([undefined], Item)` 不报错、原样返回类）。所以抽取前奏里加了守卫，
 > 绑到的名字不是函数就 `throw`。**加装饰器必须同时改运行时表和 `DECORATOR_NAMES`。**
 
+## R9/R10：`Grid` 真实轨道 + `Tabs` 切换 ✅
+
+`Grid`/`Tabs` 此前只是"能建出节点"（生成的骨架），本轮补上真实语义（51 条断言，双端通过）。
+
+**先测量**：新建 `fixtures/pages/TabsGrid.ts` 在 HarmonyOS 工程里 `devecocli build`，
+读 hvigor 缓存里的转换产物，才发现 `TabContent` 的形态和别的容器**都不一样**：
+
+```ts
+TabContent.create(deepFn);      // ← 子构建器【当构造参数传】
+TabContent.tabBar('T0');        //   （GridItem/ListItem 是 create(()=>{}, false) + 外部 deepRender）
+TabContent.pop();  …  Tabs.pop();
+```
+
+```
+$ bash run.sh tabgrid
+=== ALL PASS ===
+PASS columnsTemplate 透传：'1fr 1fr 1fr'
+PASS columnsGap → columnGap = '6px'                ← 此前它们只落 data-*，版式静默错
+PASS rowsGap → rowGap = '4px'
+PASS 每列宽 = 96.0（期望 (300-2×6)/3 = 96）         ← 几何断言，不是看字符串
+PASS 行距 = 行高 + rowsGap(58.0 + 4 = 62.0, 实测 62.0)
+PASS 裸数字轨道归一化：'100 1fr' → '100px 1fr'     ← ArkUI 裸数字=vp，CSS 必须带单位
+PASS 归一化后第 0 列真占 100px（实测 100.0）
+PASS barPosition=Start → tab bar 在内容之前
+PASS tabBar 标签顺序 = 'T0,T1,T2'
+PASS 初始恰好第 0 个可见
+PASS TabsController 已绑定 = true                  ← 机制自省，不只看 display
+PASS changeIndex(1) 后恰好第 1 个可见
+PASS onChange 已触发且 @State 驱动重渲染：'idx=1'
+PASS 点击 bar 项后恰好第 2 个可见
+PASS 隐藏的 TabContent 仍留在 DOM 中（未被销毁）    ← 与 router 的"页面实例保留"同理
+PASS 越界已记入 layoutWarnings（0 → 1）            ← 负向断言
+```
+
+**两个只能靠跑才发现的坑**：
+
+1. **`Tabs.onChange` 不能当 DOM 事件**。`onChange` 走通用分支会变成 `addEventListener('change')`
+   ——一个**永不触发**的监听器（静默失效）。必须拦在通用事件分支之前，由 Tabs 收集、切换时派发。
+2. **`TabContent` 是自定义挂载点**（要挂进 `Tabs` 的内容区而不是包装元素），于是绕过了 `mountNode`
+   → 漏了 `data-arkui-comp` 标记，测试 `querySelectorAll('[data-arkui-comp="TabContent"]')` 返回 0。
+   `rec.parentNode` 也必须改指内容区，否则重渲染会重建整个 bar。
+
 ## 工程化 ✅
 
 项目最初不是 git 仓库（287 MB 里 283 MB 是解压的 Electron），改动不可审计、回归不可复现。
@@ -401,24 +443,27 @@ PASS 替换 item.child 整体（@Observed 的字段写入）触发重渲染：'m
 | 生成物守门 | `npm run check:gen` | `--check` 只比对不落盘，漂移即非 0 退出 |
 | 覆盖统计 | `npm run stats` | 文档里的所有数字都由它产出（`--json` 机器可读） |
 
-`npm run check` 当前：**浏览器 15 用例 + Electron 14 用例全绿**。
+`npm run check` 当前：**浏览器 16 用例 + Electron 15 用例全绿**。
 
 ## 下一步
 
 **权威清单在 `docs/ROADMAP.md`**（每项带可复现的验收命令）。当前优先：
 
-1. **R9/R10** `Grid` 真实布局、`Tabs`/`TabContent` 切换（85 个骨架组件目前只落 `data-*`）
-4. **R14** 多层锚链 + `Guideline` + `bias`（`alignRules` 目前只支持一层）
+1. **R11** `Swiper` 轮播（复用 `Tabs` 已抽出的 `onlyOneVisible`）
+2. **R12** `Navigation`/`NavDestination` 栈式导航
+3. **R14** 多层锚链 + `Guideline` + `bias`（`alignRules` 目前只支持一层）
+4. **R13/R15–R17** 纯绘制类组件（`Gauge`/`DataPanel`/`Rating`）、真实文本换行测量、变高列表项
 
 **仍未覆盖**：动画/手势、`Navigation`/`Swiper` 切换语义、`@ohos:media`/`notification`、
 浏览器侧真文件系统（OPFS 在 headless Chrome 会挂起，现用 `localStorage` 兜底）。
 **别把没验的当结论**——`docs/CAPABILITY.md` 里有逐项的能力矩阵。
 
-**② 留下的已知待办（别当已完成）**：
+**已知待办（别当已完成）**：
 
 - `ForEach` 现在是「数组变了就整体重建」，**没有键级 diff**
 - 父组件重渲染时参数推送走 `updateStateVarsOfChildByElmtId`，但**子视图内部的 elmtId 迁移未处理**（复杂嵌套可能出问题）
-- `Repeat` / `Navigation` / 动画 / `Grid` 自适应 / `Swiper` **未覆盖**
+- `Repeat` / 动画 / `Tabs.vertical`/`barMode` / `Grid` 无模板时的 `cellLength` 自适应 **未覆盖**
+  （这些会记 `layoutWarnings`，不是静默忽略）
 - **布局语义仍不完整**：没有约束求解器，`alignRules` 只支持一层锚链
 
 ---

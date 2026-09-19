@@ -4,8 +4,9 @@
 
 已完成的机制说明见 `docs/ARCHITECTURE.md`；怎么改见 `docs/DEVELOPING.md`。
 
-**当前状态**：`npm run check` 全绿（preflight + 生成物一致 + 浏览器 15 用例 + Electron 14 用例）。
-v1/v2 状态管理（含 v1 深度观测）已落地。**下一步优先级：R9/R10（Grid、Tabs 真实语义）→ R14（多层锚链）。**
+**当前状态**：`npm run check` 全绿（preflight + 生成物一致 + 浏览器 16 用例 + Electron 15 用例）。
+v1/v2 状态管理（含 v1 深度观测）、`Grid` 真实轨道、`Tabs`/`TabContent` 切换均已落地。
+**下一步优先级：R11（`Swiper`，复用 `onlyOneVisible`）→ R12（`Navigation`）→ R14（多层锚链）→ R13/R15–R17。**
 R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分发前才需决定。
 
 ---
@@ -26,6 +27,7 @@ R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分�
 | ③ | `@Provide` / `@Consume` / `@Watch` | `bash run.sh provide` |
 | ③ | **V1 深度观测**（`@Observed` + `@ObjectLink`，Proxy 实现） | `bash run.sh observe`（20 条断言，含负向） |
 | ③ | **状态管理 v2**（`ViewV2` + 11 个装饰器） | `bash run.sh v2`（26 条断言，浏览器 + Electron 双通过） |
+| ③ | **`Grid`/`GridItem` 真实轨道** + `Tabs`/`TabContent` 切换 | `bash run.sh tabgrid`（51 条断言，含几何与机制自省；双端通过） |
 | ③ | `@ohos:*` 别名层 + CommonJS 装载 + 真 fetch | `bash run.sh async` |
 | ③ | `UIAbility` 启动链路 | `bash run.sh ability` |
 | ③ | `router` 页面栈（返回时保留状态） | `bash run.sh router` |
@@ -36,7 +38,7 @@ R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分�
 | **P0** | 统一验收门禁（退出码可信） | `npm run check`；制造漂移 → exit 1 |
 | **P0** | `--check` 真正只校验不落盘 | `node tools/gen-components.mjs --check` |
 
-当前：**浏览器 15 用例 + Electron 14 用例全绿**（`npm run check` → `exit 0`）。
+当前：**浏览器 16 用例 + Electron 15 用例全绿**（`npm run check` → `exit 0`）。
 
 ---
 
@@ -56,7 +58,8 @@ R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分�
 | P0 | ~~R5a 入向合规：第三方许可清单~~ **已完成** | 中（分发前必须） | 低 |
 | — | R5b 出向授权（`LICENSE`）——**本地开发不需要，降级到"分发前"** | 无（现在） | 低 |
 | P1 | ~~R6–R8 状态管理 v2 + V1 深度观测~~ **R6/R7/R8 已完成** | 高 → 已拿到 | — |
-| P2 | R9–R13 组件视觉语义 | 中（85 个骨架只有 `data-*`） | 中 |
+| P2 | ~~R9–R10 Grid / Tabs 真实语义~~ **已完成** | — | — |
+| P2 | R11–R13 其余组件视觉语义 | 中（85 个骨架只有 `data-*`） | 中 |
 | P3 | R14–R17 布局引擎 | 中高（真实页面一定踩） | 高 |
 | P4 | R18–R21 平台模块 | 中 | 低–中 |
 | P5 | R22–R23 动画/手势 | 中 | 中 |
@@ -228,27 +231,47 @@ bash run.sh observe && bash electron/run.sh observe   # 20 条断言双通过
 
 > 现状：85 个组件"能建出节点但视觉上是个 `div`"。按**真实页面出现频率**挑，不按字母表刷。
 
-### R9 — `Grid` / `GridItem` 真实布局
+### ~~R9 — `Grid` / `GridItem` 真实布局~~ ✅ 已完成
 
 **内容**：`columnsTemplate`/`rowsTemplate`/`columnsGap`/`rowsGap` → 真实 grid 轨道；`GridItem` 落入正确轨道。
 
-**验收**：断言 `getComputedStyle(grid).gridTemplateColumns === '1fr 1fr'` 且子项实际占位宽度符合 2 列。
+**实现**：`columnsGap`/`rowsGap` 加进 `cssPropSize`（此前只落 `data-*`，**版式静默错**）；
+轨道模板走新增的 `normalizeTrackList`（ArkUI 裸数字 = vp → CSS 必须带 `px`，否则整条声明作废且不报错）。
+`Grid.cellLength`/`maxCount`/`minCount`/`layoutDirection`（无模板时的轨道划分）**未实现**，
+但进 `GRID_UNSUPPORTED` 记 `layoutWarnings`，不静默。
 
-**触及**：`runtime/arkui-dom-runtime.js`、`test/components.html`
+**验收（已执行）**：`bash run.sh tabgrid` —— 断言**几何**而非只断字符串：
+3 列每列 96px（`(300-2×6)/3`）、第 1 项左移一列（+102）、第 4 项换行回第 0 列、
+行距 = 行高 + `rowsGap`（关系式，不钉死绝对行高）、`'100 1fr'` 归一化后第 0 列**真占 100px**。
 
-### R10 — `Tabs` / `TabContent` 切换
+**触及**：`runtime/arkui-dom-runtime.js`、`fixtures/pages/TabsGrid.ts`、`test/tabgrid.html`、`run.sh`
 
-**内容**：`Tabs({barPosition})` + `TabContent().tabBar(...)` 的切换语义（当前骨架能建节点但无切换）。需要 `TabsController`。
+### ~~R10 — `Tabs` / `TabContent` 切换~~ ✅ 已完成
 
-**验收**：断言初始只显示第 0 个 `TabContent`；调 `controller.changeIndex(1)` 后显示第 1 个、第 0 个隐藏。
+**内容**：`Tabs({barPosition, index, controller})` + `TabContent().tabBar('T0')` 的切换语义 + `TabsController`。
 
-**触及**：`runtime/arkui-dom-runtime.js`、`test/components.html`
+**实测契约**（`ARCHITECTURE.md` §3.6）：`TabContent.create(deepFn)` 把子构建器**当构造参数传**
+（与 `GridItem`/`ListItem` 的 `create(()=>{},false)` + 外部 `deepRender` **不同**）；
+`TabContent` 必须挂进 `Tabs` 的内容区（`__tabsContentEl`）而不是包装元素，且 `rec.parentNode` 同步改指。
+
+**两个静默失效陷阱**（都真实踩到）：
+1. `Tabs.onChange` 必须在通用事件分支**之前**拦截 —— 否则变成一个永不触发的 `addEventListener('change')`。
+2. `TabContent` 是自定义挂载点 → 绕过了 `mountNode` → 必须自己补 `data-arkui-comp` 标记。
+
+**验收（已执行）**：`bash run.sh tabgrid`（51 条断言，双端通过）——`barPosition` 定序、标签顺序 `T0,T1,T2`、
+"恰好一个可见"、`changeIndex(1)`/点击 bar 切换、`onChange` 驱动 `@State` 重渲染、
+切走的面板**不销毁**、越界 `changeIndex` 记 `layoutWarnings`（负向）。
+
+**破坏验证**：把 `onlyOneVisible` 改空操作 → **4 条断言失败**（含初始可见性）；
+把 `normalizeTrackList` 改直传 + 去掉两个 gap → **9 条断言失败**（字符串级 + 几何级都有）。
+
+**触及**：`runtime/arkui-dom-runtime.js`、`fixtures/pages/TabsGrid.ts`、`test/tabgrid.html`、`run.sh`、`electron/run.sh`
 
 ### R11 — `Swiper` 轮播
 
 **内容**：`Swiper({index, autoPlay, loop, indicator})` 的当前页/切换/指示点。
 
-**依赖**：R10（共享"多子项只显示一个"的机制，先抽出公共实现）。
+**依赖**：R10 ✅ —— "多子项只显示一个"的公共实现已抽出为 `onlyOneVisible(entries, active)`，直接复用。
 
 **验收**：断言初始页、`controller.showNext()` 后页索引变化、指示点数 = 子项数。
 

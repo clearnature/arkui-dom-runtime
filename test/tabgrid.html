@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R9/R10 Grid 真实轨道 + Tabs 切换语义</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  /* 宽 300px 是刻意固定的：#root 无 padding/border，Grid.width('100%') 就等于 300，
+     三列 1fr + columnsGap 6 → 每列 (300-12)/3 = 96。几何断言依赖这个确定值。 */
+  #root { width: 300px; height: 400px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R9 Grid 真实轨道 / R10 Tabs+TabContent 切换</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../build/tabsgrid.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const near = (a, b, tol) => Math.abs(a - b) <= (tol === undefined ? 0.5 : tol);
+    const rectOf = (el) => el.getBoundingClientRect();
+
+    try {
+      __arkui_dom_loadRoute('pages/TabsGrid', root);
+      await tick(50);
+      check((root.textContent || '').includes('TabsGrid'), 'TabsGrid 页面已渲染');
+
+      // ══════════ R9-1：三列轨道 + 双向 gap ══════════
+      const gA = root.querySelector('#gridA');
+      check(!!gA, 'Grid#gridA 已创建');
+      check(gA.style.gridTemplateColumns === '1fr 1fr 1fr',
+        `columnsTemplate 透传：'${gA.style.gridTemplateColumns}'`);
+      const csA = getComputedStyle(gA);
+      check(csA.display === 'grid', `Grid 计算样式 display = '${csA.display}'`);
+      check(csA.columnGap === '6px', `columnsGap → columnGap = '${csA.columnGap}'`);
+      check(csA.rowGap === '4px', `rowsGap → rowGap = '${csA.rowGap}'`);
+
+      const items = [...gA.querySelectorAll('[data-arkui-comp="GridItem"]')];
+      check(items.length === 5, `GridItem 数量 = ${items.length}`);
+
+      const gw = rectOf(gA).width;
+      check(near(gw, 300, 1), `Grid 宽 = ${gw.toFixed(1)}（断言基准 300）`);
+
+      const x0 = rectOf(items[0]).left - rectOf(gA).left;
+      const w0 = rectOf(items[0]).width;
+      const ws = items.map((it) => rectOf(it).width);
+      check(Math.max(...ws) - Math.min(...ws) <= 0.5,
+        `5 个 GridItem 宽度一致（max-min = ${(Math.max(...ws) - Math.min(...ws)).toFixed(2)}）`);
+      check(near(w0, 96, 1), `每列宽 = ${w0.toFixed(1)}（期望 (300-2×6)/3 = 96）`);
+      check(near(x0, 0, 0.5), `第 0 项贴左边缘 (Δ=${x0.toFixed(2)})`);
+
+      const r1 = rectOf(items[1]).left - rectOf(gA).left;
+      check(near(r1, 102, 1), `第 1 项左移一列 (Δ=${r1.toFixed(1)} = 96+6)`);
+      check(near(rectOf(items[1]).top, rectOf(items[0]).top, 0.5),
+        '第 1 项与第 0 项同一行（top 相同）');
+
+      // 第 4 项换行：回到第 0 列，且 rowGap 生效（用"关系式"断言，不钉死行高绝对值）
+      const x3 = rectOf(items[3]).left - rectOf(gA).left;
+      check(near(x3, x0, 0.5), `第 4 项换行回到第 0 列 (Δ=${x3.toFixed(2)})`);
+      const pitch = rectOf(items[3]).top - rectOf(items[0]).top;
+      const h0 = rectOf(items[0]).height;
+      check(pitch > 0, `第 4 项在下一行 (行距 = ${pitch.toFixed(1)})`);
+      check(near(pitch, h0 + 4, 0.6),
+        `行距 = 行高 + rowsGap(${h0.toFixed(1)} + 4 = ${(h0 + 4).toFixed(1)}, 实测 ${pitch.toFixed(1)})`);
+
+      // ══════════ R9-2：轨道尺寸单位归一化（裸数字 = vp → px）══════════
+      const gB = root.querySelector('#gridB');
+      check(!!gB, 'Grid#gridB 已创建');
+      check(gB.style.gridTemplateColumns === '100px 1fr',
+        `裸数字轨道归一化：'100 1fr' → '${gB.style.gridTemplateColumns}'`);
+      check(gB.style.gridTemplateRows === '40px 1fr',
+        `rowsTemplate 归一化：'40 1fr' → '${gB.style.gridTemplateRows}'`);
+      const bItems = [...gB.querySelectorAll('[data-arkui-comp="GridItem"]')];
+      check(bItems.length === 2, `gridB 有 ${bItems.length} 个 GridItem`);
+      check(near(rectOf(bItems[0]).width, 100, 1),
+        `归一化后第 0 列真占 100px（实测 ${rectOf(bItems[0]).width.toFixed(1)}）`);
+      check(near(rectOf(bItems[1]).width, 200, 1),
+        `归一化后第 1 列真占 200px（实测 ${rectOf(bItems[1]).width.toFixed(1)}）`);
+      check(near(rectOf(bItems[0]).height, 40, 1),
+        `rowsTemplate 第 0 行真占 40px（实测 ${rectOf(bItems[0]).height.toFixed(1)}）`);
+
+      // ══════════ R10：Tabs / TabContent 切换 ══════════
+      const tabs = root.querySelector('#tabsA');
+      check(!!tabs, 'Tabs#tabsA 已创建');
+      const bar = tabs.querySelector('[data-arkui-tabs-bar]');
+      const contents = [...tabs.querySelectorAll('[data-arkui-comp="TabContent"]')];
+      check(!!bar, 'tab bar 已生成');
+      check(contents.length === 3, `TabContent 数量 = ${contents.length}`);
+      check(tabs.firstElementChild === bar, 'barPosition=Start → tab bar 在内容之前');
+
+      const barItems = [...bar.querySelectorAll('[data-arkui-tabbar-item]')];
+      check(barItems.length === 3, `bar 项数量 = ${barItems.length}`);
+      check(barItems.map((b) => b.textContent).join(',') === 'T0,T1,T2',
+        `tabBar 标签顺序 = '${barItems.map((b) => b.textContent).join(',')}'`);
+      check(barItems.map((b) => b.dataset.arkuiTabbarItem).join(',') === '0,1,2',
+        'bar 项索引与 TabContent 顺序一致');
+
+      const disp = (el) => getComputedStyle(el).display;
+      // 断言"恰好一个可见且是第 N 个"，而不是"第 N 个不是 none" ——
+      // 后者在"全都可见"时也成立，等于没有牙齿（本轮实测出来的弱断言）。
+      const visibleIdx = () => contents.map((c, k) => (disp(c) === 'none' ? -1 : k)).filter((k) => k >= 0);
+      const onlyVisible = (want) => {
+        const v = visibleIdx();
+        return v.length === 1 && v[0] === want ? `恰好第 ${want} 个可见` : `可见的是 [${v.join(',')}]（应为 [${want}]）`;
+      };
+      const vis0 = onlyVisible(0);
+      check(vis0 === '恰好第 0 个可见', `初始${vis0}`);
+      check(barItems[0].dataset.arkuiTabbarActive === 'true', '初始高亮第 0 个 bar 项');
+
+      const idxEl = root.querySelector('#idxline');
+      check(!!idxEl && idxEl.textContent === 'idx=0', `初始 idx 文本 = '${idxEl && idxEl.textContent}'`);
+
+      // ── 机制自省：不能只看渲染结果，还要证明控制器真绑上了 ──
+      const st = __arkui_dom_tabsState(tabs);
+      check(!!st, '自省钩子 __arkui_dom_tabsState 可用');
+      check(st && st.count === 3, `自省 count = ${st && st.count}`);
+      check(st && st.labels.join(',') === 'T0,T1,T2', `自省 labels = ${st && st.labels.join(',')}`);
+      check(st && st.barPosition === 'start', `自省 barPosition = ${st && st.barPosition}`);
+      check(st && st.hasController === true, `TabsController 已绑定 = ${st && st.hasController}`);
+
+      // ── ① 通过页面里的 Button 调 controller.changeIndex(1) ──
+      const goBtn = [...root.querySelectorAll('button')].find((b) => b.textContent === 'go1');
+      check(!!goBtn, 'Button go1 已创建');
+      goBtn.click();
+      await tick(50);
+      check(onlyVisible(1) === '恰好第 1 个可见', `changeIndex(1) 后${onlyVisible(1)}`);
+      check(idxEl.textContent === 'idx=1',
+        `onChange 已触发且 @State 驱动重渲染：'${idxEl.textContent}'`);
+      check(barItems[1].dataset.arkuiTabbarActive === 'true'
+        && barItems[0].dataset.arkuiTabbarActive === 'false', '高亮跟随到第 1 个');
+      check(__arkui_dom_tabsState(tabs).index === 1, `自省 index = ${__arkui_dom_tabsState(tabs).index}`);
+
+      // ── ② 点 tab bar 切到第 2 个 ──
+      barItems[2].click();
+      await tick(50);
+      check(onlyVisible(2) === '恰好第 2 个可见', `点击 bar 项后${onlyVisible(2)}`);
+      check(idxEl.textContent === 'idx=2', `idx 文本 = '${idxEl.textContent}'`);
+
+      // ── ③ 切走的面板不被销毁（ArkUI 保留实例/状态）──
+      check(contents[0].isConnected && contents[1].isConnected,
+        '隐藏的 TabContent 仍留在 DOM 中（未被销毁）');
+      const page0 = contents[0].textContent;
+      barItems[0].click();
+      await tick(50);
+      check(onlyVisible(0) === '恰好第 0 个可见' && contents[0].textContent === page0,
+        `切回第 0 个：${onlyVisible(0)}，内容 '${contents[0].textContent}'`);
+
+      // ── 负向：越界索引必须被拒绝并留下诊断（不是静默）──
+      const warnBefore = __arkui_dom_layout_warnings.length;
+      const okNeg = __arkui_dom_tabsState(tabs).controller.changeIndex(99);
+      const warnAfter = __arkui_dom_layout_warnings.length;
+      check(okNeg === undefined || okNeg === false, '越界 changeIndex 不返回值/返回 false');
+      check(__arkui_dom_tabsState(tabs).index === 0, '越界后 index 未变');
+      check(warnAfter > warnBefore,
+        `越界已记入 layoutWarnings（${warnBefore} → ${warnAfter}）`);
+      check(String(__arkui_dom_layout_warnings[warnAfter - 1]).includes('越界'),
+        `诊断原文：'${__arkui_dom_layout_warnings[warnAfter - 1]}'`);
+
+      lines.push(`ELMT ${__arkui_dom_elmtRecords.size}`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const el = document.getElementById('result');
+    el.textContent = lines.join('\n');
+    el.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

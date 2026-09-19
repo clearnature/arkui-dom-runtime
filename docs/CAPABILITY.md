@@ -8,8 +8,8 @@
 cd /data/training/cli/arkui-dom-runtime
 npm run check                   # 全部验收：preflight + 生成物一致 + 浏览器 + Electron（退出码可信）
 npm run check:quick             # 跳过 Electron
-./run.sh all                    # 浏览器侧：14 个用例（Chrome headless）
-./electron/run.sh all           # Electron 侧：13 个用例 + 真实磁盘核验
+./run.sh all                    # 浏览器侧：16 个用例（Chrome headless）
+./electron/run.sh all           # Electron 侧：15 个用例 + 真实磁盘核验
 npm run stats                   # 覆盖范围统计（本文档的数字都来自它）
 npm run preflight               # 环境自检（缺工具链/宿主/可执行位会明确报错）
 node tools/gen-components.mjs   # 重新生成 149 个组件骨架
@@ -68,6 +68,10 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 | DOM 标签画像（`Text→div`/`Image→img`/`Progress→progress`/`Divider→hr`/`Slider→input[range]`…） | ✅ | widgets |
 | 原生控件参数映射（`placeholder`/`text`/`min`/`max`/`step`/`value`/`total`） | ✅ | widgets |
 | `Grid`/`columnsTemplate` → CSS grid；`GridItem` 深渲染 | ✅ | widgets |
+| **`Grid` 真实轨道**：`columnsTemplate`/`rowsTemplate` 落下真实 `grid-template-*`，`columnsGap`/`rowsGap` → `columnGap`/`rowGap` | ✅ | tabgrid（几何断言：3 列每列 96px） |
+| **`Grid` 轨道尺寸单位归一化**：ArkUI 裸数字 = vp → CSS `px`（`'100 1fr'` → `'100px 1fr'`），保留 `1fr`/`auto`/`%`/`repeat()`/`minmax()` | ✅ | tabgrid（第 0 列真占 100px） |
+| **`Grid` 跨行换行**：5 项在 3 列下换行到第 0 列，行距 = 行高 + `rowsGap` | ✅ | tabgrid |
+| **`Tabs` / `TabContent` 切换**：`barPosition(Start/End)`、初始 `index`、`TabsController.changeIndex`、`onChange` 派发、点击 tab bar 切换、**切走的面板不销毁**（`display:none` 而非移除） | ✅ | tabgrid |
 | 字符串参数不丢（如 `QRCode('hello')` → `data-content`） | ✅ | widgets |
 
 ## 三、平台能力（`@ohos:*` 别名层）
@@ -105,7 +109,7 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 |---|---|---|
 | 同一份断言页在 Electron 里跑（不复制测试代码） | ✅ | electron 全矩阵 |
 | 真实渲染 + offscreen 截图（非白像素占比判定，非 `isEmpty()`） | ✅ | electron 各用例 |
-| 同一份断言的双端一致（9 个用例两个 runner 都过） | ✅ | run.sh / electron/run.sh |
+| 同一份断言的双端一致（15 个用例两个 runner 都过） | ✅ | run.sh / electron/run.sh |
 
 ---
 
@@ -114,7 +118,16 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 ## 布局与视觉
 - **`alignRules` 已实现**（6 键 + 容器/兄弟锚点，几何断言 Δ=0.0），但**不是完整的 ArkUI measure/layout**：
   没有约束求解、没有 `Guideline`、锚点链只支持同容器一层、`bias` 未实现。
-- **`Grid` 的自动行高/列宽未实现**（`columnsTemplate`/`rowsTemplate` 落到 CSS grid，但 ArkUI 的尺寸推导不同）。
+- **`Grid` 有真实轨道**（`columnsTemplate`/`rowsTemplate` + `columnsGap`/`rowsGap` + 单位归一化，几何断言守着），
+  但**无模板时的轨道划分未实现**：`cellLength`/`maxCount`/`minCount`/`layoutDirection` 只记 `layoutWarnings`，不生效。
+  另外行高仍是 CSS grid 的自动推导（`align-content: stretch` 会拉伸 auto 行），与 ArkUI 的尺寸推导不同——
+  所以 tabgrid 的行距断言写成**关系式**（行距 = 行高 + `rowsGap`）而不是钉死绝对行高。
+- **`Tabs` 切换已实现**（`barPosition`/`index`/`TabsController.changeIndex`/`onChange`/点击切换/切走不销毁），
+  但下列项**未实现并会记 `layoutWarnings`**：`vertical`（侧边 bar）、`barMode`（Fixed/Scrollable）、
+  `barWidth`/`barHeight`/`barOverlap`/`barGridAlign`、全部动画项（`animationDuration`/`animationMode`/
+  `animationCurve`/`customContentTransition`/`pageFlipMode`）、以及回调 `onTabBarClick`/`onSelected`/
+  `onUnselected`/`onAnimationStart`/`onAnimationEnd`/`onGestureSwipe`/`onContentWillChange`。
+  `TabContent.tabBar` **只支持字符串标签**：`SubTabBarStyle`/`BottomTabBarStyle`/自定义 builder 会记警告并留空标签。
 - 滚动：`LazyForEach` **有虚拟滚动**（1000 项只渲染 11 项，spacer 撑总高）；但普通 `ForEach` 仍是**全量渲染**，
   `LazyForEach` 的数据变更也是**整窗重建**（未做按 key 的增量 diff），且无 `onDataAdd/Delete` 的精确索引更新。
 - 虚拟滚动的行高是**估计值**（首帧后用真实项高校正）；变高项的行高估算会漂移。
@@ -130,7 +143,7 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 - v1 深度观测的已知边界：`@Observed` 只观测该类的**自身字段**，嵌套的非 `@Observed` 对象内部变更不触发
   （与真机一致，有负向断言守着）；`@Observed` 经 Proxy 实现，**未验证**对 `instanceof`、序列化、
   展开运算符、`for...in` 之外的反射行为有无边界差异
-- `Navigation`、`Tabs`/`TabContent` 的切换语义、`Swiper`、动画/过渡、手势（`gesture`/`panGesture`）、`Refresh`
+- `Navigation`、`Swiper`（待 R11，将复用 `Tabs` 的 `onlyOneVisible`）、动画/过渡、手势（`gesture`/`panGesture`）、`Refresh`
 - `If` 分支的 elmtId 复用优化
 - 父组件重渲染时**子视图内部 elmtId 迁移**未处理（深嵌套自定义组件可能出问题）
 

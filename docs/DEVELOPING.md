@@ -74,10 +74,10 @@ node tools/stats.mjs --json | python3 -m json.tool
 
 ### 步骤
 
-1. **先确认它是不是"手写"**。若组件名在 `runtime/arkui-dom-runtime.js` 的 `components` 里已存在（`Text`/`Button`/`Column`/`Row`/`Stack`/`List`/`ListItem`/`RelativeContainer`），生成骨架**会被跳过**，你必须改手写实现。
+1. **先确认它是不是"手写"**。若组件名在 `runtime/arkui-dom-runtime.js` 的 `components` 里已存在（`Text`/`Button`/`Column`/`Row`/`Stack`/`List`/`ListItem`/`RelativeContainer`/`Tabs`/`TabContent`），生成骨架**会被跳过**，你必须改手写实现。
 2. **判断该改哪一侧**：
    - 只需"标签或基础样式对" → 改 `tools/gen-components.mjs` 的 `CONTAINERS` / `LEAF_TAGS` / 输入类 `type` 映射，然后 `node tools/gen-components.mjs`
-   - 需要**交互/布局语义**（子项挂载方式、切换、测量）→ 改 `runtime/arkui-dom-runtime.js`，走 `ensureComponent(name, domFactory, contentUpdater)`
+   - 需要**交互/布局语义**（子项挂载方式、切换、测量）→ 改 `runtime/arkui-dom-runtime.js`，走 `ensureComponent(name, domFactory, contentUpdater)`；若该组件的 `create`/`pop` 形态特殊（如 `Tabs`/`TabContent`），在 `ensureComponent` 里按组件名加分支
 3. **用产物验证契约**。别猜属性的调用形式：
 
    ```bash
@@ -111,8 +111,12 @@ node tools/stats.mjs --json | python3 -m json.tool
 ### 硬约束
 
 - **不能 `throw`**。未实现就落 `data-*`（`applyAttr` 的兜底已经保证，别绕过它）。
+  若某属性**未实现但会影响版式/行为**，先记 `layoutWarnings` 再落 `data-*`（不 `return`）——静默忽略最难查。
 - **`pop()` 必须与 `create()` 配平**。产物里是严格配对的；你的 `contentUpdater` 若在内部 push 了节点，只有产物会 pop——**不要**在 updater 里额外 push。
 - **重渲染幂等**。`updateFunc` 第 2 次执行时节点已存在（`rec.node`），必须走复用分支，不能重复 `appendChild`。
+- **自定义挂载点要自己维护两条**：打 `data-arkui-comp` 标记 + 把 `rec.parentNode` 指到真实挂载点（见不变量 15）。
+- **自定义回调要抢在通用事件分支之前拦截**（见不变量 14，坑 ㉞）。
+- **透传成 CSS 语法的值要归一化单位**（见不变量 16，坑 ㊱）。
 
 ---
 
@@ -336,6 +340,7 @@ node tools/extract.mjs fixtures/pages/NewPage.ts build/newpage.js --cjs --regist
 | ⑪ | runner 用 case 名当页面路径 → 加载 404 页（无 `#result`，断言读空串**全通过**） | 显式 `page_of()` 映射；断言前校验页面已就绪 |
 | ⑱ | `img.isEmpty()` 对**纯白图**返回 false → 把"全白"报成"非空" | **像素级**非白比例 + 重试循环 |
 | ⑲ | 隐藏窗口的 `capturePage()` **永不 resolve** → 进程挂死，`run.sh` 退出 124（断言其实全过） | 加超时 + offscreen 模式补帧 |
+| ㊲ | **弱断言**：「第 N 个的 `display !== 'none'`」—— 在"**全都可见**"时也成立，等于没有牙齿 | 断言**不变量**：「恰好一个可见，且是第 N 个」（本轮实测：改成空操作后 3 条失败 → 加强后 4 条失败） |
 
 ### 语义正确性
 
@@ -358,6 +363,9 @@ node tools/extract.mjs fixtures/pages/NewPage.ts build/newpage.js --cjs --regist
 | ㉛ | **想给 V1 的 `@Observed` 装原型访问器** → V1 在**字段上没有任何装饰器**，拿不到字段名 | V1 只能用 `Proxy` 拦 `set`（V2 才有 `@Trace` 提供字段名） |
 | ㉜ | **Proxy 只设了 `set` 陷阱却在 `get` 里做多余拦截**，或 `Reflect.set` 传了 proxy 当 receiver 导致递归 | 只设 `set`（其余走默认行为）；`Reflect.set(t, k, v)` 直接作用于 target |
 | ㉝ | **用 `f("test")` 之类的 `statSync` 目录体积** → 得到的是目录 inode 大小（4 KB），不是递归总和 | 目录体积要递归累加；`stats.mjs` 已有 `du()` 可复用 |
+| ㉞ | **把 `Tabs.onChange` 交给通用事件分支** → 变成 `addEventListener('change')`，一个**永不触发**的监听器（切换时回调不会跑，页面看着正常） | 带 `__tabsState` 的节点要在通用事件分支**之前**拦截 `onChange`，由 Tabs 收集、`setActiveTab` 时派发 |
+| ㉟ | **自定义挂载点绕过 `mountNode`** → ① 漏了 `data-arkui-comp` 标记（`querySelectorAll` 返回 0，表现为"组件不存在"）② `rec.parentNode` 指错（重渲染时恢复到错误父节点，重建整棵兄弟结构） | 自己补标记；并把 `rec.parentNode` 指到真实挂载点（`TabContent` 指内容区） |
+| ㊱ | **ArkUI 轨道模板的裸数字直传 CSS**：`columnsTemplate('100 1fr')` → `grid-template-columns: 100 1fr` → **整条声明作废且浏览器不报错**（表现为"Grid 完全没有列"） | 过 `normalizeTrackList`（`100`→`100px`、`50vp`→`50px`，保留 `1fr`/`auto`/`%`/`repeat()`/`minmax()`）。断言要同时看字符串**和几何** |
 
 ### 确定性与时序
 
