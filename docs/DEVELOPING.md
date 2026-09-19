@@ -170,9 +170,13 @@ node tools/stats.mjs --json | python3 -m json.tool
 
 ---
 
-## 6. 任务 C：新增一个 v2 装饰器 / 修 v2 语义
+## 6. 任务 C：新增一个装饰器 / 修状态观测语义
 
-v2 与 v1 是**两套机制**（见 `ARCHITECTURE.md` §3.4）：v1 靠状态类包装，v2 靠**画在原型上的访问器**，而访问器由装饰器函数安装。
+装饰器是**两代共用的一套机制**（见 `ARCHITECTURE.md` §3.4 / §3.5）：
+- **v2**：`ViewV2` + 逐字段装饰器（访问器画在原型上）
+- **v1**：`@Observed`（类级，用 Proxy 拦字段写入）+ `@ObjectLink`（`SynchedPropertyNesedObjectPU`）
+
+v1 的 `@Observed` **也不挂 global**，走同一张 `__arkui_dom_decorators` 表。
 
 ### 步骤
 
@@ -181,8 +185,9 @@ v2 与 v1 是**两套机制**（见 `ARCHITECTURE.md` §3.4）：v1 靠状态类
    ```bash
    cd /tmp/hmtest/app && timeout 560 /data/training/cli/commandline-tools-linux-x64-26.0.0.821/command-line-tools/bin/hvigorw \
      --mode module -p product=default -p module=entry@default -p buildMode=debug assembleHap --no-daemon
-   grep -n "__decorate" /tmp/hmtest/app/entry/build/default/cache/default/default@CompileArkTS/esmodule/debug/entry/src/main/ets/pages/V2.ts
-   cp /tmp/hmtest/app/entry/build/default/cache/default/default@CompileArkTS/esmodule/debug/entry/src/main/ets/pages/V2.ts fixtures/pages/V2.ts
+   CACHE=/tmp/hmtest/app/entry/build/default/cache/default/default@CompileArkTS/esmodule/debug/entry/src/main/ets
+   grep -n "__decorate\|Nesed\|ObjectLink" $CACHE/pages/*.ts
+   cp $CACHE/pages/<Page>.ts fixtures/pages/
    ```
 
    `__decorate([X], Proto, "k", null)` 的 `key`/`desc` 形态决定了你的装饰器会收到几个参数、能不能返回改写后的描述符。**这是唯一可靠的依据。**
@@ -196,38 +201,60 @@ v2 与 v1 是**两套机制**（见 `ARCHITECTURE.md` §3.4）：v1 靠状态类
 
    曾经把 `IMonitor` 猜成 `{dirty: [{path,value,before,kind}]}`，被编译器当场判错。
 
-3. **在 `runtime/arkui-dom-runtime.js` 的"状态管理 v2"段实现**，需要装访问器就复用 `installV2Accessor(proto, key, kind)`。
+3. **在 `runtime/arkui-dom-runtime.js` 里实现**：
+   - v2 字段类装饰器 → 复用 `installV2Accessor(proto, key, kind)`
+   - v1 类装饰器（`@Observed` 那类）→ 参考 `Observed`：返回一个**子类**，构造函数返回 Proxy
 
-4. **加进装饰器表**——否则产物里绑不上：
+4. **必须同时改两处，否则静默失效**（这是本项目最容易踩的新坑）：
+
+   | 改哪里 | 作用 |
+   |---|---|
+   | `runtime/arkui-dom-runtime.js` 的 `const decorators = {...}` | 装饰器表（产物从前奏里解构它） |
+   | `tools/extract.mjs` 的 `DECORATOR_NAMES` | 前奏里会绑哪些名字 |
+
+   只改一处的话：漏在表里 → 解构得到 `undefined` → **TS 的 `__decorate` 对 falsy 装饰器是静默跳过的**，
+   页面看起来正常但功能全无（前奏里的守卫会 throw，但要靠它兜住）。
+
+5. **断言要包含"机制正确"，不只是"渲染对了"**：
 
    ```js
-   const decorators = { ViewV2, Param, Local, /* ... */ 新名字 };
-   ```
-
-   同时在 `tools/extract.mjs` 的 `V2_DECORATORS` 里加上名字，否则前奏不会绑它。
-
-5. **断言要包含"机制正确"，不只是"渲染对了"**。用 `__arkui_dom_v2Introspect()`：
-
-   ```js
+   // v2
    const intro = __arkui_dom_v2Introspect();
    check(intro.observedOf(view.constructor).includes('count'), '@Local 已装访问器');
-   check(intro.monitorsOf(view.constructor).join().includes('count→onCountChange'), '@Monitor 已登记');
-   check(intro.observedOf(V2Child).indexOf('onPing') < 0, '@Event 不参与观测');
+   // v1
+   check(__arkui_dom_isObserved(items[0]) === true,  '@Observed 产出了可观测代理');
+   check(__arkui_dom_isObserved(items[0].child) === false, '非 @Observed 对象不是可观测的');
    ```
 
-   否则"渲染碰巧对了"和"机制正确"分不开。
-
-6. **验收**：
+6. **证明断言有牙齿**（本项目的硬要求）。实现完再**临时破坏**它，确认关键断言真的会失败：
 
    ```bash
-   bash run.sh v2 && bash electron/run.sh v2
-   node tools/stats.mjs | sed -n '/状态管理/,/注入方式/p'
+   cp runtime/arkui-dom-runtime.js /tmp/runtime.bak.js
+   # 把 Observed 改成 `return Base;` 之类
+   bash run.sh observe        # 必须看到 FAIL，记下失败条数
+   cp /tmp/runtime.bak.js runtime/arkui-dom-runtime.js
+   md5sum /tmp/runtime.bak.js runtime/arkui-dom-runtime.js   # 确认逐字节还原
+   ```
+
+   实测：破坏 `Observed` 后有 **8 条**断言失败，其中包含
+   `@ObjectLink('item') 绑定到非 @Observed 对象` 的 `layoutWarnings` 诊断。
+   如果破坏后**全绿**，说明断言没测到东西。
+
+7. **验收**：
+
+   ```bash
+   bash run.sh observe && bash electron/run.sh observe
+   node tools/stats.mjs | sed -n '/状态管理/,/装饰器表合计/p'
+   npm run check
    ```
 
 ### 硬约束
 
 - **`@Once` 必须写成 `@Once @Param`**，否则 ArkTS 构建失败。
 - **装饰器不能挂 global**。`Event` 与浏览器全局同名，挂上去会打断 `new Event('scroll')`（runtime 的 `Scroller` 和 `test/lazy.html` 都在用）。走 `__arkui_dom_decorators` + 抽取前奏。
+- **类装饰器必须返回一个类**。`__decorate([Cls], Target)` 只有 2 个实参，助手把返回值当类本身用。
+- **`SynchedPropertyNesedObjectPU` 的 `Nesed` 是官方拼写错误**，不要"顺手改对"——产物按这个名字引用。
+- **`@Observed` 的观测边界不要扩大**：嵌套的非 `@Observed` 对象内部变更**不应**触发重渲染（有负向断言守着）。绑到非 `@Observed` 对象时要记 `layoutWarnings`，不静默。
 - **回调抛错不能炸整页**。`@Monitor` 的调用已经在 `try/catch` 里并把错误记进 `layoutWarnings`，保持这个行为。
 - **`@Computed` 不引入缓存**。当前实现靠"getter 体在渲染上下文里执行 ⇒ 传递依赖天然成立"来保证正确性；加缓存就必须同时实现失效逻辑，否则会出现"值对了但没重渲染"。
 
@@ -326,6 +353,11 @@ node tools/extract.mjs fixtures/pages/NewPage.ts build/newpage.js --cjs --regist
 | ㉖ | **把 `string.length` 当字节数** → 生成器报告"文件比生成物长 48 字节"，其实是 banner 里中文的 UTF-16 码元 vs UTF-8 字节之差 | 报告体积用 `Buffer.byteLength(s, 'utf8')`，或直接 `fs.statSync().size` |
 | ㉗ | **`pkill -f "serve.py 41891"`** → 模式匹配到了自己所在的命令行，把执行中的 shell 杀了（`Signal: 15`，命令无声中断） | 先 `ps -eo pid,args \| grep "[s]erve\.py"` 取 PID 再 `kill` |
 | ㉘ | **`--check` 只在注释里声明、代码里没实现** → 加进验收清单后它其实在**覆写**生成物 | `--check` 必须做到"只比对、不落盘、不一致时非 0 退出"。加进清单前先验证失败路径 |
+| ㉙ | **装饰器加进了 `extract.mjs` 的名单、却忘了加进运行时的 `decorators` 表** → 解构得到 `undefined`，而 TS 的 `__decorate` 对 falsy 装饰器**静默跳过** → `@Observed` 什么都不做，页面看起来正常 | 两处必须同改；`extract.mjs` 的前奏已加守卫，绑定到的名字不是函数就 `throw`（不变量 12） |
+| ㉚ | **把 `SynchedPropertyNesedObjectPU` 的 `Nesed` 当成拼写错误改掉** → 产物按这个名字引用，直接 `ReferenceError` | 记住它是官方拼写错误，逐字保留 |
+| ㉛ | **想给 V1 的 `@Observed` 装原型访问器** → V1 在**字段上没有任何装饰器**，拿不到字段名 | V1 只能用 `Proxy` 拦 `set`（V2 才有 `@Trace` 提供字段名） |
+| ㉜ | **Proxy 只设了 `set` 陷阱却在 `get` 里做多余拦截**，或 `Reflect.set` 传了 proxy 当 receiver 导致递归 | 只设 `set`（其余走默认行为）；`Reflect.set(t, k, v)` 直接作用于 target |
+| ㉝ | **用 `f("test")` 之类的 `statSync` 目录体积** → 得到的是目录 inode 大小（4 KB），不是递归总和 | 目录体积要递归累加；`stats.mjs` 已有 `du()` 可复用 |
 
 ### 确定性与时序
 

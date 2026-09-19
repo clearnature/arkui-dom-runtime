@@ -59,28 +59,44 @@ const result = ts.transpileModule(source, {
 
 let output = result.outputText;
 
-// ── 状态管理 v2 的装饰器前奏 ──
-// V2 产物把装饰器保留成 __decorate([Param], Proto, "label", void 0) —— 这些名字在
-// 产物里是【自由变量】。但其中 `Event` 与浏览器全局同名，而 runtime 自己
+// ── 状态管理装饰器前奏 ──
+// V2/V1 产物把装饰器保留成 __decorate([Local], Proto, "count", void 0) / ([Observed], Cls)
+// —— 这些名字在产物里是【自由变量】。但其中 `Event` 与浏览器全局同名，而 runtime 自己
 // （Scroller 里的 new Event('scroll')）与 test/lazy.html 都在用 new Event(...)。
 // 所以不能把装饰器挂到 global，改为在产物作用域内做绑定。
 //
-// 门禁用 __decorate( —— 它【只】在源码用了装饰器时才会被 TS 发出来，所以 V1 页面
-// 完全不受影响（实测：11 个 V1 fixture 的产物里 __decorate 出现 0 次）。
+// 门禁用 __decorate( —— 它【只】在源码用了装饰器时才会被 TS 发出来，所以不带装饰器的
+// 页面完全不受影响（实测：11 个早期 fixture 的产物里 __decorate 出现 0 次）。
 // 名字匹配故意用宽口径（词边界，不判断后随字符）：漏绑是致命错误（ReferenceError），
-// 多绑一个用不到的名字只是多一次解构赋值，没有副作用。
-const V2_DECORATORS = ['ViewV2', 'Param', 'Local', 'Once', 'Event', 'Monitor',
-  'Computed', 'Provider', 'Consumer', 'ObservedV2', 'Trace'];
+// 多绑一个用不到的名字只是多一次解构赋值，没有副作用。代价是会匹配到注释里的名字
+// （实测 V2.ts 的注释提到 @Trace 导致多绑一个），可以接受。
+//
+// `Observed` 是 V1 的类装饰器；`SynchedPropertyNesedObjectPU` 不是装饰器而是状态类，
+// 走 global（见 runtime 的 Object.assign(global, ...)），不需要在这里绑。
+const DECORATOR_NAMES = ['ViewV2', 'Param', 'Local', 'Once', 'Event', 'Monitor',
+  'Computed', 'Provider', 'Consumer', 'ObservedV2', 'Trace', 'Observed'];
 const hasDecorators = output.includes('__decorate(');
 const usedDecorators = hasDecorators
-  ? V2_DECORATORS.filter((d) => new RegExp(`\\b${d}\\b`).test(output))
+  ? DECORATOR_NAMES.filter((d) => new RegExp(`\\b${d}\\b`).test(output))
   : [];
+
+// 守卫：把"静默无效"变成"响亮报错"。
+// 若某个装饰器名字出现在产物里、却不在运行时表里，解构会得到 undefined，
+// 而 TS 的 __decorate 助手对 falsy 装饰器是【静默跳过】的 —— 于是 `@Observed`
+// 会什么都不做，页面看起来"正常"但深度观测完全失效。这类静默失败在本项目已经
+// 出过 4 次，必须在边界处堵住。
 const decoratorPrelude = usedDecorators.length
-  ? `// 自动生成：状态管理 v2 装饰器的作用域内绑定（避免与浏览器全局 Event 等撞名）\n` +
+  ? `// 自动生成：状态管理装饰器的作用域内绑定（避免与浏览器全局 Event 等撞名）\n` +
     `const { ${usedDecorators.join(', ')} } = (globalThis.__arkui_dom_decorators || {});\n` +
-    (usedDecorators.includes('ViewV2')
-      ? `if (typeof ViewV2 === 'undefined') { throw new Error('[arkui-dom] 需要先加载 runtime/arkui-dom-runtime.js（提供 __arkui_dom_decorators）'); }\n`
-      : '')
+    `{\n` +
+    `  const __missing = [${usedDecorators.map((d) => `[${JSON.stringify(d)}, typeof ${d}]`).join(', ')}]\n` +
+    `    .filter(([, t]) => t !== 'function')\n` +
+    `    .map(([n, t]) => \`\${n}(\${t})\`);\n` +
+    `  if (__missing.length) {\n` +
+    `    throw new Error('[arkui-dom] 装饰器未就绪: ' + __missing.join(', ') +\n` +
+    `      ' —— 需先加载 runtime/arkui-dom-runtime.js，且该名字要同时存在于运行时的 decorators 表里');\n` +
+    `  }\n` +
+    `}\n`
   : '';
 
 if (decoratorPrelude) output = decoratorPrelude + output;

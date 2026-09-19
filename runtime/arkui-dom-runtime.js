@@ -134,6 +134,100 @@
     aboutToBeDeleted() { this._source = null; }
   }
 
+  // ───────────── V1 深度观测：@Observed 类 + @ObjectLink ─────────────
+  //
+  // 与 v2 的 @Trace 不同，V1 的 @Observed 标在【整个类】上，产物里【不带任何字段
+  // 装饰器】：
+  //     @Observed class Item { name: string; count: number; }   // 字段上什么都没有
+  //     Item = __decorate([Observed], Item);                    // 类装饰器，2 个实参
+  //
+  // 没有字段名可用 → 装不了原型访问器 → 只能用 **Proxy** 拦截 set。
+  // （ArkUI 真机也是这么做的：ObservedObject.createNew 返回一个 Proxy。）
+  //
+  // 订阅侧：@ObjectLink 编译成
+  //     this.__item = new SynchedPropertyNesedObjectPU(params.item, this, "item")
+  //   注意类名里的 `Nesed` 是【官方拼写错误】（应为 Nested）。别"顺手改对"——产物里
+  //   写的就是这个名字，改了就直接 ReferenceError。
+  //   产物【不会】自己调 subscribe：订阅必须由运行时在构造 at 时完成。
+  //
+  // 观测语义（与真机一致）：
+  //   ✓ @Observed 类实例的【自身字段】写入 → 通知订阅者
+  //   ✗ 嵌套的【非 @Observed】对象内部写入 → 不通知（本用例里有负向断言守着）
+
+  const observedCells = new WeakMap();   // Proxy -> 通知单元（复用 propDeps 机制）
+  const OBSERVED_CELL = Symbol('arkui.observedCell');
+  const OBSERVED_TAG = Symbol('arkui.isObserved');
+
+  function makeObservedProxy(target) {
+    const cell = { __observed: true, __name: target && target.constructor ? target.constructor.name : '?' };
+    const proxy = new Proxy(target, {
+      get(t, k, r) {
+        if (k === OBSERVED_CELL) return cell;
+        if (k === OBSERVED_TAG) return true;
+        return Reflect.get(t, k, r);
+      },
+      set(t, k, v, r) {
+        const had = Object.prototype.hasOwnProperty.call(t, k) || k in t;
+        const before = t[k];
+        const ok = Reflect.set(t, k, v, r);
+        // 只在真的变了时通知（与状态类一致：同值写入不触发重渲染）
+        if (ok && had && !Object.is(before, v)) markDependentsDirty(cell);
+        return ok;
+      },
+    });
+    observedCells.set(proxy, cell);
+    return proxy;
+  }
+
+  // 类装饰器：__decorate([Observed], Cls) 只有 2 个实参 → 助手把返回值当作类本身，
+  // 所以这里【必须返回一个类】。用子类把构造返回值换成 Proxy。
+  function Observed(Base) {
+    const ObservedClass = class extends Base {
+      constructor(...args) {
+        super(...args);
+        return makeObservedProxy(this);
+      }
+    };
+    // 保持 name 与静态成员可读（排查时 `Item.name` 不该变成 ''）
+    try { Object.defineProperty(ObservedClass, 'name', { value: Base.name, configurable: true }); } catch (_) {}
+    return ObservedClass;
+  }
+
+  function observedCellOf(obj) {
+    if (obj === null || typeof obj !== 'object') return null;
+    return observedCells.get(obj) || null;
+  }
+
+  // @ObjectLink：子组件持有父侧 @Observed 实例的【引用】，只订阅、不复制值。
+  class SynchedPropertyNesedObjectPU {
+    constructor(source, owner, name) {
+      this._owner = owner; this._name = name; this._source = undefined;
+      this._cell = null;
+      this.set(source);
+    }
+    get() {
+      if (this._cell) recordDep(this._cell);   // 读对象 = 依赖它的字段变更
+      return this._source;
+    }
+    set(source) {
+      const nextCell = observedCellOf(source);
+      if (!nextCell && source !== undefined && source !== null) {
+        // 不静默：@ObjectLink 绑到非 @Observed 对象上时，改它的字段不会触发任何更新
+        layoutWarnings.push(
+          `@ObjectLink('${this._name}') 绑定到非 @Observed 对象，字段变更不会触发重渲染`);
+      }
+      const prev = this._cell;
+      this._source = source;
+      this._cell = nextCell;
+      // 换成了另一个对象：让原先的依赖者重渲染一次以便重新记录依赖
+      if (prev && prev !== nextCell) markDependentsDirty(prev);
+    }
+    purgeDependencyOnElmtId(elmtId) {
+      if (this._cell) { const s = propDeps.get(this._cell); if (s) s.delete(elmtId); }
+    }
+    aboutToBeDeleted() { this._source = undefined; this._cell = null; }
+  }
+
   // ─────────────────── 脏标记 / 批量重渲染 ───────────────────
   const dirty = new Set();
   let flushScheduled = false;
@@ -1090,8 +1184,10 @@
 
   // 装饰器表：不给 global 加裸名（`Event`/`Local` 之类会撞浏览器全局），
   // 由抽取工具在产物里做作用域内绑定。
+  // `Observed` 是 V1 的类装饰器（与 V2 的 `ObservedV2` 对应），走同一张表同一套机制。
   const decorators = {
     ViewV2, Param, Local, Once, Event, Monitor, Computed, Provider, Consumer, ObservedV2, Trace,
+    Observed,
   };
 
   // ────────────────────── @ohos:* 模块别名层（④） ──────────────────────
@@ -1267,6 +1363,10 @@
     ViewPU,
     ObservedPropertySimplePU, ObservedPropertyObjectPU,
     SynchedPropertySimpleOneWayPU, SynchedPropertySimpleTwoWayPU,
+    // @ObjectLink 的状态类。产物里是 `new SynchedPropertyNesedObjectPU(...)` ——
+    // 【自由变量】引用（不走 import），所以必须挂在 global 上。
+    // 名字里的 `Nesed` 是官方拼写错误，不能改。
+    SynchedPropertyNesedObjectPU,
     SubscriberManager, registerNamedRoute, ViewStackProcessor,
     Text, Button, Column, Row, Stack, List, ListItem, If, ForEach, LazyForEach, RelativeContainer,
     FontWeight, VerticalAlign, HorizontalAlign, FlexAlign, TextAlign, ItemAlign, Color,
@@ -1293,6 +1393,9 @@
     // 挂上去会打断 `new Event(...)`（Scroller 与 test/lazy.html 都在用）。
     // 由 tools/extract.mjs 在产物里生成作用域内绑定，只绑实际用到的名字。
     __arkui_dom_decorators: decorators,
+    // V1 深度观测自省：断言"@Observed 确实产出了可观测代理"，而不只看渲染结果。
+    // （Meta 这类非 @Observed 的嵌套对象必须返回 false —— 这是负向断言的依据。）
+    __arkui_dom_isObserved: (v) => !!observedCells.get(v),
     // 只读自省：供测试断言"装饰器确实在原型上装了访问器"，而不是只看渲染结果。
     // 注意 v2ProtoMeta 是 WeakMap（不可枚举，没有 keys()），所以只按类查询。
     __arkui_dom_v2Introspect: () => ({

@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>⑮ V1 深度观测（@Observed + @ObjectLink）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 340px; height: 420px; border: 1px solid #ccc; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>V1 深度观测：改数组元素的字段（长度不变）也要触发重渲染</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../build/observe.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    // 只按 id 选节点：全页 textContent 会带上 <script> 源码（曾因此假通过）
+    const val = (id) => { const e = document.getElementById(id); return e ? (e.textContent || '') : '<无此节点:' + id + '>'; };
+    const click = (id) => {
+      const e = document.getElementById(id);
+      if (!e) throw new Error('找不到按钮 #' + id);
+      e.click();
+      return e;
+    };
+    const poll = async (pred, ms) => {
+      for (let k = 0; k < ms / 25; k++) { if (pred()) return true; await tick(25); }
+      return pred();
+    };
+
+    try {
+      const view = __arkui_dom_loadRoute('pages/Observe', root);
+      await tick(60);
+
+      // ── ① 机制断言：@Observed 必须真的产出可观测代理，非 @Observed 的嵌套对象不是
+      const items = view.__items.get();
+      check(Array.isArray(items) && items.length === 2, `@State 数组就绪（长度 ${items && items.length}）`);
+      check(__arkui_dom_isObserved(items[0]) === true,
+        `@Observed 类实例是可观测代理（Item[0] → ${__arkui_dom_isObserved(items[0])}）`);
+      check(__arkui_dom_isObserved(items[0].child) === false,
+        `非 @Observed 的嵌套对象【不是】可观测的（Meta → ${__arkui_dom_isObserved(items[0].child)}）`);
+      check(items[0].name === 'a' && items[0].child.label === 'meta0', '字段可正常读取（代理未破坏读路径）');
+      check(items[0].constructor.name === 'Item', `代理不破坏 constructor.name（${items[0].constructor.name}）`);
+
+      // ── ② 渲染出来了
+      check(val('item-name-1') === 'a', `子组件 @ObjectLink 渲染：'${val('item-name-1')}'`);
+      check(val('item-count-2') === '0', `数组第二项 count = '${val('item-count-2')}'`);
+      check(val('single-name') === 'single=solo', `非数组的 @ObjectLink 渲染：'${val('single-name')}'`);
+
+      // ── ③ 核心：父侧改【数组元素的字段】(数组长度不变) → 子组件必须重渲染
+      const lenBefore = view.__items.get().length;
+      click('rename');
+      const renamed = await poll(() => val('item-name-1') === 'renamed', 1000);
+      check(renamed, `父改 items[0].name → 子组件自动重渲染：'a' → '${val('item-name-1')}'`);
+      check(view.__items.get().length === lenBefore,
+        `数组长度未变（${lenBefore} → ${view.__items.get().length}），证明确实是"元素内部变更"而非整体重建`);
+
+      // ── ④ 子组件侧改同一个对象 → 也应触发（代理是共享的）
+      click('item-bump-2');
+      const bumped = await poll(() => val('item-count-2') === '1', 1000);
+      check(bumped, `子组件内 this.item.count += 1 → 自己重渲染：'0' → '${val('item-count-2')}'`);
+      check(view.__items.get()[1].count === 1, `写穿透到父侧同一个对象（父读到 count=${view.__items.get()[1].count}）`);
+
+      // ── ⑤ 父侧再改一次（动态期望值，避免与上面的顺序耦合）
+      const before = Number(val('item-count-2'));
+      click('bump');
+      const bumped2 = await poll(() => Number(val('item-count-2')) === before + 1, 1000);
+      check(bumped2, `父改 items[1].count → 子组件更新：'${before}' → '${val('item-count-2')}'`);
+
+      // ── ⑥ 非数组（@State 单个对象）也走 @ObjectLink
+      click('singlerename');
+      const single = await poll(() => val('single-name') === 'single=solo2', 1000);
+      check(single, `@State 单对象的字段变更驱动 @ObjectLink：'${val('single-name')}'`);
+
+      // ── ⑦ 负向：改【非 @Observed】嵌套对象内部 → 不应触发重渲染
+      const metaBefore = val('item-meta-1');
+      check(metaBefore === 'meta0', `改前 meta 文本 = '${metaBefore}'`);
+      click('touchmeta');
+      await tick(150);
+      check(view.__items.get()[0].child.label === 'metaX',
+        `底层值确实被改了（item.child.label = '${view.__items.get()[0].child.label}'）`);
+      check(val('item-meta-1') === metaBefore,
+        `非 @Observed 对象内部变更【未】触发重渲染：仍为 '${val('item-meta-1')}'（若变成 'metaX' 说明观测过宽）`);
+
+      // ── ⑧ 但【替换】嵌套对象本身是 @Observed 类的字段写入 → 应触发重渲染
+      click('replacemeta');
+      const replaced = await poll(() => val('item-meta-1') === 'metaY', 1000);
+      check(replaced, `替换 item.child 整体（@Observed 的字段写入）触发重渲染：'${val('item-meta-1')}'`);
+
+      // ── ⑨ 没有 @ObjectLink 绑定失败的告警
+      const warns = (__arkui_dom_layout_warnings || []).filter((w) => /ObjectLink|Observed/.test(w));
+      check(warns.length === 0, `无 @ObjectLink/@Observed 告警（${warns.length}${warns.length ? ': ' + warns[0] : ''}）`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const el = document.getElementById('result');
+    el.textContent = lines.join('\n');
+    el.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

@@ -4,8 +4,8 @@
 
 已完成的机制说明见 `docs/ARCHITECTURE.md`；怎么改见 `docs/DEVELOPING.md`。
 
-**当前状态**：`npm run check` 全绿（preflight + 生成物一致 + 浏览器 14 用例 + Electron 13 用例）。
-v2 状态管理已落地。**下一步优先级：R5（许可证，需决策）→ R9/R10（Grid、Tabs 真实语义）→ R14（多层锚链）。**
+**当前状态**：`npm run check` 全绿（preflight + 生成物一致 + 浏览器 15 用例 + Electron 14 用例）。
+v1/v2 状态管理（含 v1 深度观测）已落地。**下一步优先级：R5（许可证，需决策）→ R9/R10（Grid、Tabs 真实语义）→ R14（多层锚链）。**
 
 ---
 
@@ -23,6 +23,7 @@ v2 状态管理已落地。**下一步优先级：R5（许可证，需决策）�
 | ② | 测量接口对齐 | `bash run.sh measure` |
 | ③ | `LazyForEach` 虚拟滚动（1000 项 → 11 节点） | `bash run.sh lazy` |
 | ③ | `@Provide` / `@Consume` / `@Watch` | `bash run.sh provide` |
+| ③ | **V1 深度观测**（`@Observed` + `@ObjectLink`，Proxy 实现） | `bash run.sh observe`（20 条断言，含负向） |
 | ③ | **状态管理 v2**（`ViewV2` + 11 个装饰器） | `bash run.sh v2`（26 条断言，浏览器 + Electron 双通过） |
 | ③ | `@ohos:*` 别名层 + CommonJS 装载 + 真 fetch | `bash run.sh async` |
 | ③ | `UIAbility` 启动链路 | `bash run.sh ability` |
@@ -34,7 +35,7 @@ v2 状态管理已落地。**下一步优先级：R5（许可证，需决策）�
 | **P0** | 统一验收门禁（退出码可信） | `npm run check`；制造漂移 → exit 1 |
 | **P0** | `--check` 真正只校验不落盘 | `node tools/gen-components.mjs --check` |
 
-当前：**浏览器 14 用例 + Electron 13 用例全绿**（`npm run check` → `exit 0`）。
+当前：**浏览器 15 用例 + Electron 14 用例全绿**（`npm run check` → `exit 0`）。
 
 ---
 
@@ -52,7 +53,7 @@ v2 状态管理已落地。**下一步优先级：R5（许可证，需决策）�
 |---|---|---|---|
 | P0 | ~~R1–R4 工程化地基~~ **已完成** | — | — |
 | P0 | **R5 许可证与 CHANGELOG** | 低但**阻塞对外发布**，且需决策 | 低 |
-| P1 | ~~R6–R8 状态管理 v2~~ **R6/R7 已完成**，R8 待做 | 高 → 已拿到 | — |
+| P1 | ~~R6–R8 状态管理 v2 + V1 深度观测~~ **R6/R7/R8 已完成** | 高 → 已拿到 | — |
 | P2 | R9–R13 组件视觉语义 | 中（85 个骨架只有 `data-*`） | 中 |
 | P3 | R14–R17 布局引擎 | 中高（真实页面一定踩） | 高 |
 | P4 | R18–R21 平台模块 | 中 | 低–中 |
@@ -158,17 +159,41 @@ Chrome、Electron、**入口脚本可执行位**、核心文件齐备、fixtures
 
 ---
 
-### R8 — `@Observed` / `@ObjectLink`（**v1** 的深度观测）
+### ~~R8 — `@Observed` / `@ObjectLink`（V1 的深度观测）~~ ✅ 已完成
 
-**内容**：v1 的 `@Observed` 类 + `@ObjectLink` 引用——目前 `ForEach` 只在**数组长度变化**时重建，
-元素内部字段变更不触发重渲染。v2 的 `@Trace` 已具备等价能力（见 R7），但 **v1 语法路径仍缺**。
+**内容**：v1 的 `@Observed` 类 + `@ObjectLink` 引用——此前 `ForEach` 只在**数组长度变化**时重建，
+元素内部字段变更不触发重渲染。
 
-**依赖**：无（`ViewPU` 一侧，与 v2 实现互不干扰）。
+**测量结果（先测量再实现）**：
+- `@Observed` **保留在产物里**（是运行时装饰器）：`Item = __decorate([Observed], Item)`
+- `@ObjectLink` → `new SynchedPropertyNesedObjectPU(params.item, this, "item")`
+  —— **`Nesed` 是官方拼写错误**（应为 Nested），不能改
+- 产物全文搜 `subscribe` / `ObservedObject` / `addSubscriber` 都是 **0 次** —— 订阅必须由运行时隐式完成
+- V1 **在字段上没有任何装饰器** → 拿不到字段名 → 只能用 **Proxy** 拦 `set`
 
-**验收**：新断言——v1 页面里改 `arr[2].name`（长度不变）必须触发重渲染。
-**当前会失败，实现后通过**（先确认它会失败，再实现——否则说明断言没测到东西）。
+**实现**：`Observed(Base)` 返回一个构造函数产出 Proxy 的子类；Proxy 的 `set` 陷阱
+→ `markDependentsDirty(cell)`；`SynchedPropertyNesedObjectPU.get()` → `recordDep(cell)`。
+复用已有的 `propDeps` 机制，依赖键从"状态对象"换成"对象实例的通知单元"。
 
-**触及**：`runtime/arkui-dom-runtime.js`（`forEachUpdateFunction` / 新增 v1 深度观测）、`test/rich.html`
+**顺带修掉一个静默失败通道**：TS 的 `__decorate` 助手对 **falsy 装饰器静默跳过**
+（`__decorate([undefined], Item)` 不报错、原样返回类）。所以 `extract.mjs` 的前奏里加了守卫，
+逐个检查绑定到的名字是不是函数，不是就 `throw`。**加装饰器必须同时改运行时表和 `DECORATOR_NAMES`**。
+
+**验收（已执行）**：
+```bash
+bash run.sh observe && bash electron/run.sh observe   # 20 条断言双通过
+```
+断言含**负向**项：改嵌套的**非** `@Observed` 对象内部**不应**触发重渲染（`item.child.label` 改了但文本不变）。
+
+**并证明了断言有牙齿**：临时把 `Observed` 改成空操作 → **8 条断言失败**，
+其中包括 `@ObjectLink('item') 绑定到非 @Observed 对象` 的 `layoutWarnings` 诊断；
+还原后 `md5sum` 与备份逐字节一致。
+
+**已知边界**：`@Observed` 经 Proxy 实现，**未验证**对序列化、展开运算符、`for...in` 之外的
+反射行为有无边界差异（`instanceof` 与 `constructor.name` 已断言正常）。
+
+**触及**：`runtime/arkui-dom-runtime.js`、`tools/extract.mjs`、`fixtures/pages/Observe.ts`、
+`test/observe.html`、`run.sh`、`electron/run.sh`
 
 ---
 

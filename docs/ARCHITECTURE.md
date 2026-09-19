@@ -159,6 +159,7 @@ class ProvideDemo extends ViewPU {
 | `initializeConsume('name', 'prop')` | 沿 `__parent` 链上溯取**同一个属性实例** | L229 |
 | `reInitializeConsume__Internal` | `@Reusable` 复用时的重绑定 | L238 |
 | `declareWatch('prop', cb)` | 把回调挂到属性实例的 `watch` | L246 |
+| `new SynchedPropertyNesedObjectPU(src, this, "item")` | **@ObjectLink**：订阅 `@Observed` 实例（见 §3.5） | L217 |
 | `observeComponentCreation2(fn, Class)` | 分配 elmtId、记录 updateFunc、执行、**不动组件栈** | L202 |
 | `ifElseBranchUpdateFunction(branchId, fn)` | 同一 elmtId 下按 branchId 换子树 | L251 |
 | `forEachUpdateFunction(elmtId, arr, itemGen, keyGen)` | 数组变化才重建（键级 diff 待优化） | L276 |
@@ -321,6 +322,59 @@ declare interface IMonitorValue<T> { before: T; now: T; path: string; }
 由 ArkTS 编译器强制（`When a variable decorated with '@Once', it must also be decorated with '@Param'`）。
 写成 `@Once mode` 会**构建失败**。正确写法：`@Once @Param mode: string`。
 
+### 3.5 V1 深度观测的契约（`@Observed` / `@ObjectLink`）
+
+V1 与 V2 的深度观测模型**不同**，这一点容易搞混：
+
+| | V1（`@Observed`） | V2（`@ObservedV2` + `@Trace`） |
+|---|---|---|
+| 装饰粒度 | **整个类**（字段上什么都不写） | 类 + **逐字段** `@Trace` |
+| 观测范围 | 该类的**所有自身字段** | **只有**标了 `@Trace` 的字段 |
+| 产物里的形态 | `Item = __decorate([Observed], Item);` | `__decorate([Trace], Item.prototype, "name", void 0)` |
+
+**产物里没有字段名可用**（V1 不在字段上放装饰器）→ 装不了原型访问器 → **只能用 `Proxy` 拦 `set`**。
+（ArkUI 真机也是这个做法：`ObservedObject.createNew` 返回 Proxy。）
+
+订阅侧的产物形态（实测）：
+
+```js
+// @ObjectLink item: Item;  编译成：
+this.__item = new SynchedPropertyNesedObjectPU(params.item, this, "item");
+//                                ^^^^^^ 官方拼写错误（应为 Nested）——不能"顺手改对"，
+//                                       产物里写的就是这个名字，改了直接 ReferenceError
+this.__item.set(params.item);          // setInitiallyProvidedValue / updateStateVars 都调
+this.__item.purgeDependencyOnElmtId(elmtId);
+this.__item.aboutToBeDeleted();
+```
+
+> **产物不会自己调 subscribe。** 全文搜 `subscribe` / `ObservedObject` / `addSubscriber` 都是 0 次
+> ——订阅必须由运行时在构造 `SynchedPropertyNesedObjectPU` 时隐式完成。
+
+**运行时的实现路径**：复用已有的 `propDeps` 依赖机制，但依赖键从"状态对象"换成"**对象实例的通知单元**"：
+
+```
+Observed(Base)  →  返回 class extends Base，构造函数返回 makeObservedProxy(this)
+makeObservedProxy(target)
+  ├ cell = {...}                       ← 通知单元
+  ├ Proxy set 陷阱：值真变了 → markDependentsDirty(cell)
+  └ observedCells.set(proxy, cell)     ← WeakMap，供订阅时按对象取单元
+SynchedPropertyNesedObjectPU.get()   → recordDep(cell) ; return source
+```
+
+于是 `items[0].name = 'renamed'` ⇒ Proxy 的 `set` ⇒ `markDependentsDirty` ⇒
+读过该对象的 elmtId 全部重渲染，**数组长度完全没变**。
+
+**观测边界（有负向断言守着）**：
+
+```
+@Observed class Item { name: string; child: Meta }   // Meta 不是 @Observed
+item.name = 'x'          → 通知 ✅
+item.child = new Meta()  → 通知 ✅（这是 Item 的字段写入）
+item.child.label = 'x'   → 不通知 ✗（Meta 内部，未观测）
+```
+最后一条不是 bug，是与真机一致的语义。它同样是**不静默**的：`@ObjectLink` 绑到非 `@Observed`
+对象上时，`SynchedPropertyNesedObjectPU.set` 会往 `layoutWarnings` 里写一条明确说明。
+
 ---
 
 ## 4. 核心机制
@@ -481,6 +535,13 @@ app.ability.AbilityConstant  app.ability.ConfigurationConstant
 9. **装饰器不挂 global**，一律走 `__arkui_dom_decorators` + 抽取时生成的作用域内绑定。理由：`Event` 与浏览器全局同名（见 §3.4）。
 10. **形状以官方声明为准，不靠猜**。`IMonitor`/`IMonitorValue` 这类接口，权威定义在 SDK 的 `.d.ts` 里；组件工厂名、方法契约以 `ets-loader` 的产物为准。
 11. **v2 的表现必须可自省**。测试除了断言渲染结果，还应断言"装饰器确实在原型上装了访问器"（`__arkui_dom_v2Introspect()`）——否则"渲染碰巧对了"和"机制正确"分不开。
+12. **装饰器绑定必须响亮失败**。TS 的 `__decorate` 助手对 **falsy 装饰器是静默跳过**的：
+    `__decorate([undefined], Item)` 不报错、原样返回类。所以 `extract.mjs` 生成的前奏里有一道
+    守卫，逐个检查绑定到的名字是不是函数，不是就 `throw`。**加新装饰器时，必须同时改两处**
+    （运行时的 `decorators` 表 + `extract.mjs` 的 `DECORATOR_NAMES`），否则会静默失效（见 §3.4）。
+13. **V1 深度观测的边界要与真机一致**，不要"顺手扩大"：`@Observed` 只观测该类的自身字段，
+    嵌套的非 `@Observed` 对象内部变更**不应**触发重渲染。这条有负向断言守着；
+    遇到绑定失败要记 `layoutWarnings`，不静默。
 
 ---
 
@@ -500,56 +561,86 @@ app.ability.AbilityConstant  app.ability.ConfigurationConstant
   属性元数据总数       1211（平均 8.1／组件，最多 TextInput=70）
 
 == 运行时 API ==
-  global 导出        48 个
-  状态类            ObservedPropertySimplePU ObservedPropertyObjectPU SynchedPropertySimpleOneWayPU SynchedPropertySimpleTwoWayPU
+  global 导出        50 个
+  状态类            ObservedPropertySimplePU ObservedPropertyObjectPU SynchedPropertySimpleOneWayPU SynchedPropertySimpleTwoWayPU SynchedPropertyNesedObjectPU
   内置组件          Text Button Column Row Stack List ListItem If ForEach LazyForEach RelativeContainer
-  内部钩子 __arkui_dom_*  17 个
+  内部钩子 __arkui_dom_*  18 个
 
 == 状态管理 ==
-  v1  状态类        4 个（包装对象模型）
+  v1  状态类        5 个（包装对象模型）
+  v1  深度观测      @Observed 已实现（Proxy 拦截字段写入） + @ObjectLink 已实现（SynchedPropertyNesedObjectPU，官方拼写如此）
   v2  基类          ViewV2 已实现（extends ViewPU）
   v2  装饰器        11 个：ViewV2 Param Local Once Event Monitor Computed Provider Consumer ObservedV2 Trace
-  v2  注入方式      作用域内绑定（__arkui_dom_decorators），不挂 global —— 见 ARCHITECTURE.md §3.4
+  注入方式          作用域内绑定（__arkui_dom_decorators），不挂 global —— 见 ARCHITECTURE.md §3.4
+  装饰器表合计      12 个（含 v1 的 Observed）
 
 == 平台模块（@ohos:*）==
   10 个：app.ability.AbilityConstant app.ability.ConfigurationConstant app.ability.UIAbility app.ability.Want data.preferences file.fs hilog net.http router window
 
 == 用例矩阵 ==
-  浏览器 run.sh     14 个：index rich leak layout widgets measure lazy provide v2 async ability router netfile persist
-  Electron          13 个：netfile layout rich index leak ability router widgets measure lazy provide async v2
-  测试页            14 个
-  fixtures 转换产物  12 个：AsyncIO Detail Home Index Layout Lazy Measure NetFile Provide Rich V2 Widgets
+  浏览器 run.sh     15 个：index rich leak layout widgets measure lazy provide v2 observe async ability router netfile persist
+  Electron          14 个：netfile layout rich index leak ability router widgets measure lazy provide async v2 observe
+  测试页            15 个
+  fixtures 转换产物  13 个：AsyncIO Detail Home Index Layout Lazy Measure NetFile Observe Provide Rich V2 Widgets
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          137.8 KB
-  test             62.7 KB
-  tools            31.2 KB
+  runtime          142.7 KB
+  test             68.8 KB
+  tools            33.2 KB
   electron(src)    14.7 KB
-  docs             81.4 KB
-  fixtures         68.9 KB
+  docs             93.6 KB
+  fixtures         80.5 KB
 
 == 逐文件（文档"文件职责"表的来源）==
-  runtime/arkui-dom-runtime.js      60450 B  59.0 KB
+  runtime/arkui-dom-runtime.js      65444 B  63.9 KB
   runtime/generated-components.js   57617 B  56.3 KB
   runtime/ohos-shims.js             23066 B  22.5 KB
-  tools/extract.mjs                  5384 B  5.3 KB
+  tools/extract.mjs                  6457 B  6.3 KB
   tools/gen-components.mjs           7775 B  7.6 KB
   tools/serve.py                     2559 B  2.5 KB
-  tools/stats.mjs                    8297 B  8.1 KB
+  tools/stats.mjs                    9295 B  9.1 KB
   tools/preflight.mjs                5108 B  5.0 KB
   tools/check-all.sh                 2792 B  2.7 KB
-  run.sh                             9030 B  8.8 KB
-  electron/run.sh                    6079 B  5.9 KB
+  run.sh                             9225 B  9.0 KB
+  electron/run.sh                    6103 B  6.0 KB
   electron/main.js                   6795 B  6.6 KB
   electron/preload.js                1961 B  1.9 KB
   package.json                       1089 B  1.1 KB
   .gitignore                          674 B  0.7 KB
-  README.md                         18754 B  18.3 KB
-  docs/ARCHITECTURE.md              37594 B  36.7 KB
-  docs/CAPABILITY.md                 9310 B  9.1 KB
-  docs/DEVELOPING.md                13544 B  13.2 KB
-  docs/ROADMAP.md                   16366 B  16.0 KB
+  README.md                         22654 B  22.1 KB
+  docs/ARCHITECTURE.md              42708 B  41.7 KB
+  docs/CAPABILITY.md                11641 B  11.4 KB
+  docs/DEVELOPING.md                19253 B  18.8 KB
+  docs/ROADMAP.md                   15725 B  15.4 KB
   docs/surface-measurement.md        6496 B  6.3 KB
+  fixtures/pages/AsyncIO.ts          6206 B  6.1 KB
+  fixtures/pages/Detail.ts           3097 B  3.0 KB
+  fixtures/pages/Home.ts             3232 B  3.2 KB
+  fixtures/pages/Index.ts            2737 B  2.7 KB
+  fixtures/pages/Layout.ts           3434 B  3.4 KB
+  fixtures/pages/Lazy.ts             4485 B  4.4 KB
+  fixtures/pages/Measure.ts          6262 B  6.1 KB
+  fixtures/pages/NetFile.ts          5039 B  4.9 KB
+  fixtures/pages/Observe.ts         11906 B  11.6 KB
+  fixtures/pages/Provide.ts          6731 B  6.6 KB
+  fixtures/pages/Rich.ts             9256 B  9.0 KB
+  fixtures/pages/V2.ts              13447 B  13.1 KB
+  fixtures/pages/Widgets.ts          4600 B  4.5 KB
+  test/ability.html                  4695 B  4.6 KB
+  test/async.html                    5977 B  5.8 KB
+  test/components.html               4985 B  4.9 KB
+  test/index.html                    3560 B  3.5 KB
+  test/layout.html                   4135 B  4.0 KB
+  test/lazy.html                     4380 B  4.3 KB
+  test/leak.html                     3921 B  3.8 KB
+  test/measure.html                  6072 B  5.9 KB
+  test/netfile.html                  5302 B  5.2 KB
+  test/observe.html                  6232 B  6.1 KB
+  test/opfs-probe.html               1620 B  1.6 KB
+  test/provide.html                  4238 B  4.1 KB
+  test/rich.html                     3794 B  3.7 KB
+  test/router.html                   4288 B  4.2 KB
+  test/v2.html                       7235 B  7.1 KB
 ```
 
 **"149 / 149" 的准确含义**：149 个组件**名字**都能建出 DOM 节点（不崩、有基础标签/样式）。其中 **64 个有真实 DOM 画像**（8 手写 + 56 骨架），**85 个只落 `data-*`**（能建出来但视觉上是个 `div`）。这不等于"实现了 149 个组件"。
@@ -560,6 +651,7 @@ app.ability.AbilityConstant  app.ability.ConfigurationConstant
 |---|---|
 | ArkTS 语法（装饰器/struct/build/控制流） | ✅ 官方产物完整覆盖 |
 | 状态管理 v1（`@State/@Prop/@Link/@Provide/@Consume/@Watch`） | ✅ 有测试（`run.sh provide`） |
+| 状态管理 v1 深度观测（`@Observed` + `@ObjectLink`） | ✅ 有测试（`run.sh observe`，20 条断言；含"非 `@Observed` 嵌套对象内部变更**不**触发重渲染"的负向断言） |
 | 状态管理 v2（`@ComponentV2/@Local/@Param/@Once/@Event/@Monitor/@Provider/@Consumer/@ObservedV2/@Trace/@Computed`） | ✅ 有测试（`run.sh v2`，26 条断言，浏览器 + Electron 双通过） |
 | v2 的已知简化 | ⚠️ `@Computed` 不缓存；`IMonitor.dirty` 每次赋值一条且 `path` 非点分路径；`@Reusable` 复用路径未实测 |
 | 布局 | ⚠️ 部分：`alignRules` 仅一层锚链，无约束求解器 |
@@ -576,21 +668,21 @@ app.ability.AbilityConstant  app.ability.ConfigurationConstant
 
 | 文件 | 体积 | 职责 | 改它的时机 |
 |---|---|---|---|
-| `runtime/arkui-dom-runtime.js` | 59.0 KB | v1 状态类、`ViewPU`/`ViewV2`、v2 装饰器层、组件栈、布局、`LazyForEach`、路由 | 实现新语义（**手写优先**） |
+| `runtime/arkui-dom-runtime.js` | 63.9 KB | v1 状态类 + 深度观测（`@Observed`/`@ObjectLink`）、`ViewPU`/`ViewV2`、装饰器层、组件栈、布局、`LazyForEach`、路由 | 实现新语义（**手写优先**） |
 | `runtime/generated-components.js` | 56.3 KB | 149 个组件骨架（**生成物**） | **不手改**；改 `tools/gen-components.mjs` 后重新生成，`--check` 会守门 |
 | `runtime/ohos-shims.js` | 22.5 KB | `@ohos:*` 模块 + 持久化后端 | 新增平台模块 |
-| `tools/extract.mjs` | 5.3 KB | hvigor 缓存 `.ts` → 可执行 `.js`；**v2 装饰器作用域内绑定前奏**（§3.4） | 产物形态变化时 |
+| `tools/extract.mjs` | 6.3 KB | hvigor 缓存 `.ts` → 可执行 `.js`；**装饰器作用域内绑定前奏 + 未就绪守卫**（§3.4） | 产物形态/装饰器集合变化时 |
 | `tools/gen-components.mjs` | 7.6 KB | ets-loader 组件 JSON → 骨架注册表（`--check` 只校验不写） | 组件元数据/画像规则更新时 |
 | `tools/serve.py` | 2.5 KB | 静态服务 + `/echo` + `/slow`（测超时） | 需要新测试端点时 |
-| `tools/stats.mjs` | 8.1 KB | 本文档所有数字的来源（`--json` 机器可读） | 覆盖范围变化时 |
+| `tools/stats.mjs` | 8.3 KB | 本文档所有数字的来源（`--json` 机器可读） | 覆盖范围变化时 |
 | `tools/preflight.mjs` | 5.0 KB | 环境自检（工具链/宿主/可执行位） | 外部依赖变化时 |
 | `tools/check-all.sh` | 2.7 KB | 一条命令做完验收，退出码只看被调命令 | 新增验收步骤时 |
-| `run.sh` | 8.8 KB | 浏览器 14 用例驱动 | 新增用例 |
-| `electron/run.sh` | 5.9 KB | Electron 13 用例 + 磁盘验证 | 新增用例 |
+| `run.sh` | 9.0 KB | 浏览器 15 用例驱动 | 新增用例 |
+| `electron/run.sh` | 6.0 KB | Electron 14 用例 + 磁盘验证 | 新增用例 |
 | `electron/main.js` | 6.6 KB | 主进程：offscreen 截图、**像素级**空白检测 | 截图/验证策略变化时 |
 | `electron/preload.js` | 1.9 KB | `contextBridge` 暴露 Node fs | 宿主能力变化时 |
-| `fixtures/pages/*.ts` | 68.9 KB | **冻结的**官方转换产物（含 `V2.ts`） | 几乎不改（见不变量 5） |
-| `test/*.html` | 62.7 KB | 断言页（读 `#result` 节点文本） | 新增用例 |
+| `fixtures/pages/*.ts` | 80.5 KB | **冻结的**官方转换产物（13 个，含 `V2.ts`/`Observe.ts`） | 几乎不改（见不变量 5） |
+| `test/*.html` | 68.8 KB | 断言页（读 `#result` 节点文本） | 新增用例 |
 
 ---
 

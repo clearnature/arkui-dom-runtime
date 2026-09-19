@@ -65,6 +65,11 @@ const V2_DECORATORS = decBlock
   ? decBlock[1].split(',').map((s) => s.trim()).filter((s) => /^[A-Za-z_$][\w$]*$/.test(s))
   : [];
 const hasV2Base = /\bclass ViewV2 extends ViewPU\b/.test(rt);
+// V1 深度观测：@Observed 类装饰器 + @ObjectLink 的状态类
+const hasV1Observed = /function Observed\(/.test(rt);
+const hasObjectLinkClass = /class SynchedPropertyNesedObjectPU\b/.test(rt);
+const V1_EXTRA = ['Observed'];
+const V2_ONLY = V2_DECORATORS.filter((d) => !V1_EXTRA.includes(d));
 
 // ── 平台模块 ──
 const shims = read('runtime/ohos-shims.js');
@@ -116,6 +121,11 @@ const TRACKED_FILES = [
   'docs/ARCHITECTURE.md', 'docs/CAPABILITY.md', 'docs/DEVELOPING.md',
   'docs/ROADMAP.md', 'docs/surface-measurement.md',
 ];
+// 每个 fixture 与测试页都列出来：它们是"能力有测试"的证据
+TRACKED_FILES.push(
+  ...fs.readdirSync(path.join(ROOT, 'fixtures/pages')).sort().map((f) => `fixtures/pages/${f}`),
+  ...fs.readdirSync(path.join(ROOT, 'test')).sort().map((f) => `test/${f}`),
+);
 const fileBytes = {};
 for (const f of TRACKED_FILES) {
   const p = path.join(ROOT, f);
@@ -136,7 +146,8 @@ const report = {
   runtime: {
     globalExports: globals.length, stateClasses: STATE_CLASSES,
     builtinComponents: BUILTIN_COMPONENTS, internalHooks: INTERNAL.length,
-    stateV2: { hasViewV2Base: hasV2Base, decorators: V2_DECORATORS },
+    stateV2: { hasViewV2Base: hasV2Base, decorators: V2_ONLY },
+    stateV1Deep: { hasObservedDecorator: hasV1Observed, hasObjectLinkClass: hasObjectLinkClass },
   },
   platformModules: modules,
   tests: { browserCases: cases, electronCases: elCases, pages: tests, fixtures },
@@ -167,9 +178,12 @@ console.log(`  内部钩子 __arkui_dom_*  ${INTERNAL.length} 个`);
 
 console.log('\n== 状态管理 ==');
 console.log(`  v1  状态类        ${STATE_CLASSES.length} 个（包装对象模型）`);
+console.log(`  v1  深度观测      @Observed ${hasV1Observed ? '已实现' : '缺失'}（Proxy 拦截字段写入）` +
+  ` + @ObjectLink ${hasObjectLinkClass ? '已实现' : '缺失'}（SynchedPropertyNesedObjectPU，官方拼写如此）`);
 console.log(`  v2  基类          ViewV2 ${hasV2Base ? '已实现' : '缺失'}（extends ViewPU）`);
-console.log(`  v2  装饰器        ${V2_DECORATORS.length} 个：${V2_DECORATORS.join(' ')}`);
-console.log(`  v2  注入方式      作用域内绑定（__arkui_dom_decorators），不挂 global —— 见 ARCHITECTURE.md §3.4`);
+console.log(`  v2  装饰器        ${V2_ONLY.length} 个：${V2_ONLY.join(' ')}`);
+console.log(`  注入方式          作用域内绑定（__arkui_dom_decorators），不挂 global —— 见 ARCHITECTURE.md §3.4`);
+console.log(`  装饰器表合计      ${V2_DECORATORS.length} 个（含 v1 的 Observed）`);
 
 console.log('\n== 平台模块（@ohos:*）==');
 console.log(`  ${modules.length} 个：${modules.join(' ')}`);

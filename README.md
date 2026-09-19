@@ -86,10 +86,10 @@ tools/serve.py                 极简静态服务（端口由 OS 分配，避免
 tools/preflight.mjs            环境自检（工具链 / 宿主 / 可执行位）
 tools/check-all.sh             一条命令做完所有验收
 tools/stats.mjs                覆盖范围统计（文档里的数字都来自它）
-test/*.html                    断言页（14 个用例）
-fixtures/                      冻结的 ets-loader 转换产物（12 个，测试的输入）
-run.sh                         浏览器 14 用例驱动
-electron/run.sh                Electron 13 用例 + 真实磁盘验证
+test/*.html                    断言页（15 个用例）
+fixtures/                      冻结的 ets-loader 转换产物（13 个，测试的输入）
+run.sh                         浏览器 15 用例驱动
+electron/run.sh                Electron 14 用例 + 真实磁盘验证
 docs/                          ARCHITECTURE / DEVELOPING / ROADMAP / CAPABILITY
 ```
 
@@ -360,6 +360,34 @@ PASS 无 v2 相关告警（0）
 而 runtime 的 `Scroller` 与 `test/lazy.html` 都在用 `new Event('scroll')`。
 所以改走 `__arkui_dom_decorators` + `extract.mjs` 生成的**作用域内绑定前奏**。
 
+## V1 深度观测 ✅（`@Observed` + `@ObjectLink`）
+
+改**数组元素的字段**（数组长度不变）过去不会触发任何重渲染——`ForEach` 只在数组变化时重建。
+现在按真机语义补齐了。
+
+V1 与 V2 的深度观测**模型不同**：V2 用 `@Trace` **逐字段**标记，V1 的 `@Observed` 标在**整个类**上，
+产物里**字段上什么都没有** → 拿不到字段名 → 只能用 **Proxy** 拦 `set`。
+
+```
+$ bash run.sh observe
+=== ALL PASS ===
+PASS @Observed 类实例是可观测代理（Item[0] → true）
+PASS 非 @Observed 的嵌套对象【不是】可观测的（Meta → false）
+PASS 父改 items[0].name → 子组件自动重渲染：'a' → 'renamed'
+PASS 数组长度未变（2 → 2），证明确实是"元素内部变更"而非整体重建
+PASS 子组件内 this.item.count += 1 → 自己重渲染：'0' → '1'
+PASS 写穿透到父侧同一个对象（父读到 count=1）
+PASS 非 @Observed 对象内部变更【未】触发重渲染：仍为 'meta0'   ← 负向断言
+PASS 替换 item.child 整体（@Observed 的字段写入）触发重渲染：'metaY'
+```
+
+两个必须记住的点：产物里的 `SynchedPropertyNesedObjectPU` 里 **`Nesed` 是官方拼写错误**（不能改）；
+产物**不会**自己调 `subscribe`，订阅由运行时在构造时隐式完成。
+
+> **顺带堵掉一个静默失败通道**：TS 的 `__decorate` 对 **falsy 装饰器静默跳过**
+> （`__decorate([undefined], Item)` 不报错、原样返回类）。所以抽取前奏里加了守卫，
+> 绑到的名字不是函数就 `throw`。**加装饰器必须同时改运行时表和 `DECORATOR_NAMES`。**
+
 ## 工程化 ✅
 
 项目最初不是 git 仓库（287 MB 里 283 MB 是解压的 Electron），改动不可审计、回归不可复现。
@@ -367,21 +395,20 @@ PASS 无 v2 相关告警（0）
 
 | 能力 | 入口 | 说明 |
 |---|---|---|
-| 版本控制 | `git log` | 被跟踪 47 个文件 / 484 KB（`.gitignore` 排除 Electron 运行时与产物） |
+| 版本控制 | `git log` | 被跟踪源码 / 约 0.9 MB（`.git` 排除 Electron 运行时与产物）（`.gitignore` 排除 Electron 运行时与产物） |
 | 环境自检 | `npm run preflight` | 缺 CLT/Chrome/Electron **或脚本缺 `+x`** 都会明确报错 |
 | 统一验收 | `npm run check` | **退出码只看被调命令**，绝不用 `grep`/`wc` 数日志行 |
 | 生成物守门 | `npm run check:gen` | `--check` 只比对不落盘，漂移即非 0 退出 |
 | 覆盖统计 | `npm run stats` | 文档里的所有数字都由它产出（`--json` 机器可读） |
 
-`npm run check` 当前：**浏览器 14 用例 + Electron 13 用例全绿**。
+`npm run check` 当前：**浏览器 15 用例 + Electron 14 用例全绿**。
 
 ## 下一步
 
 **权威清单在 `docs/ROADMAP.md`**（每项带可复现的验收命令）。当前优先：
 
 1. **R5 许可证** —— 需要项目所有者决策（本仓库复用 CLT 的组件元数据与产物形态，自研部分的授权需与之区分）
-2. **R8** v1 的 `@Observed`/`@ObjectLink` 深度观测（v2 的 `@Trace` 已有等价能力，v1 路径仍缺）
-3. **R9/R10** `Grid` 真实布局、`Tabs`/`TabContent` 切换（85 个骨架组件目前只落 `data-*`）
+2. **R9/R10** `Grid` 真实布局、`Tabs`/`TabContent` 切换（85 个骨架组件目前只落 `data-*`）
 4. **R14** 多层锚链 + `Guideline` + `bias`（`alignRules` 目前只支持一层）
 
 **仍未覆盖**：动画/手势、`Navigation`/`Swiper` 切换语义、`@ohos:media`/`notification`、

@@ -41,6 +41,14 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 | **`Scroller.scrollToIndex` 支持未渲染目标**：靠 estimate 行高换算 + 同步刷新窗口 | ✅ | lazy（跳到 500 → scrollTop 14500） |
 | **`@Provide`/`@Consume`**：按名字沿视图链解析；consume 返回的**就是提供者的属性实例** | ✅ | provide（实例相等 + 跨层自动更新） |
 | **`@Watch`**：`declareWatch` 挂回调，值变更时触发（回调收到属性名） | ✅ | provide（log 随 bump 增长） |
+| **V1 深度观测 —— `@Observed` 类装饰器**：产物里是 `Item = __decorate([Observed], Item)`，运行时返回一个构造函数产出 **Proxy** 的子类，拦 `set` 通知订阅者 | ✅ | observe（`__arkui_dom_isObserved(Item[0]) === true`） |
+| **`@ObjectLink`**：`new SynchedPropertyNesedObjectPU(source, view, name)`（**`Nesed` 是官方拼写错误**）；读物时记依赖到对象的通知单元 | ✅ | observe |
+| **改数组元素的字段（数组长度不变）驱动重渲染** | ✅ | observe（`items[0].name` 改后子组件文本自动变，长度仍为 2） |
+| **子组件内改同一对象 → 写穿透到父侧同一个对象** | ✅ | observe（子组件 `this.item.count += 1`，父读到 1） |
+| **`@State` 持有的单个 `@Observed` 对象**（非数组）也走 `@ObjectLink` | ✅ | observe（`single.name` 变更驱动 `SingleView`） |
+| **观测边界 = `@Observed` 类的自身字段**：改**嵌套的非 `@Observed`** 对象内部**不**触发重渲染 | ✅ | observe（**负向断言**：`item.child.label` 改了但文本不变） |
+| **替换嵌套对象本身**（是 `@Observed` 类的字段写入）→ 触发重渲染 | ✅ | observe（`item.child = new Meta(...)` 后文本变） |
+| **`@ObjectLink` 绑到非 `@Observed` 对象时不静默** → 记 `layoutWarnings` | ✅ | observe（无告警；破坏实现时该告警出现） |
 | **状态管理 v2 —— `@ComponentV2` 基类 `ViewV2`**（`super(parent, elmtId, extraInfo)`，与 v1 签名不同） | ✅ | v2 |
 | **v2 `@Local`**：裸字段 + 原型访问器，改值触发重渲染 | ✅ | v2 |
 | **v2 `@Param` / `@Once`**：父→子；`@Once` 只取首次传入（编译器要求必须同时写 `@Param`） | ✅ | v2 |
@@ -119,7 +127,9 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
   但 `@Reusable` 的复用路径**未实测**（产物里有 `resetStateVarsOnReuse`/`resetComputed`/`resetMonitorsOnReuse` 调用，运行时提供了空实现）
 - v2 的已知简化：`@Computed` **不缓存**；`@Monitor` 一次赋值只产生一条 `dirty`，且 `path` 是字段名而非
   `items.0.name` 这样的**点分路径**（嵌套对象的 `@Trace` 变更能触发重渲染，但回调里的路径不精确）
-- `@Observed`/`@ObjectLink`（**v1** 的深度观测）：v2 的 `@Trace` 已具备等价能力，v1 语法路径仍缺
+- v1 深度观测的已知边界：`@Observed` 只观测该类的**自身字段**，嵌套的非 `@Observed` 对象内部变更不触发
+  （与真机一致，有负向断言守着）；`@Observed` 经 Proxy 实现，**未验证**对 `instanceof`、序列化、
+  展开运算符、`for...in` 之外的反射行为有无边界差异
 - `Navigation`、`Tabs`/`TabContent` 的切换语义、`Swiper`、动画/过渡、手势（`gesture`/`panGesture`）、`Refresh`
 - `If` 分支的 elmtId 复用优化
 - 父组件重渲染时**子视图内部 elmtId 迁移**未处理（深嵌套自定义组件可能出问题）
