@@ -74,7 +74,7 @@ node tools/stats.mjs --json | python3 -m json.tool
 
 ### 步骤
 
-1. **先确认它是不是"手写"**。若组件名在 `runtime/arkui-dom-runtime.js` 的 `components` 里已存在（`Text`/`Button`/`Column`/`Row`/`Stack`/`List`/`ListItem`/`RelativeContainer`/`Tabs`/`TabContent`），生成骨架**会被跳过**，你必须改手写实现。
+1. **先确认它是不是"手写"**。若组件名在 `runtime/arkui-dom-runtime.js` 的 `components` 里已存在（`Text`/`Button`/`Column`/`Row`/`Stack`/`List`/`ListItem`/`RelativeContainer`/`Tabs`/`TabContent`/`Swiper`），生成骨架**会被跳过**，你必须改手写实现。
 2. **判断该改哪一侧**：
    - 只需"标签或基础样式对" → 改 `tools/gen-components.mjs` 的 `CONTAINERS` / `LEAF_TAGS` / 输入类 `type` 映射，然后 `node tools/gen-components.mjs`
    - 需要**交互/布局语义**（子项挂载方式、切换、测量）→ 改 `runtime/arkui-dom-runtime.js`，走 `ensureComponent(name, domFactory, contentUpdater)`；若该组件的 `create`/`pop` 形态特殊（如 `Tabs`/`TabContent`），在 `ensureComponent` 里按组件名加分支
@@ -366,6 +366,9 @@ node tools/extract.mjs fixtures/pages/NewPage.ts build/newpage.js --cjs --regist
 | ㉞ | **把 `Tabs.onChange` 交给通用事件分支** → 变成 `addEventListener('change')`，一个**永不触发**的监听器（切换时回调不会跑，页面看着正常） | 带 `__tabsState` 的节点要在通用事件分支**之前**拦截 `onChange`，由 Tabs 收集、`setActiveTab` 时派发 |
 | ㉟ | **自定义挂载点绕过 `mountNode`** → ① 漏了 `data-arkui-comp` 标记（`querySelectorAll` 返回 0，表现为"组件不存在"）② `rec.parentNode` 指错（重渲染时恢复到错误父节点，重建整棵兄弟结构） | 自己补标记；并把 `rec.parentNode` 指到真实挂载点（`TabContent` 指内容区） |
 | ㊱ | **ArkUI 轨道模板的裸数字直传 CSS**：`columnsTemplate('100 1fr')` → `grid-template-columns: 100 1fr` → **整条声明作废且浏览器不报错**（表现为"Grid 完全没有列"） | 过 `normalizeTrackList`（`100`→`100px`、`50vp`→`50px`，保留 `1fr`/`auto`/`%`/`repeat()`/`minmax()`）。断言要同时看字符串**和几何** |
+| ㊳ | **凭印象写 create 的签名**：我按 `Tabs({barPosition, index, controller})` 写成 `Swiper({index:0, loop:false})` → 编译器判错 `Object literal may only specify known properties, and 'index' does not exist in type 'SwiperController'`。本 SDK 的 `SwiperInterface` **只有** `(controller?: SwiperController)` 一个重载 | **别猜**：先 grep `ets/component/<comp>.d.ts` 的 `<Comp>Interface`，再真构建一次看 cache 产物。同族组件的签名可以**完全不同** |
+| ㊴ | **长驻计时器跟着页面走**（`Swiper` 的 `autoPlay` 用 `setInterval`）：`router` 换页 / `clearRoot` 只删 DOM，计时器照跑 → 跨页面泄漏，还在写已卸载的节点 | 计时器回调里先查 `st.node.isConnected`，断了就 `clearInterval` 并清零句柄（自停表，不依赖外部拆卸钩子） |
+| ㊵ | **给依赖计时器的行为写固定等待**：`autoPlay` 在 headless + `--virtual-time-budget` 下的推进时机不稳 | 用**轮询**（有界重试）而不是 `sleep(固定值)`；并且**连跑 3 次**确认稳定（`lazy` 踩过同样的坑） |
 
 ### 确定性与时序
 
@@ -419,7 +422,7 @@ npm run stats:check-doc     # 只比对，漂移即 exit 1 并逐行打印差异
 npm run stats:write-doc     # 就地重写那个块（内部迭代到收敛）
 ```
 
-**为什么需要守卫**：那个块有 94 行，且**包含文档自身的体积**（自引用）。历史上靠人肉同步，
+**为什么需要守卫**：那个块有近百行，且**包含文档自身的体积**（自引用）。历史上靠人肉同步，
 R5a 提交就漏更新了一行（`THIRD-PARTY-NOTICES.md`），事后才发现。守卫的校验方式是
 **跑一遍 `stats.mjs` 自身**再逐行比对——不重新实现一遍渲染逻辑，避免"校验器和渲染器各写一套、
 各自漂移"（同一个坑在本项目出现过：`--check` 曾只在注释里声明却没实现）。

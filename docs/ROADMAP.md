@@ -4,9 +4,9 @@
 
 已完成的机制说明见 `docs/ARCHITECTURE.md`；怎么改见 `docs/DEVELOPING.md`。
 
-**当前状态**：`npm run check` 全绿（preflight + 生成物一致 + 浏览器 16 用例 + Electron 15 用例）。
-v1/v2 状态管理（含 v1 深度观测）、`Grid` 真实轨道、`Tabs`/`TabContent` 切换均已落地。
-**下一步优先级：R11（`Swiper`，复用 `onlyOneVisible`）→ R12（`Navigation`）→ R14（多层锚链）→ R13/R15–R17。**
+**当前状态**：`npm run check` 全绿（preflight + 生成物一致 + 文档数字守卫 + 浏览器 17 用例 + Electron 16 用例）。
+v1/v2 状态管理（含 v1 深度观测）、`Grid` 真实轨道、`Tabs` 切换、`Swiper` 轮播均已落地。
+**下一步优先级：R12（`Navigation`）→ R14（多层锚链）→ R13/R15–R17。**
 R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分发前才需决定。
 
 ---
@@ -28,6 +28,7 @@ R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分�
 | ③ | **V1 深度观测**（`@Observed` + `@ObjectLink`，Proxy 实现） | `bash run.sh observe`（20 条断言，含负向） |
 | ③ | **状态管理 v2**（`ViewV2` + 11 个装饰器） | `bash run.sh v2`（26 条断言，浏览器 + Electron 双通过） |
 | ③ | **`Grid`/`GridItem` 真实轨道** + `Tabs`/`TabContent` 切换 | `bash run.sh tabgrid`（51 条断言，含几何与机制自省；双端通过） |
+| ③ | **`Swiper` 轮播**（loop / autoPlay / 指示点 / 控制器） | `bash run.sh swiper`（41 条断言，双端通过，连跑 3 次稳定） |
 | ③ | `@ohos:*` 别名层 + CommonJS 装载 + 真 fetch | `bash run.sh async` |
 | ③ | `UIAbility` 启动链路 | `bash run.sh ability` |
 | ③ | `router` 页面栈（返回时保留状态） | `bash run.sh router` |
@@ -38,7 +39,7 @@ R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分�
 | **P0** | 统一验收门禁（退出码可信） | `npm run check`；制造漂移 → exit 1 |
 | **P0** | `--check` 真正只校验不落盘 | `node tools/gen-components.mjs --check` |
 
-当前：**浏览器 16 用例 + Electron 15 用例全绿**（`npm run check` → `exit 0`）。
+当前：**浏览器 17 用例 + Electron 16 用例全绿**（`npm run check` → `exit 0`）。
 
 ---
 
@@ -59,7 +60,8 @@ R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分�
 | — | R5b 出向授权（`LICENSE`）——**本地开发不需要，降级到"分发前"** | 无（现在） | 低 |
 | P1 | ~~R6–R8 状态管理 v2 + V1 深度观测~~ **R6/R7/R8 已完成** | 高 → 已拿到 | — |
 | P2 | ~~R9–R10 Grid / Tabs 真实语义~~ **已完成** | — | — |
-| P2 | R11–R13 其余组件视觉语义 | 中（85 个骨架只有 `data-*`） | 中 |
+| P2 | ~~R11 Swiper~~ **已完成** | — | — |
+| P2 | R12–R13 其余组件视觉语义 | 中（85 个骨架只有 `data-*`） | 中 |
 | P3 | R14–R17 布局引擎 | 中高（真实页面一定踩） | 高 |
 | P4 | R18–R21 平台模块 | 中 | 低–中 |
 | P5 | R22–R23 动画/手势 | 中 | 中 |
@@ -267,13 +269,42 @@ bash run.sh observe && bash electron/run.sh observe   # 20 条断言双通过
 
 **触及**：`runtime/arkui-dom-runtime.js`、`fixtures/pages/TabsGrid.ts`、`test/tabgrid.html`、`run.sh`、`electron/run.sh`
 
-### R11 — `Swiper` 轮播
+### ~~R11 — `Swiper` 轮播~~ ✅ 已完成
 
 **内容**：`Swiper({index, autoPlay, loop, indicator})` 的当前页/切换/指示点。
 
-**依赖**：R10 ✅ —— "多子项只显示一个"的公共实现已抽出为 `onlyOneVisible(entries, active)`，直接复用。
+**实测的签名与预期不同（本项最大的坑）**：本 SDK 的 `SwiperInterface` 只有
+`(controller?: SwiperController)` 一个重载 —— **create 的参数就是控制器实例本身**，
+`index`/`loop`/`autoPlay`/`interval`/`indicator` 全是**属性 setter**。我按 `Tabs({…options})`
+的印象写，被编译器判错 `'index' does not exist in type 'SwiperController'`。
 
-**验收**：断言初始页、`controller.showNext()` 后页索引变化、指示点数 = 子项数。
+**依赖**：R10 ✅ —— `onlyOneVisible(entries, active)` 直接复用（本轮未改动它）。
+结构上比 `Tabs` 更简单：子项直接挂进 Swiper 元素，指示点是 `Swiper.pop()` 时追加的覆盖层
+（页面标 `data-arkui-swiper-page`，圆点标 `data-arkui-swiper-dot`，互不污染）。
+
+**实现**：`SwiperController`（`showNext`/`showPrevious`/`changeIndex`/`finishAnimation`/`preloadItems`）+
+`setActiveSwiper`（loop 时回卷 / 非 loop 时越界拒绝）+ `stepSwiper`（非 loop 边界**停住**）+
+`startSwiperAutoPlay`（回调内查 `isConnected`，页面卸载后**自己停表**，避免跨页面计时器泄漏）+
+`SWIPER_UNSUPPORTED` 覆盖 26 个未实现项（含 `vertical`/`displayCount`/全部动画与手势回调）。
+
+**验收（已执行）**：`bash run.sh swiper` —— **41 条断言**，双端通过；浏览器连跑 3 次稳定
+（autoPlay 依赖计时器，故用**轮询**而非固定等待，并单独复测稳定性）：
+
+- 初始页/页数/`data-arkui-swiper-page` 标记只标页面不标指示点
+- `showNext`/`showPrevious`/`changeIndex` 三条切换路径 + `onChange` 驱动 `@State` 重渲染
+- `indicator(true)` → 圆点数 = 页数，活动圆点跟随
+- **`loop` 的两套语义**：`loop=true` 末页前进**回卷**；`loop=false` 末页前进**停住**、越界 `changeIndex` 记 warning
+- 切走的页**不销毁**；autoPlay 反复推进后页数不变（无泄漏/重复挂载）
+- 自省钩子 `__arkui_dom_swiperState`
+
+**破坏验证**：去掉 `loop` 回卷 → 1 条失败；去掉 autoPlay 的 `setInterval` → 1 条失败。
+
+**已知限制（写进 CAPABILITY）**：**手势滑动完全没有**（只有控制器/点指示点/autoPlay 三条路径）；
+无动画；`indicator` 只支持 boolean；直接子项若被 `ForEach` 包一层（`display:contents`）会记警告
+（页边界识别不出来）。
+
+**触及**：`runtime/arkui-dom-runtime.js`、`fixtures/pages/SwiperDemo.ts`、`test/swiper.html`、
+`run.sh`、`electron/run.sh`
 
 ### R12 — `Navigation` / `NavDestination`
 

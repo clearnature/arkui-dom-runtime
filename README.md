@@ -86,10 +86,10 @@ tools/serve.py                 极简静态服务（端口由 OS 分配，避免
 tools/preflight.mjs            环境自检（工具链 / 宿主 / 可执行位）
 tools/check-all.sh             一条命令做完所有验收
 tools/stats.mjs                覆盖范围统计（文档里的数字都来自它）
-test/*.html                    断言页（16 个用例）
-fixtures/                      冻结的 ets-loader 转换产物（14 个，测试的输入）
-run.sh                         浏览器 16 用例驱动
-electron/run.sh                Electron 15 用例 + 真实磁盘验证
+test/*.html                    断言页（17 个用例）
+fixtures/                      冻结的 ets-loader 转换产物（15 个，测试的输入）
+run.sh                         浏览器 17 用例驱动
+electron/run.sh                Electron 16 用例 + 真实磁盘验证
 docs/                          ARCHITECTURE / DEVELOPING / ROADMAP / CAPABILITY
 ```
 
@@ -430,6 +430,48 @@ PASS 越界已记入 layoutWarnings（0 → 1）            ← 负向断言
    → 漏了 `data-arkui-comp` 标记，测试 `querySelectorAll('[data-arkui-comp="TabContent"]')` 返回 0。
    `rec.parentNode` 也必须改指内容区，否则重渲染会重建整个 bar。
 
+## R11：`Swiper` 轮播 ✅
+
+```
+$ bash run.sh swiper
+=== ALL PASS ===
+PASS 页数 = 3（page 标记只标页面、不标指示点）
+PASS 初始恰好第 0 页可见
+PASS 指示点数 = 3（= 页数）
+PASS SwiperController 已绑定 = true                  ← 机制自省，不只看 display
+PASS showNext 后恰好第 1 页可见
+PASS onChange 已触发且 @State 驱动重渲染：'cur=1'
+PASS loop=false 时末页再 showNext 停住（index=2）
+PASS showPrevious 回到第 1 页
+PASS loop=true 末页再前进【回卷】到第 0 页          ← 与 loop=false 的语义差异
+PASS autoPlay 自动推进了索引：'auto=0' → 'auto=1'
+PASS loop=true 下索引始终在 [0,1] 内（采样 12 次）
+PASS 反复自动推进后页数仍为 2（无泄漏/重复挂载）
+PASS 越界已记入 layoutWarnings（0 → 1）            ← 负向断言
+```
+
+**最大的一个坑是签名，不是机制**：我按 `Tabs({barPosition, index, controller})` 的印象写成
+`Swiper({index:0, loop:false, ...})`，编译器直接判错：
+
+```
+Object literal may only specify known properties,
+and 'index' does not exist in type 'SwiperController'
+```
+
+这个 SDK 的 `SwiperInterface` 只有 `(controller?: SwiperController)` 一个重载 ——
+**create 的参数就是控制器实例本身**，`index`/`loop`/`autoPlay` 全是属性 setter。
+→ 再一次印证：**别凭印象写 API 形状，`.d.ts` 和产物才是权威。**
+
+**结构上比 `Tabs` 简单**：子项直接挂进 Swiper 元素（不像 `TabContent` 要另认领内容区），
+所以 `Swiper.width/height/onChange` 自然作用于整体；指示点是 `Swiper.pop()` 时追加的覆盖层
+（那时才数得出页数），页面用 `[data-arkui-swiper-page]` 标记，与指示点互不污染。
+
+**autoPlay 是自己停表的**：回调里先查 `st.node.isConnected`，页面被 `router` 换掉后自动
+`clearInterval` —— 否则计时器会跨页面泄漏。测试里对 autoPlay 用**轮询**而不是固定等待
+（本项目在 `lazy` 上踩过 headless 计时/节流的坑），并连跑 3 次确认稳定。
+
+**破坏验证**：把 `loop` 的回卷去掉 → 1 条失败；把 autoPlay 的 `setInterval` 去掉 → 1 条失败。
+
 ## 工程化 ✅
 
 项目最初不是 git 仓库（287 MB 里 283 MB 是解压的 Electron），改动不可审计、回归不可复现。
@@ -441,21 +483,20 @@ PASS 越界已记入 layoutWarnings（0 → 1）            ← 负向断言
 | 环境自检 | `npm run preflight` | 缺 CLT/Chrome/Electron **或脚本缺 `+x`** 都会明确报错 |
 | 统一验收 | `npm run check` | **退出码只看被调命令**，绝不用 `grep`/`wc` 数日志行 |
 | 生成物守门 | `npm run check:gen` | `--check` 只比对不落盘，漂移即非 0 退出 |
-| 文档数字守门 | `npm run stats:check-doc` | `ARCHITECTURE.md` §6 的 94 行实测数字，漂移即非 0 退出；`stats:write-doc` 就地重写 |
+| 文档数字守门 | `npm run stats:check-doc` | `ARCHITECTURE.md` §6 的整块实测数字逐行比对，漂移即非 0 退出；`stats:write-doc` 就地重写 |
 | 覆盖统计 | `npm run stats` | 文档里的所有数字都由它产出（`--json` 机器可读） |
 
-`npm run check` 当前：**浏览器 16 用例 + Electron 15 用例全绿**。
+`npm run check` 当前：**浏览器 17 用例 + Electron 16 用例全绿**。
 
 ## 下一步
 
 **权威清单在 `docs/ROADMAP.md`**（每项带可复现的验收命令）。当前优先：
 
-1. **R11** `Swiper` 轮播（复用 `Tabs` 已抽出的 `onlyOneVisible`）
-2. **R12** `Navigation`/`NavDestination` 栈式导航
-3. **R14** 多层锚链 + `Guideline` + `bias`（`alignRules` 目前只支持一层）
-4. **R13/R15–R17** 纯绘制类组件（`Gauge`/`DataPanel`/`Rating`）、真实文本换行测量、变高列表项
+1. **R12** `Navigation`/`NavDestination` 栈式导航
+2. **R14** 多层锚链 + `Guideline` + `bias`（`alignRules` 目前只支持一层）
+3. **R13/R15–R17** 纯绘制类组件（`Gauge`/`DataPanel`/`Rating`）、真实文本换行测量、变高列表项
 
-**仍未覆盖**：动画/手势、`Navigation`/`Swiper` 切换语义、`@ohos:media`/`notification`、
+**仍未覆盖**：动画/手势（**含 `Swiper` 的滑动翻页**）、`Navigation` 栈语义、`@ohos:media`/`notification`、
 浏览器侧真文件系统（OPFS 在 headless Chrome 会挂起，现用 `localStorage` 兜底）。
 **别把没验的当结论**——`docs/CAPABILITY.md` 里有逐项的能力矩阵。
 
@@ -463,8 +504,8 @@ PASS 越界已记入 layoutWarnings（0 → 1）            ← 负向断言
 
 - `ForEach` 现在是「数组变了就整体重建」，**没有键级 diff**
 - 父组件重渲染时参数推送走 `updateStateVarsOfChildByElmtId`，但**子视图内部的 elmtId 迁移未处理**（复杂嵌套可能出问题）
-- `Repeat` / 动画 / `Tabs.vertical`/`barMode` / `Grid` 无模板时的 `cellLength` 自适应 **未覆盖**
-  （这些会记 `layoutWarnings`，不是静默忽略）
+- `Repeat` / 动画 / `Tabs.vertical`·`barMode` / `Swiper` 的动画与 `displayCount` / `Grid` 无模板时的
+  `cellLength` 自适应 **未覆盖**（这些会记 `layoutWarnings`，不是静默忽略）
 - **布局语义仍不完整**：没有约束求解器，`alignRules` 只支持一层锚链
 
 ---

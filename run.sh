@@ -118,6 +118,8 @@ case "${1:-index}" in
     echo
     run_one tabgrid "$(src_of pages/TabsGrid.ts)" build/tabsgrid.js test/tabgrid.html || rc=1
     echo
+    run_one swiper "$(src_of pages/SwiperDemo.ts)" build/swiperdemo.js test/swiper.html || rc=1
+    echo
     run_one measure "$(src_of pages/Measure.ts)" build/measure.js test/measure.html || rc=1
     echo
     run_one lazy "$(src_of pages/Lazy.ts)" build/lazy.js test/lazy.html || rc=1
@@ -153,6 +155,7 @@ case "${1:-index}" in
   layout) run_one layout "$(src_of pages/Layout.ts)" build/layout.js test/layout.html ;;
   widgets) run_one widgets "$(src_of pages/Widgets.ts)" build/widgets.js test/components.html ;;
   tabgrid) run_one tabgrid "$(src_of pages/TabsGrid.ts)" build/tabsgrid.js test/tabgrid.html ;;
+  swiper) run_one swiper "$(src_of pages/SwiperDemo.ts)" build/swiperdemo.js test/swiper.html ;;
   measure) run_one measure "$(src_of pages/Measure.ts)" build/measure.js test/measure.html ;;
   lazy) run_one lazy "$(src_of pages/Lazy.ts)" build/lazy.js test/lazy.html ;;
   provide) run_one provide "$(src_of pages/Provide.ts)" build/provide.js test/provide.html ;;
@@ -182,5 +185,5 @@ case "${1:-index}" in
     echo
     run_one netfile-2 "$(src_of pages/NetFile.ts)" build/netfile-module.js test/netfile.html \
       "--cjs --register NetFile" "?phase=2" "$PERSIST_PROFILE" "$PERSIST_PORT" ;;
-  *) echo "用法: bash run.sh [index|rich|leak|layout|widgets|tabgrid|measure|lazy|provide|async|ability|router|netfile|all]"; exit 2 ;;
+  *) echo "用法: bash run.sh [index|rich|leak|layout|widgets|tabgrid|swiper|measure|lazy|provide|async|ability|router|netfile|all]"; exit 2 ;;
 esac

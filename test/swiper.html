@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R11 Swiper 轮播：当前页 / 切换 / 指示点 / loop / autoPlay</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 300px; height: 400px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R11 Swiper：三组用例（loop=false / loop=true / autoPlay=true）</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../build/swiperdemo.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const disp = (el) => getComputedStyle(el).display;
+    const pagesOf = (sw) => [...sw.querySelectorAll('[data-arkui-swiper-page]')];
+    const dotsOf = (sw) => [...sw.querySelectorAll('[data-arkui-swiper-dot]')];
+    // 断言"恰好一个可见且是第 N 个"，而不是"第 N 个不是 none"（后者在全可见时也成立＝没牙齿）
+    const onlyVisible = (pages, want) => {
+      const v = pages.map((p, k) => (disp(p) === 'none' ? -1 : k)).filter((k) => k >= 0);
+      return v.length === 1 && v[0] === want ? `恰好第 ${want} 页可见` : `可见的是 [${v.join(',')}]（应为 [${want}]）`;
+    };
+    const activeDot = (dots) => dots.findIndex((d) => d.dataset.arkuiSwiperDotActive === 'true');
+
+    try {
+      __arkui_dom_loadRoute('pages/SwiperDemo', root);
+      await tick(60);
+      check((root.textContent || '').includes('SwiperDemo'), 'SwiperDemo 页面已渲染');
+
+      // ══════════ A 组：loop=false，3 页 ══════════
+      const swA = root.querySelector('#swiperA');
+      check(!!swA, 'Swiper#swiperA 已创建');
+      check(!!swA && swA.__arkuiComp === 'Swiper', `组件标记 = '${swA && swA.__arkuiComp}'`);
+      const pages = pagesOf(swA);
+      check(pages.length === 3, `页数 = ${pages.length}（page 标记只标页面、不标指示点）`);
+      check(pages.map((p) => p.textContent).join(',') === 's0,s1,s2',
+        `页内容顺序 = '${pages.map((p) => p.textContent).join(',')}'`);
+
+      const v0 = onlyVisible(pages, 0);
+      check(v0 === '恰好第 0 页可见', `初始${v0}`);
+      check(disp(pages[0]) === 'block', `可见页 display = '${disp(pages[0])}'（非 none 即可覆盖，这里顺带钉住实现）`);
+
+      const dots = dotsOf(swA);
+      check(!!swA.querySelector('[data-arkui-swiper-indicator]'), 'indicator(true) → 指示点容器已生成');
+      check(dots.length === 3, `指示点数 = ${dots.length}（= 页数）`);
+      check(activeDot(dots) === 0, `初始高亮指示点 index = ${activeDot(dots)}`);
+
+      const curEl = root.querySelector('#curline');
+      check(!!curEl && curEl.textContent === 'cur=0', `初始 '${curEl && curEl.textContent}'`);
+
+      // 机制自省：不能只看 display
+      const stA = __arkui_dom_swiperState(swA);
+      check(!!stA, '自省钩子 __arkui_dom_swiperState 可用');
+      check(stA && stA.count === 3 && stA.index === 0, `自省 count/index = ${stA && stA.count}/${stA && stA.index}`);
+      check(stA && stA.hasController === true, `SwiperController 已绑定 = ${stA && stA.hasController}`);
+      check(stA && stA.loop === false && stA.autoPlay === false,
+        `自省 loop/autoPlay = ${stA && stA.loop}/${stA && stA.autoPlay}`);
+
+      const btn = (label) => [...root.querySelectorAll('button')].find((b) => b.textContent === label);
+      check(!!btn('next') && !!btn('prev') && !!btn('go2') && !!btn('loopnext'),
+        '四个控制按钮都已创建');
+
+      // ── showNext ──
+      btn('next').click();
+      await tick(40);
+      check(onlyVisible(pages, 1) === '恰好第 1 页可见', `showNext 后${onlyVisible(pages, 1)}`);
+      check(curEl.textContent === 'cur=1', `onChange 已触发且 @State 驱动重渲染：'${curEl.textContent}'`);
+      check(activeDot(dots) === 1, `指示点跟到 index = ${activeDot(dots)}`);
+
+      // ── 走到末页，再前进应停住（loop=false） ──
+      btn('next').click();
+      await tick(40);
+      check(onlyVisible(pages, 2) === '恰好第 2 页可见', `再到末页：${onlyVisible(pages, 2)}`);
+      btn('next').click();
+      await tick(40);
+      check(__arkui_dom_swiperState(swA).index === 2 && onlyVisible(pages, 2) === '恰好第 2 页可见',
+        `loop=false 时末页再 showNext 停住（index=${__arkui_dom_swiperState(swA).index}）`);
+
+      // ── showPrevious ──
+      btn('prev').click();
+      await tick(40);
+      check(onlyVisible(pages, 1) === '恰好第 1 页可见' && curEl.textContent === 'cur=1',
+        `showPrevious 回到第 1 页：${onlyVisible(pages, 1)}，'${curEl.textContent}'`);
+
+      // ── changeIndex ──
+      btn('go2').click();
+      await tick(40);
+      check(onlyVisible(pages, 2) === '恰好第 2 页可见' && activeDot(dots) === 2,
+        `changeIndex(2)：${onlyVisible(pages, 2)}，指示点 index=${activeDot(dots)}`);
+
+      // ── 切走的页不销毁（与 Tabs/router 同语义）──
+      check(pages.every((p) => p.isConnected), '所有页仍留在 DOM 中（未销毁）');
+      check(pages[0].textContent === 's0' && pages[1].textContent === 's1', '非活动页内容完好');
+
+      // ── 负向：越界 ──
+      const warnBefore = __arkui_dom_layout_warnings.length;
+      const negRet = __arkui_dom_swiperState(swA).controller.changeIndex(99);
+      const warnAfter = __arkui_dom_layout_warnings.length;
+      check(negRet === false, `越界 changeIndex 返回 false（实际 ${JSON.stringify(negRet)}）`);
+      check(__arkui_dom_swiperState(swA).index === 2, '越界后 index 未变');
+      check(warnAfter > warnBefore, `越界已记入 layoutWarnings（${warnBefore} → ${warnAfter}）`);
+      check(String(__arkui_dom_layout_warnings[warnAfter - 1]).includes('越界'),
+        `诊断原文：'${__arkui_dom_layout_warnings[warnAfter - 1]}'`);
+
+      // ══════════ B 组：loop=true 的边界回卷（用按钮确定性触发，不靠计时器）══════════
+      const swB = root.querySelector('#swiperB');
+      const pagesB = pagesOf(swB);
+      const loopEl = root.querySelector('#loopline');
+      check(!!swB && pagesB.length === 2, `swiperB 页数 = ${pagesB.length}`);
+      check(onlyVisible(pagesB, 0) === '恰好第 0 页可见' && loopEl.textContent === 'loop=0',
+        `B 组初始：${onlyVisible(pagesB, 0)}，'${loopEl.textContent}'`);
+      btn('loopnext').click();
+      await tick(40);
+      check(onlyVisible(pagesB, 1) === '恰好第 1 页可见' && loopEl.textContent === 'loop=1',
+        `B 组前进：${onlyVisible(pagesB, 1)}，'${loopEl.textContent}'`);
+      btn('loopnext').click();
+      await tick(40);
+      check(onlyVisible(pagesB, 0) === '恰好第 0 页可见' && loopEl.textContent === 'loop=0',
+        `loop=true 末页再前进【回卷】到第 0 页：${onlyVisible(pagesB, 0)}，'${loopEl.textContent}'`);
+
+      // ══════════ C 组：autoPlay（唯一依赖计时器的部分 → 轮询而非固定等待）══════════
+      const swC = root.querySelector('#swiperC');
+      const pagesC = pagesOf(swC);
+      const autoEl = root.querySelector('#autoline');
+      const stC = __arkui_dom_swiperState(swC);
+      check(stC && stC.autoPlay === true && stC.loop === true,
+        `C 组自省 autoPlay/loop = ${stC && stC.autoPlay}/${stC && stC.loop}`);
+      check(stC && stC.interval === 50, `自省 interval = ${stC && stC.interval}`);
+
+      const auto0 = autoEl.textContent;
+      let advanced = false;
+      for (let i = 0; i < 80; i++) {
+        await tick(25);
+        if (autoEl.textContent !== auto0) { advanced = true; break; }
+      }
+      check(advanced, `autoPlay 自动推进了索引：'${auto0}' → '${autoEl.textContent}'`);
+      const seen = [];
+      for (let i = 0; i < 12; i++) {
+        await tick(25);
+        seen.push(autoEl.textContent);
+      }
+      check(seen.every((s) => /^auto=[01]$/.test(s)),
+        `loop=true 下索引始终在 [0,1] 内（采样 ${seen.length} 次：${[...new Set(seen)].join(' ')}）`);
+      check(pagesOf(swC).length === 2, `反复自动推进后页数仍为 ${pagesOf(swC).length}（无泄漏/重复挂载）`);
+
+      lines.push(`ELMT ${__arkui_dom_elmtRecords.size}`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const el = document.getElementById('result');
+    el.textContent = lines.join('\n');
+    el.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

@@ -8,7 +8,7 @@
  *   node tools/stats.mjs --check-doc  只校验 ARCHITECTURE.md §6 的引用块与本脚本输出一致（不落盘）
  *   node tools/stats.mjs --write-doc  就地重写那个引用块（迭代到收敛）
  *
- * 为什么需要 --check-doc：§6 那个引用块是 94 行实测数字，过去靠人肉同步 ——
+ * 为什么需要 --check-doc：§6 那个引用块有近百行实测数字，过去靠人肉同步 ——
  * R5a 提交就漏更新了一行（THIRD-PARTY-NOTICES.md），事后才发现。与 gen-components
  * 的 --check 同构：文档里的数字必须有守卫，否则会先于代码腐烂。
  */
@@ -24,7 +24,7 @@ const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 // 注意：generated 里的条目**不是**全都生效——registerGeneratedComponents 里
 // `if (components[name]) continue` 让手写实现优先。所以覆盖数必须减掉手写的那批。
 const HANDWRITTEN = ['Text', 'Button', 'Column', 'Row', 'Stack', 'List', 'ListItem', 'RelativeContainer',
-  'Tabs', 'TabContent'];
+  'Tabs', 'TabContent', 'Swiper'];
 const CONTROL_FLOW = ['If', 'ForEach', 'LazyForEach'];   // 不在 149 注册表内，单独实现
 
 const gen = read('runtime/generated-components.js');
@@ -67,7 +67,7 @@ const globals = assignBlock
   .filter((s) => /^[A-Za-z_$][\w$]*$/.test(s));
 const STATE_CLASSES = globals.filter((g) => /Property.*PU$/.test(g));
 const BUILTIN_COMPONENTS = ['Text', 'Button', 'Column', 'Row', 'Stack', 'List', 'ListItem',
-  'If', 'ForEach', 'LazyForEach', 'RelativeContainer', 'Tabs', 'TabContent'].filter((c) => globals.includes(c));
+  'If', 'ForEach', 'LazyForEach', 'RelativeContainer', 'Tabs', 'TabContent', 'Swiper'].filter((c) => globals.includes(c));
 const INTERNAL = globals.filter((g) => g.startsWith('__arkui_dom_'));
 
 // 状态管理 v2：装饰器表（V2 的能力由装饰器提供，不由状态类提供）

@@ -822,11 +822,187 @@
     return node;
   }
 
+  // ────────────────── Swiper（轮播）──────────────────
+  //
+  // 产物形式（实测 fixtures/pages/SwiperDemo.ts）：
+  //   Swiper.create(this.ctrl);      ← create 的参数就是【控制器实例本身】
+  //   Swiper.index(0); Swiper.loop(false); Swiper.autoPlay(false);
+  //   Swiper.indicator(true); Swiper.interval(50); Swiper.onChange(cb);
+  //   Swiper.width(…); Swiper.height(…); Swiper.id(…);
+  //   { 每个子组件 = 一页 }          ← 直接挂进 Swiper 元素（不像 TabContent 要另找内容区）
+  //   Swiper.pop();
+  // 本 SDK 的签名是 Swiper(controller?: SwiperController)（不是 options 对象，与 Tabs 不同）——
+  // index/loop/autoPlay 全是属性 setter。这条是编译器判错后才查出来的，别凭印象写。
+  const SWIPER_UNSUPPORTED = new Set([
+    'vertical', 'displayArrow', 'displayMode', 'displayCount', 'effectMode', 'nextMargin', 'prevMargin',
+    'itemSpace', 'cachedCount', 'disableSwipe', 'curve', 'duration', 'customContentTransition',
+    'pageFlipMode', 'nestedScroll', 'maintainVisibleContentPosition', 'indicatorStyle', 'indicatorInteractive',
+    'onAnimationStart', 'onAnimationEnd', 'onGestureSwipe', 'onContentDidScroll', 'onContentWillScroll',
+    'onSelected', 'onUnselected', 'onScrollStateChanged',
+  ]);
+
+  let swiperSeq = 0;
+  class SwiperController {
+    constructor() { this._id = ++swiperSeq; this._state = null; }
+    showNext() { return stepSwiper(this._state, +1); }
+    showPrevious() { return stepSwiper(this._state, -1); }
+    changeIndex(i, useAnimation) {
+      if (useAnimation === true) layoutWarnings.push('SwiperController.changeIndex(useAnimation=true)：无动画实现，已忽略动画');
+      return this._state ? setActiveSwiper(this._state, Number(i), true) : false;
+    }
+    finishAnimation(cb) { if (typeof cb === 'function') cb(); }   // 无动画 → 立即完成
+    preloadItems() { return Promise.resolve(); }                  // 所有页都是即时构建的，语义等价
+  }
+
+  function bindSwiperController(st, ctl) {
+    if (!ctl || typeof ctl !== 'object') return;
+    if (typeof ctl.changeIndex !== 'function') {
+      layoutWarnings.push('Swiper.create 的参数不是 SwiperController（本 SDK 的签名是 Swiper(controller?)）');
+      return;
+    }
+    if (ctl._state && ctl._state !== st) {
+      layoutWarnings.push('同一个 SwiperController 被绑定到多个 Swiper（后绑定的生效）');
+    }
+    ctl._state = st;
+    st.controller = ctl;
+  }
+
+  function createSwiperState(node, args) {
+    const st = {
+      node, index: 0, count: 0, entries: [],
+      loop: true,                      // ArkUI 默认开启循环
+      autoPlay: false, interval: 3000, // 默认间隔 3000ms
+      indicatorWanted: false, controller: null, onChange: [], timer: 0,
+      dots: [], indicatorEl: null,
+    };
+    node.__swiperState = st;
+    node.style.position = 'relative';
+    node.style.overflow = 'hidden';
+    node.style.display = 'block';
+    bindSwiperController(st, args && args[0]);
+    return st;
+  }
+
+  function setActiveSwiper(st, i, fire) {
+    const n = st.entries.length;
+    if (!n) { layoutWarnings.push('Swiper 内没有任何子组件，无法确定当前页'); return false; }
+    let idx = Number(i);
+    if (!Number.isInteger(idx)) { layoutWarnings.push(`Swiper.changeIndex(${i}): 不是整数`); return false; }
+    if (st.loop) {
+      idx = ((idx % n) + n) % n;                    // 循环：越界即回卷
+    } else if (idx < 0 || idx >= n) {
+      layoutWarnings.push(`Swiper.changeIndex(${idx}): 越界（共 ${n} 页，loop=false）`);
+      return false;
+    }
+    st.index = idx;
+    onlyOneVisible(st.entries, idx);
+    st.dots.forEach((d, k) => d.setAttribute('data-arkui-swiper-dot-active', k === idx ? 'true' : 'false'));
+    if (fire) {
+      for (const cb of st.onChange) {
+        try { cb(idx); } catch (e) { layoutWarnings.push(`Swiper.onChange 抛错：${e && e.message}`); }
+      }
+    }
+    return true;
+  }
+
+  // showNext / showPrevious：loop=false 且在边界时【停住】（这是合法语义，所以不记 warning）
+  function stepSwiper(st, delta) {
+    if (!st) { layoutWarnings.push('SwiperController 尚未绑定到任何 Swiper'); return false; }
+    const n = st.entries.length;
+    if (!n) { layoutWarnings.push('Swiper 内没有任何子组件'); return false; }
+    const next = st.index + delta;
+    if (!st.loop && (next < 0 || next >= n)) return false;
+    return setActiveSwiper(st, next, true);
+  }
+
+  function startSwiperAutoPlay(st) {
+    if (st.timer) { clearInterval(st.timer); st.timer = 0; }
+    if (!st.autoPlay) return;
+    st.timer = setInterval(() => {
+      // 页面被卸载（router 换页 / clearRoot）后自己停掉，避免跨页面的计时器泄漏
+      if (!st.node.isConnected) { clearInterval(st.timer); st.timer = 0; return; }
+      setActiveSwiper(st, st.index + 1, true);
+    }, st.interval || 3000);
+  }
+
+  // Swiper.pop() 之后才知道有几页、每页是谁
+  function finalizeSwiper(st) {
+    const kids = [...st.node.children].filter((el) => !el.hasAttribute('data-arkui-swiper-indicator'));
+    for (const el of kids) {
+      if (getComputedStyle(el).display === 'contents') {
+        layoutWarnings.push('Swiper 的直接子项是 display:contents 包裹层（如 ForEach）——'
+          + '页面边界无法识别，请把 ForEach 移到 Swiper 之外，或用 @Builder 展开');
+      }
+    }
+    st.entries = kids.map((el) => {
+      el.setAttribute('data-arkui-swiper-page', '');
+      el.style.width = '100%';
+      el.style.height = '100%';
+      return { el };
+    });
+    st.count = st.entries.length;
+
+    if (st.indicatorWanted) st.indicatorEl = buildSwiperIndicator(st);
+
+    if (!st.entries.length) {
+      layoutWarnings.push('Swiper 内没有任何子组件');
+    } else {
+      const start = st.loop ? st.index : Math.min(Math.max(0, st.index), st.count - 1);
+      setActiveSwiper(st, start, false);
+    }
+    startSwiperAutoPlay(st);
+  }
+
+  function buildSwiperIndicator(st) {
+    const wrap = document.createElement('div');
+    wrap.setAttribute('data-arkui-swiper-indicator', '');
+    wrap.style.position = 'absolute';
+    wrap.style.left = '0';
+    wrap.style.right = '0';
+    wrap.style.bottom = '2px';
+    wrap.style.display = 'flex';
+    wrap.style.flexDirection = 'row';
+    wrap.style.justifyContent = 'center';
+    wrap.style.gap = '4px';
+    st.dots = st.entries.map((_e, k) => {
+      const d = document.createElement('div');
+      d.setAttribute('data-arkui-swiper-dot', String(k));
+      d.setAttribute('data-arkui-swiper-dot-active', 'false');
+      d.style.width = '6px';
+      d.style.height = '6px';
+      d.style.borderRadius = '50%';
+      d.style.background = '#bbb';
+      d.style.cursor = 'pointer';
+      d.addEventListener('click', () => setActiveSwiper(st, k, true));
+      wrap.appendChild(d);
+      return d;
+    });
+    st.node.appendChild(wrap);
+    return wrap;
+  }
+
+  // Swiper 的语义属性：值要进 state 而不是 DOM
+  const SWIPER_ATTRS = {
+    index: (st, v) => { st.index = Number(resolveResource(v)) || 0; },
+    loop: (st, v) => { st.loop = !!v; },
+    autoPlay: (st, v) => { st.autoPlay = !!v; },
+    interval: (st, v) => { st.interval = Number(resolveResource(v)) || st.interval; },
+    indicator: (st, v) => {
+      if (typeof v === 'boolean') { st.indicatorWanted = v; return; }
+      // DotIndicator/DigitIndicator 是带 builder 的对象，运行时读不到其配置
+      st.indicatorWanted = true;
+      layoutWarnings.push('Swiper.indicator 只支持 boolean；DotIndicator/DigitIndicator 的配置未实现（已退化为默认圆点）');
+    },
+  };
+
   function applyAttr(node, prop, value) {
     if (!node) return;
-    // Tabs 的 onChange 要由 Tabs 自己收集并在切换时派发，不能落成 DOM 事件 ——
+    // Tabs/Swiper 的 onChange 要由它们自己收集并在切换时派发，不能落成 DOM 事件 ——
     // 必须拦在通用事件分支【之前】，否则会变成永不触发的 'change' 监听器（静默失效）。
-    if (prop === 'onChange' && node.__tabsState) { node.__tabsState.onChange.push(value); return; }
+    if (prop === 'onChange' && (node.__tabsState || node.__swiperState)) {
+      (node.__tabsState || node.__swiperState).onChange.push(value);
+      return;
+    }
     if (typeof value === 'function') {          // 事件类（onClick/onChange…）
       const ev = prop.replace(/^on/, '').toLowerCase() || 'click';
       node.addEventListener(ev, value);
@@ -834,14 +1010,18 @@
     }
     if (prop === 'id') { node.id = String(resolveResource(value)); return; }
     if (prop === 'tabBar') { applyTabBar(node, value); return; }
+    if (node.__swiperState && SWIPER_ATTRS[prop]) { SWIPER_ATTRS[prop](node.__swiperState, value); return; }
     // Grid 轨道模板要过单位归一化，所以不能走 cssPropEnum 的原样透传
     if (GRID_TRACK_PROPS[prop]) {
       node.style[GRID_TRACK_PROPS[prop]] = normalizeTrackList(resolveResource(value));
       return;
     }
-    // 未实现的 Grid/Tabs 语义项：不 return，继续落 data-*，但同时留下诊断
+    // 未实现的 Grid/Tabs/Swiper 语义项：不 return，继续落 data-*，但同时留下诊断
     if (node.__arkuiComp === 'Grid' && GRID_UNSUPPORTED.has(prop)) {
       layoutWarnings.push(`Grid.${prop} 未实现（无模板时的轨道划分）：版式会与设备不一致`);
+    }
+    if (node.__swiperState && SWIPER_UNSUPPORTED.has(prop)) {
+      layoutWarnings.push(`Swiper.${prop} 未实现，已忽略`);
     }
     if (node.__tabsState && TABS_UNSUPPORTED.has(prop)) {
       layoutWarnings.push(`Tabs.${prop} 未实现，已忽略`);
@@ -987,6 +1167,34 @@
       };
     }
 
+    // Swiper：create 的参数是【控制器实例】；子项直接挂进 Swiper 元素（栈顶即它），
+    // 所以 Swiper.width/height/onChange 都作用在整体上，指示点在 pop 时作为覆盖层追加。
+    if (name === 'Swiper') {
+      C.create = function (...args) {
+        const rec = elmtRecords.get(currentNodeElmtId);
+        let node;
+        if (rec && rec.node && rec.node.__arkuiComp === 'Swiper') {
+          node = rec.node;
+          node.__swiperState.entries = [];        // 重渲染：页会在 pop 时重新收集
+          bindSwiperController(node.__swiperState, args && args[0]);
+        } else {
+          node = document.createElement('div');
+          node.__arkuiComp = 'Swiper';
+          createSwiperState(node, args);
+          mountNode(node, rec);
+        }
+        ViewStackProcessor.push(node);
+        return node;
+      };
+      // 只有到 pop 才知道有几页、每页是谁
+      C.pop = function () {
+        const top = ViewStackProcessor.top();
+        ViewStackProcessor.pop();
+        const st = top && top.__swiperState;
+        if (st) finalizeSwiper(st);
+      };
+    }
+
     components[name] = new Proxy(C, {
       get(target, key) {
         if (key in target) return target[key];
@@ -1059,6 +1267,8 @@
   // 它们各自的 create/pop 在 ensureComponent 里按组件名分派（见 name === 'Tabs' / 'TabContent'）。
   const Tabs = ensureComponent('Tabs', () => document.createElement('div'));
   const TabContent = ensureComponent('TabContent', () => document.createElement('div'));
+  // Swiper 同理：生成的骨架没有轮播语义，也没有 SwiperController
+  const Swiper = ensureComponent('Swiper', () => document.createElement('div'));
 
   // 容器类（If / ForEach）：display:contents 让它们不参与布局
   const If = ensureComponent('If',
@@ -1641,6 +1851,7 @@
     SubscriberManager, registerNamedRoute, ViewStackProcessor,
     Text, Button, Column, Row, Stack, List, ListItem, If, ForEach, LazyForEach, RelativeContainer,
     Tabs, TabContent, TabsController, BarPosition, BarMode,
+    Swiper, SwiperController,
     FontWeight, VerticalAlign, HorizontalAlign, FlexAlign, TextAlign, ItemAlign, Color,
     TextOverflow, Alignment, Scroller,
     __arkui_dom_syncAlignRules: syncAlignRules,
@@ -1678,6 +1889,20 @@
         count: st.contents.length,
         labels: st.contents.map((c) => c.label),
         barPosition: st.barPosition,
+        hasController: !!st.controller,
+        controller: st.controller,
+      };
+    },
+    // Swiper 自省：证明"控制器真绑上了、loop/autoPlay 真生效"，而不只看某个 div 的 display。
+    __arkui_dom_swiperState: (el) => {
+      const st = el && el.__swiperState;
+      if (!st) return null;
+      return {
+        index: st.index,
+        count: st.entries.length,
+        loop: st.loop,
+        autoPlay: st.autoPlay,
+        interval: st.interval,
         hasController: !!st.controller,
         controller: st.controller,
       };
