@@ -995,12 +995,394 @@
     },
   };
 
+  // ────────────────── Navigation / NavDestination（栈导航）──────────────────
+  //
+  // 产物形式（实测 fixtures/pages/NavDemo.ts）：
+  //   Navigation.create(this.stack, { moduleName, pagePath, isUserCreateStack: true });
+  //   Navigation.title('Home');
+  //   Navigation.navDestination({ builder: this.PageMap.bind(this) });   ← 包一层对象取 .builder
+  //   Navigation.mode(NavigationMode.Stack); Navigation.width('…'); Navigation.id('…');
+  //   { 根内容子组件 }                     ← 直接挂进 Navigation 元素
+  //   Navigation.pop();
+  //
+  // builder 由【运行时】在压栈时调用（不在 initialRender 里）：
+  //   builder(name, param, parent?)
+  //     → NavDestination.create(deepFn, extraInfo);   ← 子构建器同样是构造参数
+  //       NavDestination.title(name);
+  //       NavDestination.onWillAppear/…/onWillDisappear(cb);
+  //       NavDestination.pop();
+  //
+  // DOM 结构：
+  //   <div data-arkui-comp="Navigation">        position:relative; overflow:hidden
+  //     …根内容…                                 （被覆盖但不销毁 —— "状态保留"就靠这条）
+  //     <div data-arkui-nav-destinations>        绝对定位覆盖层，空栈时 display:none
+  //       <div data-arkui-comp="NavDestination"> 只有栈顶那个可见
+  const NavigationMode = { Stack: 'stack', Split: 'split', Auto: 'auto' };
+
+  // NavDestination 的生命周期回调：属性名 → state 键
+  const NAVDEST_LIFECYCLE = {
+    onWillAppear: 'willAppear', onWillShow: 'willShow', onShown: 'shown', onReady: 'ready',
+    onWillHide: 'willHide', onHidden: 'hidden', onWillDisappear: 'willDisappear',
+    onBackPressed: 'backPressed',
+  };
+  // Navigation/NavDestination 上本实现未覆盖的语义项。标题栏/工具栏是【可见差异】，不能静默。
+  const NAV_UNSUPPORTED = new Set([
+    'title', 'subTitle', 'hideTitleBar', 'hideBackButton', 'titleMode', 'menus', 'menuCount',
+    'toolBar', 'hideToolBar', 'onTitleModeChange', 'onNavBarStateChange', 'navBarWidth', 'navBarPosition',
+    'backButtonIcon', 'hideNavBar', 'minContentWidth', 'ignoreLayoutSafeArea', 'navBarWidthRange',
+    'systemBarStyle', 'toolbarConfiguration', 'onNavigationModeChange', 'customNavContentTransition',
+  ]);
+
+  const animOf = (v) => (typeof v === 'boolean' ? v : !!(v && typeof v === 'object' && v.animated));
+
+  class NavPathStack {
+    constructor() { this._nav = null; this._paths = []; this._noAnim = false; }
+
+    // ── 查询 ──
+    size() { return this._paths.length; }
+    getAllPathName() { return this._paths.map((p) => p.name); }
+    getParamByIndex(i) { const p = this._paths[i]; return p ? p.param : undefined; }
+    getParamByName(name) { return this._paths.filter((p) => p.name === name).map((p) => p.param); }
+    getIndexByName(name) {
+      const out = [];
+      this._paths.forEach((p, i) => { if (p.name === name) out.push(i); });
+      return out;
+    }
+    getPathStack() { return this._paths.map((p) => ({ name: p.name, param: p.param, onPop: p.onPop })); }
+    getParent() {
+      layoutWarnings.push('NavPathStack.getParent 未实现（嵌套 Navigation 的父栈未建模）');
+      return undefined;
+    }
+    setInterception() { layoutWarnings.push('NavPathStack.setInterception 未实现（路由拦截未建模）'); }
+    setPathStack(paths) {
+      navClearAll(this);
+      (paths || []).forEach((p) => navPushRec(this, { name: p.name, param: p.param, onPop: p.onPop }, false));
+      navSyncVisibility(this._nav);
+    }
+
+    // ── 压栈 ──
+    pushPath(info, options) { navPushRec(this, info || {}, animOf(options)); }
+    pushPathByName(name, param, a3, a4) {
+      const onPop = typeof a3 === 'function' ? a3 : undefined;
+      navPushRec(this, { name, param, onPop }, animOf(typeof a3 === 'function' ? a4 : a3));
+    }
+    pushDestination(info) { navPushRec(this, info || {}, animOf(arguments[1])); return Promise.resolve(); }
+    pushDestinationByName(name, param) { navPushRec(this, { name, param }, animOf(arguments[2])); return Promise.resolve(); }
+
+    // ── 弹栈 ──
+    pop(a1) {
+      if (!this._paths.length) return undefined;
+      const result = a1 !== undefined && typeof a1 !== 'boolean' ? a1 : undefined;
+      const rec = this._paths[this._paths.length - 1];
+      navPopRange(this, this._paths.length - 1, 1, result);
+      return { name: rec.name, param: rec.param };
+    }
+    popToName(name, a2) {
+      const idx = this.getIndexByName(name);
+      if (!idx.length) {
+        layoutWarnings.push(`NavPathStack.popToName('${name}')：栈里没有该 name（约定返回 -1）`);
+        return -1;
+      }
+      const target = idx[idx.length - 1];
+      const result = a2 !== undefined && typeof a2 !== 'boolean' ? a2 : undefined;
+      navPopRange(this, target + 1, this._paths.length - target - 1, result);
+      return target;
+    }
+    popToIndex(index, a2) {
+      const n = this._paths.length;
+      if (!Number.isInteger(index) || index < 0 || index >= n) {
+        layoutWarnings.push(`NavPathStack.popToIndex(${index})：越界（共 ${n} 项）`);
+        return;
+      }
+      const result = a2 !== undefined && typeof a2 !== 'boolean' ? a2 : undefined;
+      navPopRange(this, index + 1, n - index - 1, result);
+    }
+
+    // ── 改写 ──
+    replacePath(info, options) { navReplaceTop(this, info || {}, animOf(options)); }
+    replacePathByName(name, param) { navReplaceTop(this, { name, param }, animOf(arguments[2])); }
+    replaceDestination(info) { navReplaceTop(this, info || {}, animOf(arguments[1])); return Promise.resolve(); }
+    removeByName(name) {
+      const idx = [];
+      this._paths.forEach((p, i) => { if (p.name === name) idx.push(i); });
+      if (!idx.length) return 0;
+      idx.slice().reverse().forEach((i) => navPopRange(this, i, 1, undefined));
+      return idx.length;
+    }
+    removeByIndexes(indexes) {
+      const valid = (indexes || []).filter((i) => Number.isInteger(i) && i >= 0 && i < this._paths.length);
+      valid.slice().sort((a, b) => b - a).forEach((i) => navPopRange(this, i, 1, undefined));
+      return valid.length;
+    }
+    removeByNavDestinationId() {
+      layoutWarnings.push('NavPathStack.removeByNavDestinationId 未实现（本实现没有 NavDestination id 概念）');
+      return 0;
+    }
+    moveToTop(name) {
+      const idx = this.getIndexByName(name);
+      if (!idx.length) {
+        layoutWarnings.push(`NavPathStack.moveToTop('${name}')：栈里没有该 name`);
+        return -1;
+      }
+      const rec = this._paths.splice(idx[idx.length - 1], 1)[0];
+      this._paths.push(rec);
+      // 复用原实例（与真机一致）：只调 DOM 顺序，不重建、不销毁
+      if (rec.el && rec.el.parentNode) rec.el.parentNode.appendChild(rec.el);
+      navSyncVisibility(this._nav);
+      return this._paths.length - 1;
+    }
+    moveIndexToTop(index) {
+      const rec = this._paths[index];
+      if (!rec) { layoutWarnings.push(`NavPathStack.moveIndexToTop(${index})：越界`); return; }
+      this.moveToTop(rec.name);
+    }
+    clear() { navClearAll(this); navSyncVisibility(this._nav); }
+    disableAnimation(value) { this._noAnim = !!value; }
+  }
+
+  function createNavState(node, stack) {
+    const st = { node, stack: null, builder: null, areaEl: null, mode: 'stack', visible: null, paths: null };
+    node.__navState = st;
+    node.style.position = 'relative';
+    node.style.overflow = 'hidden';
+    bindNavStack(st, stack);
+    return st;
+  }
+
+  function bindNavStack(st, stack) {
+    if (!stack || typeof stack.pushPathByName !== 'function') {
+      layoutWarnings.push('Navigation.create 的第一个参数不是 NavPathStack');
+      return;
+    }
+    if (stack._nav && stack._nav !== st) {
+      layoutWarnings.push('同一个 NavPathStack 被绑定到多个 Navigation（后绑定的生效）');
+    }
+    stack._nav = st;
+    st.stack = stack;
+    st.paths = stack._paths;          // 与栈对象共用同一个数组，避免两份状态漂移
+  }
+
+  // 目标区：Navigation.pop() 时创建（空栈时内容为空且隐藏）
+  function ensureNavArea(st) {
+    if (st.areaEl && st.areaEl.isConnected) return st.areaEl;
+    const area = document.createElement('div');
+    area.setAttribute('data-arkui-nav-destinations', '');
+    area.style.position = 'absolute';
+    area.style.left = '0';
+    area.style.top = '0';
+    area.style.right = '0';
+    area.style.bottom = '0';
+    area.style.background = '#fff';
+    area.style.display = 'none';
+    st.areaEl = area;
+    st.node.appendChild(area);
+    return area;
+  }
+
+  function ensureBuilder(st) {
+    if (!st.builder) {
+      layoutWarnings.push('Navigation 没有 navDestination builder：无法创建 NavDestination。'
+        + '请加 .navDestination(this.PageMap)，且 builder 里的 if/else 要覆盖该 name');
+      return false;
+    }
+    return true;
+  }
+
+  function navPushRec(stack, info, _animated) {
+    const st = stack._nav;
+    if (!st) { layoutWarnings.push('NavPathStack 尚未绑定到任何 Navigation'); return false; }
+    if (!info || !info.name) { layoutWarnings.push('NavPathStack 压栈缺少 name'); return false; }
+    if (!ensureBuilder(st)) return false;
+    const rec = { name: info.name, param: info.param, onPop: info.onPop, el: null, cbs: {}, everShown: false };
+    // 先入栈再建树：builder 里若读 size()/getAllPathName() 应看到新状态
+    stack._paths.push(rec);
+    if (!navBuildDest(st, rec)) { stack._paths.pop(); return false; }   // 建不出来不留幽灵路径项
+    navSyncVisibility(st);
+    return true;
+  }
+
+  function navBuildDest(st, rec) {
+    const area = ensureNavArea(st);
+    const savedStack = ViewStackProcessor.snapshot();
+    const savedElmt = currentNodeElmtId;
+    ViewStackProcessor.push(area);          // 让 NavDestination 挂进目标区
+    try {
+      st.builder(rec.name, rec.param, undefined);
+    } catch (e) {
+      layoutWarnings.push(`Navigation 的 builder 抛错（name=${rec.name}）：${e && e.message}`);
+    }
+    ViewStackProcessor.restore(savedStack);
+    currentNodeElmtId = savedElmt;
+    const el = area.lastElementChild;
+    if (!el || el.__arkuiComp !== 'NavDestination') {
+      layoutWarnings.push(`Navigation 的 builder 没有为 name='${rec.name}' 创建 NavDestination：`
+        + '检查 builder 里的 if/else 是否覆盖了该 name');
+      return false;
+    }
+    rec.el = el;
+    rec.cbs = el.__navDestCbs || {};
+    return true;
+  }
+
+  function navDestroyDest(rec) {
+    if (rec.el && rec.el.parentNode) rec.el.parentNode.removeChild(rec.el);
+    rec.el = null;
+  }
+
+  function navFire(rec, kind) {
+    const cb = rec.cbs && rec.cbs[kind];
+    if (typeof cb !== 'function') return;
+    try { cb(); } catch (e) { layoutWarnings.push(`NavDestination.${kind} 回调抛错：${e && e.message}`); }
+  }
+
+  // 隐藏：willHide → hidden（JSDoc：前者"即将隐藏"，后者"已隐藏"）
+  function navHideDest(rec) {
+    if (!rec || !rec.el) return;
+    navFire(rec, 'willHide');
+    rec.el.style.display = 'none';
+    navFire(rec, 'hidden');
+  }
+
+  // 显示：首次挂载 willAppear → willShow → shown → ready；再次显示只走 willShow → shown
+  function navShowDest(rec) {
+    if (!rec || !rec.el) return;
+    if (!rec.everShown) { navFire(rec, 'willAppear'); rec.everShown = true; }
+    navFire(rec, 'willShow');
+    rec.el.style.display = 'block';
+    navFire(rec, 'shown');
+    if (rec.cbs.ready && !rec.readyFired) { rec.readyFired = true; navFire(rec, 'ready'); }
+  }
+
+  // 把可见性与生命周期对齐到"只有栈顶可见"
+  function navSyncVisibility(st) {
+    if (!st) return;
+    const top = st.paths.length ? st.paths[st.paths.length - 1] : null;
+    if (st.visible && st.visible !== top) navHideDest(st.visible);
+    st.paths.forEach((p) => { if (p.el && p !== top) p.el.style.display = 'none'; });
+    if (top && top !== st.visible) navShowDest(top);
+    st.visible = top;
+    if (st.areaEl) st.areaEl.style.display = st.paths.length ? 'block' : 'none';
+  }
+
+  // 弹出 [from, from+count)：从【栈顶向下】处理，保证生命周期顺序
+  function navPopRange(stack, from, count, result) {
+    const st = stack._nav;
+    if (count <= 0) return;
+    for (let i = from + count - 1; i >= from; i--) {
+      const rec = st.paths[i];
+      if (!rec) continue;
+      if (st.visible === rec) navHideDest(rec);
+      navFire(rec, 'willDisappear');
+      navDestroyDest(rec);
+      if (typeof rec.onPop === 'function') {
+        try { rec.onPop({ info: { name: rec.name, param: rec.param }, result }); }
+        catch (e) { layoutWarnings.push(`NavPathStack 的 onPop 回调抛错：${e && e.message}`); }
+      }
+    }
+    st.paths.splice(from, count);
+    purgeDetachedRecords();          // 回收被销毁目标占用的 elmtId 记录
+    navSyncVisibility(st);
+  }
+
+  function navClearAll(stack) {
+    const st = stack._nav;
+    if (!st) { stack._paths.length = 0; return; }
+    navPopRange(stack, 0, st.paths.length, undefined);
+  }
+
+  function navReplaceTop(stack, info, _animated) {
+    const st = stack._nav;
+    if (!st) { layoutWarnings.push('NavPathStack 尚未绑定到任何 Navigation'); return; }
+    if (!st.paths.length) { layoutWarnings.push('NavPathStack.replacePath：栈为空，无可替换项'); return; }
+    if (!info || !info.name) { layoutWarnings.push('NavPathStack.replacePath 缺少 name'); return; }
+    if (!ensureBuilder(st)) return;
+    const topIdx = st.paths.length - 1;
+    const old = st.paths[topIdx];
+    // "替换"不是"弹出"：不派发 onPop，但旧实例要销毁
+    if (st.visible === old) { navHideDest(old); st.visible = null; }
+    navFire(old, 'willDisappear');
+    navDestroyDest(old);
+    const rec = { name: info.name, param: info.param, onPop: info.onPop, el: null, cbs: {}, everShown: false };
+    st.paths[topIdx] = rec;
+    if (!navBuildDest(st, rec)) {
+      st.paths.splice(topIdx, 1);
+      purgeDetachedRecords();
+    }
+    navSyncVisibility(st);
+  }
+
+  function updateNavStack(st, v) { bindNavStack(st, v); }
+
+  // NavDestination 挂载：认领目标区（先按 none 挂上，可见性交给 navSyncVisibility）
+  function mountNavDestination(rec, deepFn, elmtId) {
+    let node = rec && rec.node && rec.node.__arkuiComp === 'NavDestination' ? rec.node : null;
+    if (!node) {
+      node = document.createElement('div');
+      node.__arkuiComp = 'NavDestination';
+      node.setAttribute('data-arkui-comp', 'NavDestination');   // mountNode 会打，这里绕过了它
+      node.__navDestCbs = {};
+      node.style.width = '100%';
+      node.style.height = '100%';
+      node.style.overflow = 'auto';
+      node.style.display = 'none';
+      const parent = parentOfTop();
+      if (!parent || !parent.hasAttribute || !parent.hasAttribute('data-arkui-nav-destinations')) {
+        layoutWarnings.push('NavDestination 不在 Navigation 的目标区内'
+          + '（本组件只能由 Navigation 的 navDestination builder 创建）');
+      }
+      if (rec) { rec.node = node; rec.parentNode = parent; }
+      parent.appendChild(node);
+      if (typeof deepFn === 'function' && !deepRendering.has(elmtId)) {
+        deepRendering.add(elmtId);
+        const saved = ViewStackProcessor.snapshot();
+        const savedElmt = currentNodeElmtId;
+        ViewStackProcessor.push(node);
+        currentNodeElmtId = elmtId;
+        deepFn(elmtId, true);
+        ViewStackProcessor.restore(saved);
+        currentNodeElmtId = savedElmt;
+        deepRendering.delete(elmtId);
+      }
+    }
+    return node;
+  }
+
+  // Navigation 的语义属性
+  const NAV_ATTRS = {
+    navDestination: (st, v) => {
+      const b = v && typeof v === 'object' ? v.builder : v;
+      if (typeof b !== 'function') {
+        layoutWarnings.push('Navigation.navDestination 的参数里没有 builder 函数');
+        return;
+      }
+      st.builder = b;
+    },
+    mode: (st, v) => {
+      st.mode = String(v);
+      if (st.mode !== 'stack') {
+        layoutWarnings.push(`Navigation.mode('${st.mode}') 未实现：本实现只有 Stack 语义（Split/Auto 的分栏布局不做）`);
+      }
+    },
+  };
+
   function applyAttr(node, prop, value) {
     if (!node) return;
     // Tabs/Swiper 的 onChange 要由它们自己收集并在切换时派发，不能落成 DOM 事件 ——
     // 必须拦在通用事件分支【之前】，否则会变成永不触发的 'change' 监听器（静默失效）。
     if (prop === 'onChange' && (node.__tabsState || node.__swiperState)) {
       (node.__tabsState || node.__swiperState).onChange.push(value);
+      return;
+    }
+    // NavDestination 的生命周期回调同理：由栈操作派发，不能变成 'willappear' 监听器
+    if (node.__navDestCbs && NAVDEST_LIFECYCLE[prop]) {
+      const kind = NAVDEST_LIFECYCLE[prop];
+      if (kind === 'backPressed') {
+        node.__navDestCbs[kind] = value;
+        layoutWarnings.push('NavDestination.onBackPressed 已登记，但本运行时没有系统返回键触发源'
+          + '（浏览器/Electron 不会产生它）—— 请用 NavPathStack.pop() 走真实路径');
+        return;
+      }
+      node.__navDestCbs[kind] = value;
       return;
     }
     if (typeof value === 'function') {          // 事件类（onClick/onChange…）
@@ -1011,12 +1393,13 @@
     if (prop === 'id') { node.id = String(resolveResource(value)); return; }
     if (prop === 'tabBar') { applyTabBar(node, value); return; }
     if (node.__swiperState && SWIPER_ATTRS[prop]) { SWIPER_ATTRS[prop](node.__swiperState, value); return; }
+    if (node.__navState && NAV_ATTRS[prop]) { NAV_ATTRS[prop](node.__navState, value); return; }
     // Grid 轨道模板要过单位归一化，所以不能走 cssPropEnum 的原样透传
     if (GRID_TRACK_PROPS[prop]) {
       node.style[GRID_TRACK_PROPS[prop]] = normalizeTrackList(resolveResource(value));
       return;
     }
-    // 未实现的 Grid/Tabs/Swiper 语义项：不 return，继续落 data-*，但同时留下诊断
+    // 未实现的 Grid/Tabs/Swiper/Navigation 语义项：不 return，继续落 data-*，但同时留下诊断
     if (node.__arkuiComp === 'Grid' && GRID_UNSUPPORTED.has(prop)) {
       layoutWarnings.push(`Grid.${prop} 未实现（无模板时的轨道划分）：版式会与设备不一致`);
     }
@@ -1025,6 +1408,13 @@
     }
     if (node.__tabsState && TABS_UNSUPPORTED.has(prop)) {
       layoutWarnings.push(`Tabs.${prop} 未实现，已忽略`);
+    }
+    // Navigation/NavDestination：标题栏/工具栏/分栏等是【可见差异】，不能静默
+    if (node.__navState && NAV_UNSUPPORTED.has(prop)) {
+      layoutWarnings.push(`Navigation.${prop} 未实现（本实现只有 Stack 栈语义，不绘制标题栏/工具栏）`);
+    }
+    if (node.__navDestCbs && NAV_UNSUPPORTED.has(prop)) {
+      layoutWarnings.push(`NavDestination.${prop} 未实现（不绘制标题栏/工具栏）`);
     }
     // 注意：这些必须在 cssPropEnum 之前拦掉 —— 例如 ArkUI 的 alignContent 语义
     // 是"叠放子项的对齐"，与 CSS 的 align-content（内容分布）不是一回事。
@@ -1195,6 +1585,44 @@
       };
     }
 
+    // Navigation：栈顶是【Navigation 元素本身】（所以 width/height/mode/navDestination 都作用于整体），
+    // 根内容子组件直接挂进来；目标区在 pop 时作为覆盖层创建，push 时由 navBuildDest 往里面建树。
+    if (name === 'Navigation') {
+      C.create = function (...args) {
+        const rec = elmtRecords.get(currentNodeElmtId);
+        let node;
+        if (rec && rec.node && rec.node.__arkuiComp === 'Navigation') {
+          node = rec.node;
+          updateNavStack(node.__navState, args && args[0]);
+        } else {
+          node = document.createElement('div');
+          node.__arkuiComp = 'Navigation';
+          createNavState(node, args && args[0]);
+          mountNode(node, rec);
+        }
+        ViewStackProcessor.push(node);
+        return node;
+      };
+      C.pop = function () {
+        const top = ViewStackProcessor.top();
+        ViewStackProcessor.pop();
+        const st = top && top.__navState;
+        if (st) ensureNavArea(st);        // 空栈时也该有目标区（内容为空且隐藏），方便外部查询
+      };
+    }
+
+    // NavDestination：由 NavPathStack 的压栈操作驱动创建（builder 里），不在页面 initialRender 中。
+    // 子构建器同样是【构造参数】（同 TabContent），首次构建时立即展开。
+    if (name === 'NavDestination') {
+      C.create = function (deepFn) {
+        const elmtId = currentNodeElmtId;
+        const rec = elmtRecords.get(elmtId);
+        const node = mountNavDestination(rec, deepFn, elmtId);
+        ViewStackProcessor.push(node);
+        return node;
+      };
+    }
+
     components[name] = new Proxy(C, {
       get(target, key) {
         if (key in target) return target[key];
@@ -1269,6 +1697,9 @@
   const TabContent = ensureComponent('TabContent', () => document.createElement('div'));
   // Swiper 同理：生成的骨架没有轮播语义，也没有 SwiperController
   const Swiper = ensureComponent('Swiper', () => document.createElement('div'));
+  // Navigation/NavDestination 同理：生成的骨架没有栈语义（栈由 NavPathStack + 运行时共同驱动）
+  const Navigation = ensureComponent('Navigation', () => document.createElement('div'));
+  const NavDestination = ensureComponent('NavDestination', () => document.createElement('div'));
 
   // 容器类（If / ForEach）：display:contents 让它们不参与布局
   const If = ensureComponent('If',
@@ -1852,6 +2283,7 @@
     Text, Button, Column, Row, Stack, List, ListItem, If, ForEach, LazyForEach, RelativeContainer,
     Tabs, TabContent, TabsController, BarPosition, BarMode,
     Swiper, SwiperController,
+    Navigation, NavDestination, NavPathStack, NavigationMode,
     FontWeight, VerticalAlign, HorizontalAlign, FlexAlign, TextAlign, ItemAlign, Color,
     TextOverflow, Alignment, Scroller,
     __arkui_dom_syncAlignRules: syncAlignRules,
@@ -1905,6 +2337,19 @@
         interval: st.interval,
         hasController: !!st.controller,
         controller: st.controller,
+      };
+    },
+    // Navigation 自省：证明"builder 真登记了、栈真在走动"，而不只看某个 div 的 display。
+    __arkui_dom_navState: (el) => {
+      const st = el && el.__navState;
+      if (!st) return null;
+      return {
+        size: st.paths.length,
+        names: st.paths.map((p) => p.name),
+        params: st.paths.map((p) => p.param),
+        hasBuilder: typeof st.builder === 'function',
+        mode: st.mode,
+        stack: st.stack,
       };
     },
     // 只读自省：供测试断言"装饰器确实在原型上装了访问器"，而不是只看渲染结果。

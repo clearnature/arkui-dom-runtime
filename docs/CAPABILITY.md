@@ -8,8 +8,8 @@
 cd /data/training/cli/arkui-dom-runtime
 npm run check                   # 全部验收：preflight + 生成物一致 + 浏览器 + Electron（退出码可信）
 npm run check:quick             # 跳过 Electron
-./run.sh all                    # 浏览器侧：17 个用例（Chrome headless）
-./electron/run.sh all           # Electron 侧：16 个用例 + 真实磁盘核验
+./run.sh all                    # 浏览器侧：18 个用例（Chrome headless）
+./electron/run.sh all           # Electron 侧：17 个用例 + 真实磁盘核验
 npm run stats                   # 覆盖范围统计（本文档的数字都来自它）
 npm run preflight               # 环境自检（缺工具链/宿主/可执行位会明确报错）
 node tools/gen-components.mjs   # 重新生成 149 个组件骨架
@@ -73,6 +73,12 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 | **`Grid` 跨行换行**：5 项在 3 列下换行到第 0 列，行距 = 行高 + `rowsGap` | ✅ | tabgrid |
 | **`Tabs` / `TabContent` 切换**：`barPosition(Start/End)`、初始 `index`、`TabsController.changeIndex`、`onChange` 派发、点击 tab bar 切换、**切走的面板不销毁**（`display:none` 而非移除） | ✅ | tabgrid |
 | **`Swiper` 轮播**：`index`、`loop`（默认 true → 越界回卷；false → 边界停住/越界拒绝）、`indicator(true)` → N 个可点圆点、`autoPlay`+`interval`、`onChange` 派发、`SwiperController.showNext`/`showPrevious`/`changeIndex`/`finishAnimation`/`preloadItems`、切走的页不销毁、autoPlay 在页面卸载后自行停表 | ✅ | swiper |
+| **`Navigation` 栈导航**：`NavPathStack` 的 `pushPath`/`pushPathByName`/`pushDestination*`、`pop`/`popToName`/`popToIndex`、`replacePath`/`replacePathByName`、`removeByName`/`removeByIndexes`、`moveToTop`/`moveIndexToTop`、`clear`/`setPathStack`，以及查询族 `size`/`getAllPathName`/`getParamByIndex`/`getParamByName`/`getIndexByName`/`getPathStack` | ✅ | navdemo |
+| **`onPop` 回调**（`pushPathByName(name, param, onPop)` → 弹出时收到 `{info:{name,param}, result}`） | ✅ | navdemo |
+| **`NavDestination` 生命周期**：首次挂载 `onWillAppear→onWillShow→onShown→onReady`；再显示只 `onWillShow→onShown`；隐藏 `onWillHide→onHidden`；销毁前 `onWillDisappear`（顺序**推断**自 `.d.ts` JSDoc，未在真机核对） | ✅ | navdemo |
+| **只有栈顶可见**：push 覆盖上一层，pop 露回下面那个且**实例复用**（`moveToTop` 也是复用不重建） | ✅ | navdemo |
+| **根内容（home）在 push/pop 间状态保留**（被覆盖但不销毁） | ✅ | navdemo |
+| **目标销毁后 elmtId 零泄漏**（3 层栈 + 替换/移除后 clear，记录数回到基线 25 → 25） | ✅ | navdemo |
 | 字符串参数不丢（如 `QRCode('hello')` → `data-content`） | ✅ | widgets |
 
 ## 三、平台能力（`@ohos:*` 别名层）
@@ -110,7 +116,7 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 |---|---|---|
 | 同一份断言页在 Electron 里跑（不复制测试代码） | ✅ | electron 全矩阵 |
 | 真实渲染 + offscreen 截图（非白像素占比判定，非 `isEmpty()`） | ✅ | electron 各用例 |
-| 同一份断言的双端一致（16 个用例两个 runner 都过） | ✅ | run.sh / electron/run.sh |
+| 同一份断言的双端一致（17 个用例两个 runner 都过） | ✅ | run.sh / electron/run.sh |
 
 ---
 
@@ -129,7 +135,7 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
   `animationCurve`/`customContentTransition`/`pageFlipMode`）、以及回调 `onTabBarClick`/`onSelected`/
   `onUnselected`/`onAnimationStart`/`onAnimationEnd`/`onGestureSwipe`/`onContentWillChange`。
   `TabContent.tabBar` **只支持字符串标签**：`SubTabBarStyle`/`BottomTabBarStyle`/自定义 builder 会记警告并留空标签。
-- **`Swiper` 轮播已实现**（3 页/切换/指示点/loop/autoPlay，41 条断言守着），但有两条要紧的限制：
+- **`Swiper` 轮播已实现**（切换/指示点/loop/autoPlay），但有两条要紧的限制：
   1. **手势滑动完全没有**——只有"控制器 / 点指示点 / autoPlay"三条切换路径。真机上的左右滑动在本实现里不会翻页
      （本项目整体未实现手势，见下）。`disableSwipe` 也会记 `layoutWarnings`。
   2. **无动画**：`duration`/`curve`/`effectMode`/`displayMode`/`displayCount`/`itemSpace`/`nextMargin`/`prevMargin`/
@@ -137,6 +143,19 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
      `indicator` 只支持 boolean，传 `DotIndicator`/`DigitIndicator` 会**退化为默认圆点**并记警告。
   `Swiper` 的直接子项必须是"页"本身：若用 `ForEach` 包一层，那个包裹层是 `display:contents`，
   页面边界识别不出来 → 会记警告（请把 `ForEach` 移到 `Swiper` 之外或用 `@Builder` 展开）。
+- **`Navigation` 只有 Stack 栈语义**，以下项**未实现并会记 `layoutWarnings`**：
+  **标题栏与工具栏**（`title`/`subTitle`/`hideTitleBar`/`hideBackButton`/`titleMode`/`menus`/`menuCount`/
+  `toolBar`/`hideToolBar`/`backButtonIcon`/`toolbarConfiguration`——所以**页面看起来没有标题栏和返回按钮**）、
+  分栏模式（`mode(Split)`/`mode(Auto)`、`navBarWidth`/`navBarPosition`/`hideNavBar`/`minContentWidth`）、
+  转场动画（`customNavContentTransition`）与系统栏样式（`systemBarStyle`/`ignoreLayoutSafeArea`）。
+  `NavPathStack` 侧未实现：`setInterception`（路由拦截）、`getParent`（嵌套 Navigation 的父栈）、
+  `removeByNavDestinationId`（没有 id 概念），三者都记警告并返回安全值。
+- **`onBackPressed` 登记即警告**：本运行时没有系统返回键（浏览器/Electron 不产生），
+  所以这个回调**永远不会被触发**——登记时会立刻出声，而不是"存了不调"。请用 `NavPathStack.pop()`。
+- **生命周期顺序与两处语义是推断的**：调用顺序按 `.d.ts` 的 JSDoc 语义排出（"即将挂载/显示"早于"已显示"），
+  **未在真机核对**；`replacePath` 不派发 `onPop`、`moveToTop` 复用实例不重建——这两条 `.d.ts` 未写明，
+  是按语义推断的实现取舍。`onWillAppear` 的绝对时机也不同（真机在挂载前，本实现在子树挂载后）。
+- **`Navigation` 没有转场动画**：push/pop 是瞬时切换 `display`，没有滑动/淡入淡出。
 - 滚动：`LazyForEach` **有虚拟滚动**（1000 项只渲染 11 项，spacer 撑总高）；但普通 `ForEach` 仍是**全量渲染**，
   `LazyForEach` 的数据变更也是**整窗重建**（未做按 key 的增量 diff），且无 `onDataAdd/Delete` 的精确索引更新。
 - 虚拟滚动的行高是**估计值**（首帧后用真实项高校正）；变高项的行高估算会漂移。
@@ -152,7 +171,7 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 - v1 深度观测的已知边界：`@Observed` 只观测该类的**自身字段**，嵌套的非 `@Observed` 对象内部变更不触发
   （与真机一致，有负向断言守着）；`@Observed` 经 Proxy 实现，**未验证**对 `instanceof`、序列化、
   展开运算符、`for...in` 之外的反射行为有无边界差异
-- `Navigation`、动画/过渡、手势（`gesture`/`panGesture`，**含 `Swiper` 的滑动翻页**）、`Refresh`
+- 动画/过渡、手势（`gesture`/`panGesture`，**含 `Swiper` 的滑动翻页**）、`Refresh`
 - `If` 分支的 elmtId 复用优化
 - 父组件重渲染时**子视图内部 elmtId 迁移**未处理（深嵌套自定义组件可能出问题）
 

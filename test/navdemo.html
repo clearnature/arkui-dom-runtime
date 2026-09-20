@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R12 Navigation / NavDestination / NavPathStack 栈导航</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 320px; height: 400px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R12 Navigation：栈语义 / 生命周期 / 根状态保留 / 缺 builder 的诊断</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../build/navdemo.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const disp = (el) => getComputedStyle(el).display;
+
+    try {
+      __arkui_dom_loadRoute('pages/NavDemo', root);
+      await tick(60);
+
+      const navA = root.querySelector('#navA');
+      const navB = root.querySelector('#navB');
+      const destArea = () => navA.querySelector('[data-arkui-nav-destinations]');
+      const dests = () => (destArea() ? [...destArea().querySelectorAll('[data-arkui-comp="NavDestination"]')] : []);
+      // 断言"恰好一个可见（或一个都没有）"，而不是"某个不是 none"
+      const visDests = () => dests().map((d, k) => (disp(d) === 'none' ? -1 : k)).filter((k) => k >= 0);
+      const onlyVisible = (want) => {
+        const v = visDests();
+        return v.length === 1 && v[0] === want ? `恰好第 ${want} 个可见` : `可见的是 [${v.join(',')}]（应为 [${want}]）`;
+      };
+      const textOf = (id) => { const e = root.querySelector('#' + id); return e ? e.textContent : '<缺>'; };
+      const btn = (label) => [...navA.querySelectorAll('button')].find((b) => b.textContent === label);
+      const click = async (label) => { btn(label).click(); await tick(40); };
+      const life = () => textOf('lifeline').replace(/^life=/, '');
+      const before = (a, b) => {
+        const i = life().indexOf(a), j = life().indexOf(b);
+        return i >= 0 && j >= 0 && i < j;
+      };
+      const navState = (el) => __arkui_dom_navState(el);
+      const elmtBase = __arkui_dom_elmtRecords.size;
+
+      // ══════════ 基础 ══════════
+      check(!!navA, 'Navigation#navA 已创建');
+      check(!!navA && navA.__arkuiComp === 'Navigation', `组件标记 = '${navA && navA.__arkuiComp}'`);
+      check((navA.textContent || '').includes('root'), 'Navigation 的根内容已渲染');
+      check(dests().length === 0, `初始没有 NavDestination（${dests().length} 个）`);
+      check(textOf('pathline') === 'paths=(empty)', `初始 '${textOf('pathline')}'`);
+      check(textOf('sizeline') === 'size=0', `初始 '${textOf('sizeline')}'`);
+      const st0 = navState(navA);
+      check(!!st0, '自省钩子 __arkui_dom_navState 可用');
+      check(st0 && st0.hasBuilder === true, `navDestination builder 已登记 = ${st0 && st0.hasBuilder}`);
+      check(st0 && st0.names.length === 0, `自省 names = [${st0 && st0.names.join(',')}]`);
+      // Navigation.title 未实现（标题栏不绘制）→ 必须在警告里出现，不能静默
+      check(__arkui_dom_layout_warnings.some((w) => String(w).includes('Navigation.title')),
+        `Navigation.title 未实现已记警告（共 ${__arkui_dom_layout_warnings.length} 条）：`
+        + `'${__arkui_dom_layout_warnings.find((w) => String(w).includes('Navigation.title'))}'`);
+
+      // ══════════ 根内容状态：push 前先改，push/pop 后必须还在 ══════════
+      await click('rootInc');
+      await click('rootInc');
+      check(textOf('rootline') === 'root=2', `push 前根状态 '${textOf('rootline')}'`);
+      const rootEl = root.querySelector('#rootline');
+
+      // ══════════ push A ══════════
+      await click('pushA');
+      check(dests().length === 1, `push A 后 NavDestination 数量 = ${dests().length}`);
+      check(onlyVisible(0) === '恰好第 0 个可见', `push A 后${onlyVisible(0)}`);
+      check(!!destArea() && disp(destArea()) !== 'none', `目标区已显示（display='${destArea() && disp(destArea())}'）`);
+      check(textOf('dest-A') === 'dest:A', `目标内容 '${textOf('dest-A')}'`);
+      check(textOf('pathline') === 'paths=A', `'${textOf('pathline')}'`);
+      check(textOf('sizeline') === 'size=1', `'${textOf('sizeline')}'`);
+      check(life().includes('A:willAppear') && life().includes('A:willShow')
+        && life().includes('A:shown') && life().includes('A:ready'),
+        `A 的 create 生命周期都触发了：'${life()}'`);
+      check(before('A:willAppear', 'A:shown'), 'A: willAppear 在 shown 之前（挂载早于显示）');
+      check(before('A:willShow', 'A:shown'), 'A: willShow 在 shown 之前（"即将显示"早于"已显示"）');
+      const stA = navState(navA);
+      check(stA.size === 1 && stA.names.join(',') === 'A', `自省 size/names = ${stA.size}/[${stA.names.join(',')}]`);
+      // 根内容被目标盖住但【没被销毁】—— 这是 ROADMAP 要求的"状态保留"
+      check(rootEl.isConnected && textOf('rootline') === 'root=2',
+        `push 后根内容未被销毁且状态保留（'${textOf('rootline')}'）`);
+
+      // ══════════ 从目标内部再 push B（真实路径：用户点目标里的按钮）══════════
+      const destAEl = dests()[0];
+      await click('dpushB');
+      check(dests().length === 2, `再 push B 后数量 = ${dests().length}`);
+      check(onlyVisible(1) === '恰好第 1 个可见', `push B 后${onlyVisible(1)}`);
+      check(textOf('pathline') === 'paths=A>B', `'${textOf('pathline')}'`);
+      check(before('A:willHide', 'A:hidden'), 'A: willHide 在 hidden 之前');
+      check(life().includes('A:willHide') && life().includes('A:hidden'),
+        `B 盖住 A 时 A 触发了隐藏回调：'${life()}'`);
+      check(dests()[0] === destAEl && destAEl.isConnected && dests()[0].textContent.includes('dest:A'),
+        '被盖住的 A 未被销毁（实例与内容都在）');
+
+      // ══════════ pop B → A 重新显示且状态在 ══════════
+      await click('dpop');
+      check(dests().length === 1, `pop 后数量 = ${dests().length}`);
+      check(onlyVisible(0) === '恰好第 0 个可见', `pop 后${onlyVisible(0)}`);
+      check(textOf('pathline') === 'paths=A', `'${textOf('pathline')}'`);
+      check(dests()[0] === destAEl, 'pop 回来的仍是同一个 A 实例（未重建）');
+      check(before('A:hidden', 'A:willShow') || life().lastIndexOf('A:shown') > life().indexOf('A:hidden'),
+        `A 被重新显示时再次触发了 show 回调：'${life()}'`);
+
+      // ══════════ 栈深 3：A>B>C ══════════
+      await click('pushB');
+      await click('pushC');
+      check(navState(navA).names.join(',') === 'A,B,C', `栈 = [${navState(navA).names.join(',')}]`);
+      check(onlyVisible(2) === '恰好第 2 个可见', `栈顶 C：${onlyVisible(2)}`);
+
+      // ══════════ popToName('A') ══════════
+      await click('popToA');
+      check(navState(navA).names.join(',') === 'A', `popToName('A') 后栈 = [${navState(navA).names.join(',')}]`);
+      check(onlyVisible(0) === '恰好第 0 个可见', `popToName 后${onlyVisible(0)}`);
+      check(dests().length === 1, `多余的目标已销毁（剩 ${dests().length}）`);
+
+      // ══════════ popToIndex(0) ══════════
+      await click('pushB');
+      await click('pushC');
+      check(navState(navA).names.length === 3, `重新压到 3：${navState(navA).names.join(',')}`);
+      await click('popTo0');
+      check(navState(navA).names.length === 1 && onlyVisible(0) === '恰好第 0 个可见',
+        `popToIndex(0) 后 size=${navState(navA).names.length}，${onlyVisible(0)}`);
+
+      // ══════════ onPop 回调拿到 {info, result} ══════════
+      await click('pushDwithPop');
+      check(navState(navA).names.join(',') === 'A,D', `压入 D：${navState(navA).names.join(',')}`);
+      check(textOf('popline') === 'popGot=', `pop 前 popGot 为空：'${textOf('popline')}'`);
+      await click('dpop');
+      check(textOf('popline') === 'popGot=D/undefined',
+        `onPop 收到了 info.name：'${textOf('popline')}'`);
+      check(navState(navA).names.join(',') === 'A', `pop 后栈 = [${navState(navA).names.join(',')}]`);
+
+      // ══════════ replacePath（此刻栈是 ['A'] → 替换栈顶 → ['C']）══════════
+      check(navState(navA).names.join(',') === 'A', `replacePath 前栈 = [${navState(navA).names.join(',')}]`);
+      await click('replaceC');
+      check(navState(navA).names.join(',') === 'C', `replacePath 后栈 = [${navState(navA).names.join(',')}]`);
+      check(navState(navA).size === 1, `size 不变 = ${navState(navA).size}`);
+      check(textOf('dest-C') === 'dest:C', `替换出来的目标内容 '${textOf('dest-C')}'`);
+      check(dests().length === 1, `旧目标已销毁（剩 ${dests().length}）`);
+
+      // ══════════ removeByName ══════════
+      await click('pushB');
+      check(navState(navA).names.join(',') === 'C,B', `压入 B：${navState(navA).names.join(',')}`);
+      await click('removeB');
+      check(navState(navA).names.join(',') === 'C', `removeByName('B') 后 = [${navState(navA).names.join(',')}]`);
+      check(navState(navA).size === 1, `size = ${navState(navA).size}`);
+      check(onlyVisible(0) === '恰好第 0 个可见', `移除栈顶后露出 C：${onlyVisible(0)}`);
+
+      // ══════════ moveToTop ══════════
+      await click('pushA');
+      await click('pushB');
+      check(navState(navA).names.join(',') === 'C,A,B', `压成 C,A,B：${navState(navA).names.join(',')}`);
+      await click('moveTopA');
+      check(navState(navA).names.join(',') === 'C,B,A', `moveToTop('A') 后 = [${navState(navA).names.join(',')}]`);
+      check(navState(navA).size === 3, `size 不变 = ${navState(navA).size}`);
+      check(onlyVisible(2) === '恰好第 2 个可见', `移动后栈顶可见：${onlyVisible(2)}`);
+
+      // ══════════ clear ══════════
+      await click('clear');
+      check(navState(navA).size === 0, `clear 后 size = ${navState(navA).size}`);
+      check(textOf('pathline') === 'paths=', `空栈时 getAllPathName().join('>') 为空串 → '${textOf('pathline')}'`);
+      check(dests().length === 0, `目标节点已销毁（剩 ${dests().length}）`);
+      check(!!destArea() && disp(destArea()) === 'none', `空栈时目标区隐藏（display='${destArea() && disp(destArea())}'）`);
+      check(rootEl.isConnected && textOf('rootline') === 'root=2', `根内容仍在且状态未变（'${textOf('rootline')}'）`);
+      // 泄漏：所有目标销毁后 elmtId 记录数应回到加载后的基线（进过 3 层栈、若干次替换/移除）
+      check(__arkui_dom_elmtRecords.size === elmtBase,
+        `栈清空后 elmtId 记录回到基线（${elmtBase} → ${__arkui_dom_elmtRecords.size}）`);
+
+      // ══════════ 负向 1：没提供 builder 的 Navigation，push 必须响亮失败 ══════════
+      const wBefore = __arkui_dom_layout_warnings.length;
+      const nb = [...navB.querySelectorAll('button')].find((b) => b.textContent === 'pushNB');
+      check(!!nb, 'navB 里的 pushNB 按钮存在（它属于 navB，不在 navA 里）');
+      nb.click();
+      await tick(40);
+      const wAfter = __arkui_dom_layout_warnings.length;
+      check(wAfter > wBefore, `缺 builder 的 push 记了警告（${wBefore} → ${wAfter}）`);
+      check(__arkui_dom_layout_warnings.some((w) => String(w).includes('navDestination')),
+        `诊断提到 navDestination：'${__arkui_dom_layout_warnings[wAfter - 1]}'`);
+      check(!navB || navB.querySelectorAll('[data-arkui-comp="NavDestination"]').length === 0,
+        'navB 没有凭空造出 NavDestination');
+
+      // ══════════ 负向 2：栈操作在边界/不知名时的返回值 ══════════
+      const ctl = navState(navA).stack;
+      const r1 = ctl.popToName('NOPE');
+      check(r1 === -1 || r1 === undefined, `popToName 不知名 → ${JSON.stringify(r1)}（约定 -1）`);
+      check(navState(navA).size === 0, '不知名 popToName 后栈未变');
+      const r2 = ctl.pop();
+      check(r2 === undefined || r2 === null, `空栈 pop → ${JSON.stringify(r2)}`);
+      check(navState(navA).size === 0, '空栈 pop 后 size 仍为 0');
+      const wB2 = __arkui_dom_layout_warnings.length;
+      const r3 = ctl.popToIndex(99);
+      check(__arkui_dom_layout_warnings.length > wB2, `越界 popToIndex(99) 记了警告（返回 ${JSON.stringify(r3)}）`);
+
+      lines.push(`ELMT ${__arkui_dom_elmtRecords.size}`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const el = document.getElementById('result');
+    el.textContent = lines.join('\n');
+    el.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

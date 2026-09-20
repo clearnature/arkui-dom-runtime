@@ -74,7 +74,7 @@ node tools/stats.mjs --json | python3 -m json.tool
 
 ### 步骤
 
-1. **先确认它是不是"手写"**。若组件名在 `runtime/arkui-dom-runtime.js` 的 `components` 里已存在（`Text`/`Button`/`Column`/`Row`/`Stack`/`List`/`ListItem`/`RelativeContainer`/`Tabs`/`TabContent`/`Swiper`），生成骨架**会被跳过**，你必须改手写实现。
+1. **先确认它是不是"手写"**。若组件名在 `runtime/arkui-dom-runtime.js` 的 `components` 里已存在（`Text`/`Button`/`Column`/`Row`/`Stack`/`List`/`ListItem`/`RelativeContainer`/`Tabs`/`TabContent`/`Swiper`/`Navigation`/`NavDestination`），生成骨架**会被跳过**，你必须改手写实现。
 2. **判断该改哪一侧**：
    - 只需"标签或基础样式对" → 改 `tools/gen-components.mjs` 的 `CONTAINERS` / `LEAF_TAGS` / 输入类 `type` 映射，然后 `node tools/gen-components.mjs`
    - 需要**交互/布局语义**（子项挂载方式、切换、测量）→ 改 `runtime/arkui-dom-runtime.js`，走 `ensureComponent(name, domFactory, contentUpdater)`；若该组件的 `create`/`pop` 形态特殊（如 `Tabs`/`TabContent`），在 `ensureComponent` 里按组件名加分支
@@ -369,6 +369,9 @@ node tools/extract.mjs fixtures/pages/NewPage.ts build/newpage.js --cjs --regist
 | ㊳ | **凭印象写 create 的签名**：我按 `Tabs({barPosition, index, controller})` 写成 `Swiper({index:0, loop:false})` → 编译器判错 `Object literal may only specify known properties, and 'index' does not exist in type 'SwiperController'`。本 SDK 的 `SwiperInterface` **只有** `(controller?: SwiperController)` 一个重载 | **别猜**：先 grep `ets/component/<comp>.d.ts` 的 `<Comp>Interface`，再真构建一次看 cache 产物。同族组件的签名可以**完全不同** |
 | ㊴ | **长驻计时器跟着页面走**（`Swiper` 的 `autoPlay` 用 `setInterval`）：`router` 换页 / `clearRoot` 只删 DOM，计时器照跑 → 跨页面泄漏，还在写已卸载的节点 | 计时器回调里先查 `st.node.isConnected`，断了就 `clearInterval` 并清零句柄（自停表，不依赖外部拆卸钩子） |
 | ㊵ | **给依赖计时器的行为写固定等待**：`autoPlay` 在 headless + `--virtual-time-budget` 下的推进时机不稳 | 用**轮询**（有界重试）而不是 `sleep(固定值)`；并且**连跑 3 次**确认稳定（`lazy` 踩过同样的坑） |
+| ㊶ | **把"由运行时驱动的 builder"当成页面的渲染**：`Navigation` 的 `navDestination` builder 不在 `initialRender` 里，是压栈时被调的。直接 `builder(...)` 会让里面的组件挂到**错误的父节点**（当时栈顶是什么就挂到哪） | 走"**预压容器 → 调 builder → `restore()` → 校验产出 → 失败回滚**"（不变量 17）。**校验不能省**：`if/else` 没覆盖该 name 时 builder 会**静默什么都不建** |
+| ㊷ | **回调登记了却永远不会被调**：`NavDestination.onBackPressed` 在本运行时没有触发源（没有系统返回键）。若只 `store` 不发声，就是最坏的一种静默 | 登记时**立刻记 `layoutWarnings`** 说明"没有触发源、请走哪条路"。**"存了不调"必须出声** |
+| ㊸ | **把被拒绝的 `edit` 当成成功**：我插入一大块实现时，工具返回的是 `File … has been modified since you last read it`（**这是错误**），我误读成成功，后续编辑建立在"那块代码已存在"的假设上——直到 `grep` 发现符号全都不存在 | 大块插入后 `grep` 一次新符号名确认真的落盘（或 `node --check`）；`grep` 不到就是没写进去，别继续往下做 |
 
 ### 确定性与时序
 

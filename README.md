@@ -86,10 +86,10 @@ tools/serve.py                 极简静态服务（端口由 OS 分配，避免
 tools/preflight.mjs            环境自检（工具链 / 宿主 / 可执行位）
 tools/check-all.sh             一条命令做完所有验收
 tools/stats.mjs                覆盖范围统计（文档里的数字都来自它）
-test/*.html                    断言页（17 个用例）
-fixtures/                      冻结的 ets-loader 转换产物（15 个，测试的输入）
-run.sh                         浏览器 17 用例驱动
-electron/run.sh                Electron 16 用例 + 真实磁盘验证
+test/*.html                    断言页（18 个用例）
+fixtures/                      冻结的 ets-loader 转换产物（16 个，测试的输入）
+run.sh                         浏览器 18 用例驱动
+electron/run.sh                Electron 17 用例 + 真实磁盘验证
 docs/                          ARCHITECTURE / DEVELOPING / ROADMAP / CAPABILITY
 ```
 
@@ -472,6 +472,52 @@ and 'index' does not exist in type 'SwiperController'
 
 **破坏验证**：把 `loop` 的回卷去掉 → 1 条失败；把 autoPlay 的 `setInterval` 去掉 → 1 条失败。
 
+## R12：`Navigation` / `NavDestination` 栈导航 ✅
+
+```
+$ bash run.sh navdemo
+=== ALL PASS ===                    （72 条断言）
+PASS 初始没有 NavDestination（0 个）
+PASS navDestination builder 已登记 = true
+PASS Navigation.title 未实现已记警告        ← 标题栏不绘制，但出声，不静默
+PASS push 后根内容未被销毁且状态保留（'root=2'）
+PASS A 的 create 生命周期都触发了：'A:willAppear A:willShow A:shown A:ready'
+PASS A: willShow 在 shown 之前（"即将显示"早于"已显示"）
+PASS B 盖住 A 时 A 触发了隐藏回调
+PASS 被盖住的 A 未被销毁（实例与内容都在）
+PASS pop 回来的仍是同一个 A 实例（未重建）
+PASS A 被重新显示时再次触发了 show 回调
+PASS popToName('A') 后栈 = [A]
+PASS popToIndex(0) 后 size=1
+PASS onPop 收到了 info.name：'popGot=D/undefined'
+PASS moveToTop('A') 后 = [C,B,A]
+PASS 栈清空后 elmtId 记录回到基线（25 → 25）      ← 零泄漏
+PASS 缺 builder 的 push 记了警告（诊断提到 navDestination）
+PASS 越界 popToIndex(99) 记了警告
+```
+
+**与前两组都不同的一点**：`builder` **由运行时调用，不在页面的 `initialRender` 里** ——
+`Navigation.navDestination({builder})` 传进来，运行时在压栈时把它调起来建 `NavDestination`。
+所以建树必须"**预压容器 → 调 builder → 还原栈 → 校验产出**"：
+先把目标区 push 到组件栈上（builder 里的组件才有正确挂载点），`restore()` 后**必须校验**
+builder 真产出了 `NavDestination`（`if/else` 可能没覆盖该 name）——校验失败就**回滚**，
+不留"路径项存在但节点不存在"的幽灵。
+
+**"pop 后状态保留"的实现方式是"不销毁"**：`NavDestination` 用绝对定位覆盖层盖住根内容，
+根内容被盖住但留在 DOM 里 → 它的 `@State` 自然还在（实测 `root=2` 一路保持）。
+只有**栈顶**可见，pop 时栈顶才销毁，下面那个重新显示且**是同一个实例**。
+
+**生命周期是照 `.d.ts` 的 JSDoc 语义排的**（"about to be mounted/displayed" 早于 "displayed"）：
+首次挂载 `onWillAppear→onWillShow→onShown→onReady`；再显示只走 `onWillShow→onShown`；
+隐藏 `onWillHide→onHidden`；销毁前 `onWillDisappear`。**顺序是我推断的，未在真机核对**——
+`onWillAppear` 的绝对时机也不同（真机在挂载前，本实现在子树挂载后）。这条已写进 CAPABILITY。
+
+**一处刻意的"出声"**：`onBackPressed` 在本运行时**没有触发源**（没有系统返回键），
+所以登记它时**立刻记一条警告**，而不是"存了不调" —— 后者是最坏的一种静默。
+
+**破坏验证**：去掉"非栈顶隐藏" → 3 条可见性断言失败；交换 `willShow`/`shown` 顺序 → 1 条失败；
+不派发 `onPop` → 1 条失败。
+
 ## 工程化 ✅
 
 项目最初不是 git 仓库（287 MB 里 283 MB 是解压的 Electron），改动不可审计、回归不可复现。
@@ -486,26 +532,26 @@ and 'index' does not exist in type 'SwiperController'
 | 文档数字守门 | `npm run stats:check-doc` | `ARCHITECTURE.md` §6 的整块实测数字逐行比对，漂移即非 0 退出；`stats:write-doc` 就地重写 |
 | 覆盖统计 | `npm run stats` | 文档里的所有数字都由它产出（`--json` 机器可读） |
 
-`npm run check` 当前：**浏览器 17 用例 + Electron 16 用例全绿**。
+`npm run check` 当前：**浏览器 18 用例 + Electron 17 用例全绿**。
 
 ## 下一步
 
 **权威清单在 `docs/ROADMAP.md`**（每项带可复现的验收命令）。当前优先：
 
-1. **R12** `Navigation`/`NavDestination` 栈式导航
-2. **R14** 多层锚链 + `Guideline` + `bias`（`alignRules` 目前只支持一层）
-3. **R13/R15–R17** 纯绘制类组件（`Gauge`/`DataPanel`/`Rating`）、真实文本换行测量、变高列表项
+1. **R14** 多层锚链 + `Guideline` + `bias`（`alignRules` 目前只支持一层）
+2. **R13/R15–R17** 纯绘制类组件（`Gauge`/`DataPanel`/`Rating`）、真实文本换行测量、变高列表项
 
-**仍未覆盖**：动画/手势（**含 `Swiper` 的滑动翻页**）、`Navigation` 栈语义、`@ohos:media`/`notification`、
-浏览器侧真文件系统（OPFS 在 headless Chrome 会挂起，现用 `localStorage` 兜底）。
-**别把没验的当结论**——`docs/CAPABILITY.md` 里有逐项的能力矩阵。
+**仍未覆盖**：动画/转场、手势（**含 `Swiper` 的滑动翻页**）、`Navigation` 的**标题栏/工具栏与分栏模式**、
+`@ohos:media`/`notification`、浏览器侧真文件系统（OPFS 在 headless Chrome 会挂起，现用 `localStorage` 兜底）。
+**别把没验的当结论**——`docs/CAPABILITY.md` 里有逐项的能力矩阵，其中标了哪些语义是**推断**的。
 
 **已知待办（别当已完成）**：
 
 - `ForEach` 现在是「数组变了就整体重建」，**没有键级 diff**
 - 父组件重渲染时参数推送走 `updateStateVarsOfChildByElmtId`，但**子视图内部的 elmtId 迁移未处理**（复杂嵌套可能出问题）
-- `Repeat` / 动画 / `Tabs.vertical`·`barMode` / `Swiper` 的动画与 `displayCount` / `Grid` 无模板时的
-  `cellLength` 自适应 **未覆盖**（这些会记 `layoutWarnings`，不是静默忽略）
+- `Repeat` / 动画 / `Tabs.vertical`·`barMode` / `Swiper` 的动画与 `displayCount` /
+  `Navigation` 的标题栏与分栏 / `Grid` 无模板时的 `cellLength` 自适应 **未覆盖**
+  （这些会记 `layoutWarnings`，不是静默忽略）
 - **布局语义仍不完整**：没有约束求解器，`alignRules` 只支持一层锚链
 
 ---

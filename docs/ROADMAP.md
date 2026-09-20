@@ -4,9 +4,9 @@
 
 已完成的机制说明见 `docs/ARCHITECTURE.md`；怎么改见 `docs/DEVELOPING.md`。
 
-**当前状态**：`npm run check` 全绿（preflight + 生成物一致 + 文档数字守卫 + 浏览器 17 用例 + Electron 16 用例）。
-v1/v2 状态管理（含 v1 深度观测）、`Grid` 真实轨道、`Tabs` 切换、`Swiper` 轮播均已落地。
-**下一步优先级：R12（`Navigation`）→ R14（多层锚链）→ R13/R15–R17。**
+**当前状态**：`npm run check` 全绿（preflight + 生成物一致 + 文档数字守卫 + 浏览器 18 用例 + Electron 17 用例）。
+v1/v2 状态管理（含 v1 深度观测）、`Grid` 真实轨道、`Tabs` 切换、`Swiper` 轮播、`Navigation` 栈导航均已落地。
+**下一步优先级：R14（多层锚链 + Guideline + bias）→ R13/R15–R17（纯绘制组件、文本换行、变高列表）。**
 R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分发前才需决定。
 
 ---
@@ -29,6 +29,7 @@ R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分�
 | ③ | **状态管理 v2**（`ViewV2` + 11 个装饰器） | `bash run.sh v2`（26 条断言，浏览器 + Electron 双通过） |
 | ③ | **`Grid`/`GridItem` 真实轨道** + `Tabs`/`TabContent` 切换 | `bash run.sh tabgrid`（51 条断言，含几何与机制自省；双端通过） |
 | ③ | **`Swiper` 轮播**（loop / autoPlay / 指示点 / 控制器） | `bash run.sh swiper`（41 条断言，双端通过，连跑 3 次稳定） |
+| ③ | **`Navigation` 栈导航**（NavPathStack / 生命周期 / 状态保留 / 零泄漏） | `bash run.sh navdemo`（72 条断言，双端通过） |
 | ③ | `@ohos:*` 别名层 + CommonJS 装载 + 真 fetch | `bash run.sh async` |
 | ③ | `UIAbility` 启动链路 | `bash run.sh ability` |
 | ③ | `router` 页面栈（返回时保留状态） | `bash run.sh router` |
@@ -39,7 +40,7 @@ R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分�
 | **P0** | 统一验收门禁（退出码可信） | `npm run check`；制造漂移 → exit 1 |
 | **P0** | `--check` 真正只校验不落盘 | `node tools/gen-components.mjs --check` |
 
-当前：**浏览器 17 用例 + Electron 16 用例全绿**（`npm run check` → `exit 0`）。
+当前：**浏览器 18 用例 + Electron 17 用例全绿**（`npm run check` → `exit 0`）。
 
 ---
 
@@ -61,7 +62,8 @@ R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分�
 | P1 | ~~R6–R8 状态管理 v2 + V1 深度观测~~ **R6/R7/R8 已完成** | 高 → 已拿到 | — |
 | P2 | ~~R9–R10 Grid / Tabs 真实语义~~ **已完成** | — | — |
 | P2 | ~~R11 Swiper~~ **已完成** | — | — |
-| P2 | R12–R13 其余组件视觉语义 | 中（85 个骨架只有 `data-*`） | 中 |
+| P2 | ~~R12 Navigation~~ **已完成** | — | — |
+| P2 | R13 其余组件视觉语义 | 中（85 个骨架只有 `data-*`） | 中 |
 | P3 | R14–R17 布局引擎 | 中高（真实页面一定踩） | 高 |
 | P4 | R18–R21 平台模块 | 中 | 低–中 |
 | P5 | R22–R23 动画/手势 | 中 | 中 |
@@ -306,13 +308,41 @@ bash run.sh observe && bash electron/run.sh observe   # 20 条断言双通过
 **触及**：`runtime/arkui-dom-runtime.js`、`fixtures/pages/SwiperDemo.ts`、`test/swiper.html`、
 `run.sh`、`electron/run.sh`
 
-### R12 — `Navigation` / `NavDestination`
+### ~~R12 — `Navigation` / `NavDestination`~~ ✅ 已完成
 
-**内容**：栈式导航（目前只有 `router` 页面栈，`Navigation` 组件本身无栈语义）。
+**内容**：栈式导航（此前只有 `router` 页面栈，`Navigation` 组件本身无栈语义）。
 
-**依赖**：无。
+**实测到的关键差异**：**builder 由运行时调用，不在页面的 `initialRender` 里**。
+`Navigation.navDestination({builder})` 把 builder 交出来，运行时在压栈时调它建 `NavDestination`。
+另外 `navDestination` 的参数是 **`{builder: fn}` 对象**（不是函数本身），`NavDestination.create(deepFn, extraInfo)`
+的子构建器同样是**构造参数**（同 `TabContent`）。
 
-**验收**：断言 push 后 `NavDestination` 出现、pop 后消失且**状态保留**（同 `router` 的断言风格）。
+**实现**：`NavPathStack`（19 个方法 + `onPop`）+ `navPushRec`/`navPopRange`/`navReplaceTop`/`navSyncVisibility`/
+`navFire`；DOM 为"根内容 + 绝对定位目标区覆盖层"。
+建树走 **"预压容器 → 调 builder → 还原栈 → 校验产出 → 失败回滚"**（新不变量 17）。
+销毁调 `purgeDetachedRecords()`。
+
+**语义要点**：
+- **只有栈顶可见**；根内容被覆盖但**不销毁** → 这就是"pop 后状态保留"
+- 首次挂载 `willAppear→willShow→shown→ready`；再显示只 `willShow→shown`；隐藏 `willHide→hidden`；
+  销毁前 `willDisappear`；弹出多个时**从栈顶向下**处理
+- `moveToTop` **复用原实例**（只调 DOM 顺序）；`replacePath` 销毁旧的建新的且**不派发 `onPop`**
+- `onBackPressed` **登记即警告**（本运行时无系统返回键 → 永不触发，不静默）
+
+**验收（已执行）**：`bash run.sh navdemo` —— **72 条断言**，双端通过：
+初始态/builder 登记/根状态保留（push 前改到 2，pop 后仍是 2）/三层栈/`popToName`/`popToIndex`/
+`replacePath`/`removeByName`/`moveToTop`/`clear`/`onPop` 的 `{info,result}`/生命周期顺序（4 条相对顺序断言）/
+**elmtId 零泄漏（25 → 25）**/两条负向（缺 builder 的 push、越界 `popToIndex`）。
+
+**破坏验证**：去掉"非栈顶隐藏" → 3 条可见性断言失败；交换 `willShow`/`shown` → 1 条失败；
+不派发 `onPop` → 1 条失败。
+
+**已知限制（写进 CAPABILITY）**：**无标题栏/工具栏/返回按钮**（`title` 等记警告，是可见差异）；
+只有 Stack 语义（`Split`/`Auto` 记警告）；无转场动画；`setInterception`/`getParent`/`removeByNavDestinationId`
+未实现；**生命周期顺序与两处语义是推断的**（`.d.ts` JSDoc 未写全序，未在真机核对）。
+
+**触及**：`runtime/arkui-dom-runtime.js`、`fixtures/pages/NavDemo.ts`、`test/navdemo.html`、
+`run.sh`、`electron/run.sh`
 
 ### R13 — 数据可视化类：`Progress` / `Gauge` / `DataPanel` / `Rating`
 

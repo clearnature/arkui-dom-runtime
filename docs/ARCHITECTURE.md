@@ -212,12 +212,13 @@ catch { node.dataset[prop] = String(value); }
 |---|---|---|
 | 函数值 | `addEventListener(prop.replace(/^on/,'').toLowerCase(), fn)` | `onClick` → `click` |
 | `id` | `node.id` | 测试靠它定位 |
-| **语义分歧的**（必须抢在 CSS 同名前） | 专用处理函数 | `alignRules`、`maxLines`、`textOverflow`、`alignContent`、`tabBar`、**`Tabs.onChange`/`Swiper.onChange`**、**Swiper 的 `index`/`loop`/`autoPlay`/`interval`/`indicator`**（值是状态不是样式） |
+| **语义分歧的**（必须抢在 CSS 同名前） | 专用处理函数 | `alignRules`、`maxLines`、`textOverflow`、`alignContent`、`tabBar`、**`Tabs.onChange`/`Swiper.onChange`**、**Swiper 的 `index`/`loop`/`autoPlay`/`interval`/`indicator`**、**Navigation 的 `navDestination`/`mode`**（值是状态不是样式） |
+| **生命周期回调**（由栈操作派发） | 存进 `node.__navDestCbs` | **NavDestination 的 `onWillAppear`/`onWillShow`/`onShown`/`onReady`/`onWillHide`/`onHidden`/`onWillDisappear`/`onBackPressed`** |
 | **`Grid` 轨道模板** `GRID_TRACK_PROPS` | `normalizeTrackList`（ArkUI 裸数字 = vp → CSS 必须带 `px`） | `columnsTemplate`、`rowsTemplate` |
 | 尺寸类 `cssPropSize` | `toCssSize`（number → `px`）| `fontSize/width/height/padding/margin/borderRadius`、**`columnsGap`/`rowsGap`** |
 | 原样透传 `cssPropRaw` | `String(resolveResource(v))` | `fontWeight/opacity/zIndex/flexGrow/aspectRatio` |
 | 枚举类 `cssPropEnum` | 枚举值本身即 CSS 值 | `justifyContent/alignItems/textAlign/position` |
-| **已识别但未实现** | 记 `layoutWarnings` 后**不 return**（语义丢失但值仍落 `data-*`） | `Grid.cellLength/maxCount/minCount/layoutDirection`、`Tabs.vertical/barMode/动画/回调…`、`Swiper.vertical/displayCount/动画/回调…` |
+| **已识别但未实现** | 记 `layoutWarnings` 后**不 return**（语义丢失但值仍落 `data-*`） | `Grid.cellLength/maxCount/minCount/layoutDirection`、`Tabs.vertical/barMode/动画/回调…`、`Swiper.vertical/displayCount/动画/回调…`、**`Navigation.title/hideTitleBar/menus/…` 与 `NavDestination.title/…`（标题栏是可见差异，必须出声）** |
 | **兜底** | `data-*` | 其余全部 |
 
 > ⚠️ `alignContent` 的 ArkUI 语义是"**叠放子项的对齐**"（即 `Stack({alignContent})`），与 CSS 的 `align-content`（多行内容分布）**完全不是一回事**。所以它必须在 `cssPropEnum` **之前**被拦掉。同理 `alignRules`、`maxLines`、`textOverflow`、`tabBar`。
@@ -468,6 +469,60 @@ Swiper.pop();
 
 **自省钩子** `__arkui_dom_swiperState(el)` → `{index, count, loop, autoPlay, interval, hasController, controller}`。
 
+### 3.7 `Navigation` / `NavDestination` / `NavPathStack` 的契约（R12，实测产物）
+
+与前两组都不同的一点：**builder 由运行时调用，不在页面的 `initialRender` 里**。
+
+```ts
+Navigation.create(this.stack, { moduleName, pagePath, isUserCreateStack: true });
+Navigation.title('Home');
+Navigation.navDestination({ builder: this.PageMap.bind(this) });   // ← 包一层对象取 .builder
+Navigation.mode(NavigationMode.Stack);  Navigation.width('100%');  Navigation.id('navA');
+{ …根内容子组件… }                    // 直接挂进 Navigation 元素
+Navigation.pop();
+
+// 运行时在压栈时调用 builder(name, param, parent?)：
+NavDestination.create(deepFn, extraInfo);   // ← 子构建器同样是【构造参数】（同 TabContent）
+NavDestination.title(name);
+NavDestination.onWillAppear/…/onWillDisappear(cb);
+NavDestination.pop();
+```
+
+**DOM 结构**：
+
+```
+<div data-arkui-comp="Navigation">            position:relative; overflow:hidden
+  …根内容…                                    被覆盖但【不销毁】——"pop 后状态保留"就靠这条
+  <div data-arkui-nav-destinations>           绝对定位覆盖层；空栈时 display:none
+    <div data-arkui-comp="NavDestination">    只有栈顶那个可见（其余 display:none）
+```
+
+**实现要点**：
+
+- **栈对象与 Navigation 状态共用同一个数组**（`stack._paths === st.paths`），避免两份状态漂移；
+  `Navigation.create` 时把 `stack._nav` 指回来，这就是 `NavPathStack` 知道"该操作哪个 Navigation"的方式。
+- **压栈顺序**：先 `paths.push(rec)` 再建树（builder 里若读 `size()`/`getAllPathName()` 应看到新状态）；
+  建不出来（builder 没产出 `NavDestination`）就**回滚**，不留没有节点的幽灵路径项。
+- **建树时把目标区压上组件栈**：`ViewStackProcessor.push(area)` → builder → `restore()`，
+  这样 builder 里的 `NavDestination.create` 会挂进目标区，而不需要 `NavDestination` 自己去找父容器。
+- **销毁要回收 elmtId**：`navDestroyDest` 移除节点后调 `purgeDetachedRecords()`。
+  实测：3 层栈 + 若干次替换/移除后 `clear()`，记录数回到基线（25 → 25）。
+- **生命周期派发**（`navFire`）：
+  - 首次挂载：`willAppear → willShow → shown → ready`；再次显示只走 `willShow → shown`
+  - 隐藏：`willHide → hidden`（先隐藏后 `display:none`）；销毁：`willDisappear` → 移出 DOM
+  - 弹出多个时**从栈顶向下**处理，保证顺序
+  - ⚠️ 顺序是按 `.d.ts` 的 JSDoc 语义（"about to be mounted/displayed" 早于 "displayed"）**推断**的，
+    **未在真机上核对**；`onWillAppear` 的绝对时机也不同（真机在挂载前，本实现在子树挂载后）。
+  - ⚠️ `onBackPressed` **没有触发源**：本运行时没有系统返回键（浏览器/Electron 不产生）。
+    登记它会立刻记一条 `layoutWarnings` 而不是"存了不调"（静默失效）。
+- **可见性 = 只有栈顶**：`navSyncVisibility(st)` 统一处理"隐藏旧的、显示新的"，
+  并在切换时派发生命周期。**栈顶的节点被销毁时也要先 hide 再 destroy**。
+- `moveToTop` **复用原实例**（只调 DOM 顺序、不重建），与真机一致；
+  `replacePath` 则是"销毁旧的 + 建新的"，且**不派发 `onPop`**（替换不是弹出）。
+  这两个语义差异是**推断**的（`.d.ts` 未写明），已在 `CAPABILITY.md` 标注。
+
+**自省钩子** `__arkui_dom_navState(el)` → `{size, names, params, hasBuilder, mode, stack}`。
+
 ---
 
 ## 4. 核心机制
@@ -635,16 +690,23 @@ app.ability.AbilityConstant  app.ability.ConfigurationConstant
 13. **V1 深度观测的边界要与真机一致**，不要"顺手扩大"：`@Observed` 只观测该类的自身字段，
     嵌套的非 `@Observed` 对象内部变更**不应**触发重渲染。这条有负向断言守着；
     遇到绑定失败要记 `layoutWarnings`，不静默。
-14. **`on<X>` 不一定是 DOM 事件**。凡是有内部状态容器的节点（`Tabs`/`Swiper`），其回调必须在通用事件分支
-    **之前**被拦截、由运行时自行派发。退化成 `addEventListener('change')` 会得到一个**永不触发**的
-    监听器——页面看着正常，回调从不执行（比报错难查得多）。
-    同理，`Tabs`/`Swiper` 的**语义属性**（`index`/`loop`/`autoPlay`/`indicator`…）值是状态不是样式，
-    必须在落 `data-*` 之前截进 state。
+14. **`on<X>` 不一定是 DOM 事件**。凡是有内部状态容器的节点（`Tabs`/`Swiper`），以及**由运行时派发的生命周期
+    回调**（`NavDestination` 的 `onWillAppear`…），都必须在通用事件分支**之前**被拦截、由运行时自行派发。
+    退化成 `addEventListener('change')` 会得到一个**永不触发**的监听器——页面看着正常，回调从不执行
+    （比报错难查得多）。同理，`Tabs`/`Swiper` 的**语义属性**（`index`/`loop`/`autoPlay`/`indicator`…）与
+    `Navigation` 的 `navDestination`/`mode` 值是状态不是样式，必须在落 `data-*` 之前截进 state。
+    **反过来说：如果某个回调在本运行时里根本没有触发源（如没有系统返回键的 `onBackPressed`），
+    登记时就要出声**——"存了不调"是最坏的一种静默。
 15. **自定义挂载点要自己维护两条不变量**：① 打上 `data-arkui-comp` 标记（`mountNode` 会打，绕过它就得自己打，
     否则外部 `querySelectorAll` 查不到，表现为"组件不存在"）；② `rec.parentNode` 指向**真实**挂载点
     （重渲染靠它恢复位置，指错会重建整棵兄弟结构，如 `Tabs` 的 tab bar）。
 16. **单位必须显式归一化**。ArkUI 的裸数字是 vp，CSS 无单位数值会让**整条声明作废且不报错**。
     凡是把 ArkUI 值透传成 CSS 语法的地方（轨道模板、长度），都要显式转换，并用**几何断言**兜底。
+17. **由运行时驱动的子树构建，必须"预压容器 → 调 builder → 还原栈 → 校验产出"**。
+    `Navigation` 的 builder 不在 `initialRender` 里，是运行时在压栈时调的：先把目标容器 push 到
+    组件栈上（这样 builder 里的组件才有正确的挂载点），`restore()` 之后**必须校验产出**
+    （builder 可能因为 `if/else` 没覆盖该 name 而什么都没建）——校验失败要**回滚**状态并出声，
+    不能留一个"路径项存在但节点不存在"的幽灵。同一模式适用于 `TabContent`/`ListItem` 的深渲染。
 
 ---
 
@@ -659,19 +721,19 @@ app.ability.AbilityConstant  app.ability.ConfigurationConstant
 ```
 == 组件库 ==
   ets-loader 注册名    149
-  手写实现（真布局语义）11：Text Button Column Row Stack List ListItem RelativeContainer Tabs TabContent Swiper
+  手写实现（真布局语义）13：Text Button Column Row Stack List ListItem RelativeContainer Tabs TabContent Swiper Navigation NavDestination
   控制流宏（非组件）    3：If ForEach LazyForEach
-  骨架·有 DOM 画像     53（容器 23 / 叶子 30）
-  骨架·仅 data-*       85
+  骨架·有 DOM 画像     52（容器 22 / 叶子 30）
+  骨架·仅 data-*       84
   ⇒ 可建出的组件名      149 / 149
   原生输入类控件       6
-  属性元数据总数       1148（平均 7.7／组件，最多 TextInput=70）
+  属性元数据总数       1107（平均 7.4／组件，最多 TextInput=70）
 
 == 运行时 API ==
-  global 导出        70 个
+  global 导出        80 个
   状态类            ObservedPropertySimplePU ObservedPropertyObjectPU SynchedPropertySimpleOneWayPU SynchedPropertySimpleTwoWayPU SynchedPropertyNesedObjectPU
-  内置组件          Text Button Column Row Stack List ListItem If ForEach LazyForEach RelativeContainer Tabs TabContent Swiper
-  内部钩子 __arkui_dom_*  20 个
+  内置组件          Text Button Column Row Stack List ListItem If ForEach LazyForEach RelativeContainer Tabs TabContent Swiper Navigation NavDestination
+  内部钩子 __arkui_dom_*  21 个
 
 == 状态管理 ==
   v1  状态类        5 个（包装对象模型）
@@ -685,41 +747,41 @@ app.ability.AbilityConstant  app.ability.ConfigurationConstant
   10 个：app.ability.AbilityConstant app.ability.ConfigurationConstant app.ability.UIAbility app.ability.Want data.preferences file.fs hilog net.http router window
 
 == 用例矩阵 ==
-  浏览器 run.sh     17 个：index rich leak layout widgets tabgrid swiper measure lazy provide v2 observe async ability router netfile persist
-  Electron          16 个：netfile layout rich index leak ability router widgets tabgrid swiper measure lazy provide async v2 observe
-  测试页            17 个
-  fixtures 转换产物  15 个：AsyncIO Detail Home Index Layout Lazy Measure NetFile Observe Provide Rich SwiperDemo TabsGrid V2 Widgets
+  浏览器 run.sh     18 个：index rich leak layout widgets tabgrid swiper navdemo measure lazy provide v2 observe async ability router netfile persist
+  Electron          17 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo measure lazy provide async v2 observe
+  测试页            18 个
+  fixtures 转换产物  16 个：AsyncIO Detail Home Index Layout Lazy Measure NavDemo NetFile Observe Provide Rich SwiperDemo TabsGrid V2 Widgets
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          165.8 KB
-  test             87.6 KB
-  tools            37.4 KB
-  electron(src)    15.0 KB
-  docs             124.4 KB
-  fixtures         98.5 KB
+  runtime          185.1 KB
+  test             101.0 KB
+  tools            37.5 KB
+  electron(src)    15.2 KB
+  docs             136.0 KB
+  fixtures         112.3 KB
 
 == 逐文件（文档"文件职责"表的来源）==
-  runtime/arkui-dom-runtime.js      89062 B  87.0 KB
+  runtime/arkui-dom-runtime.js     108898 B  106.3 KB
   runtime/generated-components.js   57617 B  56.3 KB
   runtime/ohos-shims.js             23066 B  22.5 KB
   tools/extract.mjs                  6457 B  6.3 KB
   tools/gen-components.mjs           7775 B  7.6 KB
   tools/serve.py                     2559 B  2.5 KB
-  tools/stats.mjs                   13229 B  12.9 KB
+  tools/stats.mjs                   13295 B  13.0 KB
   tools/preflight.mjs                5108 B  5.0 KB
   tools/check-all.sh                 3171 B  3.1 KB
-  run.sh                             9641 B  9.4 KB
-  electron/run.sh                    6409 B  6.3 KB
+  run.sh                             9844 B  9.6 KB
+  electron/run.sh                    6560 B  6.4 KB
   electron/main.js                   6795 B  6.6 KB
   electron/preload.js                1961 B  1.9 KB
   package.json                       1207 B  1.2 KB
   .gitignore                          674 B  0.7 KB
-  README.md                         29015 B  28.3 KB
+  README.md                         31966 B  31.2 KB
   THIRD-PARTY-NOTICES.md             8256 B  8.1 KB
-  docs/ARCHITECTURE.md              54304 B  53.0 KB
-  docs/CAPABILITY.md                16435 B  16.0 KB
-  docs/DEVELOPING.md                26270 B  25.7 KB
-  docs/ROADMAP.md                   23835 B  23.3 KB
+  docs/ARCHITECTURE.md              59711 B  58.3 KB
+  docs/CAPABILITY.md                19113 B  18.7 KB
+  docs/DEVELOPING.md                27538 B  26.9 KB
+  docs/ROADMAP.md                   26370 B  25.8 KB
   docs/surface-measurement.md        6496 B  6.3 KB
   fixtures/pages/AsyncIO.ts          6206 B  6.1 KB
   fixtures/pages/Detail.ts           3097 B  3.0 KB
@@ -728,6 +790,7 @@ app.ability.AbilityConstant  app.ability.ConfigurationConstant
   fixtures/pages/Layout.ts           3434 B  3.4 KB
   fixtures/pages/Lazy.ts             4485 B  4.4 KB
   fixtures/pages/Measure.ts          6262 B  6.1 KB
+  fixtures/pages/NavDemo.ts         14129 B  13.8 KB
   fixtures/pages/NetFile.ts          5039 B  4.9 KB
   fixtures/pages/Observe.ts         11906 B  11.6 KB
   fixtures/pages/Provide.ts          6731 B  6.6 KB
@@ -744,6 +807,7 @@ app.ability.AbilityConstant  app.ability.ConfigurationConstant
   test/lazy.html                     4380 B  4.3 KB
   test/leak.html                     3921 B  3.8 KB
   test/measure.html                  6072 B  5.9 KB
+  test/navdemo.html                 13765 B  13.4 KB
   test/netfile.html                  5302 B  5.2 KB
   test/observe.html                  6232 B  6.1 KB
   test/opfs-probe.html               1620 B  1.6 KB
@@ -774,7 +838,7 @@ app.ability.AbilityConstant  app.ability.ConfigurationConstant
 | 平台模块 | ⚠️ 10 个实现了；`media`/`notification`/`startAbilityForResult` 等未实现 |
 | 持久化 | ✅ Electron 真磁盘（shell 级验证）；浏览器 `localStorage` |
 | 动画 / 手势 | ❌ 未实现（`Swiper` 也无手势滑动，只有控制器/指示点/autoPlay 三条切换路径） |
-| `Navigation` | ⚠️ 骨架可建，无栈语义（待 R12） |
+| `Navigation` 栈导航 | ✅ 有测试（`run.sh navdemo`，72 条断言）：`NavPathStack` 的 push/pop/popToName/popToIndex/replacePath/removeByName/moveToTop/clear/查询族 + `onPop` 回调、`NavDestination` 生命周期、根内容状态保留、目标销毁后 elmtId 零泄漏 |
 | 85 个骨架组件的视觉语义 | ❌ 仅 `data-*` |
 
 ---
@@ -783,21 +847,21 @@ app.ability.AbilityConstant  app.ability.ConfigurationConstant
 
 | 文件 | 体积 | 职责 | 改它的时机 |
 |---|---|---|---|
-| `runtime/arkui-dom-runtime.js` | 87.0 KB | v1 状态类 + 深度观测（`@Observed`/`@ObjectLink`）、`ViewPU`/`ViewV2`、装饰器层、组件栈、布局（含 `Grid` 轨道）、`Tabs`/`TabContent`+`TabsController`、`Swiper`+`SwiperController`、`LazyForEach`、路由 | 实现新语义（**手写优先**） |
+| `runtime/arkui-dom-runtime.js` | 106.3 KB | v1 状态类 + 深度观测（`@Observed`/`@ObjectLink`）、`ViewPU`/`ViewV2`、装饰器层、组件栈、布局（含 `Grid` 轨道）、`Tabs`/`TabContent`+`TabsController`、`Swiper`+`SwiperController`、`Navigation`/`NavDestination`+`NavPathStack`、`LazyForEach`、路由 | 实现新语义（**手写优先**） |
 | `runtime/generated-components.js` | 56.3 KB | 149 个组件骨架（**生成物**） | **不手改**；改 `tools/gen-components.mjs` 后重新生成，`--check` 会守门 |
 | `runtime/ohos-shims.js` | 22.5 KB | `@ohos:*` 模块 + 持久化后端 | 新增平台模块 |
 | `tools/extract.mjs` | 6.3 KB | hvigor 缓存 `.ts` → 可执行 `.js`；**装饰器作用域内绑定前奏 + 未就绪守卫**（§3.4） | 产物形态/装饰器集合变化时 |
 | `tools/gen-components.mjs` | 7.6 KB | ets-loader 组件 JSON → 骨架注册表（`--check` 只校验不写） | 组件元数据/画像规则更新时 |
 | `tools/serve.py` | 2.5 KB | 静态服务 + `/echo` + `/slow`（测超时） | 需要新测试端点时 |
-| `tools/stats.mjs` | 12.9 KB | 本文档所有数字的来源（`--json` 机器可读）；**`--check-doc`/`--write-doc` 守 §6 引用块** | 覆盖范围变化时 |
+| `tools/stats.mjs` | 13.0 KB | 本文档所有数字的来源（`--json` 机器可读）；**`--check-doc`/`--write-doc` 守 §6 引用块** | 覆盖范围变化时 |
 | `tools/preflight.mjs` | 5.0 KB | 环境自检（工具链/宿主/可执行位） | 外部依赖变化时 |
 | `tools/check-all.sh` | 3.1 KB | 一条命令做完验收（5 步），退出码只看被调命令 | 新增验收步骤时 |
-| `run.sh` | 9.4 KB | 浏览器 17 用例驱动 | 新增用例 |
-| `electron/run.sh` | 6.3 KB | Electron 16 用例 + 磁盘验证 | 新增用例 |
+| `run.sh` | 9.6 KB | 浏览器 18 用例驱动 | 新增用例 |
+| `electron/run.sh` | 6.4 KB | Electron 17 用例 + 磁盘验证 | 新增用例 |
 | `electron/main.js` | 6.6 KB | 主进程：offscreen 截图、**像素级**空白检测 | 截图/验证策略变化时 |
 | `electron/preload.js` | 1.9 KB | `contextBridge` 暴露 Node fs | 宿主能力变化时 |
-| `fixtures/pages/*.ts` | 98.5 KB | **冻结的**官方转换产物（15 个，含 `V2.ts`/`Observe.ts`/`TabsGrid.ts`/`SwiperDemo.ts`） | 几乎不改（见不变量 5） |
-| `test/*.html` | 87.6 KB | 断言页（读 `#result` 节点文本） | 新增用例 |
+| `fixtures/pages/*.ts` | 110 KB | **冻结的**官方转换产物（16 个，含 `V2.ts`/`Observe.ts`/`TabsGrid.ts`/`SwiperDemo.ts`/`NavDemo.ts`） | 几乎不改（见不变量 5） |
+| `test/*.html` | 97 KB | 断言页（读 `#result` 节点文本） | 新增用例 |
 
 ---
 
