@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R23 手势（Pan / Tap / LongPress / Swipe / Pinch）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 320px; height: 320px; border: 1px solid #ccc; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R23：手势 → pointer 事件（合成一次 pan 序列，断言 offsetX/offsetY）</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/gesturedemo-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const el = (id) => root.querySelector('#' + id);
+    const txt = (id) => String(el(id) ? el(id).textContent : '<缺>');
+    const val = (id) => { const s = txt(id); const i = s.indexOf('='); return i < 0 ? '' : s.slice(i + 1); };
+    const group = async (name, fn) => {
+      try { await fn(); } catch (e) {
+        allPass = false;
+        lines.push(`FAIL [${name}] 抛出异常：${e && e.stack ? String(e.stack).split('\n')[0] : e}`);
+      }
+    };
+    // 合成指针事件：与真实指针走同一条路（runtime 里监听的也是 pointer*）
+    const pev = (type, x, y, id, extra) => new PointerEvent(type, Object.assign({
+      bubbles: true, cancelable: true, composed: true,
+      clientX: x, clientY: y, pointerId: id || 1, pointerType: 'touch',
+      isPrimary: (id || 1) === 1, button: 0, buttons: type === 'pointerup' ? 0 : 1,
+    }, extra || {}));
+    const down = (t, x, y, id) => t.dispatchEvent(pev('pointerdown', x, y, id));
+    const move = (t, x, y, id) => t.dispatchEvent(pev('pointermove', x, y, id));
+    const up = (t, x, y, id) => t.dispatchEvent(pev('pointerup', x, y, id));
+    /** 合成一次完整拖拽，返回本次新增的日志片段 */
+    const drag = async (t, pts, id) => {
+      const before = val('glog');
+      const p0 = pts[0];
+      down(t, p0[0], p0[1], id);
+      for (let i = 1; i < pts.length; i++) move(t, pts[i][0], pts[i][1], id);
+      const last = pts[pts.length - 1];
+      up(t, last[0], last[1], id);
+      await tick(25);
+      return val('glog').slice(before.length);
+    };
+
+    try {
+      __arkui_dom_requireModule('GestureDemo');
+      __arkui_dom_loadRoute('pages/GestureDemo', root);
+      await tick(60);        // 手势挂在微任务里，等它落地
+      check(!!el('pad') && !!el('glog'), 'GestureDemo 页面已渲染');
+
+      // ══════════ ① 手势真的挂到了元素上（不是只登记了回调）══════════
+      await group('挂载', async () => {
+        const types = (id) => __arkui_dom_gestures(el(id)).types.join(',');
+        check(types('pad') === 'pan', `#pad 上挂着 pan（'${types('pad')}'）`);
+        check(types('tap') === 'tap', `#tap 上挂着 tap（'${types('tap')}'）`);
+        check(types('press') === 'longPress', `#press 上挂着 longPress（'${types('press')}'）`);
+        check(types('swipe') === 'swipe', `#swipe 上挂着 swipe（'${types('swipe')}'）`);
+        check(types('pinch') === 'pinch', `#pinch 上挂着 pinch（'${types('pinch')}'）`);
+        check(__arkui_dom_gestures(el('pad')).attachCount >= 5,
+          `挂载次数 ${__arkui_dom_gestures(el('pad')).attachCount}（5 个元素各一次）`);
+      });
+
+      // ══════════ ② Pan：验收核心 —— offsetX/offsetY 接近合成位移 ══════════
+      await group('Pan 水平', async () => {
+        const d = await drag(el('pad'), [[10, 10], [30, 10], [50, 10]]);   // 位移 +40
+        check(d.includes('PS;') && d.includes('PE;'), `onActionStart/End 都触发（'${d}'）`);
+        const m = /end=(-?\d+),(-?\d+)/.exec(val('pan'));
+        check(!!m, `onActionEnd 的 offset 被记下（'${val('pan')}'）`);
+        check(!!m && Math.abs(Number(m[1]) - 40) <= 1 && Math.abs(Number(m[2]) - 0) <= 1,
+          `offsetX≈40、offsetY≈0（实际 ${m && m[1]},${m && m[2]}）`);
+      });
+      await group('Pan 垂直', async () => {
+        // 第二次换成竖向位移：把 offsetX 写死的实现会在这里露馅
+        const d = await drag(el('pad'), [[10, 10], [10, 30], [10, 50]]);   // 位移 +40 in y
+        const m = /end=(-?\d+),(-?\d+)/.exec(val('pan'));
+        check(d.includes('PS;') && d.includes('PE;'), `竖向拖拽也触发（'${d}'）`);
+        check(!!m && Math.abs(Number(m[1]) - 0) <= 1 && Math.abs(Number(m[2]) - 40) <= 1,
+          `offsetX≈0、offsetY≈40（实际 ${m && m[1]},${m && m[2]}）`);
+      });
+      await group('Pan 未达阈值', async () => {
+        // distance:5 —— 只动 3px 不该触发（阈值要真的起作用）
+        const d = await drag(el('pad'), [[10, 10], [13, 10]]);
+        check(!d.includes('PS;'), `位移 3px < distance 5 → 不触发（'${d}'）`);
+      });
+
+      // ══════════ ③ Tap：count=2，第二次归组 repeat=true ══════════
+      await group('Tap count=2', async () => {
+        const before = val('glog');
+        down(el('tap'), 10, 10); up(el('tap'), 10, 10);
+        down(el('tap'), 11, 11); up(el('tap'), 11, 11);
+        await tick(25);
+        const once = val('glog').slice(before.length);
+        check(once === 'TF;', `点两下触发一次且 repeat=false（'${once}'）`);
+        down(el('tap'), 10, 10); up(el('tap'), 10, 10);
+        down(el('tap'), 11, 11); up(el('tap'), 11, 11);
+        await tick(25);
+        const twice = val('glog').slice(before.length);
+        check(twice === 'TF;TR;', `再点两下 → 一次 repeat=true（'${twice}'）`);
+      });
+
+      // ══════════ ④ LongPress：duration=300；【动过就不算长按】══════════
+      await group('LongPress', async () => {
+        const before = val('glog');
+        down(el('press'), 10, 10);
+        await tick(380);
+        up(el('press'), 10, 10);
+        await tick(20);
+        check(val('glog').slice(before.length) === 'LF;',
+          `按住 380ms > duration 300 → 触发一次 repeat=false（'${val('glog').slice(before.length)}'）`);
+
+        const b2 = val('glog');
+        down(el('press'), 10, 10);
+        move(el('press'), 40, 10);          // 动了 → 取消长按
+        await tick(380);
+        up(el('press'), 40, 10);
+        await tick(20);
+        check(val('glog').slice(b2.length) === '',
+          `按住期间移动 30px → 不触发长按（'${val('glog').slice(b2.length)}'）`);
+      });
+
+      // ══════════ ⑤ Swipe：够快才算（speed 阈值要真的起作用）══════════
+      await group('Swipe', async () => {
+        const before = val('glog');
+        down(el('swipe'), 10, 10);
+        move(el('swipe'), 50, 10);
+        up(el('swipe'), 50, 10);
+        await tick(25);
+        const fast = val('glog').slice(before.length);
+        // fixture 记录 'W<angle>v<speed/100>'
+        const m = /W(-?\d+)v(\d+);/.exec(fast);
+        check(!!m, `快速滑动触发（'${fast}'）`);
+        check(!!m && Math.abs(Number(m[1])) <= 5, `向右滑 angle≈0（实际 ${m && m[1]}°）`);
+        check(!!m && Number(m[2]) >= 1, `speed/100 ≥ 1（即 speed ≥ 100 vp/s，实际 ${m && m[2]}00）`);
+
+        const b2 = val('glog');
+        down(el('swipe'), 10, 10);
+        move(el('swipe'), 50, 10);
+        await tick(600);                    // 拖慢：40px / 600ms ≈ 66 vp/s < 100
+        up(el('swipe'), 50, 10);
+        await tick(25);
+        check(val('glog').slice(b2.length) === '',
+          `慢速滑动（≈66 vp/s < 100）不触发（'${val('glog').slice(b2.length)}'）`);
+      });
+
+      // ══════════ ⑥ Pinch：两指张开 → scale 真的按距离比算 ══════════
+      await group('Pinch', async () => {
+        const before = val('glog');
+        down(el('pinch'), 10, 10, 1);
+        down(el('pinch'), 50, 10, 2);        // 两指相距 40 → 这一刻取基准距离
+        move(el('pinch'), 130, 10, 2);       // 拉到相距 120 → 超过 distance=5 → onActionStart(scale≈3)
+        move(el('pinch'), 130, 10, 2);       // 再一次移动 → onActionUpdate（fixture 在 update 里记 scale）
+        await tick(25);                      // 状态变更到 DOM 是微任务，必须等一次
+        check(val('glog').slice(before.length).includes('KS;'),
+          `两指张开触发 onActionStart（'${val('glog').slice(before.length)}'）`);
+        check(val('pan') === 'scale=3.00', `scale = 距离比 120/40 = 3（实际 '${val('pan')}'）`);
+        up(el('pinch'), 130, 10, 2);
+        up(el('pinch'), 10, 10, 1);
+        await tick(25);
+        check(val('glog').slice(before.length).includes('KE;'), 'onActionEnd 触发');
+      });
+
+      lines.push(`GEST top=${__arkui_dom_gestures(el('pad')).attachCount} pad=${val('pan')} log='${val('glog')}'`);
+      lines.push(`ELMT ${__arkui_dom_elmtRecords.size}`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

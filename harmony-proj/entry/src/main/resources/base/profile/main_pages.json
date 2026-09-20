@@ -4,6 +4,7 @@
     "pages/MeasNotify",
     "pages/PromptAct",
     "pages/Callee",
-    "pages/AnimDemo"
+    "pages/AnimDemo",
+    "pages/GestureDemo"
   ]
 }

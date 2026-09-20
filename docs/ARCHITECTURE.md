@@ -1107,6 +1107,45 @@ Electron         te=true （框宽变化的那几次过渡真的跑完并触发�
 因此**父容器尺寸变化带动子节点位移**这类连带位移不会被单独过渡
 （CSS 布局会跟着变，但过渡只作用在被改的那个元素上）。
 
+### 4.17 手势：两层栈 + 指针识别器（R23）
+
+**⚠️ 调用约定（实测产物）**：**两层栈**，全部是自由变量（不走 import）：
+
+```js
+globalThis.Gesture.create(GesturePriority.LOW);   // ① 打开手势作用域
+PanGesture.create({ fingers: 1, direction: PanDirection.All, distance: 5 });
+PanGesture.onActionStart(cb); PanGesture.onActionUpdate(cb); PanGesture.onActionEnd(cb);
+PanGesture.pop();                                 // ② 收一个手势
+globalThis.Gesture.pop();                         // ③ 关作用域 → 挂到"当前节点"上
+```
+
+「当前节点」= **组件栈顶**（`ViewStackProcessor.top()`）：手势作用域嵌在组件的构建器里
+（`Row…Gesture.create…Gesture.pop…Row.pop`），关作用域时栈顶正是那个组件。
+所以产物里**没有** `.gesture()` 这样的属性方法 —— 不需要实现它（生成了反而会误导）。
+
+**挂载按"渲染批次"替换**：`Gesture.pop()` 先把记录攒进 `pendingGestureAttach`，到微任务再统一
+`attachGestures`。这样"同一次渲染里的多个作用域"是**合并**、"下一次渲染"是**替换** ——
+否则重渲染会把回调叠成两份，一次手势触发两次回调（这类"翻倍"bug 很难从断言里看出来）。
+
+**识别器全部基于真实 DOM pointer 事件**（`pointerdown/move/up/cancel` + `setPointerCapture`），
+合成事件与真实指针走同一条路。语义（照 `.d.ts`）：
+
+| 手势 | 触发条件 | 事件字段 |
+|---|---|---|
+| `TapGesture` | `count`（默认 1）次点击归组（窗口 300ms），位移容差 10px | `repeat`（第一组 false，后续 true） |
+| `LongPressGesture` | 按住 `duration`（默认 500）；`repeat:true` 则按周期重复 | `repeat` |
+| `PanGesture` | 位移 ≥ `distance`（默认 5）才 Start，之后每次 move 是 Update，抬手 End | `offsetX/offsetY`（相对按下点） |
+| `SwipeGesture` | 抬手时按平均速度 ≥ `speed`（默认 100 **vp/s**）+ 方向匹配 | `angle`（水平向右为 0，顺时针正）、`speed` |
+| `PinchGesture` | 两指距离变化 ≥ `distance`（默认 5） | `scale`（当前距离 / **第二指按下时**的基准距离） |
+
+**一个真踩到的 bug**：`PinchGesture` 的基准距离必须在**第二个指针按下时**取。写成"第一次 move 时取"，
+第一帧的移动就成了基准 → `scale` 永远是 1（识别器静默失效；破坏验证⑤复现出 3 条红）。
+
+**已知限制**：`RotationGesture`/`GestureGroup` 未实现（`RotationGesture` 只在类型表里登记，没有识别器）；
+`priorityGesture`/`parallelGesture` 未实现；**优先级与冲突仲裁**（`GesturePriority`/`GestureMode`/`GestureMask`）
+只记录不参与决策 —— 同一元素上多个手势**并列触发**；`onActionCancel` 只在 `pointercancel` 时派发；
+`fingerList` 恒为空数组。
+
 ---
 
 ## 5. 架构不变量
@@ -1181,10 +1220,10 @@ Electron         te=true （框宽变化的那几次过渡真的跑完并触发�
   属性元数据总数       1078（平均 7.2／组件，最多 TextInput=70）
 
 == 运行时 API ==
-  global 导出        129 个
+  global 导出        142 个
   状态类            ObservedPropertySimplePU ObservedPropertyObjectPU SynchedPropertySimpleOneWayPU SynchedPropertySimpleTwoWayPU SynchedPropertyNesedObjectPU
   内置组件          Text Button Column Row Stack List ListItem If ForEach LazyForEach RelativeContainer Tabs TabContent Swiper Navigation NavDestination Progress Gauge DataPanel Rating
-  内部钩子 __arkui_dom_*  28 个
+  内部钩子 __arkui_dom_*  29 个
 
 == 状态管理 ==
   v1  状态类        5 个（包装对象模型）
@@ -1198,21 +1237,21 @@ Electron         te=true （框宽变化的那几次过渡真的跑完并触发�
   14 个：app.ability.AbilityConstant app.ability.ConfigurationConstant app.ability.UIAbility app.ability.Want data.preferences file.fs hilog measure multimedia.image net.http notificationManager promptAction router window
 
 == 用例矩阵 ==
-  浏览器 run.sh     28 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify measure lazy provide v2 observe async ability promptaction realfs animdemo router netfile persist
-  Electron          27 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs animdemo measure lazy provide async v2 observe
-  测试页            28 个
-  fixtures 转换产物  26 个：AnimDemo AsyncIO Callee Detail DrawDemo Home Index Layout Lazy LazyVar MeasArea MeasImage MeasNotify Measure NavDemo NetFile Observe PromptAct Provide RelDemo Rich SwiperDemo TabsGrid TextMeasure V2 Widgets
+  浏览器 run.sh     29 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify measure lazy provide v2 observe async ability promptaction realfs animdemo gesturedemo router netfile persist
+  Electron          28 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs animdemo gesturedemo measure lazy provide async v2 observe
+  测试页            29 个
+  fixtures 转换产物  27 个：AnimDemo AsyncIO Callee Detail DrawDemo GestureDemo Home Index Layout Lazy LazyVar MeasArea MeasImage MeasNotify Measure NavDemo NetFile Observe PromptAct Provide RelDemo Rich SwiperDemo TabsGrid TextMeasure V2 Widgets
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          279.9 KB
-  test             198.6 KB
+  runtime          294.8 KB
+  test             208.2 KB
   tools            38.1 KB
-  electron(src)    17.6 KB
-  docs             244.3 KB
-  fixtures         196.0 KB
+  electron(src)    17.8 KB
+  docs             252.8 KB
+  fixtures         202.4 KB
 
 == 逐文件（文档"文件职责"表的来源）==
-  runtime/arkui-dom-runtime.js     171215 B  167.2 KB
+  runtime/arkui-dom-runtime.js     186425 B  182.1 KB
   runtime/generated-components.js   57617 B  56.3 KB
   runtime/ohos-shims.js             57789 B  56.4 KB
   tools/extract.mjs                  6563 B  6.4 KB
@@ -1221,18 +1260,18 @@ Electron         te=true （框宽变化的那几次过渡真的跑完并触发�
   tools/stats.mjs                   13415 B  13.1 KB
   tools/preflight.mjs                5178 B  5.1 KB
   tools/check-all.sh                 3171 B  3.1 KB
-  run.sh                            13705 B  13.4 KB
-  electron/run.sh                    9049 B  8.8 KB
+  run.sh                            14096 B  13.8 KB
+  electron/run.sh                    9260 B  9.0 KB
   electron/main.js                   6795 B  6.6 KB
   electron/preload.js                1961 B  1.9 KB
   package.json                       1207 B  1.2 KB
   .gitignore                          674 B  0.7 KB
-  README.md                         61702 B  60.3 KB
+  README.md                         64623 B  63.1 KB
   THIRD-PARTY-NOTICES.md             8256 B  8.1 KB
-  docs/ARCHITECTURE.md              99786 B  97.4 KB
-  docs/CAPABILITY.md                29956 B  29.3 KB
-  docs/DEVELOPING.md                43088 B  42.1 KB
-  docs/ROADMAP.md                   58022 B  56.7 KB
+  docs/ARCHITECTURE.md             103322 B  100.9 KB
+  docs/CAPABILITY.md                30455 B  29.7 KB
+  docs/DEVELOPING.md                43861 B  42.8 KB
+  docs/ROADMAP.md                   61906 B  60.5 KB
   docs/surface-measurement.md        6496 B  6.3 KB
   docs/SESSION-2026-09-20.md        12842 B  12.5 KB
   fixtures/pages/AnimDemo.ts         6451 B  6.3 KB
@@ -1240,6 +1279,7 @@ Electron         te=true （框宽变化的那几次过渡真的跑完并触发�
   fixtures/pages/Callee.ts           1726 B  1.7 KB
   fixtures/pages/Detail.ts           3097 B  3.0 KB
   fixtures/pages/DrawDemo.ts        10867 B  10.6 KB
+  fixtures/pages/GestureDemo.ts      6561 B  6.4 KB
   fixtures/pages/Home.ts             3232 B  3.2 KB
   fixtures/pages/Index.ts            2737 B  2.7 KB
   fixtures/pages/Layout.ts           3434 B  3.4 KB
@@ -1266,6 +1306,7 @@ Electron         te=true （框宽变化的那几次过渡真的跑完并触发�
   test/async.html                    5977 B  5.8 KB
   test/components.html               5566 B  5.4 KB
   test/drawdemo.html                12765 B  12.5 KB
+  test/gesturedemo.html              9875 B  9.6 KB
   test/index.html                    3560 B  3.5 KB
   test/layout.html                   4135 B  4.0 KB
   test/lazy.html                     4380 B  4.3 KB
@@ -1311,6 +1352,7 @@ Electron         te=true （框宽变化的那几次过渡真的跑完并触发�
 | **轻提示与对话框 `@ohos.promptAction`** | ✅ 有测试（`run.sh promptaction`）：`showToast` 的 `duration` 默认/夹取 **真的生效**（1500ms 到期消失、10000ms 仍在）、缺 `message` 同步抛 401；`showDialog` 的 DOM 节点与按钮顺序、点按钮 resolve `{index}` 并消失、`buttons` 为空响亮失败 |
 | **通知 `@ohos.notificationManager`** | ✅ 有测试（`run.sh measnotify`）：`publish`/`cancel`/`cancelAll`/`isNotificationEnabled` + **回调重载**（异步、返回 `void`）；`content` 真解析（`normal`/`longText`/`multiLine`）、空 `content` 响亮失败；**三档投递路径**（`via`/`hostPermission`/`reason`）——不能确证送达就必须写出原因；Electron 侧 `hostCreated` 递增且 `permission=granted` |
 | **显式动画 `animateTo`/`animateToImmediately`** | ✅ 有测试（`run.sh animdemo`）：`fn()` 的状态变更落地 **且** 被重渲染的节点带上 `transition`（duration/curve/delay 都对）；`duration:0` **不进动画**但值照变；窗口结束清掉 transition 且 `onFinish` 被调；默认 `duration=1000`；`iterations`/`playMode` 等降级**出声**；`fn()` 无可动目标时出声 |
+| **手势 Pan/Tap/LongPress/Swipe/Pinch** | ✅ 有测试（`run.sh gesturedemo`）：5 个元素各挂对类型；**合成 pan 序列后 `offsetX/offsetY` 与合成位移一致**（横向 40,0 / 竖向 0,40）；`distance` 阈值、`TapGesture.count` 归组与 `repeat`、长按 `duration` 且**移动即取消**、`SwipeGesture.speed`（vp/s）与 `angle`、`PinchGesture.scale`（距离比）逐项有断言，且都有反向用例 |
 | 平台模块 | ✅ 14 个：`hilog`/`app.ability.*`/`window`/`router`/`data.preferences`/`file.fs`/`net.http`/**`measure`**/**`multimedia.image`**/**`notificationManager`**/**`promptAction`**；其余（`media`/`UIContext`/…）未实现 → 调用时给可操作报错 |
 | **`onAreaChange`** | ✅ 有测试（`run.sh measarea`）：回调的 `newValue.width/height` **等于真实 `getBoundingClientRect()`**、尺寸变化后再次触发且 `oldValue` 是上一次的真实值 |
 | **自定义布局协议** `onMeasureSize`+`onPlaceChildren` | ✅ 有测试（`run.sh measarea`）：`Measurable.measure(constraint)` 回**真实测量**、返回的 `SizeResult` **覆盖**声明尺寸、`Layoutable.layout(position)` 真的摆放（几何断言）、收敛有上限 |
@@ -1327,7 +1369,7 @@ Electron         te=true （框宽变化的那几次过渡真的跑完并触发�
 
 | 文件 | 体积 | 职责 | 改它的时机 |
 |---|---|---|---|
-| `runtime/arkui-dom-runtime.js` | 167.2 KB | v1 状态类 + 深度观测（`@Observed`/`@ObjectLink`）、`ViewPU`/`ViewV2`、装饰器层、组件栈、布局（`alignRules` 多层锚链 + `Guideline` + `bias`、`Grid` 轨道）、`Tabs`/`TabContent`+`TabsController`、`Swiper`+`SwiperController`、`Navigation`/`NavDestination`+`NavPathStack`、**绘制类四件套**（SVG/CSS）、`LazyForEach`、路由、**ability 栈**（`startAbilityForResult`/`terminateSelf*`）、**显式动画**（`Context.animateTo` → CSS transition） | 实现新语义（**手写优先**） |
+| `runtime/arkui-dom-runtime.js` | 182.1 KB | v1 状态类 + 深度观测（`@Observed`/`@ObjectLink`）、`ViewPU`/`ViewV2`、装饰器层、组件栈、布局（`alignRules` 多层锚链 + `Guideline` + `bias`、`Grid` 轨道）、`Tabs`/`TabContent`+`TabsController`、`Swiper`+`SwiperController`、`Navigation`/`NavDestination`+`NavPathStack`、**绘制类四件套**（SVG/CSS）、`LazyForEach`、路由、**ability 栈**（`startAbilityForResult`/`terminateSelf*`）、**显式动画**（`Context.animateTo` → CSS transition）、**手势**（两层栈 + pointer 识别器） | 实现新语义（**手写优先**） |
 | `runtime/generated-components.js` | 56.3 KB | 149 个组件骨架（**生成物**） | **不手改**；改 `tools/gen-components.mjs` 后重新生成，`--check` 会守门 |
 | `runtime/ohos-shims.js` | 56.4 KB | `@ohos:*` 模块（14 个，含 **`measure`**/**`multimedia.image`**/**`notificationManager`**/**`promptAction`**）+ 持久化后端（含 R21 的探测与自报）+ 文本/图像测量原语 | 新增平台模块 |
 | `tools/extract.mjs` | 6.3 KB | hvigor 缓存 `.ts` → 可执行 `.js`；**装饰器作用域内绑定前奏 + 未就绪守卫**（§3.4） | 产物形态/装饰器集合变化时 |
@@ -1336,12 +1378,12 @@ Electron         te=true （框宽变化的那几次过渡真的跑完并触发�
 | `tools/stats.mjs` | 13.1 KB | 本文档所有数字的来源（`--json` 机器可读）；**`--check-doc`/`--write-doc` 守 §6 引用块** | 覆盖范围变化时 |
 | `tools/preflight.mjs` | 5.0 KB | 环境自检（工具链/宿主/可执行位） | 外部依赖变化时 |
 | `tools/check-all.sh` | 3.1 KB | 一条命令做完验收（5 步），退出码只看被调命令 | 新增验收步骤时 |
-| `run.sh` | 13.4 KB | 浏览器 28 用例驱动 | 新增用例 |
-| `electron/run.sh` | 8.8 KB | Electron 27 用例 + 磁盘验证 | 新增用例 |
+| `run.sh` | 13.8 KB | 浏览器 29 用例驱动 | 新增用例 |
+| `electron/run.sh` | 9.0 KB | Electron 28 用例 + 磁盘验证 | 新增用例 |
 | `electron/main.js` | 6.6 KB | 主进程：offscreen 截图、**像素级**空白检测 | 截图/验证策略变化时 |
 | `electron/preload.js` | 1.9 KB | `contextBridge` 暴露 Node fs | 宿主能力变化时 |
-| `fixtures/pages/*.ts` | 189.5 KB | **冻结的**官方转换产物（26 个，含 `V2.ts`/`Observe.ts`/`TabsGrid.ts`/`SwiperDemo.ts`/`NavDemo.ts`/`RelDemo.ts`/`DrawDemo.ts`/`TextMeasure.ts`/`LazyVar.ts`/`MeasArea.ts`/`MeasImage.ts`/`MeasNotify.ts`/`PromptAct.ts`/`Callee.ts`/`AnimDemo.ts`），另有 `fixtures/entryability/*.ts`（`EntryAbility.ts`/`PromptAbility.ts`） | 几乎不改（见不变量 5） |
-| `test/*.html` | 198.6 KB | 断言页（读 `#result` 节点文本） | 新增用例 |
+| `fixtures/pages/*.ts` | 195.9 KB | **冻结的**官方转换产物（27 个，含 `V2.ts`/`Observe.ts`/`TabsGrid.ts`/`SwiperDemo.ts`/`NavDemo.ts`/`RelDemo.ts`/`DrawDemo.ts`/`TextMeasure.ts`/`LazyVar.ts`/`MeasArea.ts`/`MeasImage.ts`/`MeasNotify.ts`/`PromptAct.ts`/`Callee.ts`/`AnimDemo.ts`/`GestureDemo.ts`），另有 `fixtures/entryability/*.ts`（`EntryAbility.ts`/`PromptAbility.ts`） | 几乎不改（见不变量 5） |
+| `test/*.html` | 208.2 KB | 断言页（读 `#result` 节点文本） | 新增用例 |
 | `test-assets/*` | 1.1 KB | **已知尺寸的测试图片**（PNG/JPEG/伪装文件）。必须进仓库——放 `/tmp` 会在重启后失效（R5 的教训） | 需要新资产时 |
 
 ---

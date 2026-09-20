@@ -8,8 +8,8 @@
 cd /data/training/cli/arkui-dom-runtime
 npm run check                   # 全部验收：preflight + 生成物一致 + 浏览器 + Electron（退出码可信）
 npm run check:quick             # 跳过 Electron
-./run.sh all                    # 浏览器侧：28 个用例（Chrome headless）
-./electron/run.sh all           # Electron 侧：27 个用例 + 真实磁盘核验
+./run.sh all                    # 浏览器侧：29 个用例（Chrome headless）
+./electron/run.sh all           # Electron 侧：28 个用例 + 真实磁盘核验
 npm run stats                   # 覆盖范围统计（本文档的数字都来自它）
 npm run preflight               # 环境自检（缺工具链/宿主/可执行位会明确报错）
 node tools/gen-components.mjs   # 重新生成 149 个组件骨架
@@ -103,6 +103,8 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 | **自报与真磁盘一致**：OS 可见后端给出的真路径**确实存在于磁盘**（外部核验）；非 OS 可见后端必须明确声明"不是 OS 路径" | ✅ | realfs（`existsSync('/vfs/files/demo.txt')`；localStorage → '无真实路径'） |
 | **显式动画 `animateTo`/`animateToImmediately`**：`fn()` 引起的状态变更 → **被重渲染节点**上的 CSS transition（duration/curve/delay 逐项）；到点清掉并调 `onFinish`；`duration:0` **不进动画**但值照变；默认 `duration=1000` | ✅ | animdemo（`prop='all' dur='300ms' curve='ease-in-out'`；`duration:0` → `els=0/endedBy='duration-0'`） |
 | **动画参数降级要出声**：`iterations`/`playMode`/`tempo`/`expectedFrameRateRange`/`ICurve` 曲线（CSS transition 表达不了）一律写警告；`fn()` 无可动目标时也出声 | ✅ | animdemo（`iterations=3`、`playMode=2` 各被点名；无目标时记 `no-target` 并告警） |
+| **手势 Pan/Tap/LongPress/Swipe/Pinch**：两层栈（`Gesture.create/pop` + `XxxGesture.create/onAction*/pop`）挂到组件栈顶元素，识别器走真实 pointer 事件 | ✅ | gesturedemo（5 个元素各挂对；`distance`/`count`/`duration`/`speed`/`scale` 逐项断言 + 反向用例） |
+| **Pan 的 `offsetX/offsetY` = 合成位移**：横向拖 40 → `40,0`；竖向拖 40 → `0,40`（写死单轴的实现会被另一条抓住） | ✅ | gesturedemo（`end=40,0` / `end=0,40`） |
 | **`onAreaChange`**：`newValue` = 真实宽高 + 相对父/页坐标；尺寸变化后再次触发，`oldValue` 为上一次真实值 | ✅ | measarea（`120x30` == 真实 rect；`0>100` → `100>140`） |
 | **自定义布局协议**（`onMeasureSize` + `onPlaceChildren`）：`Measurable.measure(c)` 回真实测量、返回值覆盖声明尺寸、`Layoutable.layout(pos)` 真摆放 | ✅ | measarea（`measure` 遵守 maxWidth=60、组件宽 = 返回的 60、三子项依次落位） |
 | **真实行数**（`Range.getClientRects()` 数行盒，非"按字宽累加"的模拟） | ✅ | textmeasure（`__arkui_dom_countLines` 直接断言：宽 100 → 4 行、宽 400 → 1 行、无显式宽 → 按容器 2 行） |
@@ -143,7 +145,7 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 |---|---|---|
 | 同一份断言页在 Electron 里跑（不复制测试代码） | ✅ | electron 全矩阵 |
 | 真实渲染 + offscreen 截图（非白像素占比判定，非 `isEmpty()`） | ✅ | electron 各用例 |
-| 同一份断言的双端一致（27 个用例两个 runner 都过） | ✅ | run.sh / electron/run.sh |
+| 同一份断言的双端一致（28 个用例两个 runner 都过） | ✅ | run.sh / electron/run.sh |
 
 ---
 

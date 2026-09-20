@@ -454,6 +454,339 @@
     animateToImmediately: (param, fn) => runExplicitAnimation(param, fn, 'animateToImmediately'),
   };
 
+  // ────────────────────── 手势（R23） ──────────────────────
+  //
+  // ⚠️ 调用约定（实测产物）：**两层栈**，全部走自由变量（不走 import）：
+  //
+  //   globalThis.Gesture.create(GesturePriority.LOW);   // ① 打开手势作用域
+  //   PanGesture.create({fingers, direction, distance});
+  //   PanGesture.onActionStart(cb); PanGesture.onActionUpdate(cb); PanGesture.onActionEnd(cb);
+  //   PanGesture.pop();                                  // ② 收一个手势
+  //   globalThis.Gesture.pop();                          // ③ 关作用域 → 挂到"当前节点"上
+  //
+  // 「当前节点」= 组件栈顶：手势作用域嵌在组件的构建器里（`Row…Gesture.create…Gesture.pop…Row.pop`），
+  // 关作用域时栈顶正是那个组件，所以不需要 `.gesture()` 这样的属性方法（产物里也没有）。
+  //
+  // 识别器全部基于真实 DOM **pointer 事件**（pointerdown/move/up/cancel）+ setPointerCapture，
+  // 这样合成事件（dispatchEvent）与真实指针走的是同一条路。
+  const PanDirection = { None: 0, Horizontal: 1, Left: 2, Right: 3, Vertical: 4, Up: 5, Down: 6, All: 7 };
+  const SwipeDirection = { None: 0, Horizontal: 1, Vertical: 2, All: 3 };
+  const GesturePriority = { NORMAL: 0, PRIORITY: 1 };
+
+  const gestureScopes = [];              // Gesture.create/pop 的作用域栈
+  const gestureBuild = [];               // 正在构建的手势记录栈（各手势的 create/pop）
+  const TAP_SLOP_PX = 10;                // 超过这个位移就不算 tap（ArkUI 内部也有类似的容差）
+  const TAP_WINDOW_MS = 300;             // 连续点击的归组窗口
+
+  function gestureEvent(extra) {
+    // GestureEvent 的字段（.d.ts）：repeat/fingerList/offsetX/offsetY/angle/speed/scale/
+    // pinchCenterX/pinchCenterY/velocityX/velocityY/velocity + BaseEvent 的 timestamp
+    return Object.assign({
+      repeat: false, fingerList: [], offsetX: 0, offsetY: 0, angle: 0, speed: 0,
+      scale: 1, pinchCenterX: 0, pinchCenterY: 0,
+      velocityX: 0, velocityY: 0, velocity: 0, timestamp: Date.now(),
+    }, extra || {});
+  }
+
+  function fireGesture(rec, kind, ev) {
+    const cb = rec[kind];
+    if (typeof cb !== 'function') return;
+    try { cb(ev); } catch (e) {
+      layoutWarnings.push(`手势 ${rec.type}.${kind} 回调抛错：${e && e.message}`);
+    }
+  }
+
+  function gestureDirOk(rec, dx, dy) {
+    const d = (rec.params.direction === undefined || rec.params.direction === null)
+      ? null : Number(rec.params.direction);
+    const horiz = Math.abs(dx) >= Math.abs(dy);
+    switch (d) {
+      case null: case PanDirection.All: return true;
+      case PanDirection.Horizontal: return horiz;
+      case PanDirection.Vertical: return !horiz;
+      case PanDirection.Left: return dx < 0 && horiz;
+      case PanDirection.Right: return dx > 0 && horiz;
+      case PanDirection.Up: return dy < 0 && !horiz;
+      case PanDirection.Down: return dy > 0 && !horiz;
+      default: return true;
+    }
+  }
+  function swipeDirOk(rec, dx, dy) {
+    const d = (rec.params.direction === undefined || rec.params.direction === null)
+      ? SwipeDirection.All : Number(rec.params.direction);
+    const horiz = Math.abs(dx) >= Math.abs(dy);
+    if (d === SwipeDirection.All) return true;
+    if (d === SwipeDirection.Horizontal) return horiz;
+    if (d === SwipeDirection.Vertical) return !horiz;
+    return true;
+  }
+
+  function detachGestures(el) {
+    const st = el && el.__arkuiGestureState;
+    if (!st) return;
+    for (const [k, fn] of st.listeners) el.removeEventListener(k, fn);
+    for (const rs of st.longPress) if (rs.timer) clearTimeout(rs.timer);
+    if (st.tapTimer) clearTimeout(st.tapTimer);
+    el.__arkuiGestureState = null;
+  }
+  function gestureTypes(el) {
+    const st = el && el.__arkuiGestureState;
+    return st ? st.gestures.map((g) => g.type) : [];
+  }
+
+  function attachGestures(el, gestures) {
+    detachGestures(el);
+    const st = {
+      gestures: gestures.slice(), listeners: [], longPress: [],
+      ptrs: new Map(), recState: new Map(), tapCount: 0, tapTimer: null,
+    };
+    el.__arkuiGestureState = st;
+    const on = (k, fn) => { el.addEventListener(k, fn); st.listeners.push([k, fn]); };
+    const primary = () => {
+      let best = null;
+      for (const p of st.ptrs.values()) if (!best || p.seq < best.seq) best = p;
+      return best;
+    };
+    const clearLongPress = () => {
+      for (const rs of st.longPress) { if (rs.timer) clearTimeout(rs.timer); rs.timer = null; }
+      st.longPress = [];
+    };
+
+    const onDown = (ev) => {
+      if (ev.pointerType === 'mouse' && ev.button !== 0) return;
+      try { el.setPointerCapture(ev.pointerId); } catch (_) { /* 合成事件可能不支持 */ }
+      st.ptrs.set(ev.pointerId, {
+        seq: st.ptrs.size, id: ev.pointerId, x0: ev.clientX, y0: ev.clientY,
+        x: ev.clientX, y: ev.clientY, t: Date.now(),
+      });
+      for (const rec of st.gestures) {
+        if (rec.type === 'longPress') {
+          const dur = rec.params.duration === undefined ? 500 : Number(rec.params.duration);
+          const rs = { rec, timer: null, fired: 0, dur };
+          const tick = () => {
+            fireGesture(rec, 'onAction', gestureEvent({ repeat: rs.fired > 0 }));
+            rs.fired++;
+            if (rec.params.repeat === true) rs.timer = setTimeout(tick, dur);
+          };
+          rs.timer = setTimeout(tick, dur);
+          st.longPress.push(rs);
+        } else if (rec.type === 'pinch') {
+          // d0（初始两指距离）必须在【第二个指针按下时】取，而不是"第一次 move" ——
+          // 否则第一帧的移动会被当成基准，scale 永远从 1 开始（实测踩到）
+          let d0 = 0;
+          if (st.ptrs.size >= 2) {
+            const arr = [...st.ptrs.values()].sort((a, b) => a.seq - b.seq);
+            d0 = Math.hypot(arr[1].x - arr[0].x, arr[1].y - arr[0].y);
+          }
+          st.recState.set(rec, { started: false, d0 });
+        } else if (rec.type === 'pan') {
+          st.recState.set(rec, { started: false });
+        }
+      }
+    };
+
+    const onMove = (ev) => {
+      const p = st.ptrs.get(ev.pointerId);
+      if (!p) return;
+      p.x = ev.clientX; p.y = ev.clientY;
+      const first = primary();
+      const dx = first ? first.x - first.x0 : 0;
+      const dy = first ? first.y - first.y0 : 0;
+      const dist = Math.hypot(dx, dy);
+      if (dist > TAP_SLOP_PX) clearLongPress();            // 动了就不算长按
+      for (const rec of st.gestures) {
+        if (rec.type === 'pan') {
+          const th = rec.params.distance === undefined ? 5 : Number(rec.params.distance);
+          const rs = st.recState.get(rec) || { started: false };
+          st.recState.set(rec, rs);
+          if (!rs.started) {
+            if (dist >= th && gestureDirOk(rec, dx, dy)) {
+              rs.started = true;
+              fireGesture(rec, 'onActionStart', gestureEvent({ offsetX: dx, offsetY: dy }));
+            }
+          } else if (gestureDirOk(rec, dx, dy)) {
+            fireGesture(rec, 'onActionUpdate', gestureEvent({ offsetX: dx, offsetY: dy }));
+          }
+        } else if (rec.type === 'pinch' && st.ptrs.size >= 2) {
+          const arr = [...st.ptrs.values()].sort((a, b) => a.seq - b.seq);
+          const d = Math.hypot(arr[1].x - arr[0].x, arr[1].y - arr[0].y);
+          const rs = st.recState.get(rec) || { started: false, d0: 0 };
+          st.recState.set(rec, rs);
+          const th = rec.params.distance === undefined ? 5 : Number(rec.params.distance);
+          if (!rs.started) {
+            if (rs.d0 === 0) rs.d0 = d;
+            else if (Math.abs(d - rs.d0) >= th) {
+              rs.started = true;
+              fireGesture(rec, 'onActionStart', gestureEvent({
+                scale: d / rs.d0,
+                pinchCenterX: (arr[0].x + arr[1].x) / 2, pinchCenterY: (arr[0].y + arr[1].y) / 2,
+              }));
+            }
+          } else {
+            fireGesture(rec, 'onActionUpdate', gestureEvent({
+              scale: d / rs.d0,
+              pinchCenterX: (arr[0].x + arr[1].x) / 2, pinchCenterY: (arr[0].y + arr[1].y) / 2,
+            }));
+          }
+        }
+      }
+    };
+
+    const onUp = (ev) => {
+      const p = st.ptrs.get(ev.pointerId);
+      if (!p) return;
+      st.ptrs.delete(ev.pointerId);
+      const dx = ev.clientX - p.x0;
+      const dy = ev.clientY - p.y0;
+      const dist = Math.hypot(dx, dy);
+      const dt = Math.max(1, Date.now() - p.t);
+      clearLongPress();
+      const isLast = st.ptrs.size === 0;
+      for (const rec of st.gestures) {
+        if (rec.type === 'pan') {
+          const rs = st.recState.get(rec) || {};
+          if (rs.started) {
+            fireGesture(rec, 'onActionEnd', gestureEvent({ offsetX: dx, offsetY: dy }));
+            rs.started = false;
+          }
+        } else if (rec.type === 'pinch') {
+          const rs = st.recState.get(rec) || {};
+          if (rs.started && st.ptrs.size < 2) {
+            fireGesture(rec, 'onActionEnd', gestureEvent({ scale: rs.d0 ? 1 : 1 }));
+            rs.started = false;
+          }
+        } else if (rec.type === 'tap') {
+          if (dist <= TAP_SLOP_PX) {
+            const count = rec.params.count === undefined ? 1 : Number(rec.params.count);
+            st.tapCount++;
+            if (st.tapTimer) clearTimeout(st.tapTimer);
+            st.tapTimer = setTimeout(() => { st.tapCount = 0; st.tapTimer = null; }, TAP_WINDOW_MS);
+            if (st.tapCount % count === 0) {
+              fireGesture(rec, 'onAction', gestureEvent({ repeat: st.tapCount > count }));
+            }
+          }
+        } else if (rec.type === 'swipe' && isLast) {
+          // .d.ts：speed 单位 vp/s；angle 以水平向右为基准，顺时针 0~180、逆时针 0~-180
+          const speed = (dist / dt) * 1000;
+          const th = rec.params.speed === undefined ? 100 : Number(rec.params.speed);
+          const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
+          if (speed >= th && swipeDirOk(rec, dx, dy)) {
+            fireGesture(rec, 'onAction', gestureEvent({ angle, speed }));
+          }
+        }
+      }
+    };
+
+    const onCancel = (ev) => {
+      const p = st.ptrs.get(ev.pointerId);
+      if (p) st.ptrs.delete(ev.pointerId);
+      clearLongPress();
+      for (const rec of st.gestures) {
+        const rs = st.recState.get(rec) || {};
+        if ((rec.type === 'pan' || rec.type === 'pinch') && rs.started) {
+          fireGesture(rec, 'onActionCancel', gestureEvent({}));
+          rs.started = false;
+        }
+      }
+    };
+
+    on('pointerdown', onDown);
+    on('pointermove', onMove);
+    on('pointerup', onUp);
+    on('pointercancel', onCancel);
+    return st;
+  }
+
+  // 手势构建器：`XxxGesture.create(params)` → `.on*（cb）` → `.pop()`
+  const GESTURE_TYPES = {
+    TapGesture: 'tap', LongPressGesture: 'longPress', PanGesture: 'pan',
+    SwipeGesture: 'swipe', PinchGesture: 'pinch', RotationGesture: 'rotation',
+  };
+  function makeGestureBuilder(name) {
+    const type = GESTURE_TYPES[name];
+    const impl = {
+      create(params) {
+        const rec = { type, name, params: (params && typeof params === 'object') ? params : {}, seq: gestureSeq++ };
+        gestureBuild.push(rec);
+        return rec;
+      },
+      // 收一个手势 → 归入【当前手势作用域】（由它统一在 pop 时挂到元素上）
+      pop() {
+        const rec = gestureBuild.pop();
+        const scope = gestureScopes[gestureScopes.length - 1];
+        if (!scope) {
+          layoutWarnings.push(`${name}.pop() 不在任何 Gesture.create() 作用域里 —— 手势无处挂载`);
+          return;
+        }
+        if (rec) scope.list.push(rec);
+      },
+    };
+    // 未列举的 on* 方法一律当"回调 setter"（onAction/onActionStart/onActionUpdate/onActionEnd/onActionCancel）
+    return new Proxy(impl, {
+      get(target, key) {
+        if (key in target) return target[key];
+        if (typeof key === 'symbol') return undefined;
+        let fn = target['__' + String(key)];
+        if (!fn) {
+          fn = function (cb) {
+            const rec = gestureBuild[gestureBuild.length - 1];
+            if (!rec) {
+              layoutWarnings.push(`${name}.${String(key)}() 不在任何手势的 create 之后 —— 回调无处安放`);
+              return undefined;
+            }
+            rec[String(key)] = cb;
+            return undefined;
+          };
+          target['__' + String(key)] = fn;
+        }
+        return fn;
+      },
+    });
+  }
+  let gestureSeq = 0;
+  const gestureBuilders = {};
+  for (const name of Object.keys(GESTURE_TYPES)) gestureBuilders[name] = makeGestureBuilder(name);
+
+  const Gesture = {
+    create(priority) {
+      gestureScopes.push({ priority: priority === undefined ? GesturePriority.NORMAL : priority, list: [] });
+    },
+    pop() {
+      const scope = gestureScopes.pop();
+      if (!scope) {
+        layoutWarnings.push('Gesture.pop() 没有对应的 Gesture.create()');
+        return;
+      }
+      const el = ViewStackProcessor.top();
+      if (!el) {
+        layoutWarnings.push(`Gesture.pop() 时组件栈是空的 —— 手势（${scope.list.map((g) => g.type).join(',')}）无处可挂`);
+        return;
+      }
+      scheduleGestureAttach(el, scope.list);
+    },
+  };
+  let gestureAttachCount = 0;
+  // 同一元素上可能开了多个手势作用域（`.gesture` 之外还有 priorityGesture/parallelGesture 之类），
+  // 所以先按元素累积、到微任务再一次性挂载 —— 这样"一次渲染"里是【合并】，
+  // 而"下一次渲染"是【替换】（否则重渲染会把回调叠成两份，回调被触发两次）。
+  const pendingGestureAttach = new Map();
+  let pendingAttachScheduled = false;
+  function scheduleGestureAttach(el, records) {
+    const list = pendingGestureAttach.get(el) || [];
+    for (const r of records) list.push(r);
+    pendingGestureAttach.set(el, list);
+    if (pendingAttachScheduled) return;
+    pendingAttachScheduled = true;
+    Promise.resolve().then(() => {
+      pendingAttachScheduled = false;
+      for (const [element, recs] of pendingGestureAttach) {
+        attachGestures(element, recs);
+        gestureAttachCount++;
+      }
+      pendingGestureAttach.clear();
+    });
+  }
+
   // ─────────────────────────── ViewPU ───────────────────────────
   class ViewPU {
     constructor(parent, localStorage, elmtId = -1, extraInfo) {
@@ -3508,6 +3841,18 @@
     TextOverflow, Alignment, Scroller, Axis,
     // R22：显式动画。产物里是 `Context.animateTo(...)`（自由变量）→ 必须挂 Context 这个名字
     Context, Curve, PlayMode,
+    // R23：手势。产物里是 `globalThis.Gesture.create(...)` + `PanGesture.create(...)` 这类
+    // 自由变量引用（两层栈），所以这些名字都必须挂在 global 上
+    Gesture, PanDirection, SwipeDirection, GesturePriority,
+    TapGesture: gestureBuilders.TapGesture, LongPressGesture: gestureBuilders.LongPressGesture,
+    PanGesture: gestureBuilders.PanGesture, SwipeGesture: gestureBuilders.SwipeGesture,
+    PinchGesture: gestureBuilders.PinchGesture, RotationGesture: gestureBuilders.RotationGesture,
+    // 手势自省：证明手势真的挂到了哪个元素上（而不是只登记了一堆回调）
+    __arkui_dom_gestures: (el) => ({
+      types: gestureTypes(el),
+      attachCount: gestureAttachCount,
+      dragState: el && el.__arkuiGestureState ? el.__arkuiGestureState.gestures.length : 0,
+    }),
     // 动画自省：证明"过渡真的挂在被重渲染的节点上、到点真的清掉了"，而不是只看某次 style 非空
     __arkui_dom_animations: () => ({
       active: animWindow ? { seq: animWindow.seq, duration: animWindow.duration, els: animWindow.els.length } : null,

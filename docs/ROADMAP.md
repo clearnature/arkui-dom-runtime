@@ -41,6 +41,7 @@ R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分�
 | ③ | **ability 结果链路 + 轻提示/对话框**（`startAbilityForResult`、`promptAction`） | `bash run.sh promptaction`（37 条断言，双端通过） |
 | ③ | **后端如实自报 + OPFS 现场探测**（"能持久化 ≠ 是文件系统"） | `bash run.sh realfs`（21 条断言，双端通过） |
 | ③ | **显式动画**（`animateTo`/`animateToImmediately` → CSS transition） | `bash run.sh animdemo`（35 条断言，双端通过） |
+| ③ | **手势**（Pan/Tap/LongPress/Swipe/Pinch → pointer 事件） | `bash run.sh gesturedemo`（24 条断言，双端通过） |
 | ③ | `@ohos:*` 别名层 + CommonJS 装载 + 真 fetch | `bash run.sh async` |
 | ③ | `UIAbility` 启动链路 | `bash run.sh ability` |
 | ③ | `router` 页面栈（返回时保留状态） | `bash run.sh router` |
@@ -806,11 +807,53 @@ Electron 里框宽那几次为 `true` —— 即"我们把 transition 挂上又�
 `__arkui_dom_animations`）、`fixtures/pages/AnimDemo.ts`、`harmony-proj/`（`AnimDemo.ets` + main_pages.json）、
 `test/animdemo.html`、`run.sh`、`electron/run.sh`
 
-### R23 — `Gesture`
+### R23 — 手势（Pan / Tap / LongPress / Swipe / Pinch）✅
 
-**内容**：`TapGesture` / `LongPressGesture` / `PanGesture` / `PinchGesture` / `SwipeGesture` 映射到 pointer/touch 事件。
+**内容**：`TapGesture` / `LongPressGesture` / `PanGesture` / `PinchGesture` / `SwipeGesture` 映射到 pointer 事件。
 
-**验收**：用 `dispatchEvent` 合成一次 pan 序列，断言回调的 `offsetX/offsetY` 接近合成位移。
+**⚠️ 调用约定（实测产物）**：**两层栈**，全部是自由变量（不走 import）：
+
+```js
+globalThis.Gesture.create(GesturePriority.LOW);   // ① 打开手势作用域
+PanGesture.create({ fingers: 1, direction: PanDirection.All, distance: 5 });
+PanGesture.onActionStart(cb); PanGesture.onActionUpdate(cb); PanGesture.onActionEnd(cb);
+PanGesture.pop();                                 // ② 收一个手势
+globalThis.Gesture.pop();                         // ③ 关作用域 → 挂到"当前节点"上
+```
+
+「当前节点」= **组件栈顶**：手势作用域嵌在组件的构建器里（`Row…Gesture.create…Gesture.pop…Row.pop`），
+关作用域时栈顶正是那个组件 —— 所以产物里**没有** `.gesture()` 这样的属性方法，也不需要实现它。
+
+**识别器全部基于真实 DOM pointer 事件**（`pointerdown/move/up/cancel` + `setPointerCapture`），
+所以合成事件（`dispatchEvent`）与真实指针走同一条路。实现要点：
+`TapGesture` 用 `count` 归组、`repeat` 标后续；`LongPressGesture` 按住 `duration`（默认 500）触发，
+**中途移动超过容差就取消**；`PanGesture` 位移超过 `distance`（默认 5）才 `onActionStart`，
+之后每次移动 `onActionUpdate`、抬手 `onActionEnd`；`SwipeGesture` 按 `speed`（默认 100 **vp/s**）与方向判定，
+`angle` 以水平向右为基准（顺时针 0~180、逆时针 0~-180，照 `.d.ts`）；`PinchGesture` 用两指距离比算 `scale`。
+挂在元素上的手势**按渲染批次替换**（同一次渲染里多个作用域合并），否则重渲染会把回调叠成两份。
+
+**验收（已执行）**：`bash run.sh gesturedemo` / `bash electron/run.sh gesturedemo` —— **24 条断言**，双端通过：
+5 个元素各自挂对了手势（读自省不读日志）；**合成一次 pan 序列后 `offsetX/offsetY` 与合成位移一致**
+（横向 `end=40,0`、竖向 `end=0,40` —— 写死其中一个轴会被另一条抓住）；位移 3px < distance 5 → 不触发；
+`TapGesture(count:2)` 两下触发一次且 `repeat=false`、再两下 `repeat=true`；
+`LongPressGesture(duration:300)` 按 380ms 触发、**按住期间移动 30px 不触发**；
+`SwipeGesture(speed:100)` 快速滑动触发且 `angle≈0`、**慢速（≈66 vp/s）不触发**；
+`PinchGesture` 两指从 40px 张到 120px → `scale=3.00`。
+
+**破坏验证**（5 项，各被精确抓住）：① pan 的 `offsetX/offsetY` 写死成标量距离 → 1 条红；
+② 忽略 `distance` 阈值 → 1 条红；③ 长按不因移动取消 → 1 条红；④ 忽略 swipe 的 `speed` 阈值 → 1 条红；
+⑤ `PinchGesture` 的基准距离改回"第一次 move 时取"（实现时踩过的真 bug）→ 3 条红。
+**其中②第一次注入的是"删掉默认值分支"，而 fixture 显式传了 `distance: 5` → 变异没落在被测路径上，
+断言照样通过（假阴性）；改成真的忽略阈值才红** —— 这条记进了坑表（破坏验证的变异必须落在被测路径上）。
+
+**已知限制**：`RotationGesture`/`GestureGroup` 未实现（`RotationGesture` 已在 `GESTURE_TYPES` 里登记类型但
+没有识别器，不会认出手势）；`priorityGesture`/`parallelGesture` 未实现；手势**优先级与冲突仲裁**
+（`GesturePriority`/`GestureMode`/`GestureMask`）只记录不参与决策 —— 同一元素上多个手势会**并列触发**；
+`onActionCancel` 只在收到 `pointercancel` 时派发；`fingerList` 恒为空数组（不合成手指轨迹）。
+
+**触及**：`runtime/arkui-dom-runtime.js`（`Gesture`/5 个手势构建器 + 指针识别器 + `__arkui_dom_gestures`）、
+`fixtures/pages/GestureDemo.ts`、`harmony-proj/`（`GestureDemo.ets` + main_pages.json）、
+`test/gesturedemo.html`、`run.sh`、`electron/run.sh`
 
 ---
 

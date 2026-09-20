@@ -86,11 +86,11 @@ tools/serve.py                 极简静态服务（端口由 OS 分配，避免
 tools/preflight.mjs            环境自检（工具链 / 宿主 / 可执行位）
 tools/check-all.sh             一条命令做完所有验收
 tools/stats.mjs                覆盖范围统计（文档里的数字都来自它）
-test/*.html                    断言页（28 个用例）
-fixtures/                      冻结的 ets-loader 转换产物（26 个，测试的输入）
+test/*.html                    断言页（29 个用例）
+fixtures/                      冻结的 ets-loader 转换产物（27 个，测试的输入）
 harmony-proj/                  HarmonyOS 工程（页面 .ets 源码，转换产物的来源；构建输出不入库）
-run.sh                         浏览器 28 用例驱动
-electron/run.sh                Electron 27 用例 + 真实磁盘验证
+run.sh                         浏览器 29 用例驱动
+electron/run.sh                Electron 28 用例 + 真实磁盘验证
 docs/                          ARCHITECTURE / DEVELOPING / ROADMAP / CAPABILITY
 ```
 
@@ -562,6 +562,48 @@ rect 已经把这位移算进去（b 明明 `offset=(40,20)`，rect 却是 `(0,0
 去掉错轴守卫 → 1 条失败（并因此发现原来那条断言**没有牙齿**：横线自身 `x=0`，
 用 `Start` 对齐时"错轴返回 0"与"没做判断"碰巧同值，改用 `Center` 才分离成 0 vs 150）。
 
+## R23：手势（Pan / Tap / LongPress / Swipe / Pinch）✅
+
+```
+$ bash run.sh gesturedemo
+=== ALL PASS ===                    （24 条断言）
+PASS #pad 上挂着 pan（'pan'）／#tap 上挂着 tap／#press=longPress／#swipe=swipe／#pinch=pinch
+PASS offsetX≈40、offsetY≈0（实际 40,0）
+PASS offsetX≈0、offsetY≈40（实际 0,40）
+PASS 位移 3px < distance 5 → 不触发（''）
+PASS 点两下触发一次且 repeat=false（'TF;'）／再点两下 → 一次 repeat=true（'TF;TR;'）
+PASS 按住 380ms > duration 300 → 触发一次 repeat=false（'LF;'）
+PASS 按住期间移动 30px → 不触发长按（''）
+PASS 快速滑动触发（'W0v400;'）／慢速滑动（≈66 vp/s < 100）不触发（''）
+PASS scale = 距离比 120/40 = 3（实际 'scale=3.00'）
+```
+
+**产物里没有 `.gesture()` 方法** —— 手势走的是**两层栈**（全部自由变量）：
+
+```js
+globalThis.Gesture.create(GesturePriority.LOW);   // ① 打开作用域
+PanGesture.create({ fingers: 1, direction: PanDirection.All, distance: 5 });
+PanGesture.onActionStart(cb); … ;
+PanGesture.pop();                                 // ② 收一个手势
+globalThis.Gesture.pop();                         // ③ 关作用域 → 挂到"当前节点"（组件栈顶）
+```
+
+识别器全部基于**真实 DOM pointer 事件**（+ `setPointerCapture`），所以合成事件与真实指针同一条路。
+`TapGesture.count` 归组并给 `repeat`；长按按 `duration` 且**中途移动即取消**；`PanGesture` 超过 `distance`
+才 Start（`offsetX/offsetY` 相对按下点）；`SwipeGesture` 按 `speed`（**vp/s**）与 `angle`
+（水平向右为 0，顺时针正 —— 照 `.d.ts`）；`PinchGesture.scale` = 当前距离 / **第二指按下时**的距离。
+
+**一个真踩到的 bug**：`PinchGesture` 的基准距离写成"第一次 move 时取" → 第一帧的移动成了基准 →
+`scale` 永远是 1（识别器静默失效）。破坏验证复现了 3 条红。
+
+**破坏验证**（5 项）：pan 的 offset 写死成标量距离 → 1 条红；忽略 `distance` → 1 条红；
+长按不因移动取消 → 1 条红；忽略 swipe 的 `speed` → 1 条红；pinch 基准距离写错 → 3 条红。
+（第二项**第一次注入失败**：改的是"未传 distance 时的默认值"分支，而 fixture 显式传了 `distance: 5` ——
+**变异没落在被测路径上**，断言照样通过。改成真的忽略阈值才红，记进了坑表 75。）
+
+**未实现（不算进本条验收）**：`RotationGesture`/`GestureGroup`/`priorityGesture`/`parallelGesture`；
+手势**优先级与冲突仲裁**只记录不参与决策（同一元素上多个手势并列触发）；`fingerList` 恒为空。
+
 ## R22：显式动画 `animateTo` ✅
 
 ```
@@ -968,17 +1010,18 @@ PASS starStyle 的图片 URI 不可用已记警告
 | 文档数字守门 | `npm run stats:check-doc` | `ARCHITECTURE.md` §6 的整块实测数字逐行比对，漂移即非 0 退出；`stats:write-doc` 就地重写 |
 | 覆盖统计 | `npm run stats` | 文档里的所有数字都由它产出（`--json` 机器可读） |
 
-`npm run check` 当前：**浏览器 28 用例 + Electron 27 用例全绿**。
+`npm run check` 当前：**浏览器 29 用例 + Electron 28 用例全绿**。
 
 ## 下一步
 
 **权威清单在 `docs/ROADMAP.md`**（每项带可复现的验收命令）。当前优先：
 
-1. **R22–R23** 动画（`animateTo`/`transition`）与手势（`Gesture`）
-2. **R24** `.abc` 路径调研（研究性）
+1. **R24** ArkVM / `.abc` 路径调研（研究性）
+2. **`transition`** 组件出现/消失动画（R22 只做了 `animateTo`，见那条的"未实现"）
+3. `Navigation` 的标题栏/工具栏与分栏模式、其余 85 个骨架组件的视觉语义、`@ohos:media`/`UIContext`
 
-**仍未覆盖**：动画/转场、手势（**含 `Swiper` 的滑动翻页**）、`chainMode`、
-`Navigation` 的**标题栏/工具栏与分栏模式**、其余 85 个骨架组件的视觉语义、`@ohos:media`/`UIContext`。
+**仍未覆盖**：`transition`（出现/消失动画）、`RotationGesture`/`GestureGroup` 与手势优先级仲裁、
+`chainMode`、`Navigation` 的**标题栏/工具栏与分栏模式**、其余 85 个骨架组件的视觉语义、`@ohos:media`/`UIContext`。
 **别把没验的当结论**——`docs/CAPABILITY.md` 里有逐项的能力矩阵，其中标了哪些语义是**推断**的。
 
 **已知待办（别当已完成）**：
