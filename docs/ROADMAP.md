@@ -6,8 +6,8 @@
 
 **当前状态**：`npm run check` 全绿（preflight + 生成物一致 + 文档数字守卫 + 浏览器 19 用例 + Electron 18 用例）。
 v1/v2 状态管理（含 v1 深度观测）、`Grid` 真实轨道、`Tabs` 切换、`Swiper` 轮播、`Navigation` 栈导航、
-`alignRules` 多层锚链 + `Guideline` + `bias`、纯绘制四件套、文本真实测量（`@ohos:measure`）均已落地。
-**下一步优先级：R16–R17（变高列表 / onMeasureSize+onAreaChange）→ R18–R21（平台模块）→ R22–R23（动画/手势）。**
+`alignRules` 多层锚链 + `Guideline` + `bias`、纯绘制四件套、文本真实测量（`@ohos:measure`）、变高列表项均已落地。
+**下一步优先级：R17（onMeasureSize/onAreaChange 与真实布局对齐）→ R18–R21（平台模块）→ R22–R23（动画/手势）。**
 R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分发前才需决定。
 
 ---
@@ -34,6 +34,7 @@ R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分�
 | ③ | **`alignRules` 多层锚链 + `Guideline` + `bias`** | `bash run.sh reldemo`（24 条断言，双端通过） |
 | ③ | **纯绘制四件套**（`Progress`/`Gauge`/`DataPanel`/`Rating`） | `bash run.sh drawdemo`（47 条断言，双端通过） |
 | ③ | **文本真实测量**（`@ohos:measure` + `__arkui_dom_countLines`） | `bash run.sh textmeasure`（25 条断言，双端通过） |
+| ③ | **变高列表项**（实测回填 + 前缀和偏移 + 滚动锚定） | `bash run.sh lazyvh`（22 条断言，双端通过） |
 | ③ | `@ohos:*` 别名层 + CommonJS 装载 + 真 fetch | `bash run.sh async` |
 | ③ | `UIAbility` 启动链路 | `bash run.sh ability` |
 | ③ | `router` 页面栈（返回时保留状态） | `bash run.sh router` |
@@ -44,7 +45,7 @@ R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分�
 | **P0** | 统一验收门禁（退出码可信） | `npm run check`；制造漂移 → exit 1 |
 | **P0** | `--check` 真正只校验不落盘 | `node tools/gen-components.mjs --check` |
 
-当前：**浏览器 21 用例 + Electron 20 用例全绿**（`npm run check` → `exit 0`）。
+当前：**浏览器 22 用例 + Electron 21 用例全绿**（`npm run check` → `exit 0`）。
 
 ---
 
@@ -70,7 +71,8 @@ R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分�
 | P2 | ~~R13 纯绘制四件套~~ **已完成**（其余 85 个骨架仍是 `data-*`） | 中 | 中 |
 | P3 | ~~R14 `alignRules` 多层锚链/Guideline/bias~~ **已完成** | — | — |
 | P3 | ~~R15 文本真实测量~~ **已完成** | — | — |
-| P3 | R16–R17 布局引擎（变高列表 / onMeasureSize） | 中高（真实页面一定踩） | 高 |
+| P3 | ~~R16 变高列表项~~ **已完成** | — | — |
+| P3 | R17 onMeasureSize/onAreaChange | 中 | 高 |
 | P4 | R18–R21 平台模块 | 中 | 低–中 |
 | P5 | R22–R23 动画/手势 | 中 | 中 |
 | P6 | R24 ArkVM 路径 | 低（研究） | 高 |
@@ -474,13 +476,39 @@ visibility:hidden` —— **不能用 `display:none`**，那样没有布局、�
 **触及**：`runtime/ohos-shims.js`（`@ohos:measure` + `__arkui_dom_countLines`）、
 `fixtures/pages/TextMeasure.ts`、`test/textmeasure.html`、`run.sh`、`electron/run.sh`
 
-### R16 — `LazyForEach` 变高列表项
+### ~~R16 — `LazyForEach` 变高列表项~~ ✅ 已完成
 
-**内容**：现在用**固定估算高度**（`estItemH`）。补：渲染后回填实测高度、修正 spacer、滚动位置稳定（避免跳动）。
+**内容**：原来用**固定估算高度**（`estItemH`，只从首项校正）。改成"逐项 advance 的前缀和"模型 +
+渲染后实测回填 + 滚动锚定。详见 `ARCHITECTURE.md` §4.5。
 
-**验收**：列表项高度不等（50px/120px 交替）时，`scrollToIndex(20)` 后目标项的 `getBoundingClientRect().top` 相对容器一致；总高度 = 实测高度之和。
+**验收（已执行）**：`bash run.sh lazyvh` —— **22 条断言**，双端通过：
+8 项全实测时 `totalH` 与 DOM 末项底部**逐像素相等**、每一项的 `offsetTop` 与模型**逐项相等**、
+`scrollToIndex(100)` 目标 `offsetTop - scrollTop = 0`、往返一次后仍为 0（不累积误差）、
+400 项只渲染 4~5 个节点、0 告警。
 
-**触及**：`runtime/arkui-dom-runtime.js`（`createLazyForEach`）、`test/lazy.html`
+**四个真 bug（全靠断言抓出来，不是读代码看出来的）**：
+1. **topSpacer 也是 flex 子项** → 容器 `gap` 多算一次，模型永远差一个 gap。改成「块级 + 每项 `margin-bottom`」。
+2. **`scrollToIndex` 把"渲染空间序号"当成"数据空间索引"** → `scrollToIndex(0)` 跳到 100 段。
+   窗口内第 k 个渲染项对应索引 `window[0]+k`。
+3. **锚定 delta 算得太早**：先取新偏移、再更新估计值 → 补偿量少算一截（目标偏 10px）。
+   → 顺序必须是"**等所有会改前缀的改动都落地，再取新偏移**"。
+4. **窗口没变时不重设 spacer** → "旧 spacer + 新模型"错配（整窗口偏 166px）。
+   → spacer 高度**每次都按当前偏移重设**。
+
+**我自己的错误断言**：把 `scrollHeight` 当内容高度 —— 内容比视口矮时它被钳到 `clientHeight`。
+改成 `max(clientHeight, 末项底部)`。
+
+**跨环境的意外收获**：同一份断言在 Electron 里高度是 **54/124**、浏览器是 **55/125**（字体度量不同），
+因为断言只钉"两种取值、相差 70" → 两端都过。**不硬编码像素是对的。**
+
+**破坏验证（4 处）**：不回填实测高度 / 不做锚定 / 窗口没变时不重设 spacer /
+`scrollToIndex` 用渲染序号当索引 → **8 条失败、跨 4 组**。
+
+**已知限制**：`heights` 按**索引**存（数据源增删/重排后整表失效，靠 `refresh` 重建窗口，不做按 key 迁移）；
+未实测到的深滚动位置**总高是估计值**（只有"视口覆盖全部项"时才有精确总高）。
+
+**触及**：`runtime/arkui-dom-runtime.js`（`createLazyForEach` / `scrollToIndex` / `__arkui_dom_lazyInfo`）、
+`fixtures/pages/LazyVar.ts`、`test/lazyvar.html`、`run.sh`、`electron/run.sh`
 
 ### R17 — `onMeasureSize` / `onAreaChange` 对齐
 

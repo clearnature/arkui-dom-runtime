@@ -381,6 +381,12 @@ node tools/extract.mjs fixtures/pages/NewPage.ts build/newpage.js --cjs --regist
 | ㊿ | **中间量在最终结果里被约掉**：`measureTextSize` 只回 `width`/`height`，而 `height = 行数 × 单行高` —— 我从高度反推"行数 = 高度/单行高"，**这个算式把行数约掉了**。把"数行"改成恒返回 1 后，反推行数依然是 4、**断言全过** | **凡是被约掉的中间量，都要单独暴露再单独断言**（本项目做法：加自省钩子 `__arkui_dom_countLines`）。判据：**能不能构造一个"只破坏该中间量、最终值不变"的场景？能，就说明当前断言测不到它** |
 | 51 | **对"没有显式尺寸的组件"预设它不受约束**：我断言"不设宽度的 `Text` 是单行"，实际它受**容器**约束（测试页 `#root` 320px，23 字×16px=368 > 320 必然换行）。**实现是对的、期望是错的** —— 这已是本项目第 N 次同类翻车 | 断言前先问"这个尺寸是谁给的"；没有显式尺寸时，**用元素自身的实测尺寸去自洽推算**（`可用宽度 = el.getBoundingClientRect().width`），而不是假设无限宽 |
 | 52 | **含 `@ohos:` import 的用例要在测试页里加载 `runtime/ohos-shims.js`**：漏了会得到"未实现的平台模块"，容易误判成"模块没实现" | 脚本顺序固定为 `generated-components.js` → `arkui-dom-runtime.js` → `ohos-shims.js` → 业务模块；且 CJS+register 模式下**必须 `__arkui_dom_requireModule('X')`**，否则模块体（含末尾的 `registerNamedRoute`）不会执行 |
+| 53 | **容器间距用 flex `gap`，但容器里还有 spacer/占位元素** → 占位元素也算一个子项，**多算一次 gap**。实测虚拟列表里"模型 offset(i)"与真实 DOM 永远差一个 gap（`item0` 的 DOM `offsetTop=2`、模型 `0`） | 间距改用「块级 + 每项 `margin-bottom`」表达（`margin` 不影响 `offsetHeight` 测量）。**凡是用 gap 的容器，都要问"里面有没有不参与内容的占位元素"** |
+| 54 | **"窗口/输入没变"就早退，但输出依赖的状态变了** → 留下"旧 spacer + 新模型"的错配。实测：实测回填改了前缀，而 spacer 只在窗口变化时设过一次 → 整个窗口偏 166px | 早退条件必须覆盖**所有影响输出的状态**；对"派生输出"（spacer 高度这类）宁可**每次重设**（设成同值是 no-op），也别只在某个分支里设一次 |
+| 55 | **派生量算得太早**：锚定补偿量 `delta = 新偏移 - 旧偏移` 在"更新估计值"**之前**取好，之后估计值又改了前缀 → 补偿少算一截（`scrollToIndex` 目标偏 10px） | 顺序固定为：**把所有会改状态的写法都落地 → 再取派生量 → 再补偿**。中间量一旦被后续写入影响，就必须放在最后算 |
+| 56 | **混淆"渲染空间序号"与"数据空间索引"**：虚拟列表里 `querySelectorAll(ListItem)` 拿到的是**当前窗口**的渲染项，`items[i]` 是"窗口内第 i 个"，对应数据索引是 `window[0] + i`。实测 `scrollToIndex(0)` 因此跳到了 100 段 | 凡是有"窗口/分页/过滤"的列表，**下标一律换算到数据空间再用**；问自己"这个下标是相对谁的？" |
+| 57 | **`scrollHeight` 被当成内容高度**：内容比视口矮时它被钳到 `clientHeight`（DOM 语义，不是 bug） | 断言用 `max(clientHeight, 内容高度)`；内容高度取"末项 `offsetTop` + 末项 `offsetHeight`"，**别去建模 gap/行盒** |
+| 58 | **用例名与页面文件名不一致**（`lazyvh` vs `lazyvar.html`）→ Electron runner 去加载不存在的 `test/lazyvh.html`，404 页没有 `#result`，断言读到**空串**，表现为"页面没输出"而不是报错 | 名字不同的必须登记进 `electron/run.sh` 的 `page_of()`。**这是本项目第二次踩**（第一次是 `widgets`→`components`）→ 以后**用例名直接取页面名**，能不映射就不映射 |
 
 ### 确定性与时序
 

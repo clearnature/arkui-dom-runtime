@@ -129,6 +129,8 @@ case "${1:-index}" in
     run_one textmeasure "$(src_of pages/TextMeasure.ts)" build/textmeasure-module.js test/textmeasure.html \
       "--cjs --register TextMeasure" || rc=1
     echo
+    run_one lazyvh "$(src_of pages/LazyVar.ts)" build/lazyvar.js test/lazyvar.html || rc=1
+    echo
     run_one measure "$(src_of pages/Measure.ts)" build/measure.js test/measure.html || rc=1
     echo
     run_one lazy "$(src_of pages/Lazy.ts)" build/lazy.js test/lazy.html || rc=1
@@ -170,6 +172,7 @@ case "${1:-index}" in
   drawdemo) run_one drawdemo "$(src_of pages/DrawDemo.ts)" build/drawdemo.js test/drawdemo.html ;;
   textmeasure) run_one textmeasure "$(src_of pages/TextMeasure.ts)" build/textmeasure-module.js test/textmeasure.html \
       "--cjs --register TextMeasure" ;;
+  lazyvh) run_one lazyvh "$(src_of pages/LazyVar.ts)" build/lazyvar.js test/lazyvar.html ;;
   measure) run_one measure "$(src_of pages/Measure.ts)" build/measure.js test/measure.html ;;
   lazy) run_one lazy "$(src_of pages/Lazy.ts)" build/lazy.js test/lazy.html ;;
   provide) run_one provide "$(src_of pages/Provide.ts)" build/provide.js test/provide.html ;;
@@ -199,5 +202,5 @@ case "${1:-index}" in
     echo
     run_one netfile-2 "$(src_of pages/NetFile.ts)" build/netfile-module.js test/netfile.html \
       "--cjs --register NetFile" "?phase=2" "$PERSIST_PROFILE" "$PERSIST_PORT" ;;
-  *) echo "用法: bash run.sh [index|rich|leak|layout|widgets|tabgrid|swiper|navdemo|reldemo|drawdemo|textmeasure|measure|lazy|provide|async|ability|router|netfile|all]"; exit 2 ;;
+  *) echo "用法: bash run.sh [index|rich|leak|layout|widgets|tabgrid|swiper|navdemo|reldemo|drawdemo|textmeasure|lazyvh|measure|lazy|provide|async|ability|router|netfile|all]"; exit 2 ;;
 esac

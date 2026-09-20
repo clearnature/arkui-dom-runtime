@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R16 LazyForEach 变高列表项</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  /* 高度够大：listA 自己高 900，测试页要装得下 */
+  #root { width: 320px; height: 1300px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R16：变高列表项（实测回填 + 前缀和偏移 + 滚动锚定）</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../build/lazyvar.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const near = (a, b, tol) => Math.abs(a - b) <= (tol === undefined ? 1 : tol);
+    const el = (id) => root.querySelector('#' + id);
+    const holderOf = (listEl) => listEl.querySelector('[data-arkui-lazyforeach]');
+    const itemsOf = (listEl) => [...listEl.querySelectorAll('[data-arkui-comp="ListItem"]')];
+    const textsOf = (listEl) => itemsOf(listEl).map((e) => e.textContent);
+    // 轮询而不是固定等待（窗口更新是异步合并的）
+    const until = async (fn, tries) => {
+      for (let k = 0; k < (tries || 60); k++) { if (fn()) return true; await tick(25); }
+      return fn();
+    };
+    const group = async (name, fn) => {
+      try { await fn(); } catch (e) {
+        allPass = false;
+        lines.push(`FAIL [${name}] 抛出异常：${e && e.stack ? String(e.stack).split('\n')[0] : e}`);
+      }
+    };
+
+    try {
+      __arkui_dom_loadRoute('pages/LazyVar', root);
+      await tick(100);
+      check(!!el('listA') && !!el('listB'), 'LazyVar 页面已渲染（两个列表）');
+
+      // ══════════ A 组：窗口覆盖全部 → 每项实测 → 总高 = 实测之和 ══════════
+      await group('全部实测 + 总高', async () => {
+        const listA = el('listA');
+        const holder = holderOf(listA);
+        const items = itemsOf(listA);
+        check(items.length === 8, `listA 8 项全部渲染（视口 800 覆盖得住）：实际 ${items.length}`);
+        const hs = items.map((e) => e.offsetHeight);
+        // 不硬编码像素：行盒会引入固定偏差（Text 是 inline-block，行盒 55 vs 期望 50）。
+        // 断言"交替"这个意图：两个不同取值、且差值 = 120-50 = 70。
+        const uniq = [...new Set(hs)];
+        check(uniq.length === 2, `高度只有两种取值：${uniq.join(' / ')}`);
+        check(hs[0] === hs[2] && hs[0] === hs[4] && hs[1] === hs[3] && hs[1] === hs[5],
+          `偶数位/奇数位各自同高（${hs.join(',')}）`);
+        check(uniq.length === 2 && Math.abs((uniq[1] - uniq[0]) - 70) <= 1,
+          `两种高度相差 70（= 120-50）：实测差 ${(uniq[1] - uniq[0]).toFixed(1)}`);
+        // 期望总高由【DOM 自己】给出：末项的底部（避开了对 gap/行盒的任何建模假设）
+        const last = items[items.length - 1];
+        const base = holder.offsetTop;
+        const expectTotal = last.offsetTop - base + last.offsetHeight;
+        // 注意：内容比视口矮时 scrollHeight 会被钳到 clientHeight（这是 DOM 语义，不是 bug）
+        const expectScrollH = Math.max(listA.clientHeight, expectTotal);
+        check(near(listA.scrollHeight, expectScrollH, 1.5),
+          `总高 = max(视口 ${listA.clientHeight}, 末项底部 ${expectTotal}) = ${expectScrollH}`
+          + `（实测 scrollHeight=${listA.scrollHeight}）`);
+        const sumH = hs.reduce((s, h) => s + h, 0);
+        lines.push(`AH ${hs.join(',')} sum=${sumH} total=${expectTotal}`);
+        const info = __arkui_dom_lazyInfo(holder);
+        check(!!info, '自省钩子 __arkui_dom_lazyInfo 可用');
+        check(info && info.measured === 8, `自省：已实测 ${info && info.measured} 项（期望 8）`);
+        check(info && near(info.totalH, expectTotal, 1.5),
+          `自省 totalH=${info && info.totalH} 与 DOM 末项底部一致（${expectTotal}）`);
+      });
+
+      // ══════════ B 组：偏移模型必须与真实 DOM 一致 ══════════
+      await group('偏移模型 ≡ DOM', async () => {
+        const listA = el('listA');
+        const holder = holderOf(listA);
+        const info = __arkui_dom_lazyInfo(holder);
+        const items = itemsOf(listA);
+        const base = holder.offsetTop;
+        const bad = items
+          .map((e, k) => ({ k, dom: e.offsetTop - base, model: info.offsetOf(k) }))
+          .filter((r) => Math.abs(r.dom - r.model) > 0.6);
+        check(bad.length === 0,
+          `每项的 DOM offsetTop 与偏移模型一致（不一致 ${bad.length} 项${bad.length ? '：' + JSON.stringify(bad[0]) : ''}）`);
+      });
+
+      // ══════════ C 组：scrollToIndex 到深处 —— 目标落在容器顶部（含锚定）══════════
+      await group('scrollToIndex + 锚定', async () => {
+        const listB = el('listB');
+        const holderB = holderOf(listB);
+        const btn = [...root.querySelectorAll('button')].find((b) => b.textContent === 'toB100');
+        check(!!btn, 'toB100 按钮存在');
+        btn.click();
+        await until(() => textsOf(listB).includes('b-100'), 80);
+        const items = itemsOf(listB);
+        check(textsOf(listB).includes('b-100'), `窗口进入 100 段：${textsOf(listB).slice(0, 3).join(',')} …`);
+        const target = items.find((e) => e.textContent === 'b-100');
+        check(!!target, '找到目标项 b-100');
+        const rel = target.offsetTop - holderB.offsetTop - listB.scrollTop;
+        // 这条同时是"变高偏移算对了"和"锚定生效"的判据：
+        // 目标在第 100 位，前 100 项里 50 项高 50、50 项高 120 → 偏移必须精确到个位；
+        // 若没做锚定，上方 overscan 项被实测后视口顶部会整体漂移（交替高度下可达数百 px）
+        check(Math.abs(rel) <= 2,
+          `scrollToIndex(100) 后目标在视口顶部（offsetTop - scrollTop = ${rel.toFixed(1)}，容差 2）`);
+        const info = __arkui_dom_lazyInfo(holderB);
+        check(info && info.window[0] <= 100 && info.window[1] > 100,
+          `自省窗口 [${info && info.window.join(',')}] 覆盖第 100 项`);
+        const sum = items.reduce((s, e) => s + e.offsetHeight, 0);
+        check(sum > 0 && items.length > 0 && items.length <= 40,
+          `滚动后只渲染 ${items.length} 项（无累积）`);
+        lines.push(`BINFO totalH=${info && info.totalH} estAdvance=${info && info.estAdvance} measured=${info && info.measured}`);
+      });
+
+      // ══════════ D 组：往返不漂移（实测累积后仍精确落到目标）══════════
+      await group('往返不漂移', async () => {
+        const listB = el('listB');
+        const holderB = holderOf(listB);
+        const btn0 = [...root.querySelectorAll('button')].find((b) => b.textContent === 'toB0');
+        const btn100 = [...root.querySelectorAll('button')].find((b) => b.textContent === 'toB100');
+        const topOffsetOf = (txt) => {
+          const t = itemsOf(listB).find((e) => e.textContent === txt);
+          return t ? t.offsetTop - holderB.offsetTop - listB.scrollTop : NaN;
+        };
+        btn0.click();
+        await until(() => textsOf(listB).includes('b-0'), 80);
+        check(Math.abs(topOffsetOf('b-0')) <= 2,
+          `回到顶部：b-0 在视口顶部（${topOffsetOf('b-0').toFixed(1)}）`);
+        // 往返一次：上方的实测项变多了，偏移的"绝对值"会变，但目标必须仍精确落在顶部
+        btn100.click();
+        await until(() => textsOf(listB).includes('b-100'), 80);
+        const rel2 = topOffsetOf('b-100');
+        check(Math.abs(rel2) <= 2,
+          `再次 scrollToIndex(100) 仍精确落在顶部（${rel2.toFixed(1)}）—— 往返不累积误差`);
+        const info = __arkui_dom_lazyInfo(holderB);
+        check(info && info.measured > 0, `自省：累计已实测 ${info && info.measured} 项`);
+      });
+
+      // ══════════ E 组：手动滚动后仍一致 + 无告警 ══════════
+      await group('手动滚动一致性', async () => {
+        const listB = el('listB');
+        const holderB = holderOf(listB);
+        listB.scrollTop = 9000;
+        listB.dispatchEvent(new Event('scroll'));
+        await tick(200);
+        const info = __arkui_dom_lazyInfo(holderB);
+        const items = itemsOf(listB);
+        const bad = items
+          .map((e, k) => ({ dom: e.offsetTop - holderB.offsetTop, model: info.offsetOf(info.window[0] + k) }))
+          .filter((r) => Math.abs(r.dom - r.model) > 0.6);
+        check(items.length > 0 && bad.length === 0,
+          `滚动到 9000 后偏移模型仍与 DOM 一致（渲染 ${items.length} 项，不一致 ${bad.length}`
+          + `${bad.length ? '：' + JSON.stringify(bad.slice(0, 2)) : ''}）`);
+        check(items.length <= 40, `仍只渲染 ${items.length} 项`);
+        const warns = __arkui_dom_layout_warnings || [];
+        check(warns.length === 0, `布局告警为空（${warns.length}${warns.length ? ': ' + warns[0] : ''}）`);
+      });
+
+      lines.push(`ELMT ${__arkui_dom_elmtRecords.size}`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

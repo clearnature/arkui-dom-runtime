@@ -86,10 +86,10 @@ tools/serve.py                 极简静态服务（端口由 OS 分配，避免
 tools/preflight.mjs            环境自检（工具链 / 宿主 / 可执行位）
 tools/check-all.sh             一条命令做完所有验收
 tools/stats.mjs                覆盖范围统计（文档里的数字都来自它）
-test/*.html                    断言页（21 个用例）
-fixtures/                      冻结的 ets-loader 转换产物（19 个，测试的输入）
-run.sh                         浏览器 21 用例驱动
-electron/run.sh                Electron 20 用例 + 真实磁盘验证
+test/*.html                    断言页（22 个用例）
+fixtures/                      冻结的 ets-loader 转换产物（20 个，测试的输入）
+run.sh                         浏览器 22 用例驱动
+electron/run.sh                Electron 21 用例 + 真实磁盘验证
 docs/                          ARCHITECTURE / DEVELOPING / ROADMAP / CAPABILITY
 ```
 
@@ -561,6 +561,44 @@ rect 已经把这位移算进去（b 明明 `offset=(40,20)`，rect 却是 `(0,0
 去掉错轴守卫 → 1 条失败（并因此发现原来那条断言**没有牙齿**：横线自身 `x=0`，
 用 `Start` 对齐时"错轴返回 0"与"没做判断"碰巧同值，改用 `Center` 才分离成 0 vs 150）。
 
+## R16：`LazyForEach` 变高列表项 ✅
+
+```
+$ bash run.sh lazyvh
+=== ALL PASS ===                    （22 条断言）
+PASS 高度只有两种取值：55 / 125
+PASS 两种高度相差 70（= 120-50）：实测差 70.0
+PASS 总高 = max(视口 800, 末项底部 736) = 800（实测 scrollHeight=800）
+PASS 自省 totalH=734 与 DOM 末项底部一致（736）
+PASS 每项的 DOM offsetTop 与偏移模型一致（不一致 0 项）
+PASS scrollToIndex(100) 后目标在视口顶部（offsetTop - scrollTop = 0.0，容差 2）
+PASS 再次 scrollToIndex(100) 仍精确落在顶部（0.0）—— 往返不累积误差
+PASS 滚动到 9000 后偏移模型仍与 DOM 一致（渲染 5 项，不一致 0）
+```
+
+**核心模型换了**：偏移不再是"序号 × 统一行高"，而是**逐项 advance 的前缀和**
+（`advance(i) = round((已实测高度(i) ?? estItemH) + gap)`，`estItemH` 取**已实测项的均值**）。
+渲染后逐项 `offsetHeight` 回填，变了就重建前缀；滚动用**锚定**（视口顶部那一项的偏移变了多少，
+就给 `scrollTop` 补多少）保证画面不跳。
+
+**四个真 bug（都是靠断言抓出来的，不是我读代码看出来的）**：
+
+| 现象 | 根因 |
+|---|---|
+| `item0` 的 DOM `offsetTop=2` 而模型 `0` | **topSpacer 也是 flex 子项**，容器 `gap` 多算一次 → 整个窗口偏一个 gap。改成「块级 + 每项 `margin-bottom`」表达间距 |
+| `scrollToIndex(0)` 跳到了 100 段 | 把**渲染空间序号**当成了**数据空间索引**：虚拟列表的 `items[i]` 是"当前窗口第 i 个"，对应索引是 `window[0]+i` |
+| 目标偏出 10px | 锚定 delta 在**更新估计值之前**算好，之后估计值又改了前缀 → 补偿不完整。**顺序：等所有改动落地再取新偏移** |
+| 滚动到 9000 后整窗口偏 166px | 窗口没变时**不重设 spacer** → "旧 spacer + 新模型"错配。**spacer 高度必须每次都按当前偏移重设** |
+
+**我自己的一条错误断言**：把 `scrollHeight` 当成内容高度——内容比视口矮时它被钳到 `clientHeight`（DOM 语义）。
+改成 `max(clientHeight, 末项底部)`。
+
+**跨环境的意外收获**：同一份断言在 Electron 里高度是 **54/124** 而浏览器是 **55/125**（字体度量差异）——
+因为断言只钉"两种取值、相差 70"，两端都过。**不硬编码像素是对的。**
+
+**破坏验证（4 处）**：不回填实测高度 / 不做锚定 / 窗口没变时不重设 spacer /
+`scrollToIndex` 用渲染序号当索引 → **8 条失败、跨 4 组**，全部被抓。
+
 ## R15：文本真实换行 / 行数测量（`@ohos:measure`）✅
 
 ```
@@ -663,13 +701,13 @@ PASS starStyle 的图片 URI 不可用已记警告
 | 文档数字守门 | `npm run stats:check-doc` | `ARCHITECTURE.md` §6 的整块实测数字逐行比对，漂移即非 0 退出；`stats:write-doc` 就地重写 |
 | 覆盖统计 | `npm run stats` | 文档里的所有数字都由它产出（`--json` 机器可读） |
 
-`npm run check` 当前：**浏览器 21 用例 + Electron 20 用例全绿**。
+`npm run check` 当前：**浏览器 22 用例 + Electron 21 用例全绿**。
 
 ## 下一步
 
 **权威清单在 `docs/ROADMAP.md`**（每项带可复现的验收命令）。当前优先：
 
-1. **R16–R17** 布局引擎：`LazyForEach` 变高列表项 / `onMeasureSize`+`onAreaChange` 与真实布局对齐（R15 文本测量已完成）
+1. **R17** `onMeasureSize`/`onAreaChange` 与真实布局对齐（R16 变高列表已完成，R17 可直接复用这套实测原语）
 2. **R18–R21** 平台模块：`@ohos:media`、`notification`、`startAbilityForResult`+`promptAction`、浏览器真 fs
 3. **R22–R23** 动画（`animateTo`/`transition`）与手势（`Gesture`）
 

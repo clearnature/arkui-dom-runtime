@@ -659,14 +659,41 @@ LazyForEach.create("1", this, this.source, itemGen, keyGen);
 LazyForEach.pop();
 ```
 
-实现要点（`createLazyForEach`，L718）：
+**核心模型：偏移永远由"逐项 advance 的前缀和"给出，而不是"序号 × 统一行高"。**
 
-- holder：`display:flex; flex-direction:column`，**继承父容器的 `gap`**
-- 窗口：`[floor(scrollTop / estItemH) - overscan, + viewport/itemH + 2*overscan]`
-- 上下各一个 spacer 维持总高度（滚动条长度正确）
-- `setTimeout(0)` 合并（不是 rAF，理由见 4.1）
-- `scrollToIndex` 到未渲染目标：先用 `lazyMeta` 估算 → `meta.flush()` **同步**补齐，然后才滚动
-- 实测：**1000 项 → 11 个真实 DOM 节点**
+```
+advance(i) = round((已实测高度(i) ?? estItemH) + gap)      // 取整：布局最终落在整像素上
+offset(i)  = Σ advance(0..i-1)                             // 前缀和（Float64Array，脏了才重算）
+totalH     = offset(total) - (total ? gap : 0)             // 最后一项后面没有 gap
+窗口起点   = 二分 offset 找"最大的 i 使 offset(i) ≤ scrollTop"，再减 overscan
+```
+
+- **实测回填**：窗口渲染后逐项读 `offsetHeight` 写回 `heights`；变了就重建前缀并重排。
+  未实测项用 `estItemH`，而 `estItemH` 取**已实测项的均值**（取第一项会错一半，且随窗口滑动来回翻）。
+- **滚动锚定**：锚点 = 视口顶部那一项。它的偏移只由**它上面**的项决定，所以
+  "改前缀前记旧偏移 → 改完取新偏移 → `scrollTop += (新 - 旧)`"就能让画面不跳。
+  ⚠️ **两处顺序/时机极易错**（都实测踩过）：
+  1. 必须等**实测高度与估计值全部写完**之后再取新偏移。先取偏移再改估计值 → 补偿量少算一截，
+     `scrollToIndex` 目标会偏出十几像素。
+  2. **spacer 高度要每次都按当前偏移重设**，不能只在"窗口变了"时设一次：窗口没变但前缀变了时，
+     会留下"旧 spacer + 新模型"的错配（实测：DOM 里的项偏移比模型大 166px，整个窗口都错）。
+- **容器间距用「块级 + 每项 `margin-bottom`」表达，不用 flex `gap`**：flex gap 会把 topSpacer
+  也算作一个子项 → 每个窗口都多算一个 gap，模型与 DOM 永远差一个 gap。
+  块级 + margin 下 `offset(i)` 恰好等于累计 advance，spacer 也不引入额外间距。
+- **`scrollToIndex(i)` 的索引空间**：`querySelectorAll(ListItem)` 拿到的是**当前窗口**的渲染项，
+  窗口内第 k 个渲染项对应的数据索引是 `window[0] + k`。直接取 `items[i]` 会把
+  "渲染空间序号"当成"数据空间索引"（实测 `scrollToIndex(0)` 跳到了 100 段）。
+  目标不在窗口内时用 `offsetOf(i)` 换算 → `meta.flush()` 同步补齐 → 才滚动。
+- `setTimeout(0)` 合并滚动事件（不是 rAF，理由见 4.1）。
+- 自省钩子 `__arkui_dom_lazyInfo(holder)` → `{total, measured, estItemH, estAdvance, gap, totalH, window, passes, offsetOf}`。
+
+**实测（`run.sh lazyvh`，400 项变高 + 8 项全实测）**：
+- 8 项全实测时 `totalH` 与 DOM 末项底部**逐像素相等**；每一项的 `offsetTop` 与模型**逐项相等**
+- `scrollToIndex(100)` → 目标 `offsetTop - scrollTop = 0`；往返后仍为 0（不累积误差）
+- 400 项里只渲染 4~5 个 DOM 节点
+
+**已知限制**：`heights` 按**索引**存（数据源增删/重排后要整表失效，当前靠 `refresh` 重建窗口，
+不做按 key 迁移）；`estItemH` 覆盖不到的深滚动位置，**总高是估计值**（只有"全实测"时才有精确总高）。
 
 ### 4.6 平台层：`@ohos:*` 别名层 + CommonJS 装载
 
@@ -844,10 +871,10 @@ since 18`**（官方建议改用 `UIContext.getMeasureUtils()`）——本实现
   属性元数据总数       1078（平均 7.2／组件，最多 TextInput=70）
 
 == 运行时 API ==
-  global 导出        103 个
+  global 导出        112 个
   状态类            ObservedPropertySimplePU ObservedPropertyObjectPU SynchedPropertySimpleOneWayPU SynchedPropertySimpleTwoWayPU SynchedPropertyNesedObjectPU
   内置组件          Text Button Column Row Stack List ListItem If ForEach LazyForEach RelativeContainer Tabs TabContent Swiper Navigation NavDestination Progress Gauge DataPanel Rating
-  内部钩子 __arkui_dom_*  24 个
+  内部钩子 __arkui_dom_*  25 个
 
 == 状态管理 ==
   v1  状态类        5 个（包装对象模型）
@@ -861,21 +888,21 @@ since 18`**（官方建议改用 `UIContext.getMeasureUtils()`）——本实现
   11 个：app.ability.AbilityConstant app.ability.ConfigurationConstant app.ability.UIAbility app.ability.Want data.preferences file.fs hilog measure net.http router window
 
 == 用例矩阵 ==
-  浏览器 run.sh     21 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure measure lazy provide v2 observe async ability router netfile persist
-  Electron          20 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure measure lazy provide async v2 observe
-  测试页            21 个
-  fixtures 转换产物  19 个：AsyncIO Detail DrawDemo Home Index Layout Lazy Measure NavDemo NetFile Observe Provide RelDemo Rich SwiperDemo TabsGrid TextMeasure V2 Widgets
+  浏览器 run.sh     22 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measure lazy provide v2 observe async ability router netfile persist
+  Electron          21 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measure lazy provide async v2 observe
+  测试页            22 个
+  fixtures 转换产物  20 个：AsyncIO Detail DrawDemo Home Index Layout Lazy LazyVar Measure NavDemo NetFile Observe Provide RelDemo Rich SwiperDemo TabsGrid TextMeasure V2 Widgets
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          220.4 KB
-  test             130.0 KB
+  runtime          226.4 KB
+  test             139.9 KB
   tools            37.6 KB
-  electron(src)    15.7 KB
-  docs             163.5 KB
-  fixtures         143.7 KB
+  electron(src)    16.1 KB
+  docs             171.2 KB
+  fixtures         151.3 KB
 
 == 逐文件（文档"文件职责"表的来源）==
-  runtime/arkui-dom-runtime.js     138659 B  135.4 KB
+  runtime/arkui-dom-runtime.js     144769 B  141.4 KB
   runtime/generated-components.js   57617 B  56.3 KB
   runtime/ohos-shims.js             29448 B  28.8 KB
   tools/extract.mjs                  6457 B  6.3 KB
@@ -884,18 +911,18 @@ since 18`**（官方建议改用 `UIContext.getMeasureUtils()`）——本实现
   tools/stats.mjs                   13385 B  13.1 KB
   tools/preflight.mjs                5108 B  5.0 KB
   tools/check-all.sh                 3171 B  3.1 KB
-  run.sh                            10595 B  10.3 KB
-  electron/run.sh                    7079 B  6.9 KB
+  run.sh                            10794 B  10.5 KB
+  electron/run.sh                    7504 B  7.3 KB
   electron/main.js                   6795 B  6.6 KB
   electron/preload.js                1961 B  1.9 KB
   package.json                       1207 B  1.2 KB
   .gitignore                          674 B  0.7 KB
-  README.md                         40984 B  40.0 KB
+  README.md                         43563 B  42.5 KB
   THIRD-PARTY-NOTICES.md             8256 B  8.1 KB
-  docs/ARCHITECTURE.md              70064 B  68.4 KB
-  docs/CAPABILITY.md                24024 B  23.5 KB
-  docs/DEVELOPING.md                31637 B  30.9 KB
-  docs/ROADMAP.md                   35182 B  34.4 KB
+  docs/ARCHITECTURE.md              72970 B  71.3 KB
+  docs/CAPABILITY.md                24569 B  24.0 KB
+  docs/DEVELOPING.md                34021 B  33.2 KB
+  docs/ROADMAP.md                   37302 B  36.4 KB
   docs/surface-measurement.md        6496 B  6.3 KB
   fixtures/pages/AsyncIO.ts          6206 B  6.1 KB
   fixtures/pages/Detail.ts           3097 B  3.0 KB
@@ -904,6 +931,7 @@ since 18`**（官方建议改用 `UIContext.getMeasureUtils()`）——本实现
   fixtures/pages/Index.ts            2737 B  2.7 KB
   fixtures/pages/Layout.ts           3434 B  3.4 KB
   fixtures/pages/Lazy.ts             4485 B  4.4 KB
+  fixtures/pages/LazyVar.ts          7774 B  7.6 KB
   fixtures/pages/Measure.ts          6262 B  6.1 KB
   fixtures/pages/NavDemo.ts         14129 B  13.8 KB
   fixtures/pages/NetFile.ts          5039 B  4.9 KB
@@ -923,6 +951,7 @@ since 18`**（官方建议改用 `UIContext.getMeasureUtils()`）——本实现
   test/index.html                    3560 B  3.5 KB
   test/layout.html                   4135 B  4.0 KB
   test/lazy.html                     4380 B  4.3 KB
+  test/lazyvar.html                 10093 B  9.9 KB
   test/leak.html                     3921 B  3.8 KB
   test/measure.html                  6072 B  5.9 KB
   test/navdemo.html                 13765 B  13.4 KB
@@ -954,7 +983,7 @@ since 18`**（官方建议改用 `UIContext.getMeasureUtils()`）——本实现
 | `Grid` / `GridItem` 轨道布局 | ✅ 有测试（`run.sh tabgrid`）：`columnsTemplate`/`rowsTemplate` 真实轨道（含 ArkUI 裸数字 vp→px 归一化）、`columnsGap`/`rowsGap`、跨行换行（几何断言） |
 | `Tabs` / `TabContent` 切换 | ✅ 有测试（`run.sh tabgrid`）：`barPosition`、`index`、`TabsController.changeIndex`、`onChange`、点击 bar 切换、切走的面板不销毁 |
 | `Swiper` 轮播 | ✅ 有测试（`run.sh swiper`）：`index`/`loop`（含回卷与边界停住）/`autoPlay`+`interval`/`indicator` 圆点/`SwiperController.showNext`·`showPrevious`·`changeIndex`、切走的页不销毁 |
-| 虚拟滚动 | ✅ 1000 项 → 11 节点 |
+| 虚拟滚动（含**变高列表项**） | ✅ 有测试（`run.sh lazyvh`）：偏移 = 逐项 advance 的前缀和、渲染后实测回填、`estItemH` 取已实测均值、滚动锚定、`scrollToIndex` 精确落顶、偏移模型与 DOM **逐项相等**；400 项 → 4~5 个节点 |
 | 平台模块 | ✅ 11 个：`hilog`/`app.ability.*`/`window`/`router`/`data.preferences`/`file.fs`/`net.http`/**`measure`**；其余（`media`/`notification`/…）未实现 → 调用时给可操作报错 |
 | 文本真实测量 | ✅ 有测试（`run.sh textmeasure`）：`@ohos:measure` 的 `measureText`（单行、忽略约束）/`measureTextSize`（约束宽高、`maxLines` 夹高、`lineHeight`）；**与同文本同宽度的真实 Text DOM 逐像素一致**；`__arkui_dom_countLines` 直接断言行数 |
 | 持久化 | ✅ Electron 真磁盘（shell 级验证）；浏览器 `localStorage` |
@@ -969,7 +998,7 @@ since 18`**（官方建议改用 `UIContext.getMeasureUtils()`）——本实现
 
 | 文件 | 体积 | 职责 | 改它的时机 |
 |---|---|---|---|
-| `runtime/arkui-dom-runtime.js` | 135.4 KB | v1 状态类 + 深度观测（`@Observed`/`@ObjectLink`）、`ViewPU`/`ViewV2`、装饰器层、组件栈、布局（`alignRules` 多层锚链 + `Guideline` + `bias`、`Grid` 轨道）、`Tabs`/`TabContent`+`TabsController`、`Swiper`+`SwiperController`、`Navigation`/`NavDestination`+`NavPathStack`、**绘制类四件套**（SVG/CSS）、`LazyForEach`、路由 | 实现新语义（**手写优先**） |
+| `runtime/arkui-dom-runtime.js` | 141.4 KB | v1 状态类 + 深度观测（`@Observed`/`@ObjectLink`）、`ViewPU`/`ViewV2`、装饰器层、组件栈、布局（`alignRules` 多层锚链 + `Guideline` + `bias`、`Grid` 轨道）、`Tabs`/`TabContent`+`TabsController`、`Swiper`+`SwiperController`、`Navigation`/`NavDestination`+`NavPathStack`、**绘制类四件套**（SVG/CSS）、`LazyForEach`、路由 | 实现新语义（**手写优先**） |
 | `runtime/generated-components.js` | 56.3 KB | 149 个组件骨架（**生成物**） | **不手改**；改 `tools/gen-components.mjs` 后重新生成，`--check` 会守门 |
 | `runtime/ohos-shims.js` | 28.8 KB | `@ohos:*` 模块（11 个，含 **`measure`**）+ 持久化后端 + 文本测量原语 | 新增平台模块 |
 | `tools/extract.mjs` | 6.3 KB | hvigor 缓存 `.ts` → 可执行 `.js`；**装饰器作用域内绑定前奏 + 未就绪守卫**（§3.4） | 产物形态/装饰器集合变化时 |
@@ -978,12 +1007,12 @@ since 18`**（官方建议改用 `UIContext.getMeasureUtils()`）——本实现
 | `tools/stats.mjs` | 13.0 KB | 本文档所有数字的来源（`--json` 机器可读）；**`--check-doc`/`--write-doc` 守 §6 引用块** | 覆盖范围变化时 |
 | `tools/preflight.mjs` | 5.0 KB | 环境自检（工具链/宿主/可执行位） | 外部依赖变化时 |
 | `tools/check-all.sh` | 3.1 KB | 一条命令做完验收（5 步），退出码只看被调命令 | 新增验收步骤时 |
-| `run.sh` | 10.3 KB | 浏览器 21 用例驱动 | 新增用例 |
-| `electron/run.sh` | 6.9 KB | Electron 20 用例 + 磁盘验证 | 新增用例 |
+| `run.sh` | 10.5 KB | 浏览器 22 用例驱动 | 新增用例 |
+| `electron/run.sh` | 7.3 KB | Electron 21 用例 + 磁盘验证 | 新增用例 |
 | `electron/main.js` | 6.6 KB | 主进程：offscreen 截图、**像素级**空白检测 | 截图/验证策略变化时 |
 | `electron/preload.js` | 1.9 KB | `contextBridge` 暴露 Node fs | 宿主能力变化时 |
-| `fixtures/pages/*.ts` | 144 KB | **冻结的**官方转换产物（19 个，含 `V2.ts`/`Observe.ts`/`TabsGrid.ts`/`SwiperDemo.ts`/`NavDemo.ts`/`RelDemo.ts`/`DrawDemo.ts`/`TextMeasure.ts`） | 几乎不改（见不变量 5） |
-| `test/*.html` | 130 KB | 断言页（读 `#result` 节点文本） | 新增用例 |
+| `fixtures/pages/*.ts` | 151 KB | **冻结的**官方转换产物（20 个，含 `V2.ts`/`Observe.ts`/`TabsGrid.ts`/`SwiperDemo.ts`/`NavDemo.ts`/`RelDemo.ts`/`DrawDemo.ts`/`TextMeasure.ts`/`LazyVar.ts`） | 几乎不改（见不变量 5） |
+| `test/*.html` | 140 KB | 断言页（读 `#result` 节点文本） | 新增用例 |
 
 ---
 

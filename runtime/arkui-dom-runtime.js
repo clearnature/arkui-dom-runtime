@@ -725,18 +725,26 @@
       // ForEach/If 的包裹层是 display:contents，ListItem 是【孙子】而非直接子节点；
       // 所以优先按组件标记查，再退回直接子节点。容器已设 position:relative → offsetTop 以它为基准。
       const items = el.querySelectorAll('[data-arkui-comp="ListItem"]');
-      const target = items[i] || el.children[i];
+      // 虚拟列表的 `items` 是【当前窗口】的渲染项，不是全量列表：
+      // 窗口内第 k 个渲染项对应的索引是 window[0]+k。第一版直接取 items[i]，
+      // 于是 scrollToIndex(0) 会滚到"当前窗口第一个渲染项"（实测跳到了 100 段）。
+      const holder = el.querySelector('[data-arkui-lazyforeach]');
+      const meta = holder && lazyMeta.get(holder);
+      const win = meta && meta.window;
+      const k = win ? i - win[0] : i;
+      const target = (k >= 0 && k < items.length) ? items[k] : null;
       if (target) {
         el.scrollTop = target.offsetTop;
-      } else {
-        // 虚拟列表：第 i 项可能根本没渲染 → 用 estimate 行高换算，再触发一次窗口更新
-        const holder = el.querySelector('[data-arkui-lazyforeach]');
-        const meta = holder && lazyMeta.get(holder);
-        if (!meta) { layoutWarnings.push(`Scroller.scrollToIndex(${i}): 目标不存在且非虚拟列表`); return; }
+      } else if (meta) {
+        // 目标没渲染 → 用【累计偏移】换算（而不是"统一行高 × 序号"：变高列表下后者会偏出几十上百像素）
         const max = Math.max(0, el.scrollHeight - el.clientHeight);
-        el.scrollTop = Math.min(meta.estItemH * i, max);
+        const want = typeof meta.offsetOf === 'function' ? meta.offsetOf(i) : meta.estItemH * i;
+        el.scrollTop = Math.min(want, max);
         if (typeof meta.flush === 'function') meta.flush();      // 同步刷新窗口（确定性）
         el.dispatchEvent(new Event('scroll'));
+      } else {
+        layoutWarnings.push(`Scroller.scrollToIndex(${i}): 目标不存在且非虚拟列表`);
+        return;
       }
       if (smooth) el.scrollTo({ top: el.scrollTop, behavior: 'smooth' });
     }
@@ -2356,51 +2364,142 @@
     holder.setAttribute('data-arkui-lazyforeach', String(id));
     const parent = parentOfTop();
     const pcs = parent ? getComputedStyle(parent) : null;
-    // 用 flex 列并继承容器的 space，否则 List 的 gap 在"单子项"下失效
-    holder.style.display = 'flex';
-    holder.style.flexDirection = 'column';
-    if (pcs && pcs.gap) holder.style.gap = pcs.gap;
+    // 用【块级 + 每项 margin-bottom】表达容器 space，而不是 flex gap：
+    // flex gap 会把 topSpacer 也算作一个子项 → 每个窗口都多算一个 gap，
+    // 于是"偏移模型"与真实 DOM 永远差一个 gap（实测 item0 的 DOM offsetTop=2 而模型=0）。
+    // 块级 + margin 下 offset(i) 恰好等于累计 advance，spacer 也不会引入额外间距。
+    holder.style.display = 'block';
+    const parentGap = (pcs && (parseFloat(pcs.rowGap) || parseFloat(pcs.gap))) || 0;
     mountNode(holder, elmtRecords.get(currentNodeElmtId));
     ViewStackProcessor.push(holder);              // create 入栈，pop 出栈（与 ForEach 一致）
 
     const state = {
       total: typeof source.totalCount === 'function' ? source.totalCount() : 0,
-      estItemH: 26, window: [-1, -1], scrollEl: null, raf: 0,
+      estItemH: 26,                                  // 未实测项的【估计高度】（不含 gap）
+      heights: new Map(),                            // index → 实测高度（不含 gap）
+      gap: parentGap,
+      prefix: null,                                  // 累计偏移（长度 total+1），懒算
+      prefixDirty: true,
+      window: [-1, -1], scrollEl: null, tid: 0, passes: 0,
     };
     lazyMeta.set(holder, state);
 
-    function renderWindow() {
+    // advance 取整：布局最终落在整像素上（spacer 的 px 高度会被浏览器取整），
+    // 模型若保留小数，累积到几千像素后会与真实 DOM 差出零点几到一像素。
+    // 估计值本身保留小数（均值更准），只在"一步前进多少"这一步取整。
+    const advanceOf = (i) => Math.round((state.heights.has(i) ? state.heights.get(i) : state.estItemH) + state.gap);
+    function rebuildPrefix() {
+      const p = new Float64Array(state.total + 1);
+      for (let i = 0; i < state.total; i++) p[i + 1] = p[i] + advanceOf(i);
+      state.prefix = p;
+      state.prefixDirty = false;
+    }
+    const offsetOf = (i) => {
+      if (state.prefixDirty || !state.prefix || state.prefix.length !== state.total + 1) rebuildPrefix();
+      const k = Math.max(0, Math.min(state.total, i | 0));
+      return state.prefix[k];
+    };
+    // 总高：最后一项后面没有 gap
+    const totalHOf = () => offsetOf(state.total) - (state.total ? state.gap : 0);
+    // 二分：最大的 i 使 offset(i) <= y
+    function indexAt(y) {
+      if (state.prefixDirty || !state.prefix) rebuildPrefix();
+      const p = state.prefix;
+      let lo = 0, hi = state.total;
+      while (lo < hi) {
+        const mid = (lo + hi + 1) >> 1;
+        if (p[mid] <= y) lo = mid; else hi = mid - 1;
+      }
+      return lo;
+    }
+    state.offsetOf = offsetOf;
+    state.totalHOf = totalHOf;
+    state.indexAt = indexAt;
+
+    function renderWindow(depth) {
+      const d = depth || 0;
       if (!state.scrollEl) state.scrollEl = nearestScrollable(holder);
       const se = state.scrollEl;
       const viewport = se ? se.clientHeight : 120;
       const overscan = 3;
-      const start = Math.max(0, Math.floor((se ? se.scrollTop : 0) / state.estItemH) - overscan);
-      const count = Math.max(1, Math.ceil(viewport / state.estItemH)) + overscan * 2;
-      const end = Math.min(state.total, start + count);
-      if (state.window[0] === start && state.window[1] === end) return;   // 窗口没变就不动 DOM
-      state.window = [start, end];
+      if (state.prefixDirty) rebuildPrefix();
+      const scrollTop = se ? se.scrollTop : 0;
+      // 起点按【累计偏移】二分，而不是 scrollTop / 某个统一行高
+      const start = Math.max(0, indexAt(scrollTop) - overscan);
+      // 终点：按真实/估计的 advance 累加到盖住视口，再补 overscan
+      let end = start, acc = 0;
+      while (end < state.total && acc < viewport) { acc += advanceOf(end); end++; }
+      end = Math.min(state.total, end + overscan);
+      const sameWindow = state.window[0] === start && state.window[1] === end;
 
-      holder.textContent = '';                     // 清旧窗口（含 spacer）
-      purgeDetachedRecords();
-      const topSpacer = document.createElement('div');
-      topSpacer.style.height = (start * state.estItemH) + 'px';
-      holder.appendChild(topSpacer);
+      if (!sameWindow) {
+        state.window = [start, end];
+        holder.textContent = '';                     // 清旧窗口（含 spacer）
+        purgeDetachedRecords();
+        const topSpacer = document.createElement('div');
+        topSpacer.style.height = offsetOf(start) + 'px';
+        topSpacer.style.flex = 'none';
+        holder.appendChild(topSpacer);
 
-      const savedStack = ViewStackProcessor.snapshot();
-      const savedElmt = currentNodeElmtId;
-      ViewStackProcessor.restore([]);
-      ViewStackProcessor.push(holder);
-      for (let i = start; i < end; i++) itemGen(source.getData(i), i);
-      ViewStackProcessor.restore(savedStack);
-      currentNodeElmtId = savedElmt;
+        const savedStack = ViewStackProcessor.snapshot();
+        const savedElmt = currentNodeElmtId;
+        ViewStackProcessor.restore([]);
+        ViewStackProcessor.push(holder);
+        for (let i = start; i < end; i++) itemGen(source.getData(i), i);
+        ViewStackProcessor.restore(savedStack);
+        currentNodeElmtId = savedElmt;
 
-      const bottomSpacer = document.createElement('div');
-      bottomSpacer.style.height = ((state.total - end) * state.estItemH) + 'px';
-      holder.appendChild(bottomSpacer);
+        // 项间距用 margin-bottom 表达（最后一项不加，否则总高会多一个 gap）
+        const freshItems = [...holder.querySelectorAll('[data-arkui-comp="ListItem"]')];
+        freshItems.forEach((node, k) => {
+          const idx = start + k;
+          node.style.marginBottom = (state.gap > 0 && idx < state.total - 1) ? state.gap + 'px' : '0';
+        });
 
-      // 用真实渲染出的第一项高度校正估计值（首帧后估计会收敛）
-      const firstItem = holder.querySelector('[data-arkui-comp="ListItem"]');
-      if (firstItem && firstItem.offsetHeight > 0) state.estItemH = firstItem.offsetHeight;
+        const bottomSpacer = document.createElement('div');
+        bottomSpacer.style.flex = 'none';
+        holder.appendChild(bottomSpacer);
+        state.topSpacer = topSpacer;
+        state.bottomSpacer = bottomSpacer;
+      }
+
+      // spacer 高度【每次都按当前偏移重设】，而不是只在窗口变化时设一次：
+      // 窗口没变、但实测回填改动了前缀时，若不重设就会留下"旧 spacer + 新模型"的错配
+      // （实测：DOM 的项偏移比模型大 166px，一整个窗口都错）。
+      if (state.topSpacer) state.topSpacer.style.height = offsetOf(start) + 'px';
+      if (state.bottomSpacer) state.bottomSpacer.style.height = Math.max(0, totalHOf() - offsetOf(end)) + 'px';
+
+      // ── 实测回填：把浏览器算出来的真实高度写回模型 ──
+      // 锚点取"视口顶部那一项"：它的偏移只由【它上面】的项决定，所以只要在改前缀前
+      // 记下旧偏移、改完再补差值到 scrollTop，用户看到的内容就不会跳。
+      const anchor = indexAt(scrollTop);
+      const anchorOld = offsetOf(anchor);
+      let changed = false;
+      const rendered = [...holder.querySelectorAll('[data-arkui-comp="ListItem"]')];
+      rendered.forEach((node, k) => {
+        const idx = start + k;
+        const h = node.offsetHeight;
+        if (h > 0 && state.heights.get(idx) !== h) { state.heights.set(idx, h); changed = true; }
+      });
+      // 估计值：用【已实测项的均值】逐步收敛，而不是"取第一项"（变高列表里取第一项会错一半，
+      // 且随窗口滑动来回翻，导致每次滚动都重算整条前缀）。实测项够多后就不再多算。
+      if (state.heights.size <= 24) {
+        let sum = 0;
+        for (const h of state.heights.values()) sum += h;
+        const avg = sum / state.heights.size;
+        if (Math.abs(state.estItemH - avg) > 0.5) { state.estItemH = avg; changed = true; }
+      }
+      if (!changed) return;
+      // ⚠️ 顺序要紧：必须等【实测高度 + 估计值】**全都写完之后**再取 anchorNew。
+      // 我第一版先取 anchorNew 再改估计值 → 补偿量少算了估计值那部分，目标会偏出十几像素。
+      state.prefixDirty = true;
+      const anchorNew = offsetOf(anchor);
+      const delta = anchorNew - anchorOld;
+      if (delta && se && d < 3) {
+        se.scrollTop += delta;                       // 锚定：视口顶部那一项保持不动
+        state.passes++;
+      }
+      if (d < 3) renderWindow(d + 1);                 // 高度变了 → spacer/窗口要按新偏移重排
     }
 
     const refresh = () => {
@@ -2417,8 +2516,8 @@
       try { source.registerDataChangeListener(state.listener); } catch (_) { /* 数据源可不实现 */ }
     }
 
-    state.flush = renderWindow;                   // 供 Scroller 等同步刷新（不等节流）
-    renderWindow();
+    state.flush = () => renderWindow(0);          // 供 Scroller 等同步刷新（不等节流）
+    renderWindow(0);
     if (state.scrollEl) {
       // 用 setTimeout(0) 合并滚动事件，而【不是】requestAnimationFrame：
       // rAF 在 headless + --virtual-time-budget 下触发时机不稳（实测单独跑过、在 all 里失败）。
@@ -2931,6 +3030,22 @@
       return {
         rating: el.__rating, stars: el.__starCount, stepSize: el.__step,
         indicator: !el.__interactive, lit, full, half,
+      };
+    },
+    // 虚拟列表自省：证明"偏移是真的按实测高度算出来的"，而不只看某个 scrollTop 数字
+    __arkui_dom_lazyInfo: (el) => {
+      const st = el && lazyMeta.get(el);
+      if (!st) return null;
+      return {
+        total: st.total,
+        measured: st.heights.size,
+        estItemH: st.estItemH,
+        estAdvance: st.estItemH + st.gap,
+        gap: st.gap,
+        totalH: st.totalHOf ? st.totalHOf() : 0,
+        window: st.window.slice(),
+        passes: st.passes,
+        offsetOf: (i) => (st.offsetOf ? st.offsetOf(i) : 0),
       };
     },
     __arkui_dom_syncAlignRules: syncAlignRules,

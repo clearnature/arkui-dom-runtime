@@ -8,8 +8,8 @@
 cd /data/training/cli/arkui-dom-runtime
 npm run check                   # 全部验收：preflight + 生成物一致 + 浏览器 + Electron（退出码可信）
 npm run check:quick             # 跳过 Electron
-./run.sh all                    # 浏览器侧：21 个用例（Chrome headless）
-./electron/run.sh all           # Electron 侧：20 个用例 + 真实磁盘核验
+./run.sh all                    # 浏览器侧：22 个用例（Chrome headless）
+./electron/run.sh all           # Electron 侧：21 个用例 + 真实磁盘核验
 npm run stats                   # 覆盖范围统计（本文档的数字都来自它）
 npm run preflight               # 环境自检（缺工具链/宿主/可执行位会明确报错）
 node tools/gen-components.mjs   # 重新生成 149 个组件骨架
@@ -128,7 +128,7 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 |---|---|---|
 | 同一份断言页在 Electron 里跑（不复制测试代码） | ✅ | electron 全矩阵 |
 | 真实渲染 + offscreen 截图（非白像素占比判定，非 `isEmpty()`） | ✅ | electron 各用例 |
-| 同一份断言的双端一致（20 个用例两个 runner 都过） | ✅ | run.sh / electron/run.sh |
+| 同一份断言的双端一致（21 个用例两个 runner 都过） | ✅ | run.sh / electron/run.sh |
 
 ---
 
@@ -190,7 +190,11 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 - **`Navigation` 没有转场动画**：push/pop 是瞬时切换 `display`，没有滑动/淡入淡出。
 - 滚动：`LazyForEach` **有虚拟滚动**（1000 项只渲染 11 项，spacer 撑总高）；但普通 `ForEach` 仍是**全量渲染**，
   `LazyForEach` 的数据变更也是**整窗重建**（未做按 key 的增量 diff），且无 `onDataAdd/Delete` 的精确索引更新。
-- 虚拟滚动的行高是**估计值**（首帧后用真实项高校正）；变高项的行高估算会漂移。
+- **虚拟滚动已支持变高列表项**（`run.sh lazyvh`）：偏移 = 逐项 advance 的前缀和、渲染后**逐项实测回填**、
+  `estItemH` 取已实测项的**均值**、滚动**锚定**（视口顶部那一项不会被"实测改写前缀"顶走）、
+  `scrollToIndex` 精确落顶且往返不累积误差；**偏移模型与真实 DOM 逐项相等**（这是"不跳"的判据）。
+  仍有的限制：`heights` 按**索引**存（数据源增删/重排后整表失效，靠 `refresh` 重建窗口，不做按 key 迁移）；
+  未实测到的深滚动位置，**总高是估计值**（只有"视口覆盖全部项"时才有精确总高）。
 - 文本只有 `maxLines`/`textOverflow`；**换行测量已实现（`@ohos:measure` + `__arkui_dom_countLines`）**，
   但 `Text` 组件自身**尚未把测量结果用于布局决策**（`textIndent`/`wordBreak` 之类仍未接入渲染），
   `onMeasureSize`/`onAreaChange`（R17）也还没做。

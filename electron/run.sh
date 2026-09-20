@@ -23,6 +23,9 @@ FIXTURES="$ROOT/fixtures"
 page_of() {
   case "$1" in
     widgets) printf 'components' ;;
+    # 用例名与页面文件名不一定相同 —— 名字不一致就要在这里登记，否则会去加载不存在的
+    # test/<用例名>.html（404 页没有 #result，断言读到空串，表现为"页面没输出"而不是报错）
+    lazyvh) printf 'lazyvar' ;;
     *) printf '%s' "$1" ;;
   esac
 }
@@ -48,6 +51,7 @@ prepare() {
     textmeasure) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/TextMeasure.ts" "$ROOT/build/textmeasure-module.js" --cjs --register TextMeasure >/dev/null || return 1 ;;
     measure) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/Measure.ts" "$ROOT/build/measure.js" >/dev/null || return 1 ;;
     lazy) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/Lazy.ts" "$ROOT/build/lazy.js" >/dev/null || return 1 ;;
+    lazyvh) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/LazyVar.ts" "$ROOT/build/lazyvar.js" >/dev/null || return 1 ;;
     provide) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/Provide.ts" "$ROOT/build/provide.js" >/dev/null || return 1 ;;
     async) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/AsyncIO.ts" "$ROOT/build/asyncio-module.js" --cjs --register AsyncIO >/dev/null || return 1 ;;
     netfile) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/NetFile.ts" "$ROOT/build/netfile-module.js" --cjs --register NetFile >/dev/null || return 1 ;;
@@ -113,7 +117,7 @@ case "${1:-layout}" in
   all)
     rc=0
     # 全矩阵：每个用例都是独立 Electron 进程
-    for t in index rich layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure measure lazy provide v2 observe ability router async; do
+    for t in index rich layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measure lazy provide v2 observe ability router async; do
       run_one "$t" || rc=1
       echo
     done
@@ -133,6 +137,6 @@ case "${1:-layout}" in
     run_one netfile "?phase=2" netfile-2 || exit 1
     echo
     verify_disk ;;
-  layout|rich|index|leak|ability|router|widgets|tabgrid|swiper|navdemo|reldemo|drawdemo|textmeasure|measure|lazy|provide|async|v2|observe) run_one "$1" ;;
-  *) echo "用法: bash electron/run.sh [layout|rich|index|leak|ability|router|widgets|tabgrid|swiper|navdemo|reldemo|drawdemo|textmeasure|measure|lazy|provide|async|v2|observe|netfile|all]"; exit 2 ;;
+  layout|rich|index|leak|ability|router|widgets|tabgrid|swiper|navdemo|reldemo|drawdemo|textmeasure|lazyvh|measure|lazy|provide|async|v2|observe) run_one "$1" ;;
+  *) echo "用法: bash electron/run.sh [layout|rich|index|leak|ability|router|widgets|tabgrid|swiper|navdemo|reldemo|drawdemo|textmeasure|lazyvh|measure|lazy|provide|async|v2|observe|netfile|all]"; exit 2 ;;
 esac
