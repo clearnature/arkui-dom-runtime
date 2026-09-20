@@ -150,6 +150,9 @@ case "${1:-index}" in
     run_one realfs "$(src_of pages/NetFile.ts)" build/netfile-module.js test/realfs.html \
       "--cjs --register NetFile" || rc=1
     echo
+    run_one animdemo "$(src_of pages/AnimDemo.ts)" build/animdemo-module.js test/animdemo.html \
+      "--cjs --register AnimDemo" || rc=1
+    echo
     run_one measure "$(src_of pages/Measure.ts)" build/measure.js test/measure.html || rc=1
     echo
     run_one lazy "$(src_of pages/Lazy.ts)" build/lazy.js test/lazy.html || rc=1
@@ -220,6 +223,10 @@ case "${1:-index}" in
     # R21：后端如实自报 + OPFS 现场探测（复用 NetFile 页面做真实读写）
     run_one realfs "$(src_of pages/NetFile.ts)" build/netfile-module.js test/realfs.html \
       "--cjs --register NetFile" ;;
+  animdemo)
+    # R22：animateTo / animateToImmediately → CSS transition
+    run_one animdemo "$(src_of pages/AnimDemo.ts)" build/animdemo-module.js test/animdemo.html \
+      "--cjs --register AnimDemo" ;;
   router)
     # 两个页面都要注册；Detail 先单独产出，Home 由 run_one 带 flags 产出
     "$NODE" tools/extract.mjs "$(src_of pages/Detail.ts)" build/detail-module.js --cjs --register Detail >/dev/null || exit 1
@@ -236,5 +243,5 @@ case "${1:-index}" in
     echo
     run_one netfile-2 "$(src_of pages/NetFile.ts)" build/netfile-module.js test/netfile.html \
       "--cjs --register NetFile" "?phase=2" "$PERSIST_PROFILE" "$PERSIST_PORT" ;;
-  *) echo "用法: bash run.sh [index|rich|leak|layout|widgets|tabgrid|swiper|navdemo|reldemo|drawdemo|textmeasure|lazyvh|measarea|measimage|measnotify|promptaction|realfs|measure|lazy|provide|async|ability|router|netfile|all]"; exit 2 ;;
+  *) echo "用法: bash run.sh [index|rich|leak|layout|widgets|tabgrid|swiper|navdemo|reldemo|drawdemo|textmeasure|lazyvh|measarea|measimage|measnotify|promptaction|realfs|animdemo|measure|lazy|provide|async|ability|router|netfile|all]"; exit 2 ;;
 esac

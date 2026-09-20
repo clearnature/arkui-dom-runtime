@@ -40,6 +40,7 @@ R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分�
 | ③ | **通知**（`@ohos.notificationManager`，含投递路径自省） | `bash run.sh measnotify`（32 条断言，双端通过） |
 | ③ | **ability 结果链路 + 轻提示/对话框**（`startAbilityForResult`、`promptAction`） | `bash run.sh promptaction`（37 条断言，双端通过） |
 | ③ | **后端如实自报 + OPFS 现场探测**（"能持久化 ≠ 是文件系统"） | `bash run.sh realfs`（21 条断言，双端通过） |
+| ③ | **显式动画**（`animateTo`/`animateToImmediately` → CSS transition） | `bash run.sh animdemo`（35 条断言，双端通过） |
 | ③ | `@ohos:*` 别名层 + CommonJS 装载 + 真 fetch | `bash run.sh async` |
 | ③ | `UIAbility` 启动链路 | `bash run.sh ability` |
 | ③ | `router` 页面栈（返回时保留状态） | `bash run.sh router` |
@@ -766,11 +767,44 @@ Promise 等它，不靠 sleep 猜）；**"能持久化 ≠ 是文件系统"两�
 
 ## P5 动画 / 手势
 
-### R22 — `animateTo` / `transition` / `animateToImmediately`
+### R22 — `animateTo` / `animateToImmediately` ✅（`transition` 仍待办）
 
-**内容**：`animateTo({duration,curve}, fn)` 包住的状态变更 → CSS transition。`transition` 用于出现/消失。
+**内容**：`animateTo({duration,curve}, fn)` 包住的状态变更 → CSS transition。
 
-**验收**：断言 `fn` 执行后节点带上 transition 属性且目标值已变；`duration:0` 时不带 transition（不进动画）。
+**⚠️ 调用约定（实测产物）**：源码里是**全局** `animateTo(value, event)`，编译后是
+**`Context.animateTo(...)`** —— `Context` 是自由变量，必须提供全局 `Context`（只挂裸名会 `ReferenceError`）。
+`Curve`（13 成员）/`PlayMode`（4 成员）同样是自由变量。`.d.ts` 的默认值：
+`duration` **1000**、`curve` **Curve.EaseInOut**；两个函数自 API 18 起 deprecated。
+
+**语义**：`fn()` 改状态 → 同步 flush → 把**这次真的被重渲染的节点**（`rerenderElmt` 里收集，
+不是"整棵子树"）挂上 `transition: all <duration>ms <curve> <delay>ms` + `data-arkui-anim`；
+到点（`duration+delay+30ms`）清掉并调 `onFinish`。**`duration:0` 不挂 transition**（但状态变更照常落地）。
+
+**验收（已执行）**：`bash run.sh animdemo` / `bash electron/run.sh animdemo` —— **35 条断言**，双端通过：
+按钮触发 `animateTo` 后 **目标值真的变**且节点**带上 transition**（prop/duration/curve/delay 逐项）；
+`duration:0` 时**调用返回的那一刻没有任何节点被标记**、`els` 记 0、`endedBy='duration-0'`；
+窗口结束后 transition **被清掉**（否则会污染后续变更）且 `onFinish` 被调；`animateToImmediately` 同效；
+未写 `duration` 时取默认 **1000**；`iterations`/`playMode` **出声**且动画仍正常收口；
+`fn()` 无可动目标时**出声**（`.d.ts` 警告别在 `aboutToAppear` 里用）；缺 `event` 闭包抛 **401**。
+
+**两端差异（如实记录，不作断言）**：`sawTransitionEnd` 在 headless Chrome 全为 `false`、
+Electron 里框宽那几次为 `true` —— 即"我们把 transition 挂上又按期清了"与"浏览器真的跑了过渡"
+是两件事，诊断行里分开报。
+
+**破坏验证**（5 项）：① `duration:0` 也走动画分支 → 2 条红；② 不安排收口（transition 一直挂着）→ **12 条红**；
+③ 动画挂到"整棵子树"而非被重渲染的节点 → 5 条红；④ `iterations` 降级静默 → 1 条红；
+⑤ `duration` 默认值写成 0 → 3 条红。
+（①还暴露了一处**假通过**的断言：原本查 `box` 的 transition，而那次只有读 `op` 的 Text 被重渲染 →
+改成"没有任何节点被标记"，并且必须**在同一 tick 内**读，否则会被 30ms 的清理计时器变成竞态。）
+
+**未实现（明确留在待办，不算进本条验收）**：**`transition`（组件出现/消失动画）** —— 它按不变量 3
+落 `data-*`，**不假装动画**；`animateToImmediately` 在本运行时与 `animateTo` 等价；
+`iterations`/`playMode`/`tempo`/`expectedFrameRateRange`/`ICurve` 曲线只出声不实现；
+连带位移（父容器变尺寸带走子节点）不单独过渡。
+
+**触及**：`runtime/arkui-dom-runtime.js`（`Context`/`Curve`/`PlayMode` + `rerenderElmt` 的收集点 +
+`__arkui_dom_animations`）、`fixtures/pages/AnimDemo.ts`、`harmony-proj/`（`AnimDemo.ets` + main_pages.json）、
+`test/animdemo.html`、`run.sh`、`electron/run.sh`
 
 ### R23 — `Gesture`
 

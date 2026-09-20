@@ -1057,6 +1057,56 @@ interface ShowDialogSuccessResponse { index: number }   // 被点按钮在 butto
 `showActionMenu` 未实现（调用即响亮报错）；`string | Resource` 里的 `Resource` 不解析
 （DOM 侧没有资源表，落 `[资源引用未解析]`）。
 
+### 4.16 显式动画 `animateTo` / `animateToImmediately`（R22）
+
+**⚠️ 调用约定（实测产物）**：源码里写的是**全局** `animateTo(value, event)`（声明在
+`ets/component/common.d.ts`），编译后是 **`Context.animateTo(...)`** —— `Context` 是**自由变量**。
+所以运行时必须提供全局 `Context` 对象；只挂一个裸名 `animateTo` 会 `ReferenceError`。
+（`Curve`/`PlayMode` 同样是自由变量，一并挂上。）
+
+```ts
+declare function animateTo(value: AnimateParam, event: () => void): void;               // 自 API 18 deprecated
+declare function animateToImmediately(value: AnimateParam, event: () => void): void;    // since 12
+// AnimateParam: duration? 默认 **1000**；curve? 默认 **Curve.EaseInOut**；delay? 默认 0；iterations? 默认 1；…
+// Curve 13 个成员（Linear…Friction，0 基）；PlayMode 4 个（Normal/Reverse/Alternate/AlternateReverse）
+```
+
+**语义**：`animateTo(param, fn)` = "把 `fn()` 引起的状态变更变成一次过渡"。DOM 里能表达的是 **CSS transition**
+（不是 ArkUI 的插值引擎）：
+
+1. `fn()` 改状态 → **同步 `flush()`**（不变量 7 允许关键路径同步刷新）；
+2. 刷新期间，`rerenderElmt` 把**这次真的被重渲染的节点**收集进动画窗口 —— 这比"整棵子树"或
+   "查所有元素"都准：**谁的状态变了就动谁**（`__arkui_dom_animations()` 的 `els` 就是它的计数）；
+3. 给这些节点挂 `transition: all <duration>ms <curve> <delay>ms`，并打 `data-arkui-anim="<seq>"`；
+4. 到点（`duration + delay + 30ms`）清掉（恢复它们原来的内联 transition 值），并调 `onFinish`。
+
+**`duration: 0` 不进动画**：不挂 transition、不标记、`els` 记 0、`endedBy='duration-0'`，
+但 `fn()` 里的状态变更**照常落地** —— 这正是 ROADMAP 的验收点。注意断言的写法：
+这次往往只有个别节点会被重渲染，**查"你以为的那个元素"会假通过**，判据必须是
+"调用返回时**没有任何**节点被标记"，而且要在**同一 tick 内**读（隔一个 tick 会被清理掉、变成竞态）。
+
+**`transitionend` 只作旁证，不用它清理**：多属性过渡会多次触发（先到的那个不代表整体结束），
+而无头环境里**根本不来**。所以清理一律按时间到点，另外把 `sawTransitionEnd` 记进历史 ——
+它诚实地分开两件事：**"我们挂上又按期清了"** vs **"浏览器真的跑了过渡"**。实测两端不同：
+
+```
+headless Chrome  te=false（过渡不进合成器，transitionend 不来）
+Electron         te=true （框宽变化的那几次过渡真的跑完并触发）
+```
+
+（这条**不做断言**：它是宿主能力差异，不是实现是否正确；只进诊断行与文档。）
+
+**参数降级要出声**（`iterations≠1` / `playMode≠Normal` / `tempo≠1` / `expectedFrameRateRange` / `ICurve` 曲线）
+—— CSS transition 表达不了它们（transition 只跑一次、单向）→ 一律写 `layoutWarnings`，
+绝不静默按"看着像"的方式执行。`fn()` 没有引起任何重渲染时也出声
+（`.d.ts` 明确警告不要在 `aboutToAppear`/`aboutToDisappear` 里用 `animateTo`）。
+
+**已知限制**：**`transition`（组件出现/消失动画）未实现** —— 它按不变量 3 落 `data-*`，不假装动画，
+仍留在 ROADMAP 待办里（不把没做的算进 R22 的验收）；`animateToImmediately` 与 `animateTo` 在本运行时
+**等价**（真机差异是"不等 vsync 立即投递"，CSS 里没有对应物）；动画只挂"被重渲染的节点"，
+因此**父容器尺寸变化带动子节点位移**这类连带位移不会被单独过渡
+（CSS 布局会跟着变，但过渡只作用在被改的那个元素上）。
+
 ---
 
 ## 5. 架构不变量
@@ -1131,10 +1181,10 @@ interface ShowDialogSuccessResponse { index: number }   // 被点按钮在 butto
   属性元数据总数       1078（平均 7.2／组件，最多 TextInput=70）
 
 == 运行时 API ==
-  global 导出        121 个
+  global 导出        129 个
   状态类            ObservedPropertySimplePU ObservedPropertyObjectPU SynchedPropertySimpleOneWayPU SynchedPropertySimpleTwoWayPU SynchedPropertyNesedObjectPU
   内置组件          Text Button Column Row Stack List ListItem If ForEach LazyForEach RelativeContainer Tabs TabContent Swiper Navigation NavDestination Progress Gauge DataPanel Rating
-  内部钩子 __arkui_dom_*  27 个
+  内部钩子 __arkui_dom_*  28 个
 
 == 状态管理 ==
   v1  状态类        5 个（包装对象模型）
@@ -1148,21 +1198,21 @@ interface ShowDialogSuccessResponse { index: number }   // 被点按钮在 butto
   14 个：app.ability.AbilityConstant app.ability.ConfigurationConstant app.ability.UIAbility app.ability.Want data.preferences file.fs hilog measure multimedia.image net.http notificationManager promptAction router window
 
 == 用例矩阵 ==
-  浏览器 run.sh     27 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify measure lazy provide v2 observe async ability promptaction realfs router netfile persist
-  Electron          26 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs measure lazy provide async v2 observe
-  测试页            27 个
-  fixtures 转换产物  25 个：AsyncIO Callee Detail DrawDemo Home Index Layout Lazy LazyVar MeasArea MeasImage MeasNotify Measure NavDemo NetFile Observe PromptAct Provide RelDemo Rich SwiperDemo TabsGrid TextMeasure V2 Widgets
+  浏览器 run.sh     28 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify measure lazy provide v2 observe async ability promptaction realfs animdemo router netfile persist
+  Electron          27 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs animdemo measure lazy provide async v2 observe
+  测试页            28 个
+  fixtures 转换产物  26 个：AnimDemo AsyncIO Callee Detail DrawDemo Home Index Layout Lazy LazyVar MeasArea MeasImage MeasNotify Measure NavDemo NetFile Observe PromptAct Provide RelDemo Rich SwiperDemo TabsGrid TextMeasure V2 Widgets
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          270.5 KB
-  test             187.3 KB
+  runtime          279.9 KB
+  test             198.6 KB
   tools            38.1 KB
-  electron(src)    17.4 KB
-  docs             235.1 KB
-  fixtures         189.7 KB
+  electron(src)    17.6 KB
+  docs             244.3 KB
+  fixtures         196.0 KB
 
 == 逐文件（文档"文件职责"表的来源）==
-  runtime/arkui-dom-runtime.js     161544 B  157.8 KB
+  runtime/arkui-dom-runtime.js     171215 B  167.2 KB
   runtime/generated-components.js   57617 B  56.3 KB
   runtime/ohos-shims.js             57789 B  56.4 KB
   tools/extract.mjs                  6563 B  6.4 KB
@@ -1171,20 +1221,21 @@ interface ShowDialogSuccessResponse { index: number }   // 被点按钮在 butto
   tools/stats.mjs                   13415 B  13.1 KB
   tools/preflight.mjs                5178 B  5.1 KB
   tools/check-all.sh                 3171 B  3.1 KB
-  run.sh                            13338 B  13.0 KB
-  electron/run.sh                    8859 B  8.7 KB
+  run.sh                            13705 B  13.4 KB
+  electron/run.sh                    9049 B  8.8 KB
   electron/main.js                   6795 B  6.6 KB
   electron/preload.js                1961 B  1.9 KB
   package.json                       1207 B  1.2 KB
   .gitignore                          674 B  0.7 KB
-  README.md                         58593 B  57.2 KB
+  README.md                         61702 B  60.3 KB
   THIRD-PARTY-NOTICES.md             8256 B  8.1 KB
-  docs/ARCHITECTURE.md              95368 B  93.1 KB
-  docs/CAPABILITY.md                29271 B  28.6 KB
-  docs/DEVELOPING.md                41794 B  40.8 KB
-  docs/ROADMAP.md                   54992 B  53.7 KB
+  docs/ARCHITECTURE.md              99786 B  97.4 KB
+  docs/CAPABILITY.md                29956 B  29.3 KB
+  docs/DEVELOPING.md                43088 B  42.1 KB
+  docs/ROADMAP.md                   58022 B  56.7 KB
   docs/surface-measurement.md        6496 B  6.3 KB
   docs/SESSION-2026-09-20.md        12842 B  12.5 KB
+  fixtures/pages/AnimDemo.ts         6451 B  6.3 KB
   fixtures/pages/AsyncIO.ts          6206 B  6.1 KB
   fixtures/pages/Callee.ts           1726 B  1.7 KB
   fixtures/pages/Detail.ts           3097 B  3.0 KB
@@ -1211,6 +1262,7 @@ interface ShowDialogSuccessResponse { index: number }   // 被点按钮在 butto
   fixtures/pages/V2.ts              13447 B  13.1 KB
   fixtures/pages/Widgets.ts          4600 B  4.5 KB
   test/ability.html                  4695 B  4.6 KB
+  test/animdemo.html                11498 B  11.2 KB
   test/async.html                    5977 B  5.8 KB
   test/components.html               5566 B  5.4 KB
   test/drawdemo.html                12765 B  12.5 KB
@@ -1258,6 +1310,7 @@ interface ShowDialogSuccessResponse { index: number }   // 被点按钮在 butto
 | **ability 结果链路**（`startAbilityForResult` + `terminateSelfWithResult`/`terminateSelf`） | ✅ 有测试（`run.sh promptaction`）：被启动方在新窗口里渲染自己的页面、`resultCode`/`want` 由 want 算出（写死会被抓）、Promise 与 AsyncCallback 两条形态、结束次序 `onWindowStageDestroy → onDestroy`、无结果结束不挂住 |
 | **轻提示与对话框 `@ohos.promptAction`** | ✅ 有测试（`run.sh promptaction`）：`showToast` 的 `duration` 默认/夹取 **真的生效**（1500ms 到期消失、10000ms 仍在）、缺 `message` 同步抛 401；`showDialog` 的 DOM 节点与按钮顺序、点按钮 resolve `{index}` 并消失、`buttons` 为空响亮失败 |
 | **通知 `@ohos.notificationManager`** | ✅ 有测试（`run.sh measnotify`）：`publish`/`cancel`/`cancelAll`/`isNotificationEnabled` + **回调重载**（异步、返回 `void`）；`content` 真解析（`normal`/`longText`/`multiLine`）、空 `content` 响亮失败；**三档投递路径**（`via`/`hostPermission`/`reason`）——不能确证送达就必须写出原因；Electron 侧 `hostCreated` 递增且 `permission=granted` |
+| **显式动画 `animateTo`/`animateToImmediately`** | ✅ 有测试（`run.sh animdemo`）：`fn()` 的状态变更落地 **且** 被重渲染的节点带上 `transition`（duration/curve/delay 都对）；`duration:0` **不进动画**但值照变；窗口结束清掉 transition 且 `onFinish` 被调；默认 `duration=1000`；`iterations`/`playMode` 等降级**出声**；`fn()` 无可动目标时出声 |
 | 平台模块 | ✅ 14 个：`hilog`/`app.ability.*`/`window`/`router`/`data.preferences`/`file.fs`/`net.http`/**`measure`**/**`multimedia.image`**/**`notificationManager`**/**`promptAction`**；其余（`media`/`UIContext`/…）未实现 → 调用时给可操作报错 |
 | **`onAreaChange`** | ✅ 有测试（`run.sh measarea`）：回调的 `newValue.width/height` **等于真实 `getBoundingClientRect()`**、尺寸变化后再次触发且 `oldValue` 是上一次的真实值 |
 | **自定义布局协议** `onMeasureSize`+`onPlaceChildren` | ✅ 有测试（`run.sh measarea`）：`Measurable.measure(constraint)` 回**真实测量**、返回的 `SizeResult` **覆盖**声明尺寸、`Layoutable.layout(position)` 真的摆放（几何断言）、收敛有上限 |
@@ -1274,7 +1327,7 @@ interface ShowDialogSuccessResponse { index: number }   // 被点按钮在 butto
 
 | 文件 | 体积 | 职责 | 改它的时机 |
 |---|---|---|---|
-| `runtime/arkui-dom-runtime.js` | 157.8 KB | v1 状态类 + 深度观测（`@Observed`/`@ObjectLink`）、`ViewPU`/`ViewV2`、装饰器层、组件栈、布局（`alignRules` 多层锚链 + `Guideline` + `bias`、`Grid` 轨道）、`Tabs`/`TabContent`+`TabsController`、`Swiper`+`SwiperController`、`Navigation`/`NavDestination`+`NavPathStack`、**绘制类四件套**（SVG/CSS）、`LazyForEach`、路由、**ability 栈**（`startAbilityForResult`/`terminateSelf*`） | 实现新语义（**手写优先**） |
+| `runtime/arkui-dom-runtime.js` | 167.2 KB | v1 状态类 + 深度观测（`@Observed`/`@ObjectLink`）、`ViewPU`/`ViewV2`、装饰器层、组件栈、布局（`alignRules` 多层锚链 + `Guideline` + `bias`、`Grid` 轨道）、`Tabs`/`TabContent`+`TabsController`、`Swiper`+`SwiperController`、`Navigation`/`NavDestination`+`NavPathStack`、**绘制类四件套**（SVG/CSS）、`LazyForEach`、路由、**ability 栈**（`startAbilityForResult`/`terminateSelf*`）、**显式动画**（`Context.animateTo` → CSS transition） | 实现新语义（**手写优先**） |
 | `runtime/generated-components.js` | 56.3 KB | 149 个组件骨架（**生成物**） | **不手改**；改 `tools/gen-components.mjs` 后重新生成，`--check` 会守门 |
 | `runtime/ohos-shims.js` | 56.4 KB | `@ohos:*` 模块（14 个，含 **`measure`**/**`multimedia.image`**/**`notificationManager`**/**`promptAction`**）+ 持久化后端（含 R21 的探测与自报）+ 文本/图像测量原语 | 新增平台模块 |
 | `tools/extract.mjs` | 6.3 KB | hvigor 缓存 `.ts` → 可执行 `.js`；**装饰器作用域内绑定前奏 + 未就绪守卫**（§3.4） | 产物形态/装饰器集合变化时 |
@@ -1283,12 +1336,12 @@ interface ShowDialogSuccessResponse { index: number }   // 被点按钮在 butto
 | `tools/stats.mjs` | 13.1 KB | 本文档所有数字的来源（`--json` 机器可读）；**`--check-doc`/`--write-doc` 守 §6 引用块** | 覆盖范围变化时 |
 | `tools/preflight.mjs` | 5.0 KB | 环境自检（工具链/宿主/可执行位） | 外部依赖变化时 |
 | `tools/check-all.sh` | 3.1 KB | 一条命令做完验收（5 步），退出码只看被调命令 | 新增验收步骤时 |
-| `run.sh` | 13.0 KB | 浏览器 27 用例驱动 | 新增用例 |
-| `electron/run.sh` | 8.6 KB | Electron 26 用例 + 磁盘验证 | 新增用例 |
+| `run.sh` | 13.4 KB | 浏览器 28 用例驱动 | 新增用例 |
+| `electron/run.sh` | 8.8 KB | Electron 27 用例 + 磁盘验证 | 新增用例 |
 | `electron/main.js` | 6.6 KB | 主进程：offscreen 截图、**像素级**空白检测 | 截图/验证策略变化时 |
 | `electron/preload.js` | 1.9 KB | `contextBridge` 暴露 Node fs | 宿主能力变化时 |
-| `fixtures/pages/*.ts` | 183.2 KB | **冻结的**官方转换产物（25 个，含 `V2.ts`/`Observe.ts`/`TabsGrid.ts`/`SwiperDemo.ts`/`NavDemo.ts`/`RelDemo.ts`/`DrawDemo.ts`/`TextMeasure.ts`/`LazyVar.ts`/`MeasArea.ts`/`MeasImage.ts`/`MeasNotify.ts`/`PromptAct.ts`/`Callee.ts`），另有 `fixtures/entryability/*.ts`（`EntryAbility.ts`/`PromptAbility.ts`） | 几乎不改（见不变量 5） |
-| `test/*.html` | 183.1 KB | 断言页（读 `#result` 节点文本） | 新增用例 |
+| `fixtures/pages/*.ts` | 189.5 KB | **冻结的**官方转换产物（26 个，含 `V2.ts`/`Observe.ts`/`TabsGrid.ts`/`SwiperDemo.ts`/`NavDemo.ts`/`RelDemo.ts`/`DrawDemo.ts`/`TextMeasure.ts`/`LazyVar.ts`/`MeasArea.ts`/`MeasImage.ts`/`MeasNotify.ts`/`PromptAct.ts`/`Callee.ts`/`AnimDemo.ts`），另有 `fixtures/entryability/*.ts`（`EntryAbility.ts`/`PromptAbility.ts`） | 几乎不改（见不变量 5） |
+| `test/*.html` | 198.6 KB | 断言页（读 `#result` 节点文本） | 新增用例 |
 | `test-assets/*` | 1.1 KB | **已知尺寸的测试图片**（PNG/JPEG/伪装文件）。必须进仓库——放 `/tmp` 会在重启后失效（R5 的教训） | 需要新资产时 |
 
 ---

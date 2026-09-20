@@ -3,6 +3,7 @@
     "pages/Index",
     "pages/MeasNotify",
     "pages/PromptAct",
-    "pages/Callee"
+    "pages/Callee",
+    "pages/AnimDemo"
   ]
 }

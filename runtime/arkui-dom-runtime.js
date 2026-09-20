@@ -259,6 +259,9 @@
     rec.updateFunc(elmtId, false);
     ViewStackProcessor.restore(savedStack);
     currentNodeElmtId = savedElmt;
+    // R22：若有动画窗口开着，记下【这次真的被重渲染】的节点 —— 动画只挂这些节点，
+    // 而不是"整个子树"或"碰巧同名的所有元素"（谁变了就动谁）
+    if (animWindow && rec.node) animWindow.els.push(rec.node);
     syncAlignRules(rootNode);          // 重渲染后几何可能变，重新同步
     syncDrawings(rootNode);            // 弧形要用真实尺寸重画
     syncAreas(rootNode);               // onAreaChange 要按真实几何派发
@@ -274,6 +277,182 @@
       }
     }
   }
+
+  // ────────────────────── 显式动画：animateTo / animateToImmediately（R22） ──────────────────────
+  //
+  // ⚠️ 调用约定（实测的产物）：源码里写全局 `animateTo(...)`，编译后是 **`Context.animateTo(...)`**
+  // （`Context` 是自由变量）。所以必须提供全局 `Context` 对象 —— 只挂裸名 `animateTo` 会 ReferenceError。
+  //
+  // 语义：`animateTo(param, fn)` = "把 fn() 引起的状态变更变成一次过渡"。DOM 里能表达的是 CSS transition
+  // （不是 ArkUI 的插值引擎）：
+  //   · fn() 改状态 → 同步 flush → 把【这次真的被重渲染的节点】找出来（rerenderElmt 里收集），
+  //     给它们挂 `transition: all <duration>ms <curve> <delay>ms`
+  //   · 窗口结束（时长+延迟到点）时清掉，并调 onFinish
+  //   · `duration: 0` → **不进动画**（不挂 transition），但状态变更照常落地
+  // 已知限制：CSS transition 表达不了 `iterations`/`playMode`/`tempo`/`expectedFrameRateRange` 与
+  // "弹簧"曲线（ICurve）→ 一律写 layoutWarnings（出声，不静默）。
+  const CURVE_NAMES = [
+    'Linear', 'Ease', 'EaseIn', 'EaseOut', 'EaseInOut', 'FastOutSlowIn', 'LinearOutSlowIn',
+    'FastOutLinearIn', 'ExtremeDeceleration', 'Sharp', 'Rhythm', 'Smooth', 'Friction',
+  ];
+  const Curve = {};
+  CURVE_NAMES.forEach((n, i) => { Curve[n] = i; });
+  // ArkUI 的曲线名 → CSS 等价物（名字对得上的直接透传）
+  const CURVE_CSS = {
+    Linear: 'linear', Ease: 'ease', EaseIn: 'ease-in', EaseOut: 'ease-out', EaseInOut: 'ease-in-out',
+    FastOutSlowIn: 'cubic-bezier(0.4, 0, 0.2, 1)', LinearOutSlowIn: 'cubic-bezier(0, 0, 0.2, 1)',
+    FastOutLinearIn: 'cubic-bezier(0.4, 0, 1, 1)', ExtremeDeceleration: 'cubic-bezier(0, 0, 0, 1)',
+    Sharp: 'cubic-bezier(0.33, 0, 0.67, 1)', Rhythm: 'cubic-bezier(0.7, 0, 0.2, 1)',
+    Smooth: 'cubic-bezier(0.4, 0, 0.4, 1)', Friction: 'cubic-bezier(0.2, 0, 0.2, 1)',
+  };
+  const PlayMode = { Normal: 0, Reverse: 1, Alternate: 2, AlternateReverse: 3 };
+
+  let animWindow = null;                 // 当前开着的动画窗口（rerenderElmt 会往里收集节点）
+  const animHistory = [];
+  let animSeq = 0;
+  let onFinishCount = 0;
+
+  function animCurveCss(curve) {
+    if (typeof curve === 'string' && curve) return curve;      // CSS 关键字 / cubic-bezier(...)
+    if (typeof curve === 'number' && CURVE_NAMES[curve] !== undefined) {
+      return CURVE_CSS[CURVE_NAMES[curve]] || 'ease-in-out';
+    }
+    if (curve && typeof curve === 'object') {
+      layoutWarnings.push('animateTo 的 curve 是 ICurve（弹簧/自定义插值）：CSS transition 表达不了，'
+        + '本次退化为 ease-in-out —— 真机上会按 interpolate 逐帧插值');
+      return 'ease-in-out';
+    }
+    return 'ease-in-out';                                      // .d.ts 默认 Curve.EaseInOut
+  }
+  function animCurveName(curve) {
+    if (typeof curve === 'number' && CURVE_NAMES[curve] !== undefined) return CURVE_NAMES[curve];
+    if (typeof curve === 'string' && curve) return curve;
+    if (curve && typeof curve === 'object') return 'ICurve';
+    return 'EaseInOut(默认)';
+  }
+
+  function animFireFinish(win) {
+    onFinishCount++;
+    if (typeof win.onFinish !== 'function') return;
+    // 回调一律异步（同 AsyncCallback 的规矩）
+    Promise.resolve().then(() => {
+      try { win.onFinish(); } catch (e) {
+        layoutWarnings.push(`animateTo 的 onFinish 抛错：${e && e.message}`);
+      }
+    });
+  }
+
+  function animFinish(win, how) {
+    if (!win || win.done) return;
+    win.done = true;
+    if (win.timer) clearTimeout(win.timer);
+    for (const el of win.els) {
+      const s = el.__animStyle || {};
+      el.style.transitionProperty = s.prop || '';
+      el.style.transitionDuration = s.dur || '';
+      el.style.transitionTimingFunction = s.curve || '';
+      el.style.transitionDelay = s.delay || '';
+      el.removeAttribute('data-arkui-anim');
+      delete el.__animStyle;
+    }
+    for (const [el, fn] of win.listeners) el.removeEventListener('transitionend', fn);
+    win.listeners.length = 0;
+    win.rec.endedBy = how;
+    win.rec.sawTransitionEnd = !!win.sawTransitionEnd;
+    win.rec.els = win.els.length;
+    animFireFinish(win);
+  }
+
+  function runExplicitAnimation(param, fn, api) {
+    if (typeof fn !== 'function') {
+      // .d.ts: animateTo(value: AnimateParam, event: () => void) —— event 是必填
+      throw bizError(401, `${api}(value, event): 缺少 event 闭包（.d.ts 里它是必填的 () => void）`);
+    }
+    const p = (param && typeof param === 'object') ? param : {};
+    const duration = (p.duration === undefined || p.duration === null) ? 1000 : Number(p.duration);  // @default 1000
+    const delay = (p.delay === undefined || p.delay === null) ? 0 : Number(p.delay);
+    // CSS transition 表达不了的参数：出声
+    if (p.iterations !== undefined && p.iterations !== 1) {
+      layoutWarnings.push(`animateTo 的 iterations=${p.iterations} 无法用 CSS transition 表达`
+        + '（transition 只跑一次）—— 本次按 1 次执行');
+    }
+    if (p.playMode !== undefined && p.playMode !== 0) {
+      layoutWarnings.push(`animateTo 的 playMode=${p.playMode} 无法用 CSS transition 表达`
+        + '（单向位移没有"反向/交替"的概念）—— 本次按 Normal 执行');
+    }
+    if (p.tempo !== undefined && p.tempo !== 1) {
+      layoutWarnings.push(`animateTo 的 tempo=${p.tempo} 未实现（需要缩放时长，请直接改 duration）`);
+    }
+    if (p.expectedFrameRateRange !== undefined) {
+      layoutWarnings.push('animateTo 的 expectedFrameRateRange 未实现（帧率由浏览器决定）');
+    }
+    // 同一时刻只维护一个窗口：上一个还没结束就先收口（否则两个窗口会互相清 transition）
+    if (animWindow) animFinish(animWindow, 'superseded');
+
+    const rec = {
+      seq: ++animSeq, api, duration, delay,
+      curve: animCurveName(p.curve), curveCss: animCurveCss(p.curve),
+      els: 0, endedBy: null, sawTransitionEnd: false,
+    };
+    animHistory.push(rec);
+
+    if (!(duration > 0)) {
+      fn();                                    // duration:0 → 不进动画
+      flush();
+      rec.endedBy = 'duration-0';
+      animFireFinish({ onFinish: p.onFinish });
+      return undefined;
+    }
+
+    const win = {
+      seq: rec.seq, api, duration, delay, onFinish: p.onFinish, rec,
+      els: [], listeners: [], sawTransitionEnd: false, done: false,
+    };
+    animWindow = win;
+    try {
+      fn();
+    } finally {
+      flush();                                 // 同步落地（不变量 7 允许关键路径同步 flush）
+      animWindow = null;
+    }
+    const els = [...new Set(win.els)].filter((el) => el && el.style);
+    win.els = els;
+    if (els.length === 0) {
+      // fn() 没引起任何重渲染 → 没有可动画的节点。这不该静默：多半是写错了（比如在 aboutToAppear 里调用）
+      layoutWarnings.push(`${api} 的 fn() 没有引起任何节点重渲染 → 没有可动画的属性`
+        + '（.d.ts 明确警告不要在 aboutToAppear/aboutToDisappear 里用它）');
+      animFinish(win, 'no-target');
+      return undefined;
+    }
+    for (const el of els) {
+      el.__animStyle = {
+        prop: el.style.transitionProperty, dur: el.style.transitionDuration,
+        curve: el.style.transitionTimingFunction, delay: el.style.transitionDelay,
+      };
+      el.style.transitionProperty = 'all';
+      el.style.transitionDuration = duration + 'ms';
+      el.style.transitionTimingFunction = rec.curveCss;
+      el.style.transitionDelay = delay + 'ms';
+      el.setAttribute('data-arkui-anim', String(win.seq));
+      const onEnd = (ev) => {
+        if (ev && ev.target === el) win.sawTransitionEnd = true;   // 浏览器真的跑了过渡（无头环境下可能不来）
+      };
+      el.addEventListener('transitionend', onEnd);
+      win.listeners.push([el, onEnd]);
+    }
+    rec.els = els.length;
+    // 结束时间 = duration + delay（稍加余量）；transitionend 只作为"浏览器真跑了"的旁证记录，
+    // 不用它来清理 —— 否则多属性/无头环境下会清早或清晚
+    win.timer = setTimeout(() => animFinish(win, 'timer'), Math.max(0, duration) + Math.max(0, delay) + 30);
+    return undefined;
+  }
+
+  const Context = {
+    animateTo: (param, fn) => runExplicitAnimation(param, fn, 'animateTo'),
+    // animateToImmediately 与 animateTo 在 DOM 里等价：CSS transition 本来就是"下一帧开始"。
+    // 真机差异（不等 vsync 立即投递）在 CSS 里没有对应物，见 docs 已知限制。
+    animateToImmediately: (param, fn) => runExplicitAnimation(param, fn, 'animateToImmediately'),
+  };
 
   // ─────────────────────────── ViewPU ───────────────────────────
   class ViewPU {
@@ -3327,6 +3506,14 @@
     __Common__: _CommonWrapper,
     FontWeight, VerticalAlign, HorizontalAlign, FlexAlign, TextAlign, ItemAlign, Color,
     TextOverflow, Alignment, Scroller, Axis,
+    // R22：显式动画。产物里是 `Context.animateTo(...)`（自由变量）→ 必须挂 Context 这个名字
+    Context, Curve, PlayMode,
+    // 动画自省：证明"过渡真的挂在被重渲染的节点上、到点真的清掉了"，而不是只看某次 style 非空
+    __arkui_dom_animations: () => ({
+      active: animWindow ? { seq: animWindow.seq, duration: animWindow.duration, els: animWindow.els.length } : null,
+      history: animHistory.map((h) => Object.assign({}, h)),
+      onFinishCount,
+    }),
     // DataPanel 自省：证明"段占比真按 values/max 算出来了"，而不只看某个背景串。
     __arkui_dom_dataPanel: (el) => {
       if (!el || el.__drawKind !== 'DataPanel') return null;

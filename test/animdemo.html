@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R22 animateTo / animateToImmediately</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 320px; height: 260px; border: 1px solid #ccc; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R22：animateTo 包住的状态变更 → CSS transition（duration:0 不进动画）</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/animdemo-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const el = (id) => root.querySelector('#' + id);
+    const txt = (id) => String(el(id) ? el(id).textContent : '<缺>');
+    const val = (id) => { const s = txt(id); const i = s.indexOf('='); return i < 0 ? '' : s.slice(i + 1); };
+    const box = () => el('box');
+    const click = (id) => {
+      const b = el(id);
+      if (!b) throw new Error(`按钮 #${id} 不存在`);
+      b.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    };
+    const group = async (name, fn) => {
+      try { await fn(); } catch (e) {
+        allPass = false;
+        lines.push(`FAIL [${name}] 抛出异常：${e && e.stack ? String(e.stack).split('\n')[0] : e}`);
+      }
+    };
+    const boxTransition = () => {
+      const s = box().style;
+      return { prop: s.transitionProperty, dur: s.transitionDuration, curve: s.transitionTimingFunction, delay: s.transitionDelay };
+    };
+    const animOf = (elm) => (elm && elm.getAttribute('data-arkui-anim')) || '';
+    const anims = () => (typeof __arkui_dom_animations === 'function' ? __arkui_dom_animations() : null);
+
+    try {
+      __arkui_dom_requireModule('AnimDemo');
+      __arkui_dom_loadRoute('pages/AnimDemo', root);
+      await tick(40);
+      check(!!box() && !!el('btn-anim'), 'AnimDemo 页面已渲染（box 与按钮都在）');
+
+      // ══════════ ① 初始态：没有动画属性 ══════════
+      await group('初始态', async () => {
+        check(val('w') === '100' && val('op') === '1', `初值 w=${val('w')} op=${val('op')}`);
+        check(box().style.transitionProperty === '' && box().style.transitionDuration === '',
+          `初始没有 transition（prop='${box().style.transitionProperty}' dur='${box().style.transitionDuration}'）`);
+      });
+
+      // ══════════ ② animateTo({duration:300})：目标值变 + 带上 transition ══════════
+      await group('animateTo', async () => {
+        click('btn-anim');
+        await tick(30);
+        check(val('w') === '220' && val('op') === '0.5',
+          `fn() 里的状态变更真的落地：w=${val('w')} op=${val('op')}`);
+        const t = boxTransition();
+        check(t.prop !== '' && /300ms/.test(t.dur),
+          `节点带上了 transition：prop='${t.prop}' dur='${t.dur}'`);
+        check(/cubic-bezier|ease|linear/.test(t.curve),
+          `curve 进了 transition-timing-function：'${t.curve}'`);
+        check(animOf(box()) !== '',
+          `被动画的节点带上了标记（data-arkui-anim='${animOf(box())}'）`);
+        const info = anims();
+        check(!!info && info.history.length >= 1 && info.history[info.history.length - 1].duration === 300,
+          `自省记录了这次动画：${JSON.stringify(info && info.history[info.history.length - 1])}`);
+      });
+
+      // ══════════ ③ 动画窗口结束后：清掉 transition + onFinish 被调 ══════════
+      await group('窗口结束', async () => {
+        await tick(420);                   // 300ms + 余量
+        const t = boxTransition();
+        check(t.prop === '' && t.dur === '',
+          `窗口结束后 transition 被清掉（prop='${t.prop}' dur='${t.dur}'）—— 否则会污染后续变更`);
+        check(animOf(box()) === '', '被动画的标记也被清掉');
+        check(val('fin').includes('A;'), `onFinish 被调用（fin='${val('fin')}'）`);
+        const h = anims().history.slice(-1)[0];
+        check(h && h.endedBy && t.prop === '',
+          `自省记录了结束方式：endedBy='${h && h.endedBy}'`);
+      });
+
+      // ══════════ ④ duration:0 —— 目标值变，但【不进动画】══════════
+      await group('duration:0', async () => {
+        click('btn-zero');
+        // 必须在【同一 tick】内读：错误实现也会在 30ms 后被计时器清掉，
+        // 隔一个 tick 再查就成了竞态（B1 破坏验证踩到过）
+        const markedSync = root.querySelectorAll('[data-arkui-anim]').length;
+        const propSync = box().style.transitionProperty;
+        await tick(30);
+        check(val('op') === '0.8', `目标值仍然变了（op=${val('op')}）`);
+        // 这次只有读 op 的 Text 会被重渲染（box 样式不依赖 op）→ 判据是"没有任何节点被动画"
+        check(markedSync === 0,
+          `不进动画：调用返回时没有任何节点被标记为动画目标（实际 ${markedSync} 个）`);
+        check(propSync === '' && box().style.transitionProperty === '',
+          `box 上也从没挂过 transition（同步时 '${propSync}'，30ms 后 '${box().style.transitionProperty}'）`);
+        const h = anims().history.slice(-1)[0];
+        check(h && h.duration === 0 && h.endedBy === 'duration-0' && h.els === 0,
+          `自省如实记为 duration-0 且 0 个节点：${JSON.stringify({ duration: h && h.duration, endedBy: h && h.endedBy, els: h && h.els })}`);
+        await tick(30);
+        check(val('fin').includes('Z;'), `duration:0 的 onFinish 也被调用（fin='${val('fin')}'）`);
+      });
+
+      // ══════════ ⑤ animateToImmediately ══════════
+      await group('animateToImmediately', async () => {
+        click('btn-imm');
+        await tick(30);
+        check(val('w') === '260', `目标值变了（w=${val('w')}）`);
+        const t = boxTransition();
+        check(t.prop !== '' && /250ms/.test(t.dur), `同样带上 transition：prop='${t.prop}' dur='${t.dur}'`);
+        await tick(360);
+        check(val('fin').includes('I;'), `onFinish 被调用（fin='${val('fin')}'）`);
+      });
+
+      // ══════════ ⑥ delay 进 transition-delay（注意：要查【被动画的那个】元素）══════════
+      await group('delay', async () => {
+        click('btn-delay');
+        await tick(20);
+        // this.op 只被 "op=" 那个 Text 读 → 被重渲染的只有它，box 不该被动
+        const marked = root.querySelector('[data-arkui-anim]');
+        check(!!marked, '有元素被标记为动画目标');
+        check(!!marked && /120ms/.test(marked.style.transitionDelay),
+          `delay 真的进了 transition-delay：'${marked && marked.style.transitionDelay}'`);
+        check(!!marked && box() !== marked,
+          '动画只挂在【真的被重渲染】的节点上，没顺手改别的元素（box 的 opacity 没依赖）');
+        check(val('op') === '0.2', `目标值变了（op=${val('op')}）`);
+        const h = anims().history.slice(-1)[0];
+        check(h && h.els === 1, `自省记下本次只动了 ${h && h.els} 个节点`);
+        await tick(400);
+      });
+
+      // ══════════ ⑦ CSS transition 表达不了的参数必须出声 ══════════
+      await group('不支持的参数要出声', async () => {
+        const before = (__arkui_dom_layout_warnings || []).length;
+        click('btn-loop');
+        await tick(30);
+        const w = (__arkui_dom_layout_warnings || []).slice(before).map(String);
+        check(w.some((m) => /iterations/.test(m)), `iterations 被点名：'${w.find((m) => /iterations/.test(m)) || '(无)'}'`);
+        check(w.some((m) => /playMode/.test(m)), `playMode 被点名：'${w.find((m) => /playMode/.test(m)) || '(无)'}'`);
+        check(val('w') === '300', `目标值照样落地（w=${val('w')}）`);
+        // 即使参数被降级，动画窗口也必须【有始有终】（不然 transition 会一直挂着）
+        await tick(300);
+        const h = anims().history.slice(-1)[0];
+        check(h && h.endedBy === 'timer', `被降级的这次动画也正常收口：endedBy='${h && h.endedBy}'`);
+        check(root.querySelector('[data-arkui-anim]') === null, '收口后没有残留的动画标记');
+      });
+
+      // ══════════ ⑧ 默认值与"没有可动画目标"（直接调 Context，不经页面）══════════
+      await group('默认值与无目标', async () => {
+        // .d.ts：AnimateParam.duration 默认 1000
+        const beforeW = (__arkui_dom_layout_warnings || []).length;
+        // fn() 只写了一个【不走状态】的样式 → 没有 elmtId 被重渲染 → 没有可动画的目标
+        Context.animateTo({ curve: Curve.Linear }, () => {
+          root.setAttribute('data-noop', '1');
+        });
+        await tick(30);
+        const h = anims().history.slice(-1)[0];
+        check(h && h.duration === 1000, `未写 duration 时取 .d.ts 的默认 1000（实际 ${h && h.duration}）`);
+        check(h && h.endedBy === 'no-target', `记为 no-target 而不是假装动画了：'${h && h.endedBy}'`);
+        check(h && h.els === 0, `如实记 0 个节点（${h && h.els}）`);
+        const w = (__arkui_dom_layout_warnings || []).slice(beforeW).map(String);
+        check(w.some((m) => /没有引起任何节点重渲染/.test(m)),
+          `没有目标时出声（多半是写错了，比如在 aboutToAppear 里调用）：'${w.find((m) => /没有引起任何节点重渲染/.test(m)) || '(无)'}'`);
+        check(root.querySelector('[data-arkui-anim]') === null, '没有留下残留标记');
+        // 缺 event 闭包 → 401（.d.ts 里 event 必填）
+        let err = null;
+        try { Context.animateTo({ duration: 100 }); } catch (e) { err = e; }
+        check(!!err && err.code === 401 && /event/.test(String(err.message)),
+          `缺 event 闭包时响亮失败（code=${err && err.code}）：'${err && String(err.message).slice(0, 50)}'`);
+      });
+
+      lines.push(`ANIM history=${JSON.stringify((anims() || { history: [] }).history.map((h) => `${h.duration}/${h.curve}/${h.els}el/${h.endedBy}/te=${h.sawTransitionEnd}`))}`);
+      lines.push(`TE 浏览器是否真的跑了过渡（transitionend）：${JSON.stringify((anims() || { history: [] }).history.map((h) => h.sawTransitionEnd))}`);
+      lines.push(`ELMT ${__arkui_dom_elmtRecords.size}`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

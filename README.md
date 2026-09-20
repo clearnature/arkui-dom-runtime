@@ -86,11 +86,11 @@ tools/serve.py                 极简静态服务（端口由 OS 分配，避免
 tools/preflight.mjs            环境自检（工具链 / 宿主 / 可执行位）
 tools/check-all.sh             一条命令做完所有验收
 tools/stats.mjs                覆盖范围统计（文档里的数字都来自它）
-test/*.html                    断言页（27 个用例）
-fixtures/                      冻结的 ets-loader 转换产物（25 个，测试的输入）
+test/*.html                    断言页（28 个用例）
+fixtures/                      冻结的 ets-loader 转换产物（26 个，测试的输入）
 harmony-proj/                  HarmonyOS 工程（页面 .ets 源码，转换产物的来源；构建输出不入库）
-run.sh                         浏览器 27 用例驱动
-electron/run.sh                Electron 26 用例 + 真实磁盘验证
+run.sh                         浏览器 28 用例驱动
+electron/run.sh                Electron 27 用例 + 真实磁盘验证
 docs/                          ARCHITECTURE / DEVELOPING / ROADMAP / CAPABILITY
 ```
 
@@ -562,6 +562,49 @@ rect 已经把这位移算进去（b 明明 `offset=(40,20)`，rect 却是 `(0,0
 去掉错轴守卫 → 1 条失败（并因此发现原来那条断言**没有牙齿**：横线自身 `x=0`，
 用 `Start` 对齐时"错轴返回 0"与"没做判断"碰巧同值，改用 `Center` 才分离成 0 vs 150）。
 
+## R22：显式动画 `animateTo` ✅
+
+```
+$ bash run.sh animdemo
+=== ALL PASS ===                    （35 条断言）
+PASS 节点带上了 transition：prop='all' dur='300ms'
+PASS curve 进了 transition-timing-function：'ease-in-out'
+PASS fn() 里的状态变更真的落地：w=220 op=0.5
+PASS 窗口结束后 transition 被清掉（prop='' dur=''）—— 否则会污染后续变更
+PASS onFinish 被调用（fin='A;'）
+PASS 不进动画：调用返回时没有任何节点被标记为动画目标（实际 0 个）
+PASS 自省如实记为 duration-0 且 0 个节点：{"duration":0,"endedBy":"duration-0","els":0}
+PASS delay 真的进了 transition-delay：'120ms'
+PASS 动画只挂在【真的被重渲染】的节点上，没顺手改别的元素（box 的 opacity 没依赖）
+PASS iterations 被点名、playMode 被点名
+PASS 未写 duration 时取 .d.ts 的默认 1000（实际 1000）
+ANIM history=["300/EaseInOut/3el/timer/te=false","0/EaseInOut(默认)/0el/duration-0/te=false",…]
+```
+
+**先测调用约定，别按源码写**：源码里是**全局** `animateTo(value, event)`，编译后是
+**`Context.animateTo(...)`**（`Context` 是自由变量）。只挂一个裸名 `animateTo` 会 `ReferenceError`。
+`Curve`（13 成员）/`PlayMode`（4 成员）同理。默认值照 `.d.ts`：`duration` **1000**、`curve` **EaseInOut**。
+
+**语义**：`fn()` 改状态 → 同步 flush → 给**这次真的被重渲染的节点**挂
+`transition: all <duration>ms <curve> <delay>ms` → 到点清掉并调 `onFinish`。
+`duration:0` **不进动画**（不挂 transition、不标记），但状态变更照常落地。
+
+**两端差异（如实记录）**：诊断行里的 `te=`（`sawTransitionEnd`）在 headless Chrome 全 `false`、
+Electron 里框宽那几次为 `true` —— **"我们把 transition 挂上又按期清了"** 与
+**"浏览器真的跑了过渡"** 是两件事，分开报，但**不做断言**（那是宿主能力差异，不是对错）。
+
+**降级要出声**：`.d.ts` 的 `iterations`/`playMode`/`tempo`/`expectedFrameRateRange` 与"弹簧"曲线
+（`ICurve`）在 CSS transition 里没有对应物 → 一律写 `layoutWarnings`，绝不静默按"看着像"的方式跑。
+`fn()` 没引起任何重渲染时也出声（`.d.ts` 专门警告别在 `aboutToAppear` 里用 `animateTo`）。
+
+**破坏验证**（5 项）：`duration:0` 也走动画分支 → 2 条红；不安排收口 → **12 条红**；
+动画挂到"整棵子树"而非被重渲染的节点 → 5 条红；`iterations` 静默 → 1 条红；`duration` 默认写成 0 → 3 条红。
+（第一项还暴露了一处**假通过**：原本查 `box` 的 transition，而那次只有读 `op` 的 Text 被重渲染 ——
+改成"调用返回时没有任何节点被标记"，且必须**在同一 tick 内**读，否则会被 30ms 的清理计时器变成竞态。）
+
+**未实现（不算进本条验收）**：**`transition`（出现/消失动画）** —— 按不变量 3 落 `data-*`，不假装动画，
+仍留在 ROADMAP 待办里；`animateToImmediately` 与 `animateTo` 在本运行时等价。
+
 ## R21：后端是什么就说是什么 ✅
 
 ```
@@ -925,7 +968,7 @@ PASS starStyle 的图片 URI 不可用已记警告
 | 文档数字守门 | `npm run stats:check-doc` | `ARCHITECTURE.md` §6 的整块实测数字逐行比对，漂移即非 0 退出；`stats:write-doc` 就地重写 |
 | 覆盖统计 | `npm run stats` | 文档里的所有数字都由它产出（`--json` 机器可读） |
 
-`npm run check` 当前：**浏览器 27 用例 + Electron 26 用例全绿**。
+`npm run check` 当前：**浏览器 28 用例 + Electron 27 用例全绿**。
 
 ## 下一步
 
