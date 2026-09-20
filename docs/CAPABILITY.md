@@ -8,8 +8,8 @@
 cd /data/training/cli/arkui-dom-runtime
 npm run check                   # 全部验收：preflight + 生成物一致 + 浏览器 + Electron（退出码可信）
 npm run check:quick             # 跳过 Electron
-./run.sh all                    # 浏览器侧：20 个用例（Chrome headless）
-./electron/run.sh all           # Electron 侧：19 个用例 + 真实磁盘核验
+./run.sh all                    # 浏览器侧：21 个用例（Chrome headless）
+./electron/run.sh all           # Electron 侧：20 个用例 + 真实磁盘核验
 npm run stats                   # 覆盖范围统计（本文档的数字都来自它）
 npm run preflight               # 环境自检（缺工具链/宿主/可执行位会明确报错）
 node tools/gen-components.mjs   # 重新生成 149 个组件骨架
@@ -89,6 +89,8 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 | **`DataPanel` 环**：`conic-gradient` + 累计色标（余量走轨道色） | ✅ | drawdemo（[30,20,50]/100 → 色标 30/50/100） |
 | **`DataPanel` 线**：分段宽度 = value/max | ✅ | drawdemo（[10,30]/100 → 20px/60px） |
 | **`Rating`**：`rating`/`stars`/`stepSize` → 满星 + 半星；点击派发 `onChange`；`starStyle` 图片 URI 不可用会告警并退化为内置星形 | ✅ | drawdemo（3/5 → 3 高亮、2.5/4 → 2 满 + 1 半、点第 5 颗 → 5） |
+| **文本测量 `@ohos:measure`**：`MeasureText.measureText`（**总是单行**，JSDoc 明确 `constraintWidth`/`maxLines` 不影响结果）、`measureTextSize`（受约束宽高，px；`maxLines` 夹高、`lineHeight` 覆盖单行高、`letterSpacing`/`wordBreak`/`textIndent`） | ✅ | textmeasure（与同文本同宽度的真实 Text DOM **逐像素一致**） |
+| **真实行数**（`Range.getClientRects()` 数行盒，非"按字宽累加"的模拟） | ✅ | textmeasure（`__arkui_dom_countLines` 直接断言：宽 100 → 4 行、宽 400 → 1 行、无显式宽 → 按容器 2 行） |
 | 字符串参数不丢（如 `QRCode('hello')` → `data-content`） | ✅ | widgets |
 
 ## 三、平台能力（`@ohos:*` 别名层）
@@ -126,7 +128,7 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 |---|---|---|
 | 同一份断言页在 Electron 里跑（不复制测试代码） | ✅ | electron 全矩阵 |
 | 真实渲染 + offscreen 截图（非白像素占比判定，非 `isEmpty()`） | ✅ | electron 各用例 |
-| 同一份断言的双端一致（19 个用例两个 runner 都过） | ✅ | run.sh / electron/run.sh |
+| 同一份断言的双端一致（20 个用例两个 runner 都过） | ✅ | run.sh / electron/run.sh |
 
 ---
 
@@ -166,6 +168,13 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
      `Rating.starStyle` 是**图片 URI**，本运行时没有资源管线 → **退化为内置星形并记警告**。
      另外 `Progress` **不再是原生 `<progress>`**（R13 起是手写 div + `--progress`）——
      `test/components.html` 里那条旧断言已相应升级（契约变了，不是放宽）。
+- **文本测量（`@ohos:measure`）的限制**：`textContent`/尺寸传 `Resource` 引用 → 没有资源管线，
+  按默认值/空串处理并记警告；百分比约束在离屏测量里没有父容器，按像素处理并记警告。
+  `measureTextSize` 在当前 SDK 里**已标 `@deprecated since 18`**（官方建议 `UIContext.getMeasureUtils()`），
+  本实现只做了前者；页面若改走 `this.getUIContext()` 会得到响亮的 `TypeError`（不是静默错值）。
+  `textAlign`/`baselineOffset`/`textCase` 对测量结果无影响，未接入。
+  测量用的是 `sans-serif`（未指定 `fontFamily` 时），**与真机的系统默认字体不同**，绝对像素值会差
+  （但"换行行为"这一层是一致的）。
 - **`Navigation` 只有 Stack 栈语义**，以下项**未实现并会记 `layoutWarnings`**：
   **标题栏与工具栏**（`title`/`subTitle`/`hideTitleBar`/`hideBackButton`/`titleMode`/`menus`/`menuCount`/
   `toolBar`/`hideToolBar`/`backButtonIcon`/`toolbarConfiguration`——所以**页面看起来没有标题栏和返回按钮**）、
@@ -182,7 +191,9 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 - 滚动：`LazyForEach` **有虚拟滚动**（1000 项只渲染 11 项，spacer 撑总高）；但普通 `ForEach` 仍是**全量渲染**，
   `LazyForEach` 的数据变更也是**整窗重建**（未做按 key 的增量 diff），且无 `onDataAdd/Delete` 的精确索引更新。
 - 虚拟滚动的行高是**估计值**（首帧后用真实项高校正）；变高项的行高估算会漂移。
-- 文本只有 `maxLines`/`textOverflow`；**换行测量、`Text` 的 `textIndent`/`wordBreak` 细粒度控制未实现**。
+- 文本只有 `maxLines`/`textOverflow`；**换行测量已实现（`@ohos:measure` + `__arkui_dom_countLines`）**，
+  但 `Text` 组件自身**尚未把测量结果用于布局决策**（`textIndent`/`wordBreak` 之类仍未接入渲染），
+  `onMeasureSize`/`onAreaChange`（R17）也还没做。
 - 组件虽有 149 个骨架，但**多数属性只落到 `data-*`**（不丢信息，但不产生视觉效果）。视觉保真度远低于真机。
 - 版本：`./run.sh measure` 的 16 条几何断言是当前布局能力的**可复现基线**——改布局相关代码后必须重跑。
 

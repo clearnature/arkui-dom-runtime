@@ -745,6 +745,35 @@ DOM 侧有两条路，按形状天然二分：
 `Rating.starStyle` 是**图片 URI** —— 本运行时没有资源管线，加载不了，所以**退化为内置星形并记警告**
 （不静默画成"看起来对"的星）。
 
+### 4.10 文本测量：让浏览器自己排版，而不是自己模拟（R15）
+
+实现的是真实平台模块 **`@ohos:measure`**（`runtime/ohos-shims.js`），不是自造 API。
+
+| API | 权威语义（`.d.ts` 的 JSDoc） | 本实现 |
+|---|---|---|
+| `MeasureText.measureText(options): number` | **总是量单行**；`constraintWidth`/`maxLines` 等布局约束**不影响结果** | 离屏元素 `white-space:nowrap` + 不限宽，取 `getBoundingClientRect().width` |
+| `MeasureText.measureTextSize(options): SizeOptions` | 受约束的**宽高，单位 px** | 离屏元素给 `width=constraintWidth`，让浏览器换行；用 `Range.getClientRects()` 数行 |
+
+**关键取向：测量"真实布局"，不做"按字符宽度累加"的模拟。** 离屏元素 + 浏览器排版 →
+字距、字体回退、禁则处理的答案**与真实渲染一致**（实测 `measureTextSize` 的宽高与同文本同宽度的
+真实 `Text` DOM **逐像素相等**）。模拟实现一定会在这三处与渲染分叉，而这条 API 的用途恰恰是"预算尺寸"。
+
+**离屏宿主不能用 `display:none`** —— 那样没有布局，量出来全是 0。用
+`position:absolute; left:-100000px; visibility:hidden`。
+
+**数行**：`Range.getClientRects()` 每个行盒一个 rect（复杂情况下同一行会有多段）→ 按 `top` 去重。
+
+⚠️ **一个必须记住的"断言盲区"**：`measureTextSize` 只回 `width`/`height`，而
+`height = 行数 × 单行高` —— **行数在算式里会被约掉**。所以"从高度反推行数"的断言
+**无法验证数行本身**（实测：把数行改成恒返回 1，反推出来的行数依然是 4，断言全过）。
+→ 所以额外暴露了自省钩子 **`__arkui_dom_countLines(el)`**（与 `measureTextSize` 内部用的是同一个
+原始函数），让"数行"能被**直接**断言。**教训：如果某个中间量在最终结果里被约掉，就必须单独把它暴露出来。**
+
+**已知限制**：`textContent` / 尺寸若传 `Resource` 引用 → 没有资源管线，按默认值处理并记警告；
+百分比约束离屏测量无父容器、按像素处理并记警告；`measureTextSize` 在当前 SDK 里**已标 `@deprecated
+since 18`**（官方建议改用 `UIContext.getMeasureUtils()`）——本实现只做了前者，页面若走
+`this.getUIContext()` 会得到响亮的 `TypeError`（不是静默错值）。
+
 ---
 
 ## 5. 架构不变量
@@ -829,44 +858,44 @@ DOM 侧有两条路，按形状天然二分：
   装饰器表合计      12 个（含 v1 的 Observed）
 
 == 平台模块（@ohos:*）==
-  10 个：app.ability.AbilityConstant app.ability.ConfigurationConstant app.ability.UIAbility app.ability.Want data.preferences file.fs hilog net.http router window
+  11 个：app.ability.AbilityConstant app.ability.ConfigurationConstant app.ability.UIAbility app.ability.Want data.preferences file.fs hilog measure net.http router window
 
 == 用例矩阵 ==
-  浏览器 run.sh     20 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo measure lazy provide v2 observe async ability router netfile persist
-  Electron          19 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo measure lazy provide async v2 observe
-  测试页            20 个
-  fixtures 转换产物  18 个：AsyncIO Detail DrawDemo Home Index Layout Lazy Measure NavDemo NetFile Observe Provide RelDemo Rich SwiperDemo TabsGrid V2 Widgets
+  浏览器 run.sh     21 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure measure lazy provide v2 observe async ability router netfile persist
+  Electron          20 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure measure lazy provide async v2 observe
+  测试页            21 个
+  fixtures 转换产物  19 个：AsyncIO Detail DrawDemo Home Index Layout Lazy Measure NavDemo NetFile Observe Provide RelDemo Rich SwiperDemo TabsGrid TextMeasure V2 Widgets
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          214.2 KB
-  test             121.2 KB
+  runtime          220.4 KB
+  test             130.0 KB
   tools            37.6 KB
-  electron(src)    15.5 KB
-  docs             154.8 KB
-  fixtures         132.3 KB
+  electron(src)    15.7 KB
+  docs             163.5 KB
+  fixtures         143.7 KB
 
 == 逐文件（文档"文件职责"表的来源）==
   runtime/arkui-dom-runtime.js     138659 B  135.4 KB
   runtime/generated-components.js   57617 B  56.3 KB
-  runtime/ohos-shims.js             23066 B  22.5 KB
+  runtime/ohos-shims.js             29448 B  28.8 KB
   tools/extract.mjs                  6457 B  6.3 KB
   tools/gen-components.mjs           7775 B  7.6 KB
   tools/serve.py                     2559 B  2.5 KB
   tools/stats.mjs                   13385 B  13.1 KB
   tools/preflight.mjs                5108 B  5.0 KB
   tools/check-all.sh                 3171 B  3.1 KB
-  run.sh                            10260 B  10.0 KB
-  electron/run.sh                    6868 B  6.7 KB
+  run.sh                            10595 B  10.3 KB
+  electron/run.sh                    7079 B  6.9 KB
   electron/main.js                   6795 B  6.6 KB
   electron/preload.js                1961 B  1.9 KB
   package.json                       1207 B  1.2 KB
   .gitignore                          674 B  0.7 KB
-  README.md                         38004 B  37.1 KB
+  README.md                         40984 B  40.0 KB
   THIRD-PARTY-NOTICES.md             8256 B  8.1 KB
-  docs/ARCHITECTURE.md              67027 B  65.5 KB
-  docs/CAPABILITY.md                22491 B  22.0 KB
-  docs/DEVELOPING.md                30147 B  29.4 KB
-  docs/ROADMAP.md                   32345 B  31.6 KB
+  docs/ARCHITECTURE.md              70064 B  68.4 KB
+  docs/CAPABILITY.md                24024 B  23.5 KB
+  docs/DEVELOPING.md                31637 B  30.9 KB
+  docs/ROADMAP.md                   35182 B  34.4 KB
   docs/surface-measurement.md        6496 B  6.3 KB
   fixtures/pages/AsyncIO.ts          6206 B  6.1 KB
   fixtures/pages/Detail.ts           3097 B  3.0 KB
@@ -884,6 +913,7 @@ DOM 侧有两条路，按形状天然二分：
   fixtures/pages/Rich.ts             9256 B  9.0 KB
   fixtures/pages/SwiperDemo.ts       7876 B  7.7 KB
   fixtures/pages/TabsGrid.ts        10513 B  10.3 KB
+  fixtures/pages/TextMeasure.ts     11625 B  11.4 KB
   fixtures/pages/V2.ts              13447 B  13.1 KB
   fixtures/pages/Widgets.ts          4600 B  4.5 KB
   test/ability.html                  4695 B  4.6 KB
@@ -905,6 +935,7 @@ DOM 侧有两条路，按形状天然二分：
   test/router.html                   4288 B  4.2 KB
   test/swiper.html                   9177 B  9.0 KB
   test/tabgrid.html                 10096 B  9.9 KB
+  test/textmeasure.html              9021 B  8.8 KB
   test/v2.html                       7235 B  7.1 KB
 ```
 
@@ -924,7 +955,8 @@ DOM 侧有两条路，按形状天然二分：
 | `Tabs` / `TabContent` 切换 | ✅ 有测试（`run.sh tabgrid`）：`barPosition`、`index`、`TabsController.changeIndex`、`onChange`、点击 bar 切换、切走的面板不销毁 |
 | `Swiper` 轮播 | ✅ 有测试（`run.sh swiper`）：`index`/`loop`（含回卷与边界停住）/`autoPlay`+`interval`/`indicator` 圆点/`SwiperController.showNext`·`showPrevious`·`changeIndex`、切走的页不销毁 |
 | 虚拟滚动 | ✅ 1000 项 → 11 节点 |
-| 平台模块 | ⚠️ 10 个实现了；`media`/`notification`/`startAbilityForResult` 等未实现 |
+| 平台模块 | ✅ 11 个：`hilog`/`app.ability.*`/`window`/`router`/`data.preferences`/`file.fs`/`net.http`/**`measure`**；其余（`media`/`notification`/…）未实现 → 调用时给可操作报错 |
+| 文本真实测量 | ✅ 有测试（`run.sh textmeasure`）：`@ohos:measure` 的 `measureText`（单行、忽略约束）/`measureTextSize`（约束宽高、`maxLines` 夹高、`lineHeight`）；**与同文本同宽度的真实 Text DOM 逐像素一致**；`__arkui_dom_countLines` 直接断言行数 |
 | 持久化 | ✅ Electron 真磁盘（shell 级验证）；浏览器 `localStorage` |
 | 动画 / 手势 | ❌ 未实现（`Swiper` 也无手势滑动，只有控制器/指示点/autoPlay 三条切换路径） |
 | **绘制类四件套** `Progress`/`Gauge`/`DataPanel`/`Rating` | ✅ 有测试（`run.sh drawdemo`，47 条断言）：`--progress` 百分比 + 无障碍属性、进度环、`Gauge` 任意起止角/整圆/分段色/min-max、`DataPanel` 环（`conic-gradient` 累计色标）与线（几何宽度）、`Rating` 满星/半星/`onChange`/`starStyle` 告警 |
@@ -939,19 +971,19 @@ DOM 侧有两条路，按形状天然二分：
 |---|---|---|---|
 | `runtime/arkui-dom-runtime.js` | 135.4 KB | v1 状态类 + 深度观测（`@Observed`/`@ObjectLink`）、`ViewPU`/`ViewV2`、装饰器层、组件栈、布局（`alignRules` 多层锚链 + `Guideline` + `bias`、`Grid` 轨道）、`Tabs`/`TabContent`+`TabsController`、`Swiper`+`SwiperController`、`Navigation`/`NavDestination`+`NavPathStack`、**绘制类四件套**（SVG/CSS）、`LazyForEach`、路由 | 实现新语义（**手写优先**） |
 | `runtime/generated-components.js` | 56.3 KB | 149 个组件骨架（**生成物**） | **不手改**；改 `tools/gen-components.mjs` 后重新生成，`--check` 会守门 |
-| `runtime/ohos-shims.js` | 22.5 KB | `@ohos:*` 模块 + 持久化后端 | 新增平台模块 |
+| `runtime/ohos-shims.js` | 28.8 KB | `@ohos:*` 模块（11 个，含 **`measure`**）+ 持久化后端 + 文本测量原语 | 新增平台模块 |
 | `tools/extract.mjs` | 6.3 KB | hvigor 缓存 `.ts` → 可执行 `.js`；**装饰器作用域内绑定前奏 + 未就绪守卫**（§3.4） | 产物形态/装饰器集合变化时 |
 | `tools/gen-components.mjs` | 7.6 KB | ets-loader 组件 JSON → 骨架注册表（`--check` 只校验不写） | 组件元数据/画像规则更新时 |
 | `tools/serve.py` | 2.5 KB | 静态服务 + `/echo` + `/slow`（测超时） | 需要新测试端点时 |
 | `tools/stats.mjs` | 13.0 KB | 本文档所有数字的来源（`--json` 机器可读）；**`--check-doc`/`--write-doc` 守 §6 引用块** | 覆盖范围变化时 |
 | `tools/preflight.mjs` | 5.0 KB | 环境自检（工具链/宿主/可执行位） | 外部依赖变化时 |
 | `tools/check-all.sh` | 3.1 KB | 一条命令做完验收（5 步），退出码只看被调命令 | 新增验收步骤时 |
-| `run.sh` | 10.0 KB | 浏览器 20 用例驱动 | 新增用例 |
-| `electron/run.sh` | 6.7 KB | Electron 19 用例 + 磁盘验证 | 新增用例 |
+| `run.sh` | 10.3 KB | 浏览器 21 用例驱动 | 新增用例 |
+| `electron/run.sh` | 6.9 KB | Electron 20 用例 + 磁盘验证 | 新增用例 |
 | `electron/main.js` | 6.6 KB | 主进程：offscreen 截图、**像素级**空白检测 | 截图/验证策略变化时 |
 | `electron/preload.js` | 1.9 KB | `contextBridge` 暴露 Node fs | 宿主能力变化时 |
-| `fixtures/pages/*.ts` | 132 KB | **冻结的**官方转换产物（18 个，含 `V2.ts`/`Observe.ts`/`TabsGrid.ts`/`SwiperDemo.ts`/`NavDemo.ts`/`RelDemo.ts`/`DrawDemo.ts`） | 几乎不改（见不变量 5） |
-| `test/*.html` | 121 KB | 断言页（读 `#result` 节点文本） | 新增用例 |
+| `fixtures/pages/*.ts` | 144 KB | **冻结的**官方转换产物（19 个，含 `V2.ts`/`Observe.ts`/`TabsGrid.ts`/`SwiperDemo.ts`/`NavDemo.ts`/`RelDemo.ts`/`DrawDemo.ts`/`TextMeasure.ts`） | 几乎不改（见不变量 5） |
+| `test/*.html` | 130 KB | 断言页（读 `#result` 节点文本） | 新增用例 |
 
 ---
 

@@ -86,10 +86,10 @@ tools/serve.py                 极简静态服务（端口由 OS 分配，避免
 tools/preflight.mjs            环境自检（工具链 / 宿主 / 可执行位）
 tools/check-all.sh             一条命令做完所有验收
 tools/stats.mjs                覆盖范围统计（文档里的数字都来自它）
-test/*.html                    断言页（20 个用例）
-fixtures/                      冻结的 ets-loader 转换产物（18 个，测试的输入）
-run.sh                         浏览器 20 用例驱动
-electron/run.sh                Electron 19 用例 + 真实磁盘验证
+test/*.html                    断言页（21 个用例）
+fixtures/                      冻结的 ets-loader 转换产物（19 个，测试的输入）
+run.sh                         浏览器 21 用例驱动
+electron/run.sh                Electron 20 用例 + 真实磁盘验证
 docs/                          ARCHITECTURE / DEVELOPING / ROADMAP / CAPABILITY
 ```
 
@@ -561,6 +561,47 @@ rect 已经把这位移算进去（b 明明 `offset=(40,20)`，rect 却是 `(0,0
 去掉错轴守卫 → 1 条失败（并因此发现原来那条断言**没有牙齿**：横线自身 `x=0`，
 用 `Start` 对齐时"错轴返回 0"与"没做判断"碰巧同值，改用 `Center` 才分离成 0 vs 150）。
 
+## R15：文本真实换行 / 行数测量（`@ohos:measure`）✅
+
+```
+$ bash run.sh textmeasure
+=== ALL PASS ===                    （25 条断言）
+PASS 读到 N=23，单行宽 singleW=368.02（每字约 16.00px）
+PASS measureText 带 constraintWidth/maxLines 的结果与不带【完全相同】
+PASS 加宽量 ≈ letterSpacing×字数 = 92（实测 92.0）
+PASS 测量行数 = round(96/24) = 4，与手工推算的 4 一致
+PASS maxLines:1 → 高度被夹到单行（24 ≈ 24）
+PASS lineHeight:40 → 高度 = 行数×40 = 160（实测 160）
+PASS measureTextSize 的高度与真实渲染一致：API 96 vs DOM 96.0
+PASS 数行(ref，宽 100) = 4，期望 4
+PASS 数行(refWide，宽 400 放得下) = 1，期望 1
+PASS 不设宽度时按容器宽度换行：可用 320.0px → 手工推算 2 行，DOM 实测 2 行
+```
+
+**实现的是真实平台模块 `@ohos:measure`**（不是自造 API）。两条 API 的语义完全来自 `.d.ts` 的 JSDoc：
+
+| API | JSDoc 原话 | 本实现 |
+|---|---|---|
+| `measureText` | "always measures **single-line** text width. Layout constraints in options (**constraintWidth, maxLines**, and more) **do not affect results**" | 离屏元素 `nowrap` + 不限宽 |
+| `measureTextSize` | "Layout width and height occupied by the text… both in **px**" | 离屏元素按 `constraintWidth` 换行，`Range.getClientRects()` 数行 |
+
+**关键取向：让浏览器自己排版，不自己模拟。** 用离屏元素 + 真实排版，字距/字体回退/禁则处理的答案
+**与真实渲染一致** —— 实测 `measureTextSize` 的宽高与同文本同宽度的真实 `Text` DOM **逐像素相等**。
+"按字符宽度累加"的模拟一定会在这三处与渲染分叉，而这条 API 的用途恰恰是预算尺寸。
+
+**离屏宿主不能用 `display:none`** —— 那样没有布局，量出来全是 0。用 `position:absolute; left:-100000px; visibility:hidden`。
+
+**⚠️ 一个值得单独记的"断言盲区"**：`measureTextSize` 只回 `width`/`height`，而 `height = 行数 × 单行高`
+—— **行数在算式里被约掉了**。破坏验证时我把"数行"改成恒返回 1，**从高度反推出来的行数依然是 4，
+相关断言全过**。→ 所以额外暴露了自省钩子 `__arkui_dom_countLines(el)`，让数行能被**直接**断言。
+**通用教训：如果某个中间量在最终结果里被约掉，只断言最终结果就等于没测它。**
+
+**我这轮又犯了一次同类错误**：断言"不设宽度的 Text 是单行"——实际它受**容器**（测试页 `#root` 320px）约束，
+23 字 × 16px = 368 > 320 必然换行。**实现是对的，我的期望是错的**。改成用元素自身实测宽度自洽推算。
+
+**破坏验证（4 处）**：`measureText` 不再忽略约束、数行恒为 1、不夹 `maxLines`、忽略 `lineHeight`
+→ 全部被抓（数行那条在补了 `__arkui_dom_countLines` 后由 2 条直接断言抓到）。
+
 ## R13：纯绘制类 `Progress` / `Gauge` / `DataPanel` / `Rating` ✅
 
 ```
@@ -622,13 +663,13 @@ PASS starStyle 的图片 URI 不可用已记警告
 | 文档数字守门 | `npm run stats:check-doc` | `ARCHITECTURE.md` §6 的整块实测数字逐行比对，漂移即非 0 退出；`stats:write-doc` 就地重写 |
 | 覆盖统计 | `npm run stats` | 文档里的所有数字都由它产出（`--json` 机器可读） |
 
-`npm run check` 当前：**浏览器 20 用例 + Electron 19 用例全绿**。
+`npm run check` 当前：**浏览器 21 用例 + Electron 20 用例全绿**。
 
 ## 下一步
 
 **权威清单在 `docs/ROADMAP.md`**（每项带可复现的验收命令）。当前优先：
 
-1. **R15–R17** 布局引擎：文本真实换行测量 / `LazyForEach` 变高列表项 / `onMeasureSize` 对齐
+1. **R16–R17** 布局引擎：`LazyForEach` 变高列表项 / `onMeasureSize`+`onAreaChange` 与真实布局对齐（R15 文本测量已完成）
 2. **R18–R21** 平台模块：`@ohos:media`、`notification`、`startAbilityForResult`+`promptAction`、浏览器真 fs
 3. **R22–R23** 动画（`animateTo`/`transition`）与手势（`Gesture`）
 

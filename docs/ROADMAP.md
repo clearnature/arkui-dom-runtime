@@ -6,8 +6,8 @@
 
 **当前状态**：`npm run check` 全绿（preflight + 生成物一致 + 文档数字守卫 + 浏览器 19 用例 + Electron 18 用例）。
 v1/v2 状态管理（含 v1 深度观测）、`Grid` 真实轨道、`Tabs` 切换、`Swiper` 轮播、`Navigation` 栈导航、
-`alignRules` 多层锚链 + `Guideline` + `bias`、纯绘制四件套均已落地。
-**下一步优先级：R15–R17（文本换行 / 变高列表 / onMeasureSize）→ R18–R21（平台模块）→ R22–R23（动画/手势）。**
+`alignRules` 多层锚链 + `Guideline` + `bias`、纯绘制四件套、文本真实测量（`@ohos:measure`）均已落地。
+**下一步优先级：R16–R17（变高列表 / onMeasureSize+onAreaChange）→ R18–R21（平台模块）→ R22–R23（动画/手势）。**
 R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分发前才需决定。
 
 ---
@@ -33,6 +33,7 @@ R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分�
 | ③ | **`Navigation` 栈导航**（NavPathStack / 生命周期 / 状态保留 / 零泄漏） | `bash run.sh navdemo`（72 条断言，双端通过） |
 | ③ | **`alignRules` 多层锚链 + `Guideline` + `bias`** | `bash run.sh reldemo`（24 条断言，双端通过） |
 | ③ | **纯绘制四件套**（`Progress`/`Gauge`/`DataPanel`/`Rating`） | `bash run.sh drawdemo`（47 条断言，双端通过） |
+| ③ | **文本真实测量**（`@ohos:measure` + `__arkui_dom_countLines`） | `bash run.sh textmeasure`（25 条断言，双端通过） |
 | ③ | `@ohos:*` 别名层 + CommonJS 装载 + 真 fetch | `bash run.sh async` |
 | ③ | `UIAbility` 启动链路 | `bash run.sh ability` |
 | ③ | `router` 页面栈（返回时保留状态） | `bash run.sh router` |
@@ -43,7 +44,7 @@ R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分�
 | **P0** | 统一验收门禁（退出码可信） | `npm run check`；制造漂移 → exit 1 |
 | **P0** | `--check` 真正只校验不落盘 | `node tools/gen-components.mjs --check` |
 
-当前：**浏览器 20 用例 + Electron 19 用例全绿**（`npm run check` → `exit 0`）。
+当前：**浏览器 21 用例 + Electron 20 用例全绿**（`npm run check` → `exit 0`）。
 
 ---
 
@@ -68,7 +69,8 @@ R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分�
 | P2 | ~~R12 Navigation~~ **已完成** | — | — |
 | P2 | ~~R13 纯绘制四件套~~ **已完成**（其余 85 个骨架仍是 `data-*`） | 中 | 中 |
 | P3 | ~~R14 `alignRules` 多层锚链/Guideline/bias~~ **已完成** | — | — |
-| P3 | R15–R17 布局引擎（文本换行 / 变高列表 / 键级 diff） | 中高（真实页面一定踩） | 高 |
+| P3 | ~~R15 文本真实测量~~ **已完成** | — | — |
+| P3 | R16–R17 布局引擎（变高列表 / onMeasureSize） | 中高（真实页面一定踩） | 高 |
 | P4 | R18–R21 平台模块 | 中 | 低–中 |
 | P5 | R22–R23 动画/手势 | 中 | 中 |
 | P6 | R24 ArkVM 路径 | 低（研究） | 高 |
@@ -435,13 +437,42 @@ Rating 的破坏完全没被暴露）→ 改成**分组隔离**（`group()` 逐�
 **触及**：`runtime/arkui-dom-runtime.js`（`applyAlignRules`/`syncAlignRules`/`applyGuideLines`/`applyBias`）、
 `fixtures/pages/RelDemo.ts`、`test/reldemo.html`、`run.sh`、`electron/run.sh`
 
-### R15 — 文本真实换行/行数测量
+### ~~R15 — 文本真实换行/行数测量~~ ✅ 已完成
 
-**内容**：`maxLines` 当前用 CSS `-webkit-line-clamp` 近似，`measure` 的行数不真实。用 `canvas.measureText` 或二分 + `Range` 精确算换行点与行数。
+**内容**：实现真实平台模块 **`@ohos:measure`**（不是自造 API）：`MeasureText.measureText` 与
+`measureTextSize`。语义全部取自 `.d.ts` 的 JSDoc —— `measureText` **总是量单行**且
+"constraintWidth/maxLines 等布局约束**不影响结果**"；`measureTextSize` 回受约束的**宽高、单位 px**。
 
-**验收**：断言一段已知文本在已知宽度下的**测量行数**等于手工计算的期望值（当前会失败）。
+**实现取向：让浏览器自己排版，不自己模拟。** 离屏元素（`position:absolute; left:-100000px;
+visibility:hidden` —— **不能用 `display:none`**，那样没有布局、量出来全是 0）+ 浏览器真实排版，
+再用 `Range.getClientRects()` 数行盒（按 `top` 去重）。这样字距/字体回退/禁则处理的答案**与真实渲染一致**
+—— 实测 `measureTextSize` 的宽高与同文本同宽度的真实 `Text` DOM **逐像素相等**。
+"按字符宽度累加"的模拟一定会在这三处与渲染分叉，而这条 API 的用途恰恰是预算尺寸。
 
-**触及**：`runtime/arkui-dom-runtime.js`、`test/measure.html`
+**验收（已执行）**：`bash run.sh textmeasure` —— **25 条断言**，双端通过：
+`measureText` 的单行语义（带约束与不带**完全相同**）、`letterSpacing` 加宽、约束宽度、
+行数 = `round(高度/单行高)` 与手工推算一致、`maxLines` 夹高、`lineHeight` 覆盖、
+**与真实 Text DOM 的宽高逐像素一致**、以及三条**直接的行数断言**。
+
+**⚠️ 破坏验证暴露的一个"断言盲区"**（本轮最值得记的一条）：
+`measureTextSize` 只回 `width`/`height`，而 `height = 行数 × 单行高` —— **行数在算式里被约掉**。
+我把"数行"改成恒返回 1 后，**从高度反推出来的行数依然是 4，相关断言全过**。
+→ 因此补了自省钩子 **`__arkui_dom_countLines(el)`**（与 `measureTextSize` 内部同一个原始函数），
+让数行能被直接断言。**通用教训：中间量在最终结果里被约掉时，只断言最终结果等于没测它。**
+
+**破坏验证（4 处）**：`measureText` 不再忽略约束、数行恒为 1、不夹 `maxLines`、忽略 `lineHeight`
+→ 全部被抓（数行那条在补了自省钩子后由 2 条直接断言抓到）。
+
+**我这轮又犯了一次同类错误**：断言"不设宽度的 `Text` 是单行" —— 实际它受**容器**约束
+（测试页 `#root` 320px，23 字×16px=368 > 320 必然换行）。**实现是对的、期望是错的**；
+改成用元素自身实测宽度自洽推算行数，并另加一个"显式给足宽度 → 单行"的用例。
+
+**已知限制**：`Resource` 引用（无资源管线）与百分比约束按默认值/像素处理并记警告；
+`measureTextSize` 在当前 SDK **已标 `@deprecated since 18`**（官方建议 `UIContext.getMeasureUtils()`），
+本实现只做了前者（走 `getUIContext()` 会响亮 `TypeError`）。
+
+**触及**：`runtime/ohos-shims.js`（`@ohos:measure` + `__arkui_dom_countLines`）、
+`fixtures/pages/TextMeasure.ts`、`test/textmeasure.html`、`run.sh`、`electron/run.sh`
 
 ### R16 — `LazyForEach` 变高列表项
 

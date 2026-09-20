@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R15 文本真实换行与行数测量（@ohos.measure）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 320px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R15：@ohos.measure 的 measureText / measureTextSize，并与真实渲染的 DOM 对照</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/textmeasure-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const near = (a, b, tol) => Math.abs(a - b) <= (tol === undefined ? 1 : tol);
+    const el = (id) => root.querySelector('#' + id);
+    const num = (id) => parseFloat(String(el(id).textContent).split('=')[1]);
+    const group = async (name, fn) => {
+      try { await fn(); } catch (e) {
+        allPass = false;
+        lines.push(`FAIL [${name}] 抛出异常：${e && e.stack ? String(e.stack).split('\n')[0] : e}`);
+      }
+    };
+
+    try {
+      __arkui_dom_requireModule('TextMeasure');   // CJS+register 模式下模块要先被 require 才会执行（含末尾的 registerNamedRoute）
+      __arkui_dom_loadRoute('pages/TextMeasure', root);
+      await tick(80);
+      check(!!el('singleW'), 'TextMeasure 页面已渲染');
+
+      // 从页面读出输入参数（不硬编码，避免 fixture 改了测试还过）
+      const N = num('n');                       // 字符数
+      const singleW = num('singleW');           // 单行宽度
+      const charW = singleW / N;                // 每字宽度（由测量值反推，与字体无关）
+      const BOX_W = 100;
+      const perLine = Math.floor(BOX_W / charW);
+      const expectedLines = Math.ceil(N / perLine);
+
+      // ══════════ measureText：单行语义 ══════════
+      await group('measureText 单行语义', async () => {
+        check(N > 0 && singleW > 0, `读到 N=${N}，单行宽 singleW=${singleW}（每字约 ${charW.toFixed(2)}px）`);
+        check(perLine >= 2, `按测量值手工推算：每行放得下 floor(${BOX_W}/${charW.toFixed(2)}) = ${perLine} 字`);
+        check(expectedLines >= 3, `期望行数 = ceil(${N}/${perLine}) = ${expectedLines}`);
+        // JSDoc 原话：measureText "always measures single-line text width.
+        // Layout constraints in options (constraintWidth, maxLines, and more) do not affect results."
+        const ignoredW = num('ignoredW');
+        check(near(ignoredW, singleW, 0.01),
+          `measureText 带 constraintWidth/maxLines 的结果与不带【完全相同】（${ignoredW} vs ${singleW}）—— 按 JSDoc 约束不参与计算`);
+        // letterSpacing 会加宽单行
+        const letterW = num('letterW');
+        check(letterW > singleW, `letterSpacing:4 使单行变宽（${letterW} > ${singleW}）`);
+        check(near(letterW - singleW, 4 * N, 8),
+          `加宽量 ≈ letterSpacing×字数 = ${4 * N}（实测 ${(letterW - singleW).toFixed(1)}，容差 ±8 覆盖"末字是否也加间距"的分歧）`);
+      });
+
+      // ══════════ measureTextSize：受约束的宽高 ══════════
+      await group('measureTextSize 行数与高度', async () => {
+        const conW = num('conW');
+        const conH = num('conH');
+        const wideH = num('wideH');            // 约束很宽 → 1 行，于是它就是"单行高度"
+        check(conW <= BOX_W + 0.5, `返回宽度受 constraintWidth 约束：${conW} ≤ ${BOX_W}`);
+        check(conW > 0 && conH > 0, `宽高都为正：${conW} × ${conH}`);
+        check(wideH > 0, `约束 1000px → 单行高度 wideH=${wideH}`);
+        // 行数 = 受约束高度 / 单行高度 —— 与字体度量无关，且"手工可算"
+        const linesMeasured = Math.round(conH / wideH);
+        check(linesMeasured === expectedLines,
+          `测量行数 = round(${conH}/${wideH}) = ${linesMeasured}，与手工推算的 ${expectedLines} 一致`);
+        check(conH > wideH * 1.5, `确实换行了（${conH} 明显大于单行 ${wideH}）`);
+      });
+
+      // ══════════ maxLines 与 lineHeight ══════════
+      await group('maxLines / lineHeight', async () => {
+        const wideH = num('wideH');
+        const oneLineH = num('oneLineH');
+        check(near(oneLineH, wideH, 0.5),
+          `maxLines:1 → 高度被夹到单行（${oneLineH} ≈ ${wideH}）`);
+        const clampedH = num('clampedH');
+        check(near(clampedH, wideH * 2, 0.5),
+          `maxLines:2 → 高度 = 2 个单行（${clampedH} ≈ 2×${wideH}）`);
+        const bigLineH = num('bigLineH');
+        check(near(bigLineH, expectedLines * 40, 1),
+          `lineHeight:40 → 高度 = 行数×40 = ${expectedLines * 40}（实测 ${bigLineH}）—— 把"行数"与 lineHeight 绑起来验，比只看比例更强`);
+      });
+
+      // ══════════ 行数机制本身（直接断言，不从高度反推）══════════
+      // 为什么单列一组：measureTextSize 只回 width/height，而 height = 行数 × 单行高，
+      // 【行数会在算式里约掉】—— 只从高度反推，"数行"写错也看不出来。
+      await group('行数机制', async () => {
+        check(typeof __arkui_dom_countLines === 'function', '自省钩子 __arkui_dom_countLines 可用');
+        check(__arkui_dom_countLines(el('ref')) === expectedLines,
+          `数行(ref，宽 ${BOX_W}) = ${__arkui_dom_countLines(el('ref'))}，期望 ${expectedLines}`);
+        check(__arkui_dom_countLines(el('refWide')) === 1,
+          `数行(refWide，宽 400 放得下) = ${__arkui_dom_countLines(el('refWide'))}，期望 1`);
+        const flowLines2 = Math.ceil(N / Math.floor(el('refFlow').getBoundingClientRect().width / charW));
+        check(__arkui_dom_countLines(el('refFlow')) === flowLines2,
+          `数行(refFlow，无显式宽) = ${__arkui_dom_countLines(el('refFlow'))}，期望 ${flowLines2}`);
+      });
+
+      // ══════════ 与真实渲染的 DOM 对照（R17 的"要来自真实布局"精神）══════════
+      await group('与真实 DOM 对照', async () => {
+        const conH = num('conH');
+        const conW = num('conW');
+        const wideH = num('wideH');
+        const ref = el('ref');                 // 同文本、同字号、同宽度的真实渲染
+        const rect = ref.getBoundingClientRect();
+        check(near(rect.height, conH, 1.5),
+          `measureTextSize 的高度与真实渲染一致：API ${conH} vs DOM ${rect.height.toFixed(1)}`);
+        check(near(rect.width, conW, 1.5),
+          `宽度也一致：API ${conW} vs DOM ${rect.width.toFixed(1)}`);
+        check(Math.round(rect.height / wideH) === expectedLines,
+          `真实渲染的行数也是 ${expectedLines}（DOM 高 ${rect.height.toFixed(1)} / 单行 ${wideH}）`);
+        // 显式给足宽度（400 > 368）→ 单行
+        const wideRect = el('refWide').getBoundingClientRect();
+        check(near(wideRect.height, wideH, 1.5),
+          `显式给足宽度（400px）的 Text 是单行（DOM 高 ${wideRect.height.toFixed(1)} ≈ 单行 ${wideH}）`);
+        // 不设宽度 → 由【容器】决定可用宽度。这条不能预设"单行"：可用宽度是测试页 #root 给的，
+        // 23 字 × 16px = 368 > 320，所以必然换行。用元素自身的实测宽度自洽推算行数。
+        const flowRect = el('refFlow').getBoundingClientRect();
+        const avail = flowRect.width;
+        const flowLines = Math.ceil(N / Math.floor(avail / charW));
+        check(Math.round(flowRect.height / wideH) === flowLines,
+          `不设宽度时按容器宽度换行：可用 ${avail.toFixed(1)}px → 手工推算 ${flowLines} 行，DOM 实测 ${Math.round(flowRect.height / wideH)} 行`);
+        check(avail < singleW, `（顺带解释为何换行：容器宽 ${avail.toFixed(1)} < 单行需 ${singleW.toFixed(1)}）`);
+      });
+
+      lines.push(`ELMT ${__arkui_dom_elmtRecords.size}`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

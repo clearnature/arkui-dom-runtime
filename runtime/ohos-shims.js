@@ -254,6 +254,122 @@
   define('app.ability.Want', class Want {});
   define('window', { WindowStage: class WindowStage {} });
 
+  // ── @ohos:measure —— 文本测量（R15） ──
+  //
+  // 权威语义来自 `@ohos.measure.d.ts` 的 JSDoc：
+  //   measureText(options): number        —— 【总是量单行】；constraintWidth / maxLines 等布局约束
+  //                                          **不影响结果**（原文："Layout constraints in options
+  //                                          (constraintWidth, maxLines, and more) do not affect results"）
+  //   measureTextSize(options): SizeOptions —— 受约束的宽高，**单位 px**
+  //
+  // 实现取向：**让浏览器自己做换行，再用 `Range.getClientRects()` 数行数** ——
+  // 即"测量真实布局"而不是"按字符宽度累加的模拟"。模拟会和真实渲染分叉（字距、字体回退、
+  // 禁则处理都算不准），而这条 API 的用途恰恰是"预算尺寸"，分叉了就白测。
+  const measureWarn = (msg) => {
+    const w = global.__arkui_dom_layout_warnings;
+    if (w && !w.includes(msg)) w.push(msg);
+  };
+  const dimPx = (v, dflt) => {
+    if (v === undefined || v === null) return dflt;
+    if (typeof v === 'number') return v;
+    const s = String(v);
+    if (/^\$r\(|^\{.*id.*\}$/.test(s)) {                 // Resource 引用：没有资源管线
+      measureWarn(`@ohos:measure 收到资源引用（${s.slice(0, 24)}…），无法解析，已按默认值处理`);
+      return dflt;
+    }
+    const n = parseFloat(s);
+    if (!Number.isFinite(n)) return dflt;
+    if (s.trim().endsWith('%')) measureWarn('@ohos:measure 的尺寸/约束收到百分比：离屏测量没有父容器，按像素处理');
+    return n;                                            // px 与 vp 一律按 px（与本项目其它地方一致）
+  };
+  // 离屏宿主：不能用 display:none（那样没有布局，量出来全是 0）
+  const measureHost = () => {
+    let host = document.getElementById('__arkui_measure_host');
+    if (!host) {
+      host = document.createElement('div');
+      host.id = '__arkui_measure_host';
+      host.style.position = 'absolute';
+      host.style.left = '-100000px';
+      host.style.top = '0';
+      host.style.visibility = 'hidden';
+      host.style.pointerEvents = 'none';
+      document.body.appendChild(host);
+    }
+    return host;
+  };
+  const FONT_STYLE = { 0: 'normal', 1: 'italic' };
+  const FONT_WEIGHT = { 0: 'lighter', 1: 'normal', 2: 'normal', 3: 'normal', 4: 'normal', 5: '500', 6: '600', 7: 'bold', 8: 'bolder', 9: 'bold' };
+  const fontCssOf = (o) => {
+    const size = dimPx(o.fontSize, 16);
+    let weight = o.fontWeight === undefined ? 'normal' : (typeof o.fontWeight === 'number' ? (FONT_WEIGHT[o.fontWeight] || String(o.fontWeight)) : String(o.fontWeight));
+    const style = typeof o.fontStyle === 'number' ? (FONT_STYLE[o.fontStyle] || 'normal') : (o.fontStyle || 'normal');
+    const family = o.fontFamily ? String(o.fontFamily) : 'sans-serif';
+    return `${style} ${weight} ${size}px ${family}`;
+  };
+  // 行数：Range 的 client rect 每行一个（复杂情况下同一行会有多段）→ 按 top 去重
+  const countLines = (el) => {
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const rects = [...range.getClientRects()].filter((r) => r.height > 0);
+    if (!rects.length) return 0;
+    return new Set(rects.map((r) => Math.round(r.top))).size;
+  };
+  // 自省：直接暴露"数行"这个原始测量函数（与 measureTextSize 内部用的是同一个）。
+  // 为什么需要它：measureTextSize 只回 width/height，而 height = 行数 × 单行高，
+  // 【行数在算式里会被约掉】—— 只从高度反推无法验证"数行"本身是否正确。（实测踩过：
+  // 把数行改成恒返回 1，从高度反推的行数依然是 4，相关断言全过。）所以要能直接断言行数。
+  global.__arkui_dom_countLines = (el) => countLines(el || document.body);
+  const buildMeasureEl = (o, singleLine) => {
+    const el = document.createElement('div');
+    el.style.font = fontCssOf(o);
+    el.style.lineHeight = o.lineHeight !== undefined ? dimPx(o.lineHeight, 0) + 'px' : 'normal';
+    el.style.letterSpacing = o.letterSpacing !== undefined ? dimPx(o.letterSpacing, 0) + 'px' : 'normal';
+    el.style.textIndent = o.textIndent !== undefined ? dimPx(o.textIndent, 0) + 'px' : '';
+    el.style.boxSizing = 'content-box';
+    el.style.margin = el.style.padding = el.style.border = '0';
+    el.style.display = 'block';
+    el.style.whiteSpace = singleLine ? 'nowrap' : 'normal';
+    // wordBreak：BREAK_ALL → break-all；BREAK_WORD → break-word
+    el.style.wordBreak = o.wordBreak === 2 ? 'break-all' : (o.wordBreak === 1 ? 'break-word' : 'normal');
+    if (!singleLine && o.constraintWidth !== undefined) el.style.width = dimPx(o.constraintWidth, 0) + 'px';
+    const content = o.textContent === undefined || o.textContent === null ? '' : o.textContent;
+    if (typeof content !== 'string') {
+      measureWarn('@ohos:measure 的 textContent 不是字符串（可能是资源引用），已按空串处理');
+      el.textContent = '';
+    } else {
+      el.textContent = content;
+    }
+    return el;
+  };
+  const MeasureText = class MeasureText {
+    static measureText(options) {
+      const o = options || {};
+      const host = measureHost();
+      const el = buildMeasureEl(o, true);                // 单行：nowrap + 不限宽
+      host.appendChild(el);
+      const w = el.getBoundingClientRect().width;
+      host.removeChild(el);
+      return w;
+    }
+    static measureTextSize(options) {
+      const o = options || {};
+      const host = measureHost();
+      const el = buildMeasureEl(o, false);
+      host.appendChild(el);
+      const rect = el.getBoundingClientRect();
+      const lines = countLines(el);
+      const contentW = Math.max(...[...el.getClientRects()].map((r) => r.width), 0);
+      const lineH = lines > 0 ? rect.height / lines : 0;  // 单行高（由真实布局反推）
+      const maxLines = o.maxLines === undefined ? Infinity : Number(o.maxLines);
+      const kept = Math.min(lines, maxLines);
+      const height = kept * lineH;
+      host.removeChild(el);
+      const cw = o.constraintWidth === undefined ? contentW : dimPx(o.constraintWidth, contentW);
+      return { width: Math.min(contentW || cw, cw), height };   // 单位 px（JSDoc 明确）
+    }
+  };
+  define('measure', MeasureText);
+
   // ── @ohos:router ──
   const paramsByUrl = new Map();
   const normUrl = (o) => (typeof o === 'string' ? o : (o && o.url) || '');
