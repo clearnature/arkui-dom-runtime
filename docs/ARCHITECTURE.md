@@ -862,6 +862,40 @@ layout(pos) → 该子项 position:absolute + left/top
 `onMeasureSize` 会被调用多趟以收敛（趟数记在 `passes`，上限 3）；`getMargin/Padding/BorderWidth`
 回的是计算样式的四边值；实现了 `onMeasureSize` 却没有 `onPlaceChildren` 时会记警告。
 
+### 4.12 图像信息 `@ohos.multimedia.image`（R18）
+
+**模块名要更正**：ROADMAP 写的是 `@ohos:media`，实际是 **`@ohos.multimedia.image`**
+（`@ohos.multimedia.media` 是音视频播放那套，两回事）。产物里是 `import image from "@ohos:multimedia.image"`。
+
+```ts
+const src: image.ImageSource = image.createImageSource('/test-assets/known-7x3.png');
+src.getImageInfo().then((info: image.ImageInfo) => { info.size.width … info.mimeType … });
+```
+
+- `ImageSource.getImageInfo()` 三种形态：`Promise<ImageInfo>` / `(cb)` / `getImageInfoSync()`
+- `ImageInfo { size: Size{width,height}, density, stride, pixelFormat, alphaType, mimeType, isHdr }`
+
+**两条实现取向**：
+
+1. **解码交给浏览器**（`fetch` → `blob` → `createImageBitmap`），不自己解析 PNG/JPEG 头 ——
+   宽高来自真实解码器。同 R15 的"让浏览器自己排版"。
+2. **`mimeType` 必须嗅探真实字节的魔数，不能用 HTTP 响应的 `Content-Type`**。
+   依据：`.d.ts` 的 JSDoc 原话是 **"Actual image format (MIME type)"** —— 是**解码后的真实格式**。
+   文件改名或服务端配置错时，响应头与真实格式会不一致。
+   → 所以 `test-assets/` 里专门放了一张**伪装文件**（PNG 字节、`.jpg` 扩展名）来钉这条语义。
+   认不出的格式才退回响应头，**但会记警告**（否则会把"没识别"伪装成"识别对了"）。
+
+**`getImageInfoSync()` 的取舍**：同步 API 等不了解码。所以**只回已解码的缓存**；
+没有缓存就**响亮抛错**，绝不编一个尺寸出来（编出来的尺寸会让调用方拿到假数据继续跑）。
+
+**失败路径**：404/网络错误都抛 BusinessError 形状的错（`code: 62980103`），
+**错误信息里带出问题的 URI**（可操作，而不是只说"失败"）。
+回调形态成功时也传 `{code: 0}`（产物是 `if (err.code)`，传 `null` 会 `TypeError` —— R5 起的老规矩）。
+
+**已知限制**：只实现了 `createImageSource(uri)` + `getImageInfo*` + `release`；
+`PixelMap`/`ImagePacker`/`ImageReceiver`/`createImageSource(buf|fd)` 等未实现（调用会响亮报错）。
+`stride`/`density`/`pixelFormat`/`alphaType` 回常量 0（未从解码器取真实值）。
+
 ---
 
 ## 5. 架构不变量
@@ -950,44 +984,44 @@ layout(pos) → 该子项 position:absolute + left/top
   装饰器表合计      12 个（含 v1 的 Observed）
 
 == 平台模块（@ohos:*）==
-  11 个：app.ability.AbilityConstant app.ability.ConfigurationConstant app.ability.UIAbility app.ability.Want data.preferences file.fs hilog measure net.http router window
+  12 个：app.ability.AbilityConstant app.ability.ConfigurationConstant app.ability.UIAbility app.ability.Want data.preferences file.fs hilog measure multimedia.image net.http router window
 
 == 用例矩阵 ==
-  浏览器 run.sh     23 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measure lazy provide v2 observe async ability router netfile persist
-  Electron          22 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measure lazy provide async v2 observe
-  测试页            23 个
-  fixtures 转换产物  21 个：AsyncIO Detail DrawDemo Home Index Layout Lazy LazyVar MeasArea Measure NavDemo NetFile Observe Provide RelDemo Rich SwiperDemo TabsGrid TextMeasure V2 Widgets
+  浏览器 run.sh     24 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measure lazy provide v2 observe async ability router netfile persist
+  Electron          23 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measure lazy provide async v2 observe
+  测试页            24 个
+  fixtures 转换产物  22 个：AsyncIO Detail DrawDemo Home Index Layout Lazy LazyVar MeasArea MeasImage Measure NavDemo NetFile Observe Provide RelDemo Rich SwiperDemo TabsGrid TextMeasure V2 Widgets
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          235.2 KB
-  test             148.9 KB
-  tools            37.6 KB
-  electron(src)    16.3 KB
-  docs             181.5 KB
-  fixtures         159.6 KB
+  runtime          240.2 KB
+  test             153.9 KB
+  tools            37.9 KB
+  electron(src)    16.4 KB
+  docs             188.3 KB
+  fixtures         171.5 KB
 
 == 逐文件（文档"文件职责"表的来源）==
   runtime/arkui-dom-runtime.js     153793 B  150.2 KB
   runtime/generated-components.js   57617 B  56.3 KB
-  runtime/ohos-shims.js             29448 B  28.8 KB
+  runtime/ohos-shims.js             34527 B  33.7 KB
   tools/extract.mjs                  6457 B  6.3 KB
   tools/gen-components.mjs           7775 B  7.6 KB
-  tools/serve.py                     2559 B  2.5 KB
+  tools/serve.py                     2901 B  2.8 KB
   tools/stats.mjs                   13385 B  13.1 KB
   tools/preflight.mjs                5108 B  5.0 KB
   tools/check-all.sh                 3171 B  3.1 KB
-  run.sh                            11007 B  10.7 KB
-  electron/run.sh                    7661 B  7.5 KB
+  run.sh                            11318 B  11.1 KB
+  electron/run.sh                    7858 B  7.7 KB
   electron/main.js                   6795 B  6.6 KB
   electron/preload.js                1961 B  1.9 KB
   package.json                       1207 B  1.2 KB
   .gitignore                          674 B  0.7 KB
-  README.md                         46221 B  45.1 KB
+  README.md                         48423 B  47.3 KB
   THIRD-PARTY-NOTICES.md             8256 B  8.1 KB
-  docs/ARCHITECTURE.md              78130 B  76.3 KB
-  docs/CAPABILITY.md                25547 B  24.9 KB
-  docs/DEVELOPING.md                35327 B  34.5 KB
-  docs/ROADMAP.md                   40327 B  39.4 KB
+  docs/ARCHITECTURE.md              80845 B  79.0 KB
+  docs/CAPABILITY.md                26548 B  25.9 KB
+  docs/DEVELOPING.md                36151 B  35.3 KB
+  docs/ROADMAP.md                   42760 B  41.8 KB
   docs/surface-measurement.md        6496 B  6.3 KB
   fixtures/pages/AsyncIO.ts          6206 B  6.1 KB
   fixtures/pages/Detail.ts           3097 B  3.0 KB
@@ -998,6 +1032,7 @@ layout(pos) → 该子项 position:absolute + left/top
   fixtures/pages/Lazy.ts             4485 B  4.4 KB
   fixtures/pages/LazyVar.ts          7774 B  7.6 KB
   fixtures/pages/MeasArea.ts         8522 B  8.3 KB
+  fixtures/pages/MeasImage.ts       12199 B  11.9 KB
   fixtures/pages/Measure.ts          6262 B  6.1 KB
   fixtures/pages/NavDemo.ts         14129 B  13.8 KB
   fixtures/pages/NetFile.ts          5039 B  4.9 KB
@@ -1020,6 +1055,7 @@ layout(pos) → 该子项 position:absolute + left/top
   test/lazyvar.html                 10093 B  9.9 KB
   test/leak.html                     3921 B  3.8 KB
   test/measarea.html                 9231 B  9.0 KB
+  test/measimage.html                5110 B  5.0 KB
   test/measure.html                  6072 B  5.9 KB
   test/navdemo.html                 13765 B  13.4 KB
   test/netfile.html                  5302 B  5.2 KB
@@ -1051,7 +1087,7 @@ layout(pos) → 该子项 position:absolute + left/top
 | `Tabs` / `TabContent` 切换 | ✅ 有测试（`run.sh tabgrid`）：`barPosition`、`index`、`TabsController.changeIndex`、`onChange`、点击 bar 切换、切走的面板不销毁 |
 | `Swiper` 轮播 | ✅ 有测试（`run.sh swiper`）：`index`/`loop`（含回卷与边界停住）/`autoPlay`+`interval`/`indicator` 圆点/`SwiperController.showNext`·`showPrevious`·`changeIndex`、切走的页不销毁 |
 | 虚拟滚动（含**变高列表项**） | ✅ 有测试（`run.sh lazyvh`）：偏移 = 逐项 advance 的前缀和、渲染后实测回填、`estItemH` 取已实测均值、滚动锚定、`scrollToIndex` 精确落顶、偏移模型与 DOM **逐项相等**；400 项 → 4~5 个节点 |
-| 平台模块 | ✅ 11 个：`hilog`/`app.ability.*`/`window`/`router`/`data.preferences`/`file.fs`/`net.http`/**`measure`**；其余（`media`/`notification`/…）未实现 → 调用时给可操作报错 |
+| 平台模块 | ✅ 12 个：`hilog`/`app.ability.*`/`window`/`router`/`data.preferences`/`file.fs`/`net.http`/**`measure`**/**`multimedia.image`**；其余（`media`/`notification`/…）未实现 → 调用时给可操作报错 |
 | **`onAreaChange`** | ✅ 有测试（`run.sh measarea`）：回调的 `newValue.width/height` **等于真实 `getBoundingClientRect()`**、尺寸变化后再次触发且 `oldValue` 是上一次的真实值 |
 | **自定义布局协议** `onMeasureSize`+`onPlaceChildren` | ✅ 有测试（`run.sh measarea`）：`Measurable.measure(constraint)` 回**真实测量**、返回的 `SizeResult` **覆盖**声明尺寸、`Layoutable.layout(position)` 真的摆放（几何断言）、收敛有上限 |
 | 文本真实测量 | ✅ 有测试（`run.sh textmeasure`）：`@ohos:measure` 的 `measureText`（单行、忽略约束）/`measureTextSize`（约束宽高、`maxLines` 夹高、`lineHeight`）；**与同文本同宽度的真实 Text DOM 逐像素一致**；`__arkui_dom_countLines` 直接断言行数 |
@@ -1069,19 +1105,20 @@ layout(pos) → 该子项 position:absolute + left/top
 |---|---|---|---|
 | `runtime/arkui-dom-runtime.js` | 150.2 KB | v1 状态类 + 深度观测（`@Observed`/`@ObjectLink`）、`ViewPU`/`ViewV2`、装饰器层、组件栈、布局（`alignRules` 多层锚链 + `Guideline` + `bias`、`Grid` 轨道）、`Tabs`/`TabContent`+`TabsController`、`Swiper`+`SwiperController`、`Navigation`/`NavDestination`+`NavPathStack`、**绘制类四件套**（SVG/CSS）、`LazyForEach`、路由 | 实现新语义（**手写优先**） |
 | `runtime/generated-components.js` | 56.3 KB | 149 个组件骨架（**生成物**） | **不手改**；改 `tools/gen-components.mjs` 后重新生成，`--check` 会守门 |
-| `runtime/ohos-shims.js` | 28.8 KB | `@ohos:*` 模块（11 个，含 **`measure`**）+ 持久化后端 + 文本测量原语 | 新增平台模块 |
+| `runtime/ohos-shims.js` | 33.7 KB | `@ohos:*` 模块（12 个，含 **`measure`**/**`multimedia.image`**）+ 持久化后端 + 文本/图像测量原语 | 新增平台模块 |
 | `tools/extract.mjs` | 6.3 KB | hvigor 缓存 `.ts` → 可执行 `.js`；**装饰器作用域内绑定前奏 + 未就绪守卫**（§3.4） | 产物形态/装饰器集合变化时 |
 | `tools/gen-components.mjs` | 7.6 KB | ets-loader 组件 JSON → 骨架注册表（`--check` 只校验不写） | 组件元数据/画像规则更新时 |
-| `tools/serve.py` | 2.5 KB | 静态服务 + `/echo` + `/slow`（测超时） | 需要新测试端点时 |
+| `tools/serve.py` | 2.6 KB | 静态服务（含显式图片 MIME）+ `/echo` + `/slow`（测超时） | 需要新测试端点/资产类型时 |
 | `tools/stats.mjs` | 13.0 KB | 本文档所有数字的来源（`--json` 机器可读）；**`--check-doc`/`--write-doc` 守 §6 引用块** | 覆盖范围变化时 |
 | `tools/preflight.mjs` | 5.0 KB | 环境自检（工具链/宿主/可执行位） | 外部依赖变化时 |
 | `tools/check-all.sh` | 3.1 KB | 一条命令做完验收（5 步），退出码只看被调命令 | 新增验收步骤时 |
-| `run.sh` | 10.7 KB | 浏览器 23 用例驱动 | 新增用例 |
-| `electron/run.sh` | 7.5 KB | Electron 22 用例 + 磁盘验证 | 新增用例 |
+| `run.sh` | 11.1 KB | 浏览器 24 用例驱动 | 新增用例 |
+| `electron/run.sh` | 7.7 KB | Electron 23 用例 + 磁盘验证 | 新增用例 |
 | `electron/main.js` | 6.6 KB | 主进程：offscreen 截图、**像素级**空白检测 | 截图/验证策略变化时 |
 | `electron/preload.js` | 1.9 KB | `contextBridge` 暴露 Node fs | 宿主能力变化时 |
-| `fixtures/pages/*.ts` | 160 KB | **冻结的**官方转换产物（21 个，含 `V2.ts`/`Observe.ts`/`TabsGrid.ts`/`SwiperDemo.ts`/`NavDemo.ts`/`RelDemo.ts`/`DrawDemo.ts`/`TextMeasure.ts`/`LazyVar.ts`/`MeasArea.ts`） | 几乎不改（见不变量 5） |
-| `test/*.html` | 149 KB | 断言页（读 `#result` 节点文本） | 新增用例 |
+| `fixtures/pages/*.ts` | 172 KB | **冻结的**官方转换产物（22 个，含 `V2.ts`/`Observe.ts`/`TabsGrid.ts`/`SwiperDemo.ts`/`NavDemo.ts`/`RelDemo.ts`/`DrawDemo.ts`/`TextMeasure.ts`/`LazyVar.ts`/`MeasArea.ts`/`MeasImage.ts`） | 几乎不改（见不变量 5） |
+| `test/*.html` | 154 KB | 断言页（读 `#result` 节点文本） | 新增用例 |
+| `test-assets/*` | 1.1 KB | **已知尺寸的测试图片**（PNG/JPEG/伪装文件）。必须进仓库——放 `/tmp` 会在重启后失效（R5 的教训） | 需要新资产时 |
 
 ---
 

@@ -8,8 +8,8 @@
 cd /data/training/cli/arkui-dom-runtime
 npm run check                   # 全部验收：preflight + 生成物一致 + 浏览器 + Electron（退出码可信）
 npm run check:quick             # 跳过 Electron
-./run.sh all                    # 浏览器侧：23 个用例（Chrome headless）
-./electron/run.sh all           # Electron 侧：22 个用例 + 真实磁盘核验
+./run.sh all                    # 浏览器侧：24 个用例（Chrome headless）
+./electron/run.sh all           # Electron 侧：23 个用例 + 真实磁盘核验
 npm run stats                   # 覆盖范围统计（本文档的数字都来自它）
 npm run preflight               # 环境自检（缺工具链/宿主/可执行位会明确报错）
 node tools/gen-components.mjs   # 重新生成 149 个组件骨架
@@ -90,6 +90,8 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 | **`DataPanel` 线**：分段宽度 = value/max | ✅ | drawdemo（[10,30]/100 → 20px/60px） |
 | **`Rating`**：`rating`/`stars`/`stepSize` → 满星 + 半星；点击派发 `onChange`；`starStyle` 图片 URI 不可用会告警并退化为内置星形 | ✅ | drawdemo（3/5 → 3 高亮、2.5/4 → 2 满 + 1 半、点第 5 颗 → 5） |
 | **文本测量 `@ohos:measure`**：`MeasureText.measureText`（**总是单行**，JSDoc 明确 `constraintWidth`/`maxLines` 不影响结果）、`measureTextSize`（受约束宽高，px；`maxLines` 夹高、`lineHeight` 覆盖单行高、`letterSpacing`/`wordBreak`/`textIndent`） | ✅ | textmeasure（与同文本同宽度的真实 Text DOM **逐像素一致**） |
+| **图像信息 `@ohos.multimedia.image`**：`createImageSource(uri)` + `getImageInfo()`（Promise/回调）/`getImageInfoSync()` + `release`；`ImageInfo.size` 来自**真实解码**（`createImageBitmap`） | ✅ | measimage（已知尺寸 PNG 7×3 / 13×5） |
+| **`mimeType` = 解码后的真实格式**（嗅探字节魔数，不是响应头）：PNG 字节 + `.jpg` 扩展名的伪装文件也报 `image/png` | ✅ | measimage（真 JPEG → `image/jpeg`；伪装 → `image/png`） |
 | **`onAreaChange`**：`newValue` = 真实宽高 + 相对父/页坐标；尺寸变化后再次触发，`oldValue` 为上一次真实值 | ✅ | measarea（`120x30` == 真实 rect；`0>100` → `100>140`） |
 | **自定义布局协议**（`onMeasureSize` + `onPlaceChildren`）：`Measurable.measure(c)` 回真实测量、返回值覆盖声明尺寸、`Layoutable.layout(pos)` 真摆放 | ✅ | measarea（`measure` 遵守 maxWidth=60、组件宽 = 返回的 60、三子项依次落位） |
 | **真实行数**（`Range.getClientRects()` 数行盒，非"按字宽累加"的模拟） | ✅ | textmeasure（`__arkui_dom_countLines` 直接断言：宽 100 → 4 行、宽 400 → 1 行、无显式宽 → 按容器 2 行） |
@@ -130,7 +132,7 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 |---|---|---|
 | 同一份断言页在 Electron 里跑（不复制测试代码） | ✅ | electron 全矩阵 |
 | 真实渲染 + offscreen 截图（非白像素占比判定，非 `isEmpty()`） | ✅ | electron 各用例 |
-| 同一份断言的双端一致（22 个用例两个 runner 都过） | ✅ | run.sh / electron/run.sh |
+| 同一份断言的双端一致（23 个用例两个 runner 都过） | ✅ | run.sh / electron/run.sh |
 
 ---
 
@@ -197,6 +199,11 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
   `scrollToIndex` 精确落顶且往返不累积误差；**偏移模型与真实 DOM 逐项相等**（这是"不跳"的判据）。
   仍有的限制：`heights` 按**索引**存（数据源增删/重排后整表失效，靠 `refresh` 重建窗口，不做按 key 迁移）；
   未实测到的深滚动位置，**总高是估计值**（只有"视口覆盖全部项"时才有精确总高）。
+- **图像模块的限制**：只实现了 `createImageSource(uri)` + `getImageInfo*` + `release`；
+  `PixelMap`/`ImagePacker`/`ImageReceiver`/`createImageSource(buf|fd)` 未实现（调用会响亮报错）；
+  `stride`/`density`/`pixelFormat`/`alphaType` 回常量 0（未从解码器取真实值）。
+  `getImageInfoSync()` **只回已解码的缓存**（同步等不了解码）→ 没缓存时响亮抛错，不编尺寸。
+  失败时抛 `code: 62980103` 且**错误信息带 URI**（可操作）。
 - **自定义布局协议的限制**：`Measurable.measure()` 会把约束**永久**写到子项上（真机是"请求尺寸"、父容器随后决定）；
   `onMeasureSize` 会被调用多趟以收敛（上限 3 趟）；`onPlaceChildren` 缺省时会记警告（要求成对实现）；
   实现了协议但没实现 `onPlaceChildren` 时子项**不会被摆放**；`@Entry` 的 build 必须只有一个容器根节点

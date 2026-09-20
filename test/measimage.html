@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R18 @ohos.multimedia.image 图像信息</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 320px; height: 300px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R18：image.createImageSource + getImageInfo（真解码，已知尺寸 PNG）</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/measimage-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const el = (id) => root.querySelector('#' + id);
+    const txt = (id) => String(el(id) ? el(id).textContent : '<缺>');
+    const val = (id) => { const s = txt(id); const i = s.indexOf('='); return i < 0 ? '' : s.slice(i + 1); };
+    const group = async (name, fn) => {
+      try { await fn(); } catch (e) {
+        allPass = false;
+        lines.push(`FAIL [${name}] 抛出异常：${e && e.stack ? String(e.stack).split('\n')[0] : e}`);
+      }
+    };
+
+    try {
+      __arkui_dom_requireModule('MeasImage');
+      __arkui_dom_loadRoute('pages/MeasImage', root);
+      // 解码是异步的（真 fetch + 真解码）→ 轮询而不是固定等待
+      for (let k = 0; k < 60; k++) {
+        if (val('w1') === '7' && val('w2') === '13' && val('mimeMis').startsWith('image/') && val('missErr') !== '') break;
+        await tick(25);
+      }
+      check(!!el('w1'), 'MeasImage 页面已渲染');
+
+      // ══════════ ① 已知尺寸 PNG → 尺寸必须正确（ROADMAP 的验收）══════════
+      await group('已知尺寸 PNG', async () => {
+        check(val('w1') === '7' && val('h1') === '3',
+          `known-7x3.png → ${val('w1')}×${val('h1')}（期望 7×3）`);
+        check(val('w2') === '13' && val('h2') === '5',
+          `known-13x5.png → ${val('w2')}×${val('h2')}（期望 13×5，证明不是写死的）`);
+        check(val('err') === '', `没有异常（'${val('err')}'）`);
+      });
+
+      // ══════════ ② mimeType 是【解码后的真实格式】，不是响应头 ══════════
+      await group('mimeType（解码格式）', async () => {
+        check(val('mime') === 'image/png', `PNG → '${val('mime')}'`);
+        // 真 JPEG：这条给断言装上牙齿 —— 把 mimeType 写死成 image/png 会立刻失败
+        check(val('mimeJpg') === 'image/jpeg',
+          `真 JPEG（扩展名 .jpg）→ '${val('mimeJpg')}'（写死成 png 会被这条抓到）`);
+        // 伪装文件：PNG 字节 + .jpg 扩展名 → 服务端给 image/jpeg，但权威语义要求报【真实格式】
+        check(val('mimeMis') === 'image/png',
+          `伪装文件（PNG 字节 / .jpg 扩展名）→ '${val('mimeMis')}'（期望 image/png：解码格式优先于响应头）`);
+        check(val('wMis') === '7', `伪装文件仍能正常解码（宽 ${val('wMis')}，期望 7）`);
+        lines.push(`MIME ${val('mime')} / ${val('mimeJpg')} / ${val('mimeMis')}`);
+      });
+
+      // ══════════ ③ getImageInfoSync：只能回【已解码】的缓存 ══════════
+      await group('getImageInfoSync', async () => {
+        check(val('syncW') === '7',
+          `异步解码之后再问同步版 → ${val('syncW')}（期望 7，取自同一份真实结果）`);
+        // 负向：没先异步解码就想同步拿 → 必须响亮失败，不能编一个尺寸
+        check(val('syncErr') === 'threw',
+          `未解码时 getImageInfoSync 抛错（'${val('syncErr')}'，期望 threw）`);
+      });
+
+      // ══════════ ④ 失败路径必须可操作（不是静默 0×0）══════════
+      await group('失败路径', async () => {
+        const m = val('missErr');
+        check(!m.startsWith('resolved:'), `不存在的文件没有"成功"返回（'${m}'）`);
+        check(m.length > 0, `抛出了错误信息：'${m.slice(0, 60)}'`);
+        check(/does-not-exist\.png/.test(m), '错误信息里带上了出问题的 URI（可操作）');
+      });
+
+      lines.push(`ELMT ${__arkui_dom_elmtRecords.size}`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

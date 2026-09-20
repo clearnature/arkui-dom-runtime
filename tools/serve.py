@@ -22,6 +22,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         '.mjs': 'application/javascript',
         '.html': 'text/html; charset=utf-8',
         '.json': 'application/json',
+        # 图片 MIME 显式写明：默认映射不含 .png/.webp，会退化成 application/octet-stream，
+        # 那样 @ohos.multimedia.image 的 mimeType 断言就没有意义了
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.webp': 'image/webp',
+        '.svg': 'image/svg+xml',
     }
 
     def __init__(self, *a, **kw):

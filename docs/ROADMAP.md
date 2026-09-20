@@ -7,7 +7,7 @@
 **当前状态**：`npm run check` 全绿（preflight + 生成物一致 + 文档数字守卫 + 浏览器 19 用例 + Electron 18 用例）。
 v1/v2 状态管理（含 v1 深度观测）、`Grid` 真实轨道、`Tabs` 切换、`Swiper` 轮播、`Navigation` 栈导航、
 `alignRules` 多层锚链 + `Guideline` + `bias`、纯绘制四件套、文本真实测量（`@ohos:measure`）、变高列表项、`onAreaChange` 与自定义布局协议均已落地。
-**下一步优先级：R18–R21（平台模块）→ R22–R23（动画/手势）→ R24（`.abc` 路径调研）。**
+**下一步优先级：R19–R21（平台模块）→ R22–R23（动画/手势）→ R24（`.abc` 路径调研）。**
 R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分发前才需决定。
 
 ---
@@ -36,6 +36,7 @@ R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分�
 | ③ | **文本真实测量**（`@ohos:measure` + `__arkui_dom_countLines`） | `bash run.sh textmeasure`（25 条断言，双端通过） |
 | ③ | **变高列表项**（实测回填 + 前缀和偏移 + 滚动锚定） | `bash run.sh lazyvh`（22 条断言，双端通过） |
 | ③ | **`onAreaChange` + 自定义布局协议** | `bash run.sh measarea`（28 条断言，双端通过） |
+| ③ | **图像信息**（`@ohos.multimedia.image`） | `bash run.sh measimage`（14 条断言，双端通过） |
 | ③ | `@ohos:*` 别名层 + CommonJS 装载 + 真 fetch | `bash run.sh async` |
 | ③ | `UIAbility` 启动链路 | `bash run.sh ability` |
 | ③ | `router` 页面栈（返回时保留状态） | `bash run.sh router` |
@@ -46,7 +47,7 @@ R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分�
 | **P0** | 统一验收门禁（退出码可信） | `npm run check`；制造漂移 → exit 1 |
 | **P0** | `--check` 真正只校验不落盘 | `node tools/gen-components.mjs --check` |
 
-当前：**浏览器 23 用例 + Electron 22 用例全绿**（`npm run check` → `exit 0`）。
+当前：**浏览器 24 用例 + Electron 23 用例全绿**（`npm run check` → `exit 0`）。
 
 ---
 
@@ -74,7 +75,8 @@ R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分�
 | P3 | ~~R15 文本真实测量~~ **已完成** | — | — |
 | P3 | ~~R16 变高列表项~~ **已完成** | — | — |
 | P3 | ~~R17 onAreaChange + 自定义布局协议~~ **已完成** | — | — |
-| P4 | R18–R21 平台模块 | 中 | 低–中 |
+| P4 | ~~R18 图像信息~~ **已完成** | — | — |
+| P4 | R19–R21 平台模块 | 中 | 低–中 |
 | P5 | R22–R23 动画/手势 | 中 | 中 |
 | P6 | R24 ArkVM 路径 | 低（研究） | 高 |
 
@@ -559,11 +561,42 @@ visibility:hidden` —— **不能用 `display:none`**，那样没有布局、�
 
 ## P4 平台模块
 
-### R18 — `@ohos:media`
+### ~~R18 — `@ohos.multimedia.image`~~ ✅ 已完成
 
-**内容**：`createImageSource` / `ImageSource.getImageInfo`（尺寸/格式）。浏览器侧用 `new Image()` + `naturalWidth/Height`。
+**⚠️ 标题里的模块名要更正**：不是 `@ohos:media`（那是音视频播放那套，`@ohos.multimedia.media`），
+而是 **`@ohos.multimedia.image`**。产物里是 `import image from "@ohos:multimedia.image"`。
 
-**验收**：对 `tools/serve.py` 提供的一张已知尺寸 PNG，断言 `getImageInfo` 返回的尺寸正确。
+**内容**：`createImageSource(uri)` + `ImageSource.getImageInfo()`（Promise / 回调）/ `getImageInfoSync()`
++ `release`；`ImageInfo { size: Size{width,height}, density, stride, pixelFormat, alphaType, mimeType, isHdr }`。
+
+**两条实现取向**：
+1. **解码交给浏览器**（`fetch` → `blob` → `createImageBitmap`），不自己解析 PNG/JPEG 头 ——
+   宽高来自真实解码器。同 R15"让浏览器自己排版"。
+2. **`mimeType` 嗅探真实字节的魔数，不用响应头**。依据是 `.d.ts` JSDoc 原话
+   **"Actual image format (MIME type)"** —— 是**解码后的真实格式**；文件改名或服务端配置错时两者不一致。
+
+**`getImageInfoSync()` 的取舍**：同步 API 等不了解码 → **只回已解码的缓存**，没缓存就**响亮抛错**，
+绝不编一个尺寸出来。失败路径抛 BusinessError 形状的错（`code: 62980103`）且**错误信息带 URI**。
+
+**验收（已执行）**：`bash run.sh measimage` —— **14 条断言**，双端通过：
+已知尺寸 PNG 7×3 / 13×5、`mimeType`（PNG/JPEG/伪装文件）、`getImageInfoSync` 的缓存语义与负向、
+404 的可操作报错。
+
+**⚠️ 一次"断言没牙齿"的现场修复**：第一版 `mimeType` 断言是"PNG → `image/png`"，
+破坏验证时把 `mimeType` **写死成 `'image/png'`，断言照样通过**（写死的值恰好等于真值）。
+→ 修法是**造出能让错误实现暴露的输入**：加一张**真 JPEG**（写死 png 会失败）
+与一张**伪装文件**（PNG 字节 + `.jpg` 扩展名；用响应头代替嗅探会失败）。
+补完后两种错误实现**各被不同的断言精确抓到**。
+
+**破坏验证**：编造尺寸代替真解码 / `mimeType` 用响应头 / `mimeType` 写死 /
+同步版编造尺寸 / 404 静默返回 0×0 → 全部被抓。
+
+**已知限制**：`PixelMap`/`ImagePacker`/`ImageReceiver`/`createImageSource(buf|fd)` 未实现；
+`stride`/`density`/`pixelFormat`/`alphaType` 回常量 0。
+
+**触及**：`runtime/ohos-shims.js`（`@ohos:multimedia.image`）、`tools/serve.py`（显式图片 MIME）、
+`test-assets/*`（4 张已知尺寸图片，含伪装文件）、`fixtures/pages/MeasImage.ts`、
+`test/measimage.html`、`run.sh`、`electron/run.sh`
 
 ### R19 — `@ohos:notification`
 

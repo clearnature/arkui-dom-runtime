@@ -86,10 +86,10 @@ tools/serve.py                 极简静态服务（端口由 OS 分配，避免
 tools/preflight.mjs            环境自检（工具链 / 宿主 / 可执行位）
 tools/check-all.sh             一条命令做完所有验收
 tools/stats.mjs                覆盖范围统计（文档里的数字都来自它）
-test/*.html                    断言页（23 个用例）
-fixtures/                      冻结的 ets-loader 转换产物（21 个，测试的输入）
-run.sh                         浏览器 23 用例驱动
-electron/run.sh                Electron 22 用例 + 真实磁盘验证
+test/*.html                    断言页（24 个用例）
+fixtures/                      冻结的 ets-loader 转换产物（22 个，测试的输入）
+run.sh                         浏览器 24 用例驱动
+electron/run.sh                Electron 23 用例 + 真实磁盘验证
 docs/                          ARCHITECTURE / DEVELOPING / ROADMAP / CAPABILITY
 ```
 
@@ -561,6 +561,47 @@ rect 已经把这位移算进去（b 明明 `offset=(40,20)`，rect 却是 `(0,0
 去掉错轴守卫 → 1 条失败（并因此发现原来那条断言**没有牙齿**：横线自身 `x=0`，
 用 `Start` 对齐时"错轴返回 0"与"没做判断"碰巧同值，改用 `Center` 才分离成 0 vs 150）。
 
+## R18：图像信息 `@ohos.multimedia.image` ✅
+
+```
+$ bash run.sh measimage
+=== ALL PASS ===                    （14 条断言）
+PASS known-7x3.png → 7×3（期望 7×3）
+PASS known-13x5.png → 13×5（期望 13×5，证明不是写死的）
+PASS PNG → 'image/png'
+PASS 真 JPEG（扩展名 .jpg）→ 'image/jpeg'（写死成 png 会被这条抓到）
+PASS 伪装文件（PNG 字节 / .jpg 扩展名）→ 'image/png'（解码格式优先于响应头）
+PASS 异步解码之后再问同步版 → 7（取自同一份真实结果）
+PASS 未解码时 getImageInfoSync 抛错（'threw'）
+PASS 错误信息里带上了出问题的 URI（可操作）
+```
+
+**模块名要更正**：ROADMAP 写的是 `@ohos:media`，实际是 **`@ohos.multimedia.image`**
+（`@ohos.multimedia.media` 是音视频播放那套）。产物里是 `import image from "@ohos:multimedia.image"`。
+
+**两条实现取向**：
+
+1. **解码交给浏览器**（`fetch` → `blob` → `createImageBitmap`），不自己解析 PNG/JPEG 头——
+   宽高来自真实解码器。同 R15"让浏览器自己排版"。
+2. **`mimeType` 嗅探真实字节的魔数，不用响应的 `Content-Type`**。依据是 `.d.ts` JSDoc 原话
+   **"Actual image format (MIME type)"** —— 是**解码后的真实格式**。
+
+## 一次"断言没牙齿"的现场修复
+
+第一版 `mimeType` 断言写成"PNG → `image/png`"——**破坏验证时我把 `mimeType` 写死成
+`'image/png'`，断言照样通过**（写死的值恰好等于真值）。这正是前面记过的"断言与实现恰好同值"。
+
+修法：**造出能让错误实现暴露的输入**——
+
+- 加一张**真 JPEG**（11×4）→ 写死 `image/png` 立刻失败
+- 加一张**伪装文件**（PNG 字节 + `.jpg` 扩展名，服务端按扩展名给 `image/jpeg`）→ 用响应头代替嗅探立刻失败
+
+补完之后再破坏，两种错误实现**各被不同的断言精确抓到**。顺带把"`mimeType` 是响应头还是解码格式"
+这个语义分歧钉死了。
+
+**破坏验证**：编造尺寸代替真解码 / `mimeType` 用响应头 / `mimeType` 写死 /
+同步版编造尺寸而不抛错 / 404 静默返回 0×0 → 全部被抓。
+
 ## R17：`onAreaChange` + 自定义布局协议 ✅
 
 ```
@@ -741,13 +782,13 @@ PASS starStyle 的图片 URI 不可用已记警告
 | 文档数字守门 | `npm run stats:check-doc` | `ARCHITECTURE.md` §6 的整块实测数字逐行比对，漂移即非 0 退出；`stats:write-doc` 就地重写 |
 | 覆盖统计 | `npm run stats` | 文档里的所有数字都由它产出（`--json` 机器可读） |
 
-`npm run check` 当前：**浏览器 23 用例 + Electron 22 用例全绿**。
+`npm run check` 当前：**浏览器 24 用例 + Electron 23 用例全绿**。
 
 ## 下一步
 
 **权威清单在 `docs/ROADMAP.md`**（每项带可复现的验收命令）。当前优先：
 
-1. **R18–R21** 平台模块：`@ohos:media`、`notification`、`startAbilityForResult`+`promptAction`、浏览器真 fs
+1. **R19–R21** 平台模块：`notification`、`startAbilityForResult`+`promptAction`、浏览器真 fs（R18 图像信息已完成）
 2. **R22–R23** 动画（`animateTo`/`transition`）与手势（`Gesture`）
 
 **仍未覆盖**：动画/转场、手势（**含 `Swiper` 的滑动翻页**）、`chainMode`、

@@ -370,6 +370,111 @@
   };
   define('measure', MeasureText);
 
+  // ── @ohos.multimedia.image —— 图像信息（R18） ──
+  //
+  // 权威来源 `@ohos.multimedia.image.d.ts`：
+  //   createImageSource(uri: string): ImageSource
+  //   ImageSource.getImageInfo(): Promise<ImageInfo> / getImageInfo(cb) / getImageInfoSync(): ImageInfo
+  //   ImageInfo { size: Size, density, stride, pixelFormat, alphaType, mimeType, isHdr }；Size { width, height }
+  //
+  // 实现取向与 R15 的文本测量一致：**让浏览器真解码**（fetch + createImageBitmap），
+  // 而不是自己解析 PNG/JPEG 头 —— 宽高来自真实解码器，mimeType 来自真实响应的 Content-Type。
+  const resolveImageUrl = (uri) => {
+    const s = String(uri);
+    if (/^[a-z][a-z0-9+.-]*:/i.test(s)) return s;                 // http(s):/data:/file: 等绝对形式
+    const base = (global.location && global.location.origin) || '';
+    return base + (s.startsWith('/') ? s : '/' + s);             // 相对路径按页面 origin 解析
+  };
+  // mimeType 的权威语义是【解码后的真实格式】：JSDoc 原话 "Actual image format (MIME type)"。
+  // 所以不能拿 HTTP 响应的 Content-Type 充数（文件改名或服务端配置错时两者会不一致）——
+  // 这里按**真实字节的魔数**判断。这不等于自己写解码器：解码仍交给浏览器，只看文件头定格式。
+  const sniffImageFormat = (bytes) => {
+    if (!bytes || bytes.length < 4) return '';
+    const b = bytes;
+    const ascii = (i, n) => String.fromCharCode.apply(null, Array.from(b.slice(i, i + n)));
+    if (b[0] === 0x89 && ascii(1, 3) === 'PNG') return 'image/png';
+    if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg';
+    if (ascii(0, 4) === 'GIF8') return 'image/gif';
+    if (ascii(0, 4) === 'RIFF' && ascii(8, 4) === 'WEBP') return 'image/webp';
+    if (b[0] === 0x42 && b[1] === 0x4d) return 'image/bmp';
+    if (ascii(4, 4) === 'ftyp' && /heic|heix|hevc|mif1|msf1/.test(ascii(8, 4))) return 'image/heif';
+    const head = ascii(0, Math.min(100, b.length)).trim().toLowerCase();
+    if (head.startsWith('<?xml') || head.startsWith('<svg')) return 'image/svg+xml';
+    return '';
+  };
+  class ImageSource {
+    constructor(uri) {
+      this.uri = String(uri);
+      this._info = null;
+      this._pending = null;
+    }
+    getImageInfo(cb) {
+      if (!this._pending) {
+        this._pending = (async () => {
+          const url = resolveImageUrl(this.uri);
+          let res;
+          try {
+            res = await fetch(url);
+          } catch (e) {
+            throw fsErr(62980103, `读取图像失败（网络错误）：${url} —— ${e && e.message}`);
+          }
+          if (!res.ok) {
+            throw fsErr(62980103, `读取图像失败：HTTP ${res.status} ${res.statusText}（${url}）`);
+          }
+          const blob = await res.blob();
+          if (typeof global.createImageBitmap !== 'function') {
+            throw fsErr(62980103, `本环境没有 createImageBitmap，无法解码图像（${url}）`);
+          }
+          const buf = new Uint8Array(await blob.arrayBuffer());
+          const bmp = await global.createImageBitmap(blob);        // ← 真实解码
+          const w = bmp.width, h = bmp.height;
+          if (typeof bmp.close === 'function') bmp.close();
+          let mimeType = sniffImageFormat(buf);
+          if (!mimeType) {
+            // 认不出来就退回响应头 —— 但要出声（否则会把"没识别"伪装成"识别对了"）
+            mimeType = blob.type || '';
+            const w0 = global.__arkui_dom_layout_warnings;
+            const msg = `image.getImageInfo: 未能从字节识别图像格式（${url}），已退回响应头 '${mimeType}'`;
+            if (w0 && !w0.includes(msg)) w0.push(msg);
+          }
+          this._info = {
+            size: { width: w, height: h },
+            density: 0,
+            stride: w * 4,
+            pixelFormat: 0,
+            alphaType: 0,
+            mimeType,
+            isHdr: false,
+          };
+          return this._info;
+        })();
+      }
+      if (typeof cb === 'function') {
+        // 成功时也要传 BusinessError 形状的对象（code: 0）—— 产物里是 `if (err.code)`，传 null 会 TypeError
+        this._pending.then((v) => cb({ code: 0, message: '' }, v), (e) => cb(e));
+        return undefined;
+      }
+      return this._pending;
+    }
+    getImageInfoSync() {
+      if (this._info) return this._info;
+      // 同步 API 无法等待解码 —— 响亮失败，绝不编一个尺寸出来
+      throw fsErr(62980103,
+        `getImageInfoSync 无法同步解码（${this.uri}）：本实现只回【已解码】的缓存，请先 await getImageInfo()`);
+    }
+    release() {
+      this._info = null;
+      this._pending = null;
+      return Promise.resolve();
+    }
+  }
+  define('multimedia.image', {
+    createImageSource: (uri) => new ImageSource(uri),
+    ImageSource,
+    AlphaType: { UNKNOWN: 0, OPAQUE: 1, PREMUL: 2, UNPREMUL: 3 },
+    PixelMapFormat: { UNKNOWN: 0, RGB_565: 2, RGBA_8888: 3, BGRA_8888: 4, RGB_888: 5 },
+  });
+
   // ── @ohos:router ──
   const paramsByUrl = new Map();
   const normUrl = (o) => (typeof o === 'string' ? o : (o && o.url) || '');

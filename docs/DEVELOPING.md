@@ -390,6 +390,8 @@ node tools/extract.mjs fixtures/pages/NewPage.ts build/newpage.js --cjs --regist
 | 59 | **把"编译器合成的组件名"当成不存在**：`KidLayout().id('x')` 会被 emit 成 `__Common__.create(true); …; __Common__.pop();` —— `__Common__` **不在 149 组件注册表**里，运行时不给它定义就 `ReferenceError` | 实现任何"给自定义组件加链式属性"的页面时，**先把产物 grep 一遍合成名**（`grep -o '__[A-Za-z]*__'`）；合成名与注册表无关，得单独实现 |
 | 60 | **以为"多子项 build"哪儿都能用**：编译器明确拒绝 —— `@Entry` 的 build **只能有一个【容器】根节点**（原话："can have only one root node, which must be a container component"）。我为自定义布局写了两版 build 都被拒 | 自定义布局的"多子项 builder 模式"**只适用于嵌套 `@Component`**。**先测一次再写实现**：10 秒的构建能省掉一轮错误设计 |
 | 61 | **测试解析"被测页面输出"时凭 token 猜格式**：页面把回调参数拼成 `A\|120x30\|`，我却按"某个 token 以 A 开头且含 x"去找 → 找不到，**一度以为回调没传值**（实际数字完全正确） | 断言前先看**原始输出**（把 `RAWLOG` 打进结果里）；解析用正则整体匹配，不要 `split` 后再猜哪一段是什么。**"看着像坏了"和"真的坏了"要分得开** |
+| 62 | **断言的"错误实现"也可能碰巧得到正确值**：`mimeType` 的断言写成"PNG → `image/png`"，于是把 `mimeType` **写死成 `image/png` 也照样通过** —— 断言等于没测 | **造一个能让错误实现暴露的输入**：加一张真 JPEG（写死 png 会失败）、加一张**伪装文件**（PNG 字节 + `.jpg` 扩展名；用响应头代替真嗅探会失败）。判据同 ㊾：**"把实现改坏"必须真的红** |
+| 63 | **`serve.py` 按扩展名给 MIME，没登记的扩展名退化成 `application/octet-stream`** → 任何对 `Content-Type` 的断言都会失去意义（且看起来"通过了"） | 需要新资产类型时**先在 `extensions_map` 里显式登记**；测试资产要**进仓库**（`test-assets/`），别放 `/tmp`（重启即失效，R5 的教训） |
 
 ### 确定性与时序
 
