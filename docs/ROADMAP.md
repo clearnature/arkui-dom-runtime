@@ -40,7 +40,7 @@ R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分�
 | ③ | **通知**（`@ohos.notificationManager`，含投递路径自省） | `bash run.sh measnotify`（32 条断言，双端通过） |
 | ③ | **ability 结果链路 + 轻提示/对话框**（`startAbilityForResult`、`promptAction`） | `bash run.sh promptaction`（37 条断言，双端通过） |
 | ③ | **后端如实自报 + OPFS 现场探测**（"能持久化 ≠ 是文件系统"） | `bash run.sh realfs`（21 条断言，双端通过） |
-| ③ | **显式动画**（`animateTo`/`animateToImmediately` → CSS transition） | `bash run.sh animdemo`（35 条断言，双端通过） |
+| ③ | **显式动画**（`animateTo`/`animateToImmediately` → CSS transition） | `bash run.sh animdemo`（36 条断言，双端通过） |
 | ③ | **手势**（Pan/Tap/LongPress/Swipe/Pinch → pointer 事件） | `bash run.sh gesturedemo`（24 条断言，双端通过） |
 | ③ | `@ohos:*` 别名层 + CommonJS 装载 + 真 fetch | `bash run.sh async` |
 | ③ | `UIAbility` 启动链路 | `bash run.sh ability` |
@@ -781,7 +781,7 @@ Promise 等它，不靠 sleep 猜）；**"能持久化 ≠ 是文件系统"两�
 不是"整棵子树"）挂上 `transition: all <duration>ms <curve> <delay>ms` + `data-arkui-anim`；
 到点（`duration+delay+30ms`）清掉并调 `onFinish`。**`duration:0` 不挂 transition**（但状态变更照常落地）。
 
-**验收（已执行）**：`bash run.sh animdemo` / `bash electron/run.sh animdemo` —— **35 条断言**，双端通过：
+**验收（已执行）**：`bash run.sh animdemo` / `bash electron/run.sh animdemo` —— **36 条断言**，双端通过：
 按钮触发 `animateTo` 后 **目标值真的变**且节点**带上 transition**（prop/duration/curve/delay 逐项）；
 `duration:0` 时**调用返回的那一刻没有任何节点被标记**、`els` 记 0、`endedBy='duration-0'`；
 窗口结束后 transition **被清掉**（否则会污染后续变更）且 `onFinish` 被调；`animateToImmediately` 同效；

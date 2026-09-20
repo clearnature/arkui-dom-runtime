@@ -37,6 +37,19 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def log_message(self, *a):
         pass  # 静默，避免污染断言输出
 
+    def end_headers(self):
+        # 【所有响应都禁用缓存】—— 这是一条踩过坑才加的头：SimpleHTTPRequestHandler 不发任何
+        # 缓存相关头，于是 Chromium 会启发式缓存 runtime/*.js 与 build/*.js。改完 runtime 立刻
+        # 跑测试时可能拿到【旧的 runtime + 新的测试页/模块】→ 表现为"全局量未定义"这类间歇性红
+        # （实测：electron 全矩阵里 gesturedemo 报 `Cannot read properties of undefined
+        # (reading 'create')`，单独重跑又全绿）。测量工具本身必须无状态。
+        # 放在 end_headers 而不是 _send：静态文件走 SimpleHTTPRequestHandler.send_head()，
+        # 不经过 _send —— 只有这里才是所有响应的统一出口。
+        self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+        self.send_header('Pragma', 'no-cache')
+        self.send_header('Expires', '0')
+        super().end_headers()
+
     def _send(self, code, body: bytes, ctype: str = 'text/plain; charset=utf-8'):
         self.send_response(code)
         self.send_header('Content-Type', ctype)

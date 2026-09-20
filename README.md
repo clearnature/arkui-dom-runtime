@@ -608,7 +608,7 @@ globalThis.Gesture.pop();                         // ③ 关作用域 → 挂到
 
 ```
 $ bash run.sh animdemo
-=== ALL PASS ===                    （35 条断言）
+=== ALL PASS ===                    （36 条断言）
 PASS 节点带上了 transition：prop='all' dur='300ms'
 PASS curve 进了 transition-timing-function：'ease-in-out'
 PASS fn() 里的状态变更真的落地：w=220 op=0.5
@@ -1026,6 +1026,9 @@ PASS starStyle 的图片 URI 不可用已记警告
 
 **已知待办（别当已完成）**：
 
+- 文档里手写的「（N 条断言）」**没有守门**（§6 那一块有守门，散落的用例计数没有）——
+  本轮就发现 R22 记成 35、实际 **36**（`grep -c "check(" test/animdemo.html` 与 runner 输出都指向 36）。
+  该做的第 6 步：让 `stats.mjs` 也统计每个 `test/*.html` 的断言数，`--check-doc` 一并比对
 - `ForEach` 现在是「数组变了就整体重建」，**没有键级 diff**
 - 父组件重渲染时参数推送走 `updateStateVarsOfChildByElmtId`，但**子视图内部的 elmtId 迁移未处理**（复杂嵌套可能出问题）
 - `Repeat` / 动画 / `Tabs.vertical`·`barMode` / `Swiper` 的动画与 `displayCount` /

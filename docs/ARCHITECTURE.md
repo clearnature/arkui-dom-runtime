@@ -1245,9 +1245,9 @@ globalThis.Gesture.pop();                         // ③ 关作用域 → 挂到
 == 体积（源码，不含产物/Electron 运行时）==
   runtime          294.8 KB
   test             208.2 KB
-  tools            38.1 KB
+  tools            39.1 KB
   electron(src)    17.8 KB
-  docs             252.8 KB
+  docs             253.8 KB
   fixtures         202.4 KB
 
 == 逐文件（文档"文件职责"表的来源）==
@@ -1256,7 +1256,7 @@ globalThis.Gesture.pop();                         // ③ 关作用域 → 挂到
   runtime/ohos-shims.js             57789 B  56.4 KB
   tools/extract.mjs                  6563 B  6.4 KB
   tools/gen-components.mjs           7775 B  7.6 KB
-  tools/serve.py                     2901 B  2.8 KB
+  tools/serve.py                     3887 B  3.8 KB
   tools/stats.mjs                   13415 B  13.1 KB
   tools/preflight.mjs                5178 B  5.1 KB
   tools/check-all.sh                 3171 B  3.1 KB
@@ -1266,11 +1266,11 @@ globalThis.Gesture.pop();                         // ③ 关作用域 → 挂到
   electron/preload.js                1961 B  1.9 KB
   package.json                       1207 B  1.2 KB
   .gitignore                          674 B  0.7 KB
-  README.md                         64623 B  63.1 KB
+  README.md                         64982 B  63.5 KB
   THIRD-PARTY-NOTICES.md             8256 B  8.1 KB
-  docs/ARCHITECTURE.md             103322 B  100.9 KB
+  docs/ARCHITECTURE.md             103359 B  100.9 KB
   docs/CAPABILITY.md                30455 B  29.7 KB
-  docs/DEVELOPING.md                43861 B  42.8 KB
+  docs/DEVELOPING.md                44834 B  43.8 KB
   docs/ROADMAP.md                   61906 B  60.5 KB
   docs/surface-measurement.md        6496 B  6.3 KB
   docs/SESSION-2026-09-20.md        12842 B  12.5 KB
@@ -1374,7 +1374,7 @@ globalThis.Gesture.pop();                         // ③ 关作用域 → 挂到
 | `runtime/ohos-shims.js` | 56.4 KB | `@ohos:*` 模块（14 个，含 **`measure`**/**`multimedia.image`**/**`notificationManager`**/**`promptAction`**）+ 持久化后端（含 R21 的探测与自报）+ 文本/图像测量原语 | 新增平台模块 |
 | `tools/extract.mjs` | 6.3 KB | hvigor 缓存 `.ts` → 可执行 `.js`；**装饰器作用域内绑定前奏 + 未就绪守卫**（§3.4） | 产物形态/装饰器集合变化时 |
 | `tools/gen-components.mjs` | 7.6 KB | ets-loader 组件 JSON → 骨架注册表（`--check` 只校验不写） | 组件元数据/画像规则更新时 |
-| `tools/serve.py` | 2.8 KB | 静态服务（含显式图片 MIME）+ `/echo` + `/slow`（测超时） | 需要新测试端点/资产类型时 |
+| `tools/serve.py` | 3.8 KB | 静态服务（含显式图片 MIME + **禁用缓存头**，见坑表 76）+ `/echo` + `/slow`（测超时） | 需要新测试端点/资产类型时 |
 | `tools/stats.mjs` | 13.1 KB | 本文档所有数字的来源（`--json` 机器可读）；**`--check-doc`/`--write-doc` 守 §6 引用块** | 覆盖范围变化时 |
 | `tools/preflight.mjs` | 5.0 KB | 环境自检（工具链/宿主/可执行位） | 外部依赖变化时 |
 | `tools/check-all.sh` | 3.1 KB | 一条命令做完验收（5 步），退出码只看被调命令 | 新增验收步骤时 |
