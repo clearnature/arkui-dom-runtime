@@ -86,11 +86,11 @@ tools/serve.py                 极简静态服务（端口由 OS 分配，避免
 tools/preflight.mjs            环境自检（工具链 / 宿主 / 可执行位）
 tools/check-all.sh             一条命令做完所有验收
 tools/stats.mjs                覆盖范围统计（文档里的数字都来自它）
-test/*.html                    断言页（29 个用例）
-fixtures/                      冻结的 ets-loader 转换产物（27 个，测试的输入）
+test/*.html                    断言页（30 个用例；断言数由 runner 守门，见 docs/DEVELOPING.md 坑 77）
+fixtures/                      冻结的 ets-loader 转换产物（28 个，测试的输入）
 harmony-proj/                  HarmonyOS 工程（页面 .ets 源码，转换产物的来源；构建输出不入库）
-run.sh                         浏览器 29 用例驱动
-electron/run.sh                Electron 28 用例 + 真实磁盘验证
+run.sh                         浏览器 30 用例驱动
+electron/run.sh                Electron 29 用例 + 真实磁盘验证
 docs/                          ARCHITECTURE / DEVELOPING / ROADMAP / CAPABILITY
 ```
 
@@ -644,8 +644,40 @@ Electron 里框宽那几次为 `true` —— **"我们把 transition 挂上又�
 （第一项还暴露了一处**假通过**：原本查 `box` 的 transition，而那次只有读 `op` 的 Text 被重渲染 ——
 改成"调用返回时没有任何节点被标记"，且必须**在同一 tick 内**读，否则会被 30ms 的清理计时器变成竞态。）
 
-**未实现（不算进本条验收）**：**`transition`（出现/消失动画）** —— 按不变量 3 落 `data-*`，不假装动画，
+**当时未实现（已在下一节收口）**：`transition`（出现/消失动画）—— 按不变量 3 落 `data-*`、不假装动画，
 仍留在 ROADMAP 待办里；`animateToImmediately` 与 `animateTo` 在本运行时等价。
+
+## R22 收口：`transition`（组件出现/消失动画）✅
+
+`transition` 是 R22 明确留下来的待办（当时按不变量 3 落 `data-*`、**不假装动画**）。现在补上了：
+**组件被插入/删除**时播放过渡，两种机制都覆盖 —— `TransitionOptions`（自己没有时间字段，参数来自外层 `animateTo`）
+与 `TransitionEffect`（自带 `.animation()`，**不需要** `animateTo`）。
+
+**先测量**（新增 `pages/TransitionDemo.ets` → 官方构建 → 读产物）：`Text.transition({…})` 是**属性调用**
+（走 builder 栈），但 `TransitionEffect`/`TransitionType`/`TransitionEdge` 是**自由变量**（运行时必须提供全局）；
+两参重载 `Text.transition(effect, cb)` 真会传两个实参，而生成的属性方法是 `function (v) {…}` ——
+**只取第一个参数会把 `onFinish` 静默丢掉**；最坑的是**顺序**：产物是 `create → id → transition`，
+即**规格在挂载之后才到**，所以"出现动画"不可能在 `mountNode` 里跑（第一版就这么写，断言当场抓住）。
+
+**消失动画的关键决定**：分支切换 / `ForEach` 重建时**不能立刻 `remove()`** —— 带消失过渡的子节点
+要留在 DOM 里把动画走完再到点摘（`detachChildren()`）。不延迟摘除，就不可能有消失动画。
+
+```
+$ bash run.sh transitiondemo
+=== ALL PASS ===                    （58 条断言）
+PASS 消失过渡进行中，A 仍在 DOM 里（没被立刻摘掉——否则根本没有消失动画）
+PASS 过渡走完后 A 才被摘掉
+PASS 记录里写下结束方式：endedBy='timer'
+PASS 组合结果是一个新实例，链与动画都在新实例上
+PASS 登记了 4 个不同的节点（实际 ["a","b","d","e"]）—— 单个节点会被反复登记（重渲染），所以按 id 去重
+```
+
+**破坏验证**（4 项）：`detachChildren` 改成立刻摘除 → **13 条红**；忽略 `type` 方向门控 → 6 条红；
+`onFinish` 恒传 true → 1 条红；忽略 `TransitionEffect` 自带的 `animation()` → 5 条红。
+
+**已知限制**：`SLIDE`/`SLIDE_SWITCH` 的参数 `.d.ts` 没给 → 近似并**出声**（推断）；`centerX`/`centerY`、
+`translate.z` 未实现；消失过渡期间节点**仍占布局位**；`Tabs`/`Swiper`/`LazyForEach` 窗口变化与
+`Navigation` 转场等**其它删除路径**仍是立刻摘除。
 
 ## R21：后端是什么就说是什么 ✅
 
@@ -1010,17 +1042,19 @@ PASS starStyle 的图片 URI 不可用已记警告
 | 文档数字守门 | `npm run stats:check-doc` | `ARCHITECTURE.md` §6 的整块实测数字逐行比对，漂移即非 0 退出；`stats:write-doc` 就地重写 |
 | 覆盖统计 | `npm run stats` | 文档里的所有数字都由它产出（`--json` 机器可读） |
 
-`npm run check` 当前：**浏览器 29 用例 + Electron 28 用例全绿**。
+`npm run check` 当前：**浏览器 30 用例 + Electron 29 用例全绿**。
 
 ## 下一步
 
 **权威清单在 `docs/ROADMAP.md`**（每项带可复现的验收命令）。当前优先：
 
 1. **R24** ArkVM / `.abc` 路径调研（研究性）
-2. **`transition`** 组件出现/消失动画（R22 只做了 `animateTo`，见那条的"未实现"）
+2. `RotationGesture`/`GestureGroup` 与手势优先级仲裁（R23 明确留下的）
 3. `Navigation` 的标题栏/工具栏与分栏模式、其余 85 个骨架组件的视觉语义、`@ohos:media`/`UIContext`
 
-**仍未覆盖**：`transition`（出现/消失动画）、`RotationGesture`/`GestureGroup` 与手势优先级仲裁、
+> `transition`（组件出现/消失动画）**已完成** —— 见上文「R22 收口」。
+
+**仍未覆盖**：`RotationGesture`/`GestureGroup` 与手势优先级仲裁、
 `chainMode`、`Navigation` 的**标题栏/工具栏与分栏模式**、其余 85 个骨架组件的视觉语义、`@ohos:media`/`UIContext`。
 **别把没验的当结论**——`docs/CAPABILITY.md` 里有逐项的能力矩阵，其中标了哪些语义是**推断**的。
 

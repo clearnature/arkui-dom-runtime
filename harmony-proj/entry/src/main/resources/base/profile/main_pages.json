@@ -5,6 +5,7 @@
     "pages/PromptAct",
     "pages/Callee",
     "pages/AnimDemo",
-    "pages/GestureDemo"
+    "pages/GestureDemo",
+    "pages/TransitionDemo"
   ]
 }

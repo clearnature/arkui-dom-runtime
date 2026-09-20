@@ -42,6 +42,7 @@ R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分�
 | ③ | **后端如实自报 + OPFS 现场探测**（"能持久化 ≠ 是文件系统"） | `bash run.sh realfs`（21 条断言，双端通过） |
 | ③ | **显式动画**（`animateTo`/`animateToImmediately` → CSS transition） | `bash run.sh animdemo`（36 条断言，双端通过） |
 | ③ | **手势**（Pan/Tap/LongPress/Swipe/Pinch → pointer 事件） | `bash run.sh gesturedemo`（24 条断言，双端通过） |
+| ③ | **出现/消失过渡**（`transition`：Insert/Delete 方向门控、TransitionEffect 自带时长、asymmetric+onFinish） | `bash run.sh transitiondemo`（58 条断言，双端通过） |
 | ③ | `@ohos:*` 别名层 + CommonJS 装载 + 真 fetch | `bash run.sh async` |
 | ③ | `UIAbility` 启动链路 | `bash run.sh ability` |
 | ③ | `router` 页面栈（返回时保留状态） | `bash run.sh router` |
@@ -803,9 +804,58 @@ Electron 里框宽那几次为 `true` —— 即"我们把 transition 挂上又�
 `iterations`/`playMode`/`tempo`/`expectedFrameRateRange`/`ICurve` 曲线只出声不实现；
 连带位移（父容器变尺寸带走子节点）不单独过渡。
 
+> **后续**：同一天以 **R22 收口**（见下一节）把 `transition` 补上了 —— 本条"不假装动画"的取舍当时是对的
+> （宁可落 `data-*` 也不做假的），但不该是终态。
+
 **触及**：`runtime/arkui-dom-runtime.js`（`Context`/`Curve`/`PlayMode` + `rerenderElmt` 的收集点 +
 `__arkui_dom_animations`）、`fixtures/pages/AnimDemo.ts`、`harmony-proj/`（`AnimDemo.ets` + main_pages.json）、
 `test/animdemo.html`、`run.sh`、`electron/run.sh`
+
+### R22 收口 — `transition`：组件出现/消失动画 ✅（2026-09-21）
+
+**内容**：把 R22 明确留下的 `transition` 补上 —— `.transition(TransitionOptions | TransitionEffect[, onFinish])`，
+在组件**被插入/删除**时播放出现/消失过渡。
+
+**先测量**（新增 `pages/TransitionDemo.ets` → 官方构建 → 读产物）：
+- 产物形态是 `Text.transition({ opacity: 0, translate: { x: 0, y: 40 } })`：**属性调用**（走 builder 栈），
+  但 `TransitionEffect`/`TransitionType`/`TransitionEdge` 是**自由变量**，必须由运行时提供全局。
+- 两参重载 `Text.transition(effect, (transitionIn) => {…})` 真的传两个实参；而生成的属性方法是
+  `function (v) {…}` —— **只取第一个参数会把 onFinish 静默丢掉**（已改成 `(...args)` 透传）。
+- **顺序陷阱**：产物是 `Text.create('A') → Text.id('a') → Text.transition(…)`，即**规格在挂载之后才到**。
+  把"出现动画"的钩子挂进 `mountNode` 永远赶不上（第一版这么写，断言当场抓到）。现在 `mountNode` 只打
+  `__arkuiFreshMount` 标记，由 `registerTransition` 见到标记才跑出现动画（重渲染不带标记 → 不会重复播）。
+
+**语义（只用 CSS transition 能表达的部分）**：
+- 触发时机 = **插入/删除**。插入点 `mountNode`；删除点是分支切换 / `ForEach` 重建 —— 把原来的
+  `rec.node.textContent = ''` 换成 `detachChildren()`：带"消失过渡"的子节点**留在 DOM 里把动画走完再摘**，
+  其余立刻摘。**不延迟摘除就不可能有消失动画**。
+- 方向：Insert = 从"偏离态"过渡到常态；Delete = 常态 → 偏离态。
+- **时长有两档**（最要紧的差别）：`TransitionEffect` 自带 `.animation()` → 用它；`TransitionOptions`
+  没有时间字段 → 用**外层 animateTo 窗口**的参数（注意窗口的曲线在 `win.rec.curveCss` 上，读错字段只会静默丢曲线）；
+  两者都没有 → AnimateParam 默认（1000ms / Linear），并把 `source` 记成 `default`（自省里看得出这是兜底、不是设备值）。
+- 方向门控：`TransitionType.Insert/Delete` 不匹配的方向**立刻摘/不动**，且不产生过渡记录。
+- `asymmetric` 两个方向各用各的链与参数；`onFinish` 收到 `transitionIn`（插入 true / 删除 false）。
+
+**验收（已执行）**：`bash run.sh transitiondemo` / `bash electron/run.sh transitiondemo` —— **58 条断言**，双端通过。
+11 组断言：登记形状（TransitionOptions / TransitionEffect / asymmetric / 方向）、初次渲染的方向门控、
+A 的消失（窗口内仍在 DOM + 300ms + 落到偏离态 + 到点才摘）、A 的出现（从偏离态回来 + 收口清干净）、
+D（Insert-only）删除立刻消失且零记录、E（Delete-only）出现零记录、B 的 200ms/effect（不被外层 300 盖掉）、
+C 的 asymmetric 150/250 + `onFinish(true/false)`、无关变更零记录、共享常量不被污染、`SLIDE_SWITCH` 降级出声。
+自省：`__arkui_dom_transitions()` 给 `registered`/`runs`（含 `source`、`offText`、`endedBy`、`sawTransitionEnd`）。
+两端差异与 R22 一致：`sawTransitionEnd` 在无头浏览器里多为 false、Electron 为 true（只当见证，不当收口依据）。
+
+**破坏验证**（4 项，各被精确抓住）：① `detachChildren` 改成立刻 `remove()` → **13 条红**；
+② 忽略 `type` 方向门控 → **6 条红**；③ `onFinish` 恒传 true → **1 条红**；
+④ 忽略 `TransitionEffect` 自带的 `animation()`（退回窗口/默认）→ **5 条红**。
+
+**已知限制**：`SLIDE`/`SLIDE_SWITCH` 的具体参数 `.d.ts` 未给出 → 按"从左滑入"与 `scale(0.8)+opacity 0`
+近似并**出声**（推断）；`IDENTITY` 不动（记 skipped）；`rotate`/`scale` 的 `centerX`/`centerY` 与
+`translate.z` 未实现（出声）；消失过渡期间节点**仍占布局位**（真机亦然，但同容器其它项的重排能看出来）；
+`Tabs`/`Swiper`/`LazyForEach` 窗口变化、`Navigation` 转场等**其它删除路径**仍是立刻摘除。
+
+**触及**：`runtime/arkui-dom-runtime.js`（`TransitionType`/`TransitionEffect`/`TransitionEdge` + 出现/消失 +
+`detachChildren` + `__arkui_dom_transitions`）、`fixtures/pages/TransitionDemo.ts`、
+`harmony-proj/`（`TransitionDemo.ets` + main_pages.json）、`test/transitiondemo.html`、`run.sh`、`electron/run.sh`
 
 ### R23 — 手势（Pan / Tap / LongPress / Swipe / Pinch）✅
 

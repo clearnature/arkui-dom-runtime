@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R22 收口 transition（出现/消失动画）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 340px; height: 320px; border: 1px solid #ccc; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R22 收口：<code>.transition(...)</code> —— 组件出现/消失动画（Insert/Delete、TransitionEffect 自带时长）</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/transitiondemo-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const el = (id) => root.querySelector('#' + id);
+    const txt = (id) => String(el(id) ? el(id).textContent : '<缺>');
+    const val = (id) => { const s = txt(id); const i = s.indexOf('='); return i < 0 ? '' : s.slice(i + 1); };
+    const click = (id) => {
+      const b = el(id);
+      if (!b) throw new Error(`按钮 #${id} 不存在`);
+      b.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    };
+    const group = async (name, fn) => {
+      try { await fn(); } catch (e) {
+        allPass = false;
+        lines.push(`FAIL [${name}] 抛出异常：${e && e.stack ? String(e.stack).split('\n')[0] : e}`);
+      }
+    };
+    const tr = () => (typeof __arkui_dom_transitions === 'function' ? __arkui_dom_transitions() : null);
+    const runs = () => (tr() || { runs: [] }).runs;
+    const newRunsSince = (n) => runs().slice(n);
+    // 轮询到"没有挂着的过渡"，而不是等固定 tick（headless 里计时不确定，见坑表 ⑧）
+    const settle = async (cap = 2500) => {
+      const t0 = Date.now();
+      while (tr().pending > 0 && Date.now() - t0 < cap) await tick(20);
+      await tick(20);
+    };
+    const mark = (id) => { const n = el(id); return n ? (n.getAttribute('data-arkui-transition') || '') : '(无节点)'; };
+    const tprops = (id) => {
+      const n = el(id);
+      if (!n) return { prop: '(无)', dur: '(无)', curve: '(无)', delay: '(无)', opacity: '(无)', transform: '(无)' };
+      const s = n.style;
+      return { prop: s.transitionProperty, dur: s.transitionDuration, curve: s.transitionTimingFunction, delay: s.transitionDelay, opacity: s.opacity, transform: s.transform };
+    };
+
+    try {
+      __arkui_dom_requireModule('TransitionDemo');
+      __arkui_dom_loadRoute('pages/TransitionDemo', root);
+      await tick(40);
+      check(!!el('btn-a') && !!el('a'), 'TransitionDemo 页面已渲染（按钮与 A 节点都在）');
+      await settle();                       // 初次渲染 A/B/D 各自的出现过渡走完
+
+      // ══════════ ① 登记：4 条 transition（去重），形状与方向都要对 ══════════
+      await group('登记', async () => {
+        const d = tr();
+        const t = d.text();
+        const ids = [...new Set(d.registered.map((r) => r.id))].sort();
+        check(ids.length === 4 && ids.join(',') === 'a,b,d,e',
+          `登记了 4 个不同的节点（实际 ${JSON.stringify(ids)}）—— 单个节点会被反复登记（重渲染），所以按 id 去重`);
+        check(/#a TransitionOptions\/All\/opacity,translate/.test(t), `#a 是 TransitionOptions/All，选项含 opacity,translate：'${t.split(' | ')[0]}'`);
+        check(/#b TransitionEffect\/All\/opacity\+translate/.test(t), `#b 是 TransitionEffect，combine 链被记成 opacity+translate（没被压成一段）`);
+        check(/#d TransitionOptions\/Insert\/opacity/.test(t), `#d 的 type 记成 Insert`);
+        check(/#e TransitionOptions\/Delete\/opacity/.test(t), `#e 的 type 记成 Delete`);
+      });
+
+      // ══════════ ② 初次渲染的方向门控：A/B/D 有出现过渡，E（Delete-only）不该有 ══════════
+      await group('初次渲染', async () => {
+        const init = runs();
+        const byId = (id) => init.filter((r) => r.id === id);
+        check(byId('a').some((r) => r.dir === 'enter'), `A 初次出现走了过渡（${JSON.stringify(byId('a').map((r) => r.dir))}）`);
+        check(byId('a')[0].source === 'default' && byId('a')[0].duration === 1000,
+          `A 是 TransitionOptions 且没有 animateTo 窗口 → 用 AnimateParam 默认（source=${byId('a')[0].source} duration=${byId('a')[0].duration}），并如实自省`);
+        check(byId('a')[0].offText === 'opacity=0 transform=translate(0px, 40px)',
+          `A 的偏离态算对了：'${byId('a')[0].offText}'`);
+        check(byId('b').some((r) => r.dir === 'enter' && r.source === 'effect' && r.duration === 200),
+          `B 用 TransitionEffect 自带的 200ms（source=effect），不是外层/默认：${JSON.stringify(byId('b').map((r) => `${r.source}/${r.duration}`))}`);
+        check(byId('b')[0].offText === 'opacity=0 transform=translate(20px, 0px)',
+          `B 的 combine 两段都进了偏离态：'${byId('b')[0].offText}'`);
+        check(byId('d').some((r) => r.dir === 'enter'), `D（type:Insert）初次出现走了过渡`);
+        check(byId('e').length === 0,
+          `E（type:Delete）初次出现【不】走过渡 —— 方向门控生效（实际 ${byId('e').length} 条）`);
+        check(byId('c').length === 0, `C 初始不显示（showC=false）→ 没有任何过渡记录`);
+        check(tprops('a').prop === '' && tprops('a').dur === '', `收口后 A 上的 transition 被清干净（prop='${tprops('a').prop}'）`);
+      });
+
+      // ══════════ ③ A 的【消失】：带过渡留在 DOM 里，到点才摘 ══════════
+      await group('A 消失', async () => {
+        const n0 = runs().length;
+        click('btn-a');                    // showA: true → false，且在 animateTo(300) 里
+        await tick(20);
+        const r = newRunsSince(n0);
+        check(r.length === 1 && r[0].dir === 'exit',
+          `先出现一条 exit 记录：${JSON.stringify(r.map((x) => `${x.dir}:${x.id}`))}`);
+        check(r[0] && r[0].duration === 300 && r[0].source === 'animateTo' && r[0].curveCss === 'ease-in-out',
+          `TransitionOptions 的时长取自外层 animateTo：${r[0] && `${r[0].duration}ms/${r[0].source}/${r[0].curveCss}`}`);
+        check(!!el('a'), '消失过渡进行中，A 仍在 DOM 里（没被立刻摘掉——否则根本没有消失动画）');
+        check(mark('a') === 'exit', `A 带上了 exit 标记：'${mark('a')}'`);
+        const t = tprops('a');
+        check(/300ms/.test(t.dur) && t.opacity === '0',
+          `A 上挂的是 300ms 且目标值已落到偏离态（dur='${t.dur}' opacity='${t.opacity}'）`);
+        await settle();
+        check(el('a') === null, '过渡走完后 A 才被摘掉');
+        const h = runs().slice(-1)[0];
+        check(h && h.endedBy === 'timer', `记录里写下结束方式：endedBy='${h && h.endedBy}'`);
+      });
+
+      // ══════════ ④ A 的【出现】（animateTo 窗口内）══════════
+      await group('A 出现', async () => {
+        const n0 = runs().length;
+        click('btn-a');
+        await tick(20);
+        const r = newRunsSince(n0);
+        check(r.length === 1 && r[0].dir === 'enter',
+          `出现走的是 enter 记录：${JSON.stringify(r.map((x) => x.dir))}`);
+        check(!!el('a') && mark('a') === 'enter', `A 又在 DOM 里且带 enter 标记：'${mark('a')}'`);
+        check(r[0] && r[0].duration === 300 && r[0].source === 'animateTo',
+          `出现也取外层 animateTo 的 300ms：${r[0] && `${r[0].duration}/${r[0].source}`}`);
+        check(r[0] && r[0].offText === 'opacity=0 transform=translate(0px, 40px)',
+          `出现的起点就是偏离态（从 opacity 0 / y=40 回来）：'${r[0] && r[0].offText}'`);
+        await settle();
+        check(el('a') !== null && mark('a') === '', '出现结束后 A 留下，且标记被清掉');
+        check(tprops('a').transform === '' && tprops('a').opacity === '',
+          `A 的偏离态样式被清回常态（transform='${tprops('a').transform}' opacity='${tprops('a').opacity}'）`);
+      });
+
+      // ══════════ ⑤ D（Insert-only）：出现有过渡、消失【立刻】 ══════════
+      await group('D Insert-only', async () => {
+        const n0 = runs().length;
+        click('btn-d');                    // 删除
+        await tick(20);
+        check(el('d') === null, 'D 被删除时【立刻】从 DOM 摘掉（type=Insert，不含 Delete → 不拖时间）');
+        check(newRunsSince(n0).length === 0, `删除没有产生任何过渡记录（实际 ${newRunsSince(n0).length} 条）`);
+        click('btn-d');                    // 再出现
+        await tick(20);
+        const r = newRunsSince(n0);
+        check(r.length === 1 && r[0].dir === 'enter' && r[0].id === 'd',
+          `再出现时走了 enter：${JSON.stringify(r.map((x) => `${x.dir}:${x.id}`))}`);
+        await settle();
+        check(el('d') !== null, 'D 又在了');
+      });
+
+      // ══════════ ⑥ E（Delete-only）：出现【不动】、消失有过渡 ══════════
+      await group('E Delete-only', async () => {
+        const n0 = runs().length;
+        click('btn-e');                    // 删除
+        await tick(20);
+        const r1 = newRunsSince(n0);
+        check(r1.length === 1 && r1[0].dir === 'exit' && r1[0].id === 'e',
+          `删除时走了 exit：${JSON.stringify(r1.map((x) => `${x.dir}:${x.id}`))}`);
+        check(!!el('e'), '消失过渡中 E 仍在 DOM 里');
+        await settle();
+        check(el('e') === null, '过渡结束后 E 被摘掉');
+        const n1 = runs().length;
+        click('btn-e');                    // 再出现
+        await tick(20);
+        check(el('e') !== null, 'E 立刻回来了');
+        check(newRunsSince(n1).length === 0,
+          `type=Delete 不含 Insert → 出现【不】产生过渡记录（实际 ${newRunsSince(n1).length} 条）`);
+      });
+
+      // ══════════ ⑦ B：TransitionEffect 自带时长（与 animateTo 的 300 无关）══════════
+      await group('B 自带时长', async () => {
+        const n0 = runs().length;
+        click('btn-b');                    // 删除（【不】在 animateTo 里）
+        await tick(20);
+        const r = newRunsSince(n0);
+        check(r.length === 1 && r[0].dir === 'exit' && r[0].duration === 200 && r[0].source === 'effect',
+          `B 的消失用 effect 自带的 200ms：${JSON.stringify(r.map((x) => `${x.dir}/${x.duration}/${x.source}`))}`);
+        check(!!el('b'), 'B 仍在 DOM 里做消失过渡');
+        await settle();
+        check(el('b') === null, 'B 到点被摘掉');
+        const n1 = runs().length;
+        click('btn-b');                    // 再出现
+        await tick(20);
+        const r2 = newRunsSince(n1);
+        check(r2.length === 1 && r2[0].dir === 'enter' && r2[0].duration === 200,
+          `B 的出现也是 200ms：${JSON.stringify(r2.map((x) => `${x.dir}/${x.duration}`))}`);
+        await settle();
+      });
+
+      // ══════════ ⑧ C：asymmetric 两个方向用不同时长 + onFinish 收到方向 ══════════
+      await group('C asymmetric + onFinish', async () => {
+        const n0 = runs().length;
+        click('btn-c');                    // showC: false → true（出现）
+        await tick(20);
+        const r1 = newRunsSince(n0);
+        check(r1.length === 1 && r1[0].dir === 'enter' && r1[0].duration === 150,
+          `出现用 appear 那支的 150ms：${JSON.stringify(r1.map((x) => `${x.dir}/${x.duration}`))}`);
+        check(r1[0] && r1[0].offText === 'opacity=0',
+          `出现分支只动了 opacity（appear = OPACITY.animation）：'${r1[0] && r1[0].offText}'`);
+        await settle();
+        check(val('fin') === 'I;', `onFinish 收到 transitionIn=true（fin='${val('fin')}'）`);
+        const n1 = runs().length;
+        click('btn-c');                    // 消失
+        await tick(20);
+        const r2 = newRunsSince(n1);
+        check(r2.length === 1 && r2[0].dir === 'exit' && r2[0].duration === 250,
+          `消失用 disappear 那支的 250ms：${JSON.stringify(r2.map((x) => `${x.dir}/${x.duration}`))}`);
+        check(r2[0] && /transform=scale\(0\.2, 0\.2\)/.test(r2[0].offText) && /opacity=0/.test(r2[0].offText),
+          `消失分支是 scale+opacity（disappear = scale.combine(OPACITY)）：'${r2[0] && r2[0].offText}'`);
+        await settle();
+        check(val('fin') === 'I;D;', `onFinish 收到 transitionIn=false（fin='${val('fin')}'）`);
+        check(el('c') === null, 'C 消失完成');
+      });
+
+      // ══════════ ⑨ 与 transition 无关的状态变更不该产生过渡 ══════════
+      await group('无关变更', async () => {
+        const n0 = runs().length;
+        const nTxt = val('n');
+        click('btn-reA');                  // 只改 n，A 的 if 条件不变
+        await tick(20);
+        check(val('n') !== nTxt, `n 变了（${nTxt} → ${val('n')}）`);
+        check(newRunsSince(n0).length === 0,
+          `A 没被插入/删除 → 零条过渡记录（实际 ${newRunsSince(n0).length} 条）：transition 只在插入/删除时生效，不是"每次重渲染都动"`);
+        check(!!el('a'), 'A 还在（只是重渲染，没有转场）');
+      });
+
+      // ══════════ ⑩ TransitionEffect 的静态常量不能被就地改（共享对象）══════════
+      await group('常量不可污染', async () => {
+        const before = TransitionEffect.OPACITY;
+        const composed = TransitionEffect.OPACITY.combine(TransitionEffect.translate({ x: 1, y: 0 })).animation({ duration: 5 });
+        check(TransitionEffect.OPACITY.next === null && TransitionEffect.OPACITY.anim === undefined,
+          'combine/animation 之后，共享常量 TransitionEffect.OPACITY 仍是"单段、无动画"（否则会污染所有页面）');
+        check(composed !== TransitionEffect.OPACITY && composed.next && composed.anim && composed.anim.duration === 5,
+          '组合结果是一个新实例，链与动画都在新实例上');
+        check(before.kind === 'opacity', '原常量的 kind 未变');
+      });
+
+      // ══════════ ⑪ 降级要出声：SLIDE_SWITCH 与"直接经 builder 栈挂"都能跑出现动画 ══════════
+      await group('降级出声', async () => {
+        const before = (__arkui_dom_layout_warnings || []).length;
+        const n0 = runs().length;
+        ViewStackProcessor.push(root);
+        Text.create('SW');
+        Text.id('sw');
+        Text.transition(TransitionEffect.SLIDE_SWITCH);
+        Text.pop();
+        await tick(20);
+        const w = (__arkui_dom_layout_warnings || []).slice(before).map(String);
+        check(w.some((m) => /SLIDE_SWITCH/.test(m) && /推断/.test(m)),
+          `SLIDE_SWITCH 的参数是推断的 → 出声：'${(w.find((m) => /SLIDE_SWITCH/.test(m)) || '(无)').slice(0, 60)}'`);
+        const r = newRunsSince(n0);
+        check(r.length === 1 && r[0].dir === 'enter' && r[0].id === 'sw',
+          `挂上就立刻走了出现过渡：${JSON.stringify(r.map((x) => `${x.dir}:${x.id}`))}`);
+        check(/scale\(0\.8\)/.test(r[0] && r[0].offText) && /opacity=0/.test(r[0] && r[0].offText),
+          `SLIDE_SWITCH 的近似偏离态算出来了：'${r[0] && r[0].offText}'`);
+        await settle();
+        check(el('sw') !== null && mark('sw') === '', 'sw 节点留下且标记清干净');
+      });
+
+      lines.push(`TRANS 登记=${JSON.stringify(tr().text().split(' | '))}`);
+      lines.push(`TRANS runs=${JSON.stringify(runs().map((r) => `${r.dir}:${r.id}/${r.duration}+${r.delay}/${r.source}/${r.endedBy}/te=${r.sawTransitionEnd}`))}`);
+      lines.push(`TRANS 实际跑了过渡（transitionend 见证）：${JSON.stringify(runs().map((r) => r.sawTransitionEnd))}`);
+      lines.push(`ELMT ${__arkui_dom_elmtRecords.size}`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

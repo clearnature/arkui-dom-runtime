@@ -8,8 +8,8 @@
 cd /data/training/cli/arkui-dom-runtime
 npm run check                   # 全部验收：preflight + 生成物一致 + 浏览器 + Electron（退出码可信）
 npm run check:quick             # 跳过 Electron
-./run.sh all                    # 浏览器侧：29 个用例（Chrome headless）
-./electron/run.sh all           # Electron 侧：28 个用例 + 真实磁盘核验
+./run.sh all                    # 浏览器侧：30 个用例（Chrome headless）
+./electron/run.sh all           # Electron 侧：29 个用例 + 真实磁盘核验
 npm run stats                   # 覆盖范围统计（本文档的数字都来自它）
 npm run preflight               # 环境自检（缺工具链/宿主/可执行位会明确报错）
 node tools/gen-components.mjs   # 重新生成 149 个组件骨架
@@ -109,6 +109,7 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 | **动画参数降级要出声**：`iterations`/`playMode`/`tempo`/`expectedFrameRateRange`/`ICurve` 曲线（CSS transition 表达不了）一律写警告；`fn()` 无可动目标时也出声 | ✅ | animdemo（`iterations=3`、`playMode=2` 各被点名；无目标时记 `no-target` 并告警） |
 | **手势 Pan/Tap/LongPress/Swipe/Pinch**：两层栈（`Gesture.create/pop` + `XxxGesture.create/onAction*/pop`）挂到组件栈顶元素，识别器走真实 pointer 事件 | ✅ | gesturedemo（5 个元素各挂对；`distance`/`count`/`duration`/`speed`/`scale` 逐项断言 + 反向用例） |
 | **Pan 的 `offsetX/offsetY` = 合成位移**：横向拖 40 → `40,0`；竖向拖 40 → `0,40`（写死单轴的实现会被另一条抓住） | ✅ | gesturedemo（`end=40,0` / `end=0,40`） |
+| **出现/消失过渡 `transition`**：`TransitionOptions`（自己没有时间字段 → 用外层 `animateTo` 窗口的参数）与 `TransitionEffect`（自带 `.animation()`，**不依赖** animateTo）；`TransitionType.Insert/Delete` 方向门控；`asymmetric` 两方向各用各的链与时长；`onFinish(transitionIn)`；**消失时节点留在 DOM 里把过渡走完再摘** | ✅ | `bash run.sh transitiondemo`（58 条断言；两档时长来源分别断言，`exit:d` 与 `enter:e` 必须**不存在**） |
 | **`onAreaChange`**：`newValue` = 真实宽高 + 相对父/页坐标；尺寸变化后再次触发，`oldValue` 为上一次真实值 | ✅ | measarea（`120x30` == 真实 rect；`0>100` → `100>140`） |
 | **自定义布局协议**（`onMeasureSize` + `onPlaceChildren`）：`Measurable.measure(c)` 回真实测量、返回值覆盖声明尺寸、`Layoutable.layout(pos)` 真摆放 | ✅ | measarea（`measure` 遵守 maxWidth=60、组件宽 = 返回的 60、三子项依次落位） |
 | **真实行数**（`Range.getClientRects()` 数行盒，非"按字宽累加"的模拟） | ✅ | textmeasure（`__arkui_dom_countLines` 直接断言：宽 100 → 4 行、宽 400 → 1 行、无显式宽 → 按容器 2 行） |
@@ -149,7 +150,7 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 |---|---|---|
 | 同一份断言页在 Electron 里跑（不复制测试代码） | ✅ | electron 全矩阵 |
 | 真实渲染 + offscreen 截图（非白像素占比判定，非 `isEmpty()`） | ✅ | electron 各用例 |
-| 同一份断言的双端一致（28 个用例两个 runner 都过） | ✅ | run.sh / electron/run.sh |
+| 同一份断言的双端一致（29 个用例两个 runner 都过） | ✅ | run.sh / electron/run.sh |
 
 ---
 
