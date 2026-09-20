@@ -291,7 +291,12 @@ const text = document.getElementById('result').textContent;
 
 ```bash
 # 1. 在仓库内的 HarmonyOS 工程里构建（页面源码 harmony-proj/entry/src/main/ets/pages/*.ets）
-cd harmony-proj && devecocli build && cd ..
+#    ⚠️ 本机**没有 devecocli**（那是装在 fnm v24.21.0 的 npm 全局里的第三方 CLI，现已不在；CLT 的 bin/ 下
+#    只有 ohpm/hvigorw/codelinter/hstack/arktsdoc/Emulator 六个 wrapper）。用官方 hvigorw：
+export DEVECO_CLI_CLT_PATH=/data/training/cli/commandline-tools-linux-x64-26.0.0.821/command-line-tools
+unset DEVECO_NODE_HOME          # 必须空着才会用 CLT 自带的 node（v24.14.1）
+( cd harmony-proj && "$DEVECO_CLI_CLT_PATH/bin/hvigorw" --no-daemon assembleHap )
+# 实测：全量约 10s；BUILD SUCCESSFUL 即可，产物在下面的 CACHE 路径
 
 # 2. 转换产物在 hvigor 的 cache（注意这条长路径）
 CACHE=harmony-proj/entry/build/default/cache/default/default@CompileArkTS/esmodule/debug/entry/src/main/ets
@@ -408,6 +413,7 @@ node tools/extract.mjs fixtures/pages/NewPage.ts build/newpage.js --cjs --regist
 | 77 | **文档里手写的"（N 条断言）"没有守卫 → 悄悄漂移**：已发生两次 —— R22 animdemo 记成 35、实际 **36**；v2 记成 26、实际 **25**；observe 记成 20、实际 **19**（后两处于 2026-09-21 由新加的守门查出，跨 README/ROADMAP/ARCHITECTURE **3 个文件共 7 处**）。更隐蔽的是**想用静态计数去守门本身是错的**：`grep -c 'check(' test/realfs.html` 得 28，而两端各只**执行** 21 条 —— 差的 7 处在**互斥分支**里（浏览器走 `localStorage` 那支、Electron 走 `node-fs` 那支），静态计数会把"没跑到的断言"也算上 | 数字的**唯一权威是运行期 emit 的 PASS 行**：`run.sh` / `electron/run.sh` 在 `run_one` 里落盘 `build/assert-counts-<端>.tsv`，退出时 `tools/assert-counts.mjs` 与文档声明比对（**EXIT trap** 触发，所以单用例也受守门）。文档声明只有两种**规范写法**能被守住：① 同行写 `bash run.sh <用例>` …（N 条断言…）；② 围栏块内先出现 `run.sh <用例>`，块内随后的「（N 条断言）」归它；数字必须**紧跟在** `（ ( ， , *` 之后（"被 5 条断言抓住"这类散文因此不会被误判）；「条断言失败/条红」是破坏验证的失败数、自动跳过。**判据：这个数字是"跑出来的"还是"抄进去的"？抄的就必须有守卫** |
 | 78 | **属性规格"晚于挂载"才到 → 挂载点的钩子永远看不到它**：实现 `transition` 的"出现动画"时，我把钩子写进 `mountNode`（节点挂上 DOM 的瞬间）—— 但实测产物顺序是 `Text.create('A') → Text.id('a') → Text.transition(…)`，即**规格是在挂载之后才通过属性调用传进来的**。于是初次渲染的 4 个节点一个都没跑出现动画（断言当场抓到：`enter:a` 等记录全缺）。更阴的是这种错**不会报错**，只是"动画静默不发生" | 需要属性值的钩子必须在**属性登记处**触发：`mountNode` 只打一个 `__arkuiFreshMount` 标记，由 `registerTransition` 见到标记才跑出现动画、并清掉标记（重渲染不带标记 → 不会每次重渲染都重播）。**判据：这个钩子需要的信息，在它执行的那一刻已经存在了吗？先去看一眼产物里的调用顺序** |
 | 79 | **两条"不报错的静默降级"**：① 链式 API 的 `animation()` **只拷贝自己、丢掉 `combine` 出来的链** —— `.OPACITY.combine(translate(…)).animation({…})` 之后只剩 opacity，动画照跑、断言若不核对"链的形状"就完全看不出；② 从一个对象里**读错字段名**（`animWindow.curveCss` 其实在 `win.rec.curveCss` 上）→ `undefined` 赋给 `style.transitionTimingFunction` 被 CSS 静默忽略，**曲线丢了但一切正常**（回落到 `ease`） | ① 链式不可变对象要**整链深拷贝**（`_deepCopy()` 同时用于 `animation()` 与 `combine()`），并且**断言要核对链的形状**（本项目断言里直接看 `#b …/opacity+translate` 这种 summary），不能只看"动了没有"；② 跨对象取值时**先确认字段在谁身上**（打印一次对象，或读一眼创建处），并让自省把取值结果写出来（本次把 `curve`/`curveCss` 都记进 run 记录，曲线一丢断言就红）。**判据：这条信息的缺失会以什么形式暴露出来？如果答案是"什么都不发生"，就必须把它记进自省** |
+| 80 | **文档里的"外部命令/路径"也会腐烂，而且腐烂是静默的**：`DEVELOPING.md` §8 一直写着 `cd harmony-proj && devecocli build` 来重生成 fixtures —— 而 `devecocli` 是装在 **fnm v24.21.0 的 npm 全局**里的第三方 CLI，那份 node 版本机已经不在（CLT 的 `bin/` 只有 `ohpm`/`hvigorw`/`codelinter`/`hstack`/`arktsdoc`/`Emulator` 六个 wrapper）。命令早就跑不通，**但没有任何东西会提醒** —— 直到真的需要加新页面时才撞上（R22 收口）。同一处 `run.sh` 的"缺输入提示"也抄了这条死命令 | 外部命令要么写清"它依赖什么、怎么自检"，要么改成**本仓库自带/官方自带**的形式；脚本里的提示语与文档必须**同源**（本次两处一起改成官方 `hvigorw` + `DEVECO_CLI_CLT_PATH`/`DEVECO_NODE_HOME` 两行前提）。**判据：把这条命令原样粘进终端，今天还跑得通吗？跑不通就是文档 bug，不是环境问题** |
 
 ### 确定性与时序
 

@@ -84,7 +84,7 @@ R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分�
 | P4 | ~~R18 图像信息~~ **已完成** | — | — |
 | P4 | R19–R21 平台模块 | 中 | 低–中 |
 | P5 | R22–R23 动画/手势 | 中 | 中 |
-| P6 | R24 ArkVM 路径 | 低（研究） | 高 |
+| P6 | ~~R24 ArkVM / `.abc` 路径调研~~ **已完成** | — | — |
 
 ---
 
@@ -909,15 +909,50 @@ globalThis.Gesture.pop();                         // ③ 关作用域 → 挂到
 
 ## P6 与设备路径对齐（研究性）
 
-### R24 — ArkVM / `.abc` 路径调研
+### R24 — ArkVM / `.abc` 路径调研 ✅（2026-09-21）
 
-**内容**：本项目执行的是 **JS**，设备执行的是 **`.abc` 字节码**。调研两者差异是否会影响语义（如 `es2abc` 对某些降级语法有不同的处理）。**先测量再决定**，不预设要做什么。
+**内容**：本项目执行的是 **JS**，设备执行的是 **`.abc` 字节码**。调研两者差异是否会失真我们的结论。
 
-**依赖**：无。
+**结论（一句话）**：有差异；其中**只有一处是协议级且对现有实现无害**，另有一处**把结论的适用范围钉死** ——
+**凡断言 `@ohos:*` 模块行为的用例，其结论都只关于 `runtime/ohos-shims.js`，与真机原生模块无关**。
+完整报告见 `docs/ARKVM-RESEARCH.md`（含"可复现命令速查"）。
 
-**验收**：产出一份**有证据**的差异清单（哪些 `ets-loader` 产物在 `.abc` 下语义不同），或明确结论"对本项目当前范围无影响"。
+**差异清单（按对我们是否有影响排）**：
 
-**触及**：`docs/`（新增调研文档）
+| 差异 | 性质 | 影响 |
+|---|---|---|
+| 装饰器调用协议：JS 走 tsc `__decorate`（字段装饰器 **3 实参**），`.abc` 走 es2abc 原生装饰器（字段 **2 实参**），`__decorate` 在字节码里**一次都不出现** | 协议级 | **无害**：运行时 `v2Field = (kind) => function (target, key) {…}` 只读前两参；但"按 `__decorate` 形状写装饰器"只在 JS 路径成立 |
+| 模块接线：`.abc` 走 **ESM 模块记录** + `npmEntries.txt` 把 `@ohos.*` 重定向到 `@native.*`；JS 路径走 **CommonJS 仿真**（`__arkui_dom_defineCommonJS` + `require("@ohos:xxx")`） | 结构级 | **结论范围钉子**：`@ohos:*` 用例的结论是关于**垫片**的 |
+| 正则字面量被降到运行期 `RegExp` 构造（对象身份 / `lastIndex` 不跨调用共享） | 语义级 | 现有用例无此断言（未测，留待需要时） |
+| 自由变量 / 原型访问器（`definegettersetterbyvalue`）/ 字面量 / `try-catch` / `async` / `new Function` / `globalThis` / `static {}` | — | 逐项实测**与 JS 同构**，未见分叉 |
+| ArkTS 检查器拒绝 `eval`/`Symbol`/生成器/`#private`/`Object.defineProperty`；本机**没有 ArkVM**（`.abc` 不能执行） | 硬边界 | 本项目的结论是**字节码级同构判断**，不是**执行级等价证明** |
+
+**验收（已执行）**：报告存在且每条结论内联"命令 + 原始输出"。其中四条关键命令由**主 agent 独立重跑**核对：
+
+```bash
+# ① JS 路径有 __decorate
+node tools/extract.mjs fixtures/pages/V2.ts /tmp/v2.js && grep -c __decorate /tmp/v2.js    # → 24
+# ② 同一份 .ts 交给官方 es2abc 直编成 .abc，再反汇编
+B=/data/training/cli/commandline-tools-linux-x64-26.0.0.821/command-line-tools
+$B/sdk/default/openharmony/ets/build-tools/ets-loader/bin/ark/build/bin/es2abc --module --extension ts \
+  --output /tmp/V2.abc --source-file V2.ts fixtures/pages/V2.ts
+$B/sdk/default/openharmony/toolchains/ark_disasm --verbose /tmp/V2.abc /tmp/V2.pa
+grep -c __decorate /tmp/V2.pa     # → 0
+grep -A3 '"Trace"' /tmp/V2.pa     # → tryldglobalbyname "Trace" … callargs2（字段装饰器 2 实参）
+# ③ "无害"的判据：我们的实现只读前两参
+grep -n "v2Field" runtime/arkui-dom-runtime.js    # → const v2Field = (kind) => function (target, key) {…}
+# ④ 正则降级（另起单文件验）：/ab+c/g → 字节码出现 tryldglobalbyname "RegExp" + ldobjbyname "lastIndex"
+```
+
+**这次调研顺带修掉的一处文档失效**：`DEVELOPING.md` §8 的 `devecocli build` 在本机**跑不通** —— `devecocli`
+是装在**已消失的** fnm v24.21.0 npm 全局里的第三方 CLI（CLT 的 `bin/` 只有 6 个 wrapper）→ 已改成官方
+`hvigorw`（附 `DEVECO_CLI_CLT_PATH` / `DEVECO_NODE_HOME` 两行前提），`run.sh` 的缺输入提示同步（见坑 80）。
+
+**未做成（报告 §10 逐条列了）**：`merge_abc` 复现 `.protoBin` 失败；ArkUI 的 `stateMgmt.js` 不在 CLT 里
+（真机 `@Observed` 的 Proxy 实现取不到证据）；无 ArkVM → 无执行级验证。
+
+**触及**：`docs/ARKVM-RESEARCH.md`（新增）、本节、`docs/DEVELOPING.md`（§8 构建命令 + 坑 80）、
+`run.sh`（缺输入提示）、`docs/CAPABILITY.md`（已知限制里点名"结论只对 JS 路径成立"的类别）
 
 ---
 

@@ -260,6 +260,11 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 
 ## 平台与流程
 - **没有 ArkVM**：`.abc` 无法在宿主执行，本项目走的是"ets-loader 产出 JS → JS 运行时"这条路，与真机的执行模型不同。
+  **与真机的差异清单见 `docs/ARKVM-RESEARCH.md`（R24，2026-09-21）**：实测两处分叉 —— ① **装饰器协议**（JS 走 tsc
+  `__decorate`、字段装饰器 3 实参；`.abc` 走 es2abc 原生装饰器、2 实参，字节码里没有 `__decorate`）→ 对现有实现**无害**
+  （运行时只读前两参），但"按 `__decorate` 形状写装饰器"只在 JS 路径成立；② **模块接线**（`.abc` 走 ESM 模块记录 +
+  `@native.*` 重定向，JS 路径走 CommonJS 仿真）→ **凡断言 `@ohos:*` 模块行为的用例，其结论都只关于 `runtime/ohos-shims.js`**，
+  与真机原生模块无关。另：本项目的"语义一致"都是**字节码级同构判断**，不是执行级等价证明（本地无 ArkVM）。
 - Browser runner 用 `--virtual-time-budget`，会在 fetch 挂起时**暂停虚拟时间** → 超时类断言在浏览器侧不可判定
   （已标注 SKIP，由 Electron 用例严格验证）。
 - 未验证：真机行为差异、多窗口、并发/性能、跨机器/跨用户的持久化。

@@ -1048,11 +1048,10 @@ PASS starStyle 的图片 URI 不可用已记警告
 
 **权威清单在 `docs/ROADMAP.md`**（每项带可复现的验收命令）。当前优先：
 
-1. **R24** ArkVM / `.abc` 路径调研（研究性）
-2. `RotationGesture`/`GestureGroup` 与手势优先级仲裁（R23 明确留下的）
-3. `Navigation` 的标题栏/工具栏与分栏模式、其余 85 个骨架组件的视觉语义、`@ohos:media`/`UIContext`
+1. `RotationGesture`/`GestureGroup` 与手势优先级仲裁（R23 明确留下的）
+2. `Navigation` 的标题栏/工具栏与分栏模式、其余 85 个骨架组件的视觉语义、`@ohos:media`/`UIContext`
 
-> `transition`（组件出现/消失动画）**已完成** —— 见上文「R22 收口」。
+> 已完成的两项：`transition`（见上文「R22 收口」）、**R24 ArkVM/`.abc` 路径调研**（`docs/ARKVM-RESEARCH.md`）。
 
 **仍未覆盖**：`RotationGesture`/`GestureGroup` 与手势优先级仲裁、
 `chainMode`、`Navigation` 的**标题栏/工具栏与分栏模式**、其余 85 个骨架组件的视觉语义、`@ohos:media`/`UIContext`。

@@ -67,7 +67,8 @@ run_one() {
   if [ -z "$src" ] || [ ! -f "$src" ]; then
     echo "  ❌ 找不到输入文件"
     echo "     期望：$FIXTURES/<相对路径>  或  $CACHE/<相对路径>"
-    echo "     重新生成：cd harmony-proj && /data/training/cli/commandline-tools-linux-x64-26.0.0.821/command-line-tools/bin/devecocli build"
+    echo "     重新生成：export DEVECO_CLI_CLT_PATH=/data/training/cli/commandline-tools-linux-x64-26.0.0.821/command-line-tools; unset DEVECO_NODE_HOME"
+    echo "               (cd harmony-proj && \"\$DEVECO_CLI_CLT_PATH/bin/hvigorw\" --no-daemon assembleHap)   # 本机没有 devecocli，用官方 hvigorw"
     echo "     （工程在仓库内 harmony-proj/，页面源码 harmony-proj/entry/src/main/ets/pages/*.ets；"
     echo "       转换产物落在 hvigor 的 cache，即上面的 \$CACHE）"
     echo "     再固化：cp <cache>/pages/X.ts fixtures/pages/"
