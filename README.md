@@ -565,7 +565,7 @@ rect 已经把这位移算进去（b 明明 `offset=(40,20)`，rect 却是 `(0,0
 
 ```
 $ bash run.sh measimage
-=== ALL PASS ===                    （14 条断言）
+=== ALL PASS ===                    （13 条断言）
 PASS known-7x3.png → 7×3（期望 7×3）
 PASS known-13x5.png → 13×5（期望 13×5，证明不是写死的）
 PASS PNG → 'image/png'

@@ -29,14 +29,14 @@ R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分�
 | ③ | **V1 深度观测**（`@Observed` + `@ObjectLink`，Proxy 实现） | `bash run.sh observe`（20 条断言，含负向） |
 | ③ | **状态管理 v2**（`ViewV2` + 11 个装饰器） | `bash run.sh v2`（26 条断言，浏览器 + Electron 双通过） |
 | ③ | **`Grid`/`GridItem` 真实轨道** + `Tabs`/`TabContent` 切换 | `bash run.sh tabgrid`（51 条断言，含几何与机制自省；双端通过） |
-| ③ | **`Swiper` 轮播**（loop / autoPlay / 指示点 / 控制器） | `bash run.sh swiper`（41 条断言，双端通过，连跑 3 次稳定） |
+| ③ | **`Swiper` 轮播**（loop / autoPlay / 指示点 / 控制器） | `bash run.sh swiper`（38 条断言，双端通过，连跑 3 次稳定） |
 | ③ | **`Navigation` 栈导航**（NavPathStack / 生命周期 / 状态保留 / 零泄漏） | `bash run.sh navdemo`（72 条断言，双端通过） |
 | ③ | **`alignRules` 多层锚链 + `Guideline` + `bias`** | `bash run.sh reldemo`（24 条断言，双端通过） |
 | ③ | **纯绘制四件套**（`Progress`/`Gauge`/`DataPanel`/`Rating`） | `bash run.sh drawdemo`（47 条断言，双端通过） |
 | ③ | **文本真实测量**（`@ohos:measure` + `__arkui_dom_countLines`） | `bash run.sh textmeasure`（25 条断言，双端通过） |
 | ③ | **变高列表项**（实测回填 + 前缀和偏移 + 滚动锚定） | `bash run.sh lazyvh`（22 条断言，双端通过） |
 | ③ | **`onAreaChange` + 自定义布局协议** | `bash run.sh measarea`（28 条断言，双端通过） |
-| ③ | **图像信息**（`@ohos.multimedia.image`） | `bash run.sh measimage`（14 条断言，双端通过） |
+| ③ | **图像信息**（`@ohos.multimedia.image`） | `bash run.sh measimage`（13 条断言，双端通过） |
 | ③ | `@ohos:*` 别名层 + CommonJS 装载 + 真 fetch | `bash run.sh async` |
 | ③ | `UIAbility` 启动链路 | `bash run.sh ability` |
 | ③ | `router` 页面栈（返回时保留状态） | `bash run.sh router` |
@@ -300,7 +300,7 @@ bash run.sh observe && bash electron/run.sh observe   # 20 条断言双通过
 `startSwiperAutoPlay`（回调内查 `isConnected`，页面卸载后**自己停表**，避免跨页面计时器泄漏）+
 `SWIPER_UNSUPPORTED` 覆盖 26 个未实现项（含 `vertical`/`displayCount`/全部动画与手势回调）。
 
-**验收（已执行）**：`bash run.sh swiper` —— **41 条断言**，双端通过；浏览器连跑 3 次稳定
+**验收（已执行）**：`bash run.sh swiper` —— **38 条断言**，双端通过；浏览器连跑 3 次稳定
 （autoPlay 依赖计时器，故用**轮询**而非固定等待，并单独复测稳定性）：
 
 - 初始页/页数/`data-arkui-swiper-page` 标记只标页面不标指示点
@@ -578,7 +578,7 @@ visibility:hidden` —— **不能用 `display:none`**，那样没有布局、�
 **`getImageInfoSync()` 的取舍**：同步 API 等不了解码 → **只回已解码的缓存**，没缓存就**响亮抛错**，
 绝不编一个尺寸出来。失败路径抛 BusinessError 形状的错（`code: 62980103`）且**错误信息带 URI**。
 
-**验收（已执行）**：`bash run.sh measimage` —— **14 条断言**，双端通过：
+**验收（已执行）**：`bash run.sh measimage` —— **13 条断言**，双端通过：
 已知尺寸 PNG 7×3 / 13×5、`mimeType`（PNG/JPEG/伪装文件）、`getImageInfoSync` 的缓存语义与负向、
 404 的可操作报错。
 

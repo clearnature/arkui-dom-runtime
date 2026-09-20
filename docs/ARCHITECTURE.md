@@ -997,7 +997,7 @@ src.getImageInfo().then((info: image.ImageInfo) => { info.size.width … info.mi
   test             153.9 KB
   tools            37.9 KB
   electron(src)    16.4 KB
-  docs             188.3 KB
+  docs             201.1 KB
   fixtures         171.5 KB
 
 == 逐文件（文档"文件职责"表的来源）==
@@ -1007,7 +1007,7 @@ src.getImageInfo().then((info: image.ImageInfo) => { info.size.width … info.mi
   tools/extract.mjs                  6457 B  6.3 KB
   tools/gen-components.mjs           7775 B  7.6 KB
   tools/serve.py                     2901 B  2.8 KB
-  tools/stats.mjs                   13385 B  13.1 KB
+  tools/stats.mjs                   13415 B  13.1 KB
   tools/preflight.mjs                5108 B  5.0 KB
   tools/check-all.sh                 3171 B  3.1 KB
   run.sh                            11318 B  11.1 KB
@@ -1018,11 +1018,12 @@ src.getImageInfo().then((info: image.ImageInfo) => { info.size.width … info.mi
   .gitignore                          674 B  0.7 KB
   README.md                         48423 B  47.3 KB
   THIRD-PARTY-NOTICES.md             8256 B  8.1 KB
-  docs/ARCHITECTURE.md              80845 B  79.0 KB
+  docs/ARCHITECTURE.md              81092 B  79.2 KB
   docs/CAPABILITY.md                26548 B  25.9 KB
   docs/DEVELOPING.md                36151 B  35.3 KB
   docs/ROADMAP.md                   42760 B  41.8 KB
   docs/surface-measurement.md        6496 B  6.3 KB
+  docs/SESSION-2026-09-20.md        12842 B  12.5 KB
   fixtures/pages/AsyncIO.ts          6206 B  6.1 KB
   fixtures/pages/Detail.ts           3097 B  3.0 KB
   fixtures/pages/DrawDemo.ts        10867 B  10.6 KB
@@ -1127,6 +1128,8 @@ src.getImageInfo().then((info: image.ImageInfo) => { info.size.width … info.mi
 - `docs/CAPABILITY.md` —— 能力矩阵与已知限制（面向使用者）
 - `docs/DEVELOPING.md` —— 开发指南：怎么加组件、加模块、加用例，以及**踩过的坑**
 - `docs/ROADMAP.md` —— 原子任务清单，每项带验收命令
+- `docs/SESSION-2026-09-20.md` —— **一次会话的快照归档**（逐提交表、方法论沉淀、犯过的错、交接须知）。
+  非权威状态：持续状态看 ROADMAP/CAPABILITY
 - `docs/surface-measurement.md` —— ①.5 阶段的接口面测量（历史记录）
 - `README.md` —— 快速开始
 

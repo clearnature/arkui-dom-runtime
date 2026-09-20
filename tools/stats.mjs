@@ -132,7 +132,7 @@ const TRACKED_FILES = [
   'run.sh', 'electron/run.sh', 'electron/main.js', 'electron/preload.js',
   'package.json', '.gitignore', 'README.md', 'THIRD-PARTY-NOTICES.md',
   'docs/ARCHITECTURE.md', 'docs/CAPABILITY.md', 'docs/DEVELOPING.md',
-  'docs/ROADMAP.md', 'docs/surface-measurement.md',
+  'docs/ROADMAP.md', 'docs/surface-measurement.md', 'docs/SESSION-2026-09-20.md',
 ];
 // 每个 fixture 与测试页都列出来：它们是"能力有测试"的证据
 TRACKED_FILES.push(
