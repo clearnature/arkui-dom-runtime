@@ -6,8 +6,8 @@
 
 **当前状态**：`npm run check` 全绿（preflight + 生成物一致 + 文档数字守卫 + 浏览器 19 用例 + Electron 18 用例）。
 v1/v2 状态管理（含 v1 深度观测）、`Grid` 真实轨道、`Tabs` 切换、`Swiper` 轮播、`Navigation` 栈导航、
-`alignRules` 多层锚链 + `Guideline` + `bias` 均已落地。
-**下一步优先级：R13（纯绘制组件）→ R15–R17（文本换行 / 变高列表 / ForEach 键级 diff）→ R18–R21（平台模块）。**
+`alignRules` 多层锚链 + `Guideline` + `bias`、纯绘制四件套均已落地。
+**下一步优先级：R15–R17（文本换行 / 变高列表 / onMeasureSize）→ R18–R21（平台模块）→ R22–R23（动画/手势）。**
 R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分发前才需决定。
 
 ---
@@ -32,6 +32,7 @@ R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分�
 | ③ | **`Swiper` 轮播**（loop / autoPlay / 指示点 / 控制器） | `bash run.sh swiper`（41 条断言，双端通过，连跑 3 次稳定） |
 | ③ | **`Navigation` 栈导航**（NavPathStack / 生命周期 / 状态保留 / 零泄漏） | `bash run.sh navdemo`（72 条断言，双端通过） |
 | ③ | **`alignRules` 多层锚链 + `Guideline` + `bias`** | `bash run.sh reldemo`（24 条断言，双端通过） |
+| ③ | **纯绘制四件套**（`Progress`/`Gauge`/`DataPanel`/`Rating`） | `bash run.sh drawdemo`（47 条断言，双端通过） |
 | ③ | `@ohos:*` 别名层 + CommonJS 装载 + 真 fetch | `bash run.sh async` |
 | ③ | `UIAbility` 启动链路 | `bash run.sh ability` |
 | ③ | `router` 页面栈（返回时保留状态） | `bash run.sh router` |
@@ -42,7 +43,7 @@ R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分�
 | **P0** | 统一验收门禁（退出码可信） | `npm run check`；制造漂移 → exit 1 |
 | **P0** | `--check` 真正只校验不落盘 | `node tools/gen-components.mjs --check` |
 
-当前：**浏览器 19 用例 + Electron 18 用例全绿**（`npm run check` → `exit 0`）。
+当前：**浏览器 20 用例 + Electron 19 用例全绿**（`npm run check` → `exit 0`）。
 
 ---
 
@@ -65,7 +66,7 @@ R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分�
 | P2 | ~~R9–R10 Grid / Tabs 真实语义~~ **已完成** | — | — |
 | P2 | ~~R11 Swiper~~ **已完成** | — | — |
 | P2 | ~~R12 Navigation~~ **已完成** | — | — |
-| P2 | R13 其余组件视觉语义 | 中（85 个骨架只有 `data-*`） | 中 |
+| P2 | ~~R13 纯绘制四件套~~ **已完成**（其余 85 个骨架仍是 `data-*`） | 中 | 中 |
 | P3 | ~~R14 `alignRules` 多层锚链/Guideline/bias~~ **已完成** | — | — |
 | P3 | R15–R17 布局引擎（文本换行 / 变高列表 / 键级 diff） | 中高（真实页面一定踩） | 高 |
 | P4 | R18–R21 平台模块 | 中 | 低–中 |
@@ -356,6 +357,45 @@ bash run.sh observe && bash electron/run.sh observe   # 20 条断言双通过
 ---
 
 ## P3 布局引擎
+
+### ~~R13 — 数据可视化类：`Progress` / `Gauge` / `DataPanel` / `Rating`~~ ✅ 已完成
+
+**内容**：这 4 个原来只是生成骨架（`Progress` → 原生 `<progress>`，其余空 div）。本轮改成**手写绘制实现**。
+
+**画法按形状二分**：条形 = div + `--progress` 百分比；环形分段 = CSS `conic-gradient`；
+弧/星 = SVG。详见 `ARCHITECTURE.md` §4.9。
+
+**四个必须记住的点**：
+1. **弧长用 `pathLength="100"` 归一化** → `stroke-dasharray` 首数直接是百分比，断言不必反推 `2πr`
+2. **整圆不能只画一条 arc**：`endAngle` **默认就是 360**，起终点重合的 arc **渲染成空** → 必须拆两段。
+   ⚠️ 这是**默认情形**，我第一版 fixture 只有半圆、**等于没测** → 补了 `Gauge#g3` 专测整圆
+3. **角度约定照 `.d.ts` JSDoc**：0 点 = 0°、顺时针为正。断言只钉"起点在顶部/底部中央（x≈cx）"，
+   **不钉半径**（`r = min(w,h)/2 - strokeWidth/2` 是本实现的选择，不是规范）
+4. **绘制要等尺寸生效**：`.width/.height` 在 create 之后才应用 → 绘制放在 `syncDrawings`
+   （与 `syncAlignRules` 同一时机），create 时只建骨架（新不变量 18）
+
+**实现**：`DRAW_ATTRS` 按组件分派语义属性（`value`/`startAngle`/`colors`/`stars`/`stepSize`/`onChange`…）；
+`Gauge.colors` 权重按**和归一化**且**权重 0 的段不画**（JSDoc 明说）；`Rating` 半星用 50% 宽裁切覆盖层；
+`starStyle` 的图片 URI **加载不了 → 退化为内置星形并记警告**（不静默）。
+
+**验收（已执行）**：`bash run.sh drawdemo` —— **47 条断言**，双端通过。
+
+**破坏验证（4 处）**：角度约定取反、不拆整圆、DataPanel 不按 values 分配、不认半星
+→ **9 条失败、跨 4 组**。
+⚠️ **并因此发现测试结构的真问题**：一处断言抛异常会**吞掉后面所有断言**（第一轮跑时 DataPanel 与
+Rating 的破坏完全没被暴露）→ 改成**分组隔离**（`group()` 逐组 try/catch），之后四处破坏才全部现形。
+**这是"破坏验证"的第二次升级**：不仅要破坏，还要保证**破坏能被完整观察到**。
+
+**旧契约升级**：`test/components.html` 里 `Progress → <progress>` 的断言因实现变更而失败 ——
+这是"测试编码了旧契约"的信号。新断言**更强**（`--progress` 百分比 + `role`/`aria-valuenow`），不是放宽。
+
+**已知限制**：`Progress` 的形状在 create 时确定（之后改 `.style()` 记警告）；`ScaleRing` 刻度、
+`Gauge.indicator`/`trackShadow`/`description`、`DataPanel.strokeWidth`/`trackShadow`/`closeEffect`
+未实现（记警告）；`DataPanel.trackBackgroundColor` 只记值不接入绘制。
+
+**触及**：`runtime/arkui-dom-runtime.js`（绘制类区块 + `syncDrawings` + `ensureComponent` 分支）、
+`fixtures/pages/DrawDemo.ts`、`test/drawdemo.html`、`test/components.html`、
+`run.sh`、`electron/run.sh`
 
 ### ~~R14 — 多层锚链 + `Guideline` + `bias`~~ ✅ 已完成
 

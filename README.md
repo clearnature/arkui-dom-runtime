@@ -86,10 +86,10 @@ tools/serve.py                 极简静态服务（端口由 OS 分配，避免
 tools/preflight.mjs            环境自检（工具链 / 宿主 / 可执行位）
 tools/check-all.sh             一条命令做完所有验收
 tools/stats.mjs                覆盖范围统计（文档里的数字都来自它）
-test/*.html                    断言页（19 个用例）
-fixtures/                      冻结的 ets-loader 转换产物（17 个，测试的输入）
-run.sh                         浏览器 19 用例驱动
-electron/run.sh                Electron 18 用例 + 真实磁盘验证
+test/*.html                    断言页（20 个用例）
+fixtures/                      冻结的 ets-loader 转换产物（18 个，测试的输入）
+run.sh                         浏览器 20 用例驱动
+electron/run.sh                Electron 19 用例 + 真实磁盘验证
 docs/                          ARCHITECTURE / DEVELOPING / ROADMAP / CAPABILITY
 ```
 
@@ -561,6 +561,53 @@ rect 已经把这位移算进去（b 明明 `offset=(40,20)`，rect 却是 `(0,0
 去掉错轴守卫 → 1 条失败（并因此发现原来那条断言**没有牙齿**：横线自身 `x=0`，
 用 `Start` 对齐时"错轴返回 0"与"没做判断"碰巧同值，改用 `Center` 才分离成 0 vs 150）。
 
+## R13：纯绘制类 `Progress` / `Gauge` / `DataPanel` / `Rating` ✅
+
+```
+$ bash run.sh drawdemo
+=== ALL PASS ===                    （47 条断言）
+PASS --progress 自定义属性 = '50%'（期望 50%）
+PASS 无障碍属性 role/aria-valuenow = 'progressbar'/'50'
+PASS 填充实际宽度 = 100（容器 200，期望 100）
+PASS 值弧占比 = 25（value 25 / total 100）
+PASS startAngle=180 → 弧起点在底部中央 (60.0, 115.0)
+PASS startAngle=0 → 弧起点在顶部中央 (60.0, 4.0)
+PASS 默认角度 → 整圆拆成 2 条 arc（实际 2 条）
+PASS 整圆首尾点重合（起点 (50,3) ≈ 终点 (50,3)）
+PASS min/max 生效：value 40 ∈ [20,60] → 比值 0.5 → 未填充 50%
+PASS 环形用 conic-gradient 绘制
+PASS 各段占比 = 30,20,50（values [30,20,50] / max 100）
+PASS 段宽按 values/max 分配：20, 60（容器 200，期望 20/60）
+PASS rating=3 → 高亮星数 = 3
+PASS rating=2.5 + stepSize 0.5 → 满星 2 + 半星 true
+PASS 点击第 5 颗星后 onChange 传回 5：'rating=5'
+PASS starStyle 的图片 URI 不可用已记警告
+```
+
+**画法按形状天然二分**：条形用 div + `--progress`、环形分段用 `conic-gradient`、
+弧与星用 SVG。四个必须记住的点：
+
+1. **弧长用 `pathLength="100"` 归一化** → `stroke-dasharray` 的第一个数**直接就是百分比**，
+   断言不必去反推 `2πr`。
+2. **整圆不能只画一条 arc** —— `endAngle` 默认就是 360，而起终点重合的 arc **渲染成空**，
+   必须拆成两个半圆。⚠️ 这条是**默认情形**，我第一版 fixture 只有半圆、**等于没测**。
+3. **角度约定照 `.d.ts` 的 JSDoc**：0 点 = 0°、顺时针为正。断言只钉"起点在顶部/底部中央"，
+   **不钉半径** —— `r = min(w,h)/2 - strokeWidth/2` 是本实现的选择，不是规范。
+4. **绘制要等尺寸生效**：`.width/.height` 是 create 之后才应用的，
+   所以真正的绘制放在 `syncDrawings`（与 `syncAlignRules` 同一时机），create 时只建骨架。
+
+**一个必须出声的地方**：`Rating.starStyle` 传的是**图片 URI**，本运行时没有资源管线 →
+加载不了。所以**退化为内置星形并记警告**，而不是静默画一个"看起来对"的星。
+
+**顺手把一条旧断言升级了**：`Progress` 从生成的 `<progress>` 骨架改成手写 div 实现，
+`test/components.html` 里那条断言随之失败 —— 这是"测试编码了旧契约"的典型信号。
+新断言**更强**（同时看 `--progress` 百分比与 `role`/`aria-valuenow`），不是放宽。
+
+**破坏验证（4 处）**：角度约定取反、不拆整圆、DataPanel 不按 values 分配、不认半星
+→ 9 条断言失败、跨 4 个分组。
+**并因此发现测试结构的真问题**：一处断言抛异常会**吞掉后面所有断言**（DataPanel 与 Rating
+的破坏当时完全没被暴露）→ 改成**分组隔离**（`group()` 逐组 try/catch），之后四处破坏全部现形。
+
 ## 工程化 ✅
 
 项目最初不是 git 仓库（287 MB 里 283 MB 是解压的 Electron），改动不可审计、回归不可复现。
@@ -575,18 +622,18 @@ rect 已经把这位移算进去（b 明明 `offset=(40,20)`，rect 却是 `(0,0
 | 文档数字守门 | `npm run stats:check-doc` | `ARCHITECTURE.md` §6 的整块实测数字逐行比对，漂移即非 0 退出；`stats:write-doc` 就地重写 |
 | 覆盖统计 | `npm run stats` | 文档里的所有数字都由它产出（`--json` 机器可读） |
 
-`npm run check` 当前：**浏览器 19 用例 + Electron 18 用例全绿**。
+`npm run check` 当前：**浏览器 20 用例 + Electron 19 用例全绿**。
 
 ## 下一步
 
 **权威清单在 `docs/ROADMAP.md`**（每项带可复现的验收命令）。当前优先：
 
-1. **R13** 纯绘制类组件（`Gauge`/`DataPanel`/`Rating`）
-2. **R15–R17** 真实文本换行测量、变高列表项、`ForEach` 键级 diff
-3. **R18–R21** `@ohos:media`/`notification`/`promptAction`、浏览器侧真文件系统
+1. **R15–R17** 布局引擎：文本真实换行测量 / `LazyForEach` 变高列表项 / `onMeasureSize` 对齐
+2. **R18–R21** 平台模块：`@ohos:media`、`notification`、`startAbilityForResult`+`promptAction`、浏览器真 fs
+3. **R22–R23** 动画（`animateTo`/`transition`）与手势（`Gesture`）
 
-**仍未覆盖**：动画/转场、手势（**含 `Swiper` 的滑动翻页**）、`chainMode`（相对布局的链式排列）、
-`Navigation` 的**标题栏/工具栏与分栏模式**、`@ohos:media`/`notification`。
+**仍未覆盖**：动画/转场、手势（**含 `Swiper` 的滑动翻页**）、`chainMode`、
+`Navigation` 的**标题栏/工具栏与分栏模式**、其余 85 个骨架组件的视觉语义、`@ohos:media`/`notification`。
 **别把没验的当结论**——`docs/CAPABILITY.md` 里有逐项的能力矩阵，其中标了哪些语义是**推断**的。
 
 **已知待办（别当已完成）**：
@@ -594,8 +641,8 @@ rect 已经把这位移算进去（b 明明 `offset=(40,20)`，rect 却是 `(0,0
 - `ForEach` 现在是「数组变了就整体重建」，**没有键级 diff**
 - 父组件重渲染时参数推送走 `updateStateVarsOfChildByElmtId`，但**子视图内部的 elmtId 迁移未处理**（复杂嵌套可能出问题）
 - `Repeat` / 动画 / `Tabs.vertical`·`barMode` / `Swiper` 的动画与 `displayCount` /
-  `Navigation` 的标题栏与分栏 / `Grid` 无模板时的 `cellLength` 自适应 / `chainMode` **未覆盖**
-  （这些会记 `layoutWarnings`，不是静默忽略）
+  `Navigation` 的标题栏与分栏 / `Grid` 无模板时的 `cellLength` 自适应 / `chainMode` /
+  `Gauge.indicator`·`trackShadow` **未覆盖**（这些会记 `layoutWarnings`，不是静默忽略）
 - **布局仍不是约束求解器**：多层锚链靠不动点迭代（有上限），环状锚定只记警告
 
 ---

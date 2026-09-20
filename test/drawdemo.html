@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R13 纯绘制类：Progress / Gauge / DataPanel / Rating</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 320px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R13：Progress（线性/环形）/ Gauge（角度约定 + 分段色 + min-max + 整圆）/ DataPanel（环/线）/ Rating（半星 + starStyle 告警）</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../build/drawdemo.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const near = (a, b, tol) => Math.abs(a - b) <= (tol === undefined ? 0.6 : tol);
+    const el = (id) => root.querySelector('#' + id);
+    const cs = (e) => getComputedStyle(e);
+    // SVG 弧的 d 形如 "M 60 115 A 55 55 0 0 1 60 5"，取出起点
+    const arcStart = (p) => {
+      const m = /M\s*(-?[\d.]+)[\s,]+(-?[\d.]+)/.exec(p.getAttribute('d') || '');
+      return m ? { x: parseFloat(m[1]), y: parseFloat(m[2]) } : null;
+    };
+    const dashFirst = (p) => parseFloat(String(p.getAttribute('stroke-dasharray') || '').trim().split(/[\s,]+/)[0]);
+
+    // 分组隔离：一组里抛异常不再吞掉后面所有组的覆盖（实测踩过：整圆那条断言抛错后，
+    // DataPanel 与 Rating 的破坏完全没被暴露出来）。抛错按该组的 FAIL 记录，其余组照跑。
+    const group = async (name, fn) => {
+      try { await fn(); } catch (e) {
+        allPass = false;
+        const head = e && e.stack ? String(e.stack).split('\n')[0] : String(e);
+        lines.push(`FAIL [${name}] 抛出异常：${head}`);
+      }
+    };
+
+    try {
+      __arkui_dom_loadRoute('pages/DrawDemo', root);
+      await tick(60);
+      check((root.textContent || '').includes('rating='), 'DrawDemo 页面已渲染');
+
+      // ══════════ Progress ══════════
+      await group('Progress', async () => {
+        const p1 = el('p1');
+        check(!!p1 && p1.__arkuiComp === 'Progress', `Progress#p1 已创建（comp=${p1 && p1.__arkuiComp}）`);
+        check(p1 && p1.style.getPropertyValue('--progress') === '50%',
+          `--progress 自定义属性 = '${p1 && p1.style.getPropertyValue('--progress')}'（期望 50%）`);
+        check(p1 && p1.getAttribute('role') === 'progressbar' && p1.getAttribute('aria-valuenow') === '50',
+          `无障碍属性 role/aria-valuenow = '${p1 && p1.getAttribute('role')}'/'${p1 && p1.getAttribute('aria-valuenow')}'`);
+        check(p1 && p1.getAttribute('aria-valuemax') === '100',
+          `aria-valuemax = '${p1 && p1.getAttribute('aria-valuemax')}'`);
+        const fill1 = p1 && p1.querySelector('[data-arkui-progress-fill]');
+        check(!!fill1, '线性进度有填充元素');
+        check(near(fill1.offsetWidth, 100, 1.5),
+          `填充实际宽度 = ${fill1.offsetWidth}（容器 ${p1.offsetWidth}，期望 100）`);
+
+        const p2 = el('p2');
+        const svg2 = p2 && p2.querySelector('svg');
+        check(!!svg2, '环形进度用 SVG 绘制');
+        const p2arc = svg2 && svg2.querySelector('[data-arkui-progress-arc]');
+        check(!!p2arc, '有值弧元素');
+        check(p2arc && near(dashFirst(p2arc), 25, 0.5),
+          `值弧占比 = ${p2arc && dashFirst(p2arc)}（value 25 / total 100）`);
+        check(p2arc && p2arc.getAttribute('pathLength') === '100',
+          `用 pathLength=100 归一化，使 dasharray 直接是百分比（='${p2arc && p2arc.getAttribute('pathLength')}'）`);
+        check(svg2 && near(svg2.getBoundingClientRect().width, 80, 1),
+          `SVG 宽度 = ${svg2 && svg2.getBoundingClientRect().width.toFixed(1)}（组件宽 80）`);
+      });
+
+      // ══════════ Gauge ══════════
+      await group('Gauge', async () => {
+        // A：180°→360°，value 40 / [min 20, max 60]
+        const g1 = el('g1');
+        const svgA = g1 && g1.querySelector('svg');
+        check(!!svgA, 'Gauge#g1 用 SVG 绘制');
+        const segA = svgA && svgA.querySelector('[data-arkui-gauge-seg="0"]');
+        check(!!segA, '有第 0 个色段弧');
+        // 0 点 = 0 度、顺时针为正（.d.ts JSDoc）→ 180° 是 6 点钟（底部中央）
+        const startA = segA && arcStart(segA);
+        check(!!startA && near(startA.x, 60, 1.5) && startA.y > 60,
+          `startAngle=180 → 弧起点在底部中央 (${startA && startA.x.toFixed(1)}, ${startA && startA.y.toFixed(1)})，期望 x≈60 且 y>60`);
+        check(segA && near(parseFloat(segA.getAttribute('stroke-width')), 10, 0.1),
+          `strokeWidth=10 → stroke-width=${segA && segA.getAttribute('stroke-width')}`);
+        const segA1 = svgA && svgA.querySelector('[data-arkui-gauge-seg="1"]');
+        check(!!segA1, `colors 有两项 → 2 个色段（实际 ${svgA && svgA.querySelectorAll('[data-arkui-gauge-seg]').length}）`);
+        check(segA && near(dashFirst(segA), 50, 0.5) && segA1 && near(parseFloat(segA1.getAttribute('stroke-dashoffset')), -50, 0.5),
+          `两段各占 50%：seg0 dash=${segA && dashFirst(segA)}, seg1 offset=${segA1 && segA1.getAttribute('stroke-dashoffset')}`);
+        const trackA = svgA && svgA.querySelector('[data-arkui-gauge-track]');
+        check(!!trackA && near(dashFirst(trackA), 50, 0.5) && near(parseFloat(trackA.getAttribute('stroke-dashoffset')), -50, 0.5),
+          `min/max 生效：value 40 ∈ [20,60] → 比值 0.5 → 未填充 50%（dash=${trackA && dashFirst(trackA)}, offset=${trackA && trackA.getAttribute('stroke-dashoffset')}）`);
+
+        // B：0°→180° —— 与 A 配对钉住"0 点 = 12 点钟"
+        const svgB = el('g2') && el('g2').querySelector('svg');
+        const segB = svgB && svgB.querySelector('[data-arkui-gauge-seg="0"]');
+        const startB = segB && arcStart(segB);
+        check(!!startB && near(startB.x, 60, 1.5) && startB.y < 60,
+          `startAngle=0 → 弧起点在顶部中央 (${startB && startB.x.toFixed(1)}, ${startB && startB.y.toFixed(1)})，期望 x≈60 且 y<60`);
+        check(segB && near(dashFirst(segB), 100, 0.5),
+          `无 colors 时是单段整环（dash=${segB && dashFirst(segB)}）`);
+
+        // C：不设角度 → 默认 0→360 的【整圆】（.d.ts 的默认值，必须有断言守着）
+        const svgC = el('g3') && el('g3').querySelector('svg');
+        const segC = svgC && svgC.querySelector('[data-arkui-gauge-seg="0"]');
+        const dC = String((segC && segC.getAttribute('d')) || '');
+        check(!!segC && (dC.match(/A /g) || []).length === 2,
+          `默认角度 → 整圆拆成 2 条 arc（实际 ${(dC.match(/A /g) || []).length} 条）`);
+        // 按命令切分取每段【终点】（直接全局配对数字会匹配到 A 的参数，取不到端点）
+        const cmds = dC.split(/(?=[MA])/).filter((c) => c.trim());
+        const endpts = cmds.map((c) => {
+          const nums = c.match(/-?[\d.]+/g) || [];
+          return nums.slice(-2).map(Number);
+        });
+        check(cmds.length === 3 && endpts.length === 3 && endpts.every((p) => p.length === 2),
+          `整圆 = 1 个 M + 2 个 A（实际 ${cmds.length} 段）`);
+        check(endpts.length === 3 && near(endpts[0][0], endpts[2][0], 0.5) && near(endpts[0][1], endpts[2][1], 0.5),
+          `整圆首尾点重合（起点 (${endpts[0]}) ≈ 终点 (${endpts[2]})）`);
+        check(endpts.length === 3 && endpts[1][1] > endpts[0][1],
+          `第一段走到下半圆（(${endpts[0]}) → (${endpts[1]})）`);
+        const trackC = svgC && svgC.querySelector('[data-arkui-gauge-track]');
+        check(!!trackC && near(dashFirst(trackC), 25, 0.5) && near(parseFloat(trackC.getAttribute('stroke-dashoffset')), -75, 0.5),
+          `整圆下 min/max 也生效：value 75 → 未填充 25%（dash=${trackC && dashFirst(trackC)}）`);
+      });
+
+      // ══════════ DataPanel ══════════
+      await group('DataPanel', async () => {
+        const d1 = el('d1');
+        check(!!d1 && d1.__arkuiComp === 'DataPanel', `DataPanel#d1 已创建（comp=${d1 && d1.__arkuiComp}）`);
+        check(d1 && /conic-gradient/.test(cs(d1).backgroundImage),
+          `环形用 conic-gradient 绘制（'${d1 && cs(d1).backgroundImage.slice(0, 46)}…'）`);
+        const dp1 = __arkui_dom_dataPanel(d1);
+        check(!!dp1, '自省钩子 __arkui_dom_dataPanel 可用');
+        check(dp1 && dp1.type === 'circle', `自省 type = ${dp1 && dp1.type}`);
+        check(dp1 && dp1.segments.map((v) => Math.round(v * 100)).join(',') === '30,20,50',
+          `各段占比 = ${dp1 && dp1.segments.map((v) => Math.round(v * 100)).join(',')}（values [30,20,50] / max 100）`);
+        check(dp1 && dp1.stops.map((v) => Math.round(v * 100)).join(',') === '30,50,100',
+          `累计色标 = ${dp1 && dp1.stops.map((v) => Math.round(v * 100)).join(',')}`);
+
+        const d2 = el('d2');
+        const segs = d2 ? [...d2.querySelectorAll('[data-arkui-datapanel-seg]')] : [];
+        check(segs.length === 2, `线形段数 = ${segs.length}`);
+        check(segs.length === 2 && near(segs[0].offsetWidth, 20, 1.5) && near(segs[1].offsetWidth, 60, 1.5),
+          `段宽按 values/max 分配：${segs.map((s) => s.offsetWidth).join(', ')}（容器 200，期望 20/60）`);
+        const dp2 = __arkui_dom_dataPanel(d2);
+        check(dp2 && dp2.type === 'line', `自省 type = ${dp2 && dp2.type}`);
+      });
+
+      // ══════════ Rating ══════════
+      await group('Rating', async () => {
+        const r1 = el('r1');
+        const stars1 = r1 ? [...r1.querySelectorAll('[data-arkui-star]')] : [];
+        check(stars1.length === 5, `Rating#r1 星数 = ${stars1.length}（stars(5)）`);
+        const lit1 = stars1.filter((s) => s.dataset.arkuiStarLit === 'true').length;
+        check(lit1 === 3, `rating=3 → 高亮星数 = ${lit1}`);
+        const rs1 = __arkui_dom_rating(r1);
+        check(!!rs1 && rs1.rating === 3 && rs1.stars === 5 && rs1.stepSize === 0.5,
+          `自省 rating/stars/stepSize = ${rs1 && rs1.rating}/${rs1 && rs1.stars}/${rs1 && rs1.stepSize}`);
+        check(__arkui_dom_layout_warnings.some((w) => /starStyle|foregroundUri/.test(String(w))),
+          `starStyle 的图片 URI 不可用已记警告：'${__arkui_dom_layout_warnings.find((w) => /starStyle|foregroundUri/.test(String(w)))}'`);
+        check(stars1.length === 5 && lit1 === 3,
+          'starStyle 不可用不影响星的数量与高亮数（退化为内置星形）');
+
+        const r2 = el('r2');
+        const rs2 = __arkui_dom_rating(r2);
+        const stars2 = r2 ? [...r2.querySelectorAll('[data-arkui-star]')] : [];
+        check(stars2.length === 4, `Rating#r2 星数 = ${stars2.length}`);
+        check(rs2 && rs2.full === 2 && rs2.half === true,
+          `rating=2.5 + stepSize 0.5 → 满星 ${rs2 && rs2.full} + 半星 ${rs2 && rs2.half}`);
+        check(stars2.filter((s) => s.dataset.arkuiStarLit === 'true').length === 2
+          && r2.querySelectorAll('[data-arkui-star-half]').length === 1,
+          '渲染上体现为 2 个高亮 + 1 个半星元素');
+
+        const rateline = el('rateline');
+        check(rateline.textContent === 'rating=3', `初始 '${rateline.textContent}'`);
+        stars1[4].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await tick(50);
+        check(rateline.textContent === 'rating=5', `点击第 5 颗星后 onChange 传回 5：'${rateline.textContent}'`);
+        check([...r1.querySelectorAll('[data-arkui-star]')].filter((s) => s.dataset.arkuiStarLit === 'true').length === 5,
+          '点击后高亮星数更新为 5');
+        check(__arkui_dom_rating(r1).rating === 5, `自省 rating 更新为 ${__arkui_dom_rating(r1).rating}`);
+      });
+
+      lines.push(`ELMT ${__arkui_dom_elmtRecords.size}`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

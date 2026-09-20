@@ -52,9 +52,13 @@
       check(slider && slider.min === '0' && slider.max === '100' && slider.step === '5' && slider.value === '30',
         `Slider 参数落位：min=${slider && slider.min} max=${slider && slider.max} step=${slider && slider.step} value=${slider && slider.value}`);
 
-      const prog = root.querySelector('progress');
-      check(!!prog && prog.value === 40 && prog.max === 100,
-        `Progress → <progress> value=${prog && prog.value} max=${prog && prog.max}`);
+      // R13 起 Progress 是【手写实现】（div + --progress 自定义属性），不再是生成的 <progress> 骨架。
+      // 契约变了（旧断言断言的是"生成骨架用原生 <progress>"），新断言更强：既看百分比也看无障碍值。
+      const prog = root.querySelector('[data-arkui-progress]');
+      check(!!prog && prog.style.getPropertyValue('--progress') === '40%',
+        `Progress → div + --progress=${prog && prog.style.getPropertyValue('--progress')}（value 40/total 100）`);
+      check(!!prog && prog.getAttribute('role') === 'progressbar' && prog.getAttribute('aria-valuenow') === '40',
+        `Progress 无障碍属性 role/aria-valuenow = ${prog && prog.getAttribute('role')}/${prog && prog.getAttribute('aria-valuenow')}`);
 
       const hr = root.querySelector('hr');
       check(!!hr, 'Divider → <hr>');

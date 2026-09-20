@@ -212,7 +212,7 @@ catch { node.dataset[prop] = String(value); }
 |---|---|---|
 | 函数值 | `addEventListener(prop.replace(/^on/,'').toLowerCase(), fn)` | `onClick` → `click` |
 | `id` | `node.id` | 测试靠它定位 |
-| **语义分歧的**（必须抢在 CSS 同名前） | 专用处理函数 | `alignRules`、`maxLines`、`textOverflow`、`alignContent`、`tabBar`、**`Tabs.onChange`/`Swiper.onChange`**、**Swiper 的 `index`/`loop`/`autoPlay`/`interval`/`indicator`**、**Navigation 的 `navDestination`/`mode`**（值是状态不是样式） |
+| **语义分歧的**（必须抢在 CSS 同名前） | 专用处理函数 | `alignRules`、`maxLines`、`textOverflow`、`alignContent`、`tabBar`、**`Tabs.onChange`/`Swiper.onChange`**、**Swiper 的 `index`/`loop`/`autoPlay`/`interval`/`indicator`**、**Navigation 的 `navDestination`/`mode`**、**绘制类四件套的 `value`/`startAngle`/`colors`/`stars`/`stepSize`/`onChange`…**（值是状态、要重绘，不是样式） |
 | **生命周期回调**（由栈操作派发） | 存进 `node.__navDestCbs` | **NavDestination 的 `onWillAppear`/`onWillShow`/`onShown`/`onReady`/`onWillHide`/`onHidden`/`onWillDisappear`/`onBackPressed`** |
 | **`Grid` 轨道模板** `GRID_TRACK_PROPS` | `normalizeTrackList`（ArkUI 裸数字 = vp → CSS 必须带 `px`） | `columnsTemplate`、`rowsTemplate` |
 | 尺寸类 `cssPropSize` | `toCssSize`（number → `px`）| `fontSize/width/height/padding/margin/borderRadius`、**`columnsGap`/`rowsGap`** |
@@ -712,6 +712,39 @@ app.ability.AbilityConstant  app.ability.ConfigurationConstant
 - 对外只暴露 `__arkui_dom_pageStack` 为**路径数组**（内部结构不外泄）
 - `router` 模块的参数存在 `paramsByUrl: Map<url, params>`，`getParams()` 读回
 
+### 4.9 绘制类组件的两种画法（SVG / CSS）
+
+`Progress` / `Gauge` / `DataPanel` / `Rating`（R13）都是"数据来自 create 选项 + 形状由属性定"。
+DOM 侧有两条路，按形状天然二分：
+
+| 组件 | 用什么画 | 为什么 |
+|---|---|---|
+| `Progress`（Linear/Capsule） | **div + `--progress` 自定义属性 + 百分比宽度** | 条形用 CSS 最简，且 `--progress` 是个可断言的百分比出口 |
+| `Progress`（Ring/Eclipse/ScaleRing） | **SVG 圆**（`<circle>` + `stroke-dasharray`） | 圆弧只能矢量画 |
+| `Gauge` | **SVG 弧**（`<path d="M…A…">` + `stroke-dasharray`） | 需要任意起止角的分段弧 |
+| `DataPanel`（Circle） | **CSS `conic-gradient`** | 环形分段用锥形渐变一行搞定，不必画 SVG |
+| `DataPanel`（Line） | **flex 行 + 百分比宽度** | 分段条 |
+| `Rating` | **内联 SVG 星 + 半星裁切覆盖层** | 星形需要路径；半星用 50% 宽的 `overflow:hidden` 覆盖层 |
+
+**四个必须记住的实现要点**：
+
+1. **弧长用 `pathLength="100"` 归一化** — 这样 `stroke-dasharray` 的第一个数**直接就是百分比**。
+   否则断言只能去反推 `2πr`，脆而且难读。`Gauge` 的分段色与 `Progress` 的环都靠这一手。
+2. **整圆不能只画一条 arc** — `startAngle=0 / endAngle=360` 是 **`.d.ts` 的默认值**，而一条
+   SVG arc 的起终点重合时会**渲染成空**。必须拆成两个半圆（`arcPath` 里 `sweep >= 360` 分支）。
+   ⚠️ 这条分支是"默认情形"，最容易漏测 —— 我的第一版 fixture 只有半圆，等于没测。
+3. **角度约定照 `.d.ts` 的 JSDoc**：**0 点 = 0 度、顺时针为正**（即 `x = cx + r·sin θ`、
+   `y = cy - r·cos θ`）。断言只钉"起点在顶部/底部中央（x≈cx 且 y 在中心的上/下侧）"，
+   **不**钉具体半径 —— 半径 `r = min(w,h)/2 - strokeWidth/2` 是本实现的选择，不是规范。
+4. **绘制要等尺寸生效**：形状在 `create` 时定，但 `.width/.height` 是之后才应用的，
+   那时 `offsetWidth` 还是 0。所以真正的绘制放在 `syncDrawings`（与 `syncAlignRules` 同一时机：
+   首渲染后 + 每次重渲染后）。**create 时只建骨架。**
+
+**颜色与资源**：`Gauge.colors` 的权重按**和归一化**（`.d.ts` 只说"weight"、没说是否要求和为 1，
+取归一化以同时兼容 `[0.5,0.5]` 与 `[3,7]` 两种写法），**权重为 0 的段按 JSDoc 不绘制**。
+`Rating.starStyle` 是**图片 URI** —— 本运行时没有资源管线，加载不了，所以**退化为内置星形并记警告**
+（不静默画成"看起来对"的星）。
+
 ---
 
 ## 5. 架构不变量
@@ -753,6 +786,12 @@ app.ability.AbilityConstant  app.ability.ConfigurationConstant
     组件栈上（这样 builder 里的组件才有正确的挂载点），`restore()` 之后**必须校验产出**
     （builder 可能因为 `if/else` 没覆盖该 name 而什么都没建）——校验失败要**回滚**状态并出声，
     不能留一个"路径项存在但节点不存在"的幽灵。同一模式适用于 `TabContent`/`ListItem` 的深渲染。
+18. **凡是要"读真实几何/尺寸"才能算的东西，一律不许在属性应用时做** —— 那时这些量还不存在。
+    统一放到**渲染后的同步阶段**（`syncAlignRules` / `syncDrawings`，首渲染后 + 每次重渲染后各一遍）：
+    - `alignRules` 的锚点解析（锚点兄弟可能还没建出来，逆序声明必然如此）
+    - 弧的半径（`.width/.height` 是 create 之后才应用的，create 时 `offsetWidth` 是 0）
+    - `guideLine` 的位置（要容器尺寸）
+    违反这条的症状是双重的：**算出错值** + **留下一堆假警告**（把警告通道弄脏）。
 
 ---
 
@@ -767,19 +806,19 @@ app.ability.AbilityConstant  app.ability.ConfigurationConstant
 ```
 == 组件库 ==
   ets-loader 注册名    149
-  手写实现（真布局语义）13：Text Button Column Row Stack List ListItem RelativeContainer Tabs TabContent Swiper Navigation NavDestination
+  手写实现（真布局语义）17：Text Button Column Row Stack List ListItem RelativeContainer Tabs TabContent Swiper Navigation NavDestination Progress Gauge DataPanel Rating
   控制流宏（非组件）    3：If ForEach LazyForEach
-  骨架·有 DOM 画像     52（容器 22 / 叶子 30）
-  骨架·仅 data-*       84
+  骨架·有 DOM 画像     51（容器 22 / 叶子 29）
+  骨架·仅 data-*       81
   ⇒ 可建出的组件名      149 / 149
   原生输入类控件       6
-  属性元数据总数       1107（平均 7.4／组件，最多 TextInput=70）
+  属性元数据总数       1078（平均 7.2／组件，最多 TextInput=70）
 
 == 运行时 API ==
-  global 导出        84 个
+  global 导出        103 个
   状态类            ObservedPropertySimplePU ObservedPropertyObjectPU SynchedPropertySimpleOneWayPU SynchedPropertySimpleTwoWayPU SynchedPropertyNesedObjectPU
-  内置组件          Text Button Column Row Stack List ListItem If ForEach LazyForEach RelativeContainer Tabs TabContent Swiper Navigation NavDestination
-  内部钩子 __arkui_dom_*  22 个
+  内置组件          Text Button Column Row Stack List ListItem If ForEach LazyForEach RelativeContainer Tabs TabContent Swiper Navigation NavDestination Progress Gauge DataPanel Rating
+  内部钩子 __arkui_dom_*  24 个
 
 == 状态管理 ==
   v1  状态类        5 个（包装对象模型）
@@ -793,44 +832,45 @@ app.ability.AbilityConstant  app.ability.ConfigurationConstant
   10 个：app.ability.AbilityConstant app.ability.ConfigurationConstant app.ability.UIAbility app.ability.Want data.preferences file.fs hilog net.http router window
 
 == 用例矩阵 ==
-  浏览器 run.sh     19 个：index rich leak layout widgets tabgrid swiper navdemo reldemo measure lazy provide v2 observe async ability router netfile persist
-  Electron          18 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo measure lazy provide async v2 observe
-  测试页            19 个
-  fixtures 转换产物  17 个：AsyncIO Detail Home Index Layout Lazy Measure NavDemo NetFile Observe Provide RelDemo Rich SwiperDemo TabsGrid V2 Widgets
+  浏览器 run.sh     20 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo measure lazy provide v2 observe async ability router netfile persist
+  Electron          19 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo measure lazy provide async v2 observe
+  测试页            20 个
+  fixtures 转换产物  18 个：AsyncIO Detail DrawDemo Home Index Layout Lazy Measure NavDemo NetFile Observe Provide RelDemo Rich SwiperDemo TabsGrid V2 Widgets
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          192.3 KB
-  test             108.2 KB
-  tools            37.5 KB
-  electron(src)    15.3 KB
-  docs             144.5 KB
-  fixtures         121.7 KB
+  runtime          214.2 KB
+  test             121.2 KB
+  tools            37.6 KB
+  electron(src)    15.5 KB
+  docs             154.8 KB
+  fixtures         132.3 KB
 
 == 逐文件（文档"文件职责"表的来源）==
-  runtime/arkui-dom-runtime.js     116187 B  113.5 KB
+  runtime/arkui-dom-runtime.js     138659 B  135.4 KB
   runtime/generated-components.js   57617 B  56.3 KB
   runtime/ohos-shims.js             23066 B  22.5 KB
   tools/extract.mjs                  6457 B  6.3 KB
   tools/gen-components.mjs           7775 B  7.6 KB
   tools/serve.py                     2559 B  2.5 KB
-  tools/stats.mjs                   13295 B  13.0 KB
+  tools/stats.mjs                   13385 B  13.1 KB
   tools/preflight.mjs                5108 B  5.0 KB
   tools/check-all.sh                 3171 B  3.1 KB
-  run.sh                            10047 B  9.8 KB
-  electron/run.sh                    6711 B  6.6 KB
+  run.sh                            10260 B  10.0 KB
+  electron/run.sh                    6868 B  6.7 KB
   electron/main.js                   6795 B  6.6 KB
   electron/preload.js                1961 B  1.9 KB
   package.json                       1207 B  1.2 KB
   .gitignore                          674 B  0.7 KB
-  README.md                         34890 B  34.1 KB
+  README.md                         38004 B  37.1 KB
   THIRD-PARTY-NOTICES.md             8256 B  8.1 KB
-  docs/ARCHITECTURE.md              63004 B  61.5 KB
-  docs/CAPABILITY.md                20434 B  20.0 KB
-  docs/DEVELOPING.md                28907 B  28.2 KB
-  docs/ROADMAP.md                   29169 B  28.5 KB
+  docs/ARCHITECTURE.md              67027 B  65.5 KB
+  docs/CAPABILITY.md                22491 B  22.0 KB
+  docs/DEVELOPING.md                30147 B  29.4 KB
+  docs/ROADMAP.md                   32345 B  31.6 KB
   docs/surface-measurement.md        6496 B  6.3 KB
   fixtures/pages/AsyncIO.ts          6206 B  6.1 KB
   fixtures/pages/Detail.ts           3097 B  3.0 KB
+  fixtures/pages/DrawDemo.ts        10867 B  10.6 KB
   fixtures/pages/Home.ts             3232 B  3.2 KB
   fixtures/pages/Index.ts            2737 B  2.7 KB
   fixtures/pages/Layout.ts           3434 B  3.4 KB
@@ -848,7 +888,8 @@ app.ability.AbilityConstant  app.ability.ConfigurationConstant
   fixtures/pages/Widgets.ts          4600 B  4.5 KB
   test/ability.html                  4695 B  4.6 KB
   test/async.html                    5977 B  5.8 KB
-  test/components.html               4985 B  4.9 KB
+  test/components.html               5566 B  5.4 KB
+  test/drawdemo.html                12765 B  12.5 KB
   test/index.html                    3560 B  3.5 KB
   test/layout.html                   4135 B  4.0 KB
   test/lazy.html                     4380 B  4.3 KB
@@ -886,6 +927,7 @@ app.ability.AbilityConstant  app.ability.ConfigurationConstant
 | 平台模块 | ⚠️ 10 个实现了；`media`/`notification`/`startAbilityForResult` 等未实现 |
 | 持久化 | ✅ Electron 真磁盘（shell 级验证）；浏览器 `localStorage` |
 | 动画 / 手势 | ❌ 未实现（`Swiper` 也无手势滑动，只有控制器/指示点/autoPlay 三条切换路径） |
+| **绘制类四件套** `Progress`/`Gauge`/`DataPanel`/`Rating` | ✅ 有测试（`run.sh drawdemo`，47 条断言）：`--progress` 百分比 + 无障碍属性、进度环、`Gauge` 任意起止角/整圆/分段色/min-max、`DataPanel` 环（`conic-gradient` 累计色标）与线（几何宽度）、`Rating` 满星/半星/`onChange`/`starStyle` 告警 |
 | `Navigation` 栈导航 | ✅ 有测试（`run.sh navdemo`，72 条断言）：`NavPathStack` 的 push/pop/popToName/popToIndex/replacePath/removeByName/moveToTop/clear/查询族 + `onPop` 回调、`NavDestination` 生命周期、根内容状态保留、目标销毁后 elmtId 零泄漏 |
 | 85 个骨架组件的视觉语义 | ❌ 仅 `data-*` |
 
@@ -895,7 +937,7 @@ app.ability.AbilityConstant  app.ability.ConfigurationConstant
 
 | 文件 | 体积 | 职责 | 改它的时机 |
 |---|---|---|---|
-| `runtime/arkui-dom-runtime.js` | 113.5 KB | v1 状态类 + 深度观测（`@Observed`/`@ObjectLink`）、`ViewPU`/`ViewV2`、装饰器层、组件栈、布局（`alignRules` 多层锚链 + `Guideline` + `bias`、`Grid` 轨道）、`Tabs`/`TabContent`+`TabsController`、`Swiper`+`SwiperController`、`Navigation`/`NavDestination`+`NavPathStack`、`LazyForEach`、路由 | 实现新语义（**手写优先**） |
+| `runtime/arkui-dom-runtime.js` | 135.4 KB | v1 状态类 + 深度观测（`@Observed`/`@ObjectLink`）、`ViewPU`/`ViewV2`、装饰器层、组件栈、布局（`alignRules` 多层锚链 + `Guideline` + `bias`、`Grid` 轨道）、`Tabs`/`TabContent`+`TabsController`、`Swiper`+`SwiperController`、`Navigation`/`NavDestination`+`NavPathStack`、**绘制类四件套**（SVG/CSS）、`LazyForEach`、路由 | 实现新语义（**手写优先**） |
 | `runtime/generated-components.js` | 56.3 KB | 149 个组件骨架（**生成物**） | **不手改**；改 `tools/gen-components.mjs` 后重新生成，`--check` 会守门 |
 | `runtime/ohos-shims.js` | 22.5 KB | `@ohos:*` 模块 + 持久化后端 | 新增平台模块 |
 | `tools/extract.mjs` | 6.3 KB | hvigor 缓存 `.ts` → 可执行 `.js`；**装饰器作用域内绑定前奏 + 未就绪守卫**（§3.4） | 产物形态/装饰器集合变化时 |
@@ -904,12 +946,12 @@ app.ability.AbilityConstant  app.ability.ConfigurationConstant
 | `tools/stats.mjs` | 13.0 KB | 本文档所有数字的来源（`--json` 机器可读）；**`--check-doc`/`--write-doc` 守 §6 引用块** | 覆盖范围变化时 |
 | `tools/preflight.mjs` | 5.0 KB | 环境自检（工具链/宿主/可执行位） | 外部依赖变化时 |
 | `tools/check-all.sh` | 3.1 KB | 一条命令做完验收（5 步），退出码只看被调命令 | 新增验收步骤时 |
-| `run.sh` | 9.8 KB | 浏览器 19 用例驱动 | 新增用例 |
-| `electron/run.sh` | 6.6 KB | Electron 18 用例 + 磁盘验证 | 新增用例 |
+| `run.sh` | 10.0 KB | 浏览器 20 用例驱动 | 新增用例 |
+| `electron/run.sh` | 6.7 KB | Electron 19 用例 + 磁盘验证 | 新增用例 |
 | `electron/main.js` | 6.6 KB | 主进程：offscreen 截图、**像素级**空白检测 | 截图/验证策略变化时 |
 | `electron/preload.js` | 1.9 KB | `contextBridge` 暴露 Node fs | 宿主能力变化时 |
-| `fixtures/pages/*.ts` | 121 KB | **冻结的**官方转换产物（17 个，含 `V2.ts`/`Observe.ts`/`TabsGrid.ts`/`SwiperDemo.ts`/`NavDemo.ts`/`RelDemo.ts`） | 几乎不改（见不变量 5） |
-| `test/*.html` | 107 KB | 断言页（读 `#result` 节点文本） | 新增用例 |
+| `fixtures/pages/*.ts` | 132 KB | **冻结的**官方转换产物（18 个，含 `V2.ts`/`Observe.ts`/`TabsGrid.ts`/`SwiperDemo.ts`/`NavDemo.ts`/`RelDemo.ts`/`DrawDemo.ts`） | 几乎不改（见不变量 5） |
+| `test/*.html` | 121 KB | 断言页（读 `#result` 节点文本） | 新增用例 |
 
 ---
 

@@ -8,8 +8,8 @@
 cd /data/training/cli/arkui-dom-runtime
 npm run check                   # 全部验收：preflight + 生成物一致 + 浏览器 + Electron（退出码可信）
 npm run check:quick             # 跳过 Electron
-./run.sh all                    # 浏览器侧：19 个用例（Chrome headless）
-./electron/run.sh all           # Electron 侧：18 个用例 + 真实磁盘核验
+./run.sh all                    # 浏览器侧：20 个用例（Chrome headless）
+./electron/run.sh all           # Electron 侧：19 个用例 + 真实磁盘核验
 npm run stats                   # 覆盖范围统计（本文档的数字都来自它）
 npm run preflight               # 环境自检（缺工具链/宿主/可执行位会明确报错）
 node tools/gen-components.mjs   # 重新生成 149 个组件骨架
@@ -83,6 +83,12 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 | **`Guideline` 虚拟参考线**：`{id, direction, position:{start\|end}}`；竖线锚水平、横线锚垂直；**错轴值恒为 0**；支持 `'30%'` 这类 Dimension 字符串 | ✅ | reldemo（30%→90、end:30→270、错轴→0） |
 | **`bias` 居中偏置**：同轴两侧都锚定时按比例定位，**默认 0.5**（权威 `@default`） | ✅ | reldemo（0.2→56、0.8→224、不写→140） |
 | **`alignRules` 两套键名**：`left/middle/right` 与本地化的 `start/end/middle`（`middle` 是水平、`center` 是垂直） | ✅ | reldemo + measure |
+| **`Progress` 线性/胶囊**：`--progress` 自定义属性 = 百分比、填充宽度、`role=progressbar` + `aria-valuenow/min/max` | ✅ | drawdemo（50/100 → 50%、填充 100px） |
+| **`Progress` 环形**：SVG 圆 + `pathLength=100` 归一化的 dasharray | ✅ | drawdemo（25/100 → dash 25） |
+| **`Gauge`**：`Gauge({value,min,max})` + `startAngle`/`endAngle`（0 点 = 0°、顺时针）、整圆拆两段、`colors` 分段（权重归一 + 权重 0 不画）、`strokeWidth`、未填充轨道 | ✅ | drawdemo（180°→底部、0°→顶部、默认 0→360 整圆、40∈[20,60]→未填充 50%） |
+| **`DataPanel` 环**：`conic-gradient` + 累计色标（余量走轨道色） | ✅ | drawdemo（[30,20,50]/100 → 色标 30/50/100） |
+| **`DataPanel` 线**：分段宽度 = value/max | ✅ | drawdemo（[10,30]/100 → 20px/60px） |
+| **`Rating`**：`rating`/`stars`/`stepSize` → 满星 + 半星；点击派发 `onChange`；`starStyle` 图片 URI 不可用会告警并退化为内置星形 | ✅ | drawdemo（3/5 → 3 高亮、2.5/4 → 2 满 + 1 半、点第 5 颗 → 5） |
 | 字符串参数不丢（如 `QRCode('hello')` → `data-content`） | ✅ | widgets |
 
 ## 三、平台能力（`@ohos:*` 别名层）
@@ -120,7 +126,7 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 |---|---|---|
 | 同一份断言页在 Electron 里跑（不复制测试代码） | ✅ | electron 全矩阵 |
 | 真实渲染 + offscreen 截图（非白像素占比判定，非 `isEmpty()`） | ✅ | electron 各用例 |
-| 同一份断言的双端一致（18 个用例两个 runner 都过） | ✅ | run.sh / electron/run.sh |
+| 同一份断言的双端一致（19 个用例两个 runner 都过） | ✅ | run.sh / electron/run.sh |
 
 ---
 
@@ -152,6 +158,14 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
   `Guideline` 的位置字段只有 `start`/`end`（旧 API 的 `percent` 会被忽略并记警告）。
   另外 `alignRules` 的解析被**推迟到渲染后**（首渲染 + 每次重渲染各一遍），
   所以渲染中途读取几何会看到未应用相对定位的临时状态。
+- **绘制类四件套有两条要紧的限制**：
+  1. **`Progress` 的形状在 create 时确定**（`Progress({style})`），之后再用 `.style()` 不会换形状（会记警告）。
+     `ScaleRing` 的刻度、`Eclipse` 的特殊形状只按环画。
+  2. **`Gauge` 的指针/刻度（`indicator`）与 `trackShadow`/`description` 未实现**（记警告）；
+     `DataPanel` 的 `strokeWidth`/`trackShadow`/`closeEffect` 未实现、`trackBackgroundColor` 只记值不接入绘制。
+     `Rating.starStyle` 是**图片 URI**，本运行时没有资源管线 → **退化为内置星形并记警告**。
+     另外 `Progress` **不再是原生 `<progress>`**（R13 起是手写 div + `--progress`）——
+     `test/components.html` 里那条旧断言已相应升级（契约变了，不是放宽）。
 - **`Navigation` 只有 Stack 栈语义**，以下项**未实现并会记 `layoutWarnings`**：
   **标题栏与工具栏**（`title`/`subTitle`/`hideTitleBar`/`hideBackButton`/`titleMode`/`menus`/`menuCount`/
   `toolBar`/`hideToolBar`/`backButtonIcon`/`toolbarConfiguration`——所以**页面看起来没有标题栏和返回按钮**）、
@@ -181,6 +195,7 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
   （与真机一致，有负向断言守着）；`@Observed` 经 Proxy 实现，**未验证**对 `instanceof`、序列化、
   展开运算符、`for...in` 之外的反射行为有无边界差异
 - `chainMode`（相对布局的链式排列）、动画/过渡、手势（`gesture`/`panGesture`，**含 `Swiper` 的滑动翻页**）、`Refresh`
+- **其余 85 个骨架组件的视觉语义**（R13 只把 `Progress`/`Gauge`/`DataPanel`/`Rating` 从骨架升级为手写绘制）
 - `If` 分支的 elmtId 复用优化
 - 父组件重渲染时**子视图内部 elmtId 迁移**未处理（深嵌套自定义组件可能出问题）
 
