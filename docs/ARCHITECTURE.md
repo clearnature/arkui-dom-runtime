@@ -1282,7 +1282,7 @@ globalThis.Gesture.pop();                         // ③ 关作用域 → 挂到
   test             224.8 KB
   tools            46.4 KB
   electron(src)    18.9 KB
-  docs             312.5 KB
+  docs             318.1 KB
   fixtures         216.4 KB
 
 == 逐文件（文档"文件职责"表的来源）==
@@ -1296,18 +1296,18 @@ globalThis.Gesture.pop();                         // ③ 关作用域 → 挂到
   tools/assert-counts.mjs             7476 B  7.3 KB
   tools/preflight.mjs                 5178 B  5.1 KB
   tools/check-all.sh                  3171 B  3.1 KB
-  run.sh                             15721 B  15.4 KB
+  run.sh                             15889 B  15.5 KB
   electron/run.sh                    10406 B  10.2 KB
   electron/main.js                    6795 B  6.6 KB
   electron/preload.js                 1961 B  1.9 KB
   package.json                        1207 B  1.2 KB
   .gitignore                           674 B  0.7 KB
-  README.md                          68439 B  66.8 KB
+  README.md                          68426 B  66.8 KB
   THIRD-PARTY-NOTICES.md              8256 B  8.1 KB
   docs/ARCHITECTURE.md              106440 B  103.9 KB
-  docs/CAPABILITY.md                 31380 B  30.6 KB
-  docs/DEVELOPING.md                 48273 B  47.1 KB
-  docs/ROADMAP.md                    66787 B  65.2 KB
+  docs/CAPABILITY.md                 32145 B  31.4 KB
+  docs/DEVELOPING.md                 49810 B  48.6 KB
+  docs/ROADMAP.md                    70217 B  68.6 KB
   docs/surface-measurement.md         6496 B  6.3 KB
   docs/SESSION-2026-09-20.md         12842 B  12.5 KB
   fixtures/pages/AnimDemo.ts          6451 B  6.3 KB
