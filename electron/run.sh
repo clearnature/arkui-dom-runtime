@@ -55,6 +55,11 @@ prepare() {
     measarea) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/MeasArea.ts" "$ROOT/build/measarea.js" >/dev/null || return 1 ;;
     measimage) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/MeasImage.ts" "$ROOT/build/measimage-module.js" --cjs --register MeasImage >/dev/null || return 1 ;;
     measnotify) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/MeasNotify.ts" "$ROOT/build/measnotify-module.js" --cjs --register MeasNotify >/dev/null || return 1 ;;
+    promptaction)
+      # R20：三个模块（调用方页面 / 被启动方页面 / ability 类）
+      "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/Callee.ts" "$ROOT/build/callee-module.js" --cjs --register Callee >/dev/null || return 1
+      "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/PromptAct.ts" "$ROOT/build/promptact-module.js" --cjs --register PromptAct >/dev/null || return 1
+      "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/entryability/PromptAbility.ts" "$ROOT/build/promptability-module.js" --cjs --register PromptAbility >/dev/null || return 1 ;;
     provide) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/Provide.ts" "$ROOT/build/provide.js" >/dev/null || return 1 ;;
     async) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/AsyncIO.ts" "$ROOT/build/asyncio-module.js" --cjs --register AsyncIO >/dev/null || return 1 ;;
     netfile) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/NetFile.ts" "$ROOT/build/netfile-module.js" --cjs --register NetFile >/dev/null || return 1 ;;
@@ -120,7 +125,7 @@ case "${1:-layout}" in
   all)
     rc=0
     # 全矩阵：每个用例都是独立 Electron 进程
-    for t in index rich layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify measure lazy provide v2 observe ability router async; do
+    for t in index rich layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction measure lazy provide v2 observe ability router async; do
       run_one "$t" || rc=1
       echo
     done
@@ -140,6 +145,6 @@ case "${1:-layout}" in
     run_one netfile "?phase=2" netfile-2 || exit 1
     echo
     verify_disk ;;
-  layout|rich|index|leak|ability|router|widgets|tabgrid|swiper|navdemo|reldemo|drawdemo|textmeasure|lazyvh|measarea|measimage|measnotify|measure|lazy|provide|async|v2|observe) run_one "$1" ;;
-  *) echo "用法: bash electron/run.sh [layout|rich|index|leak|ability|router|widgets|tabgrid|swiper|navdemo|reldemo|drawdemo|textmeasure|lazyvh|measarea|measimage|measnotify|measure|lazy|provide|async|v2|observe|netfile|all]"; exit 2 ;;
+  layout|rich|index|leak|ability|router|widgets|tabgrid|swiper|navdemo|reldemo|drawdemo|textmeasure|lazyvh|measarea|measimage|measnotify|promptaction|measure|lazy|provide|async|v2|observe) run_one "$1" ;;
+  *) echo "用法: bash electron/run.sh [layout|rich|index|leak|ability|router|widgets|tabgrid|swiper|navdemo|reldemo|drawdemo|textmeasure|lazyvh|measarea|measimage|measnotify|promptaction|measure|lazy|provide|async|v2|observe|netfile|all]"; exit 2 ;;
 esac

@@ -1,6 +1,8 @@
 {
   "src": [
     "pages/Index",
-    "pages/MeasNotify"
+    "pages/MeasNotify",
+    "pages/PromptAct",
+    "pages/Callee"
   ]
 }

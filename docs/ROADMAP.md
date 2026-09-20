@@ -38,6 +38,7 @@ R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分�
 | ③ | **`onAreaChange` + 自定义布局协议** | `bash run.sh measarea`（28 条断言，双端通过） |
 | ③ | **图像信息**（`@ohos.multimedia.image`） | `bash run.sh measimage`（13 条断言，双端通过） |
 | ③ | **通知**（`@ohos.notificationManager`，含投递路径自省） | `bash run.sh measnotify`（32 条断言，双端通过） |
+| ③ | **ability 结果链路 + 轻提示/对话框**（`startAbilityForResult`、`promptAction`） | `bash run.sh promptaction`（37 条断言，双端通过） |
 | ③ | `@ohos:*` 别名层 + CommonJS 装载 + 真 fetch | `bash run.sh async` |
 | ③ | `UIAbility` 启动链路 | `bash run.sh ability` |
 | ③ | `router` 页面栈（返回时保留状态） | `bash run.sh router` |
@@ -646,13 +647,75 @@ payload 真解析（`id`/`title`/`text`）、被拒绝的那条不进历史、`c
 **触及**：`runtime/ohos-shims.js`（`@ohos:notificationManager`）、`fixtures/pages/MeasNotify.ts`、
 `harmony-proj/`（页面源码，新增入仓）、`test/measnotify.html`、`run.sh`、`electron/run.sh`
 
-### R20 — `startAbilityForResult` + `promptAction`
+### R20 — `startAbilityForResult` + `promptAction` ✅
 
-**内容**：`startAbilityForResult` 的回调链路；`promptAction.showToast` / `showDialog`（DOM 实现）。
+**内容**：`startAbilityForResult` 的结果链路（`terminateSelfWithResult` / `terminateSelf`）；
+`promptAction.showToast` / `showDialog`（DOM 实现）。
 
-**依赖**：无（`startAbility` 已实现，补 result 分支）。
+**⚠️ 前提更正（实测）**：原文写的"断言 `onResult` 被调用"基于一个**不存在的 API** ——
+`grep -r onAbilityResult <SDK>/ets/api/` **0 命中**（API 26 SDK）。stage 模型的结果**只**从
+`startAbilityForResult` 回来：`(want, options?): Promise<AbilityResult>` 与
+`(want, callback: AsyncCallback<AbilityResult>)` / `(want, options, callback)`。
+→ 验收改为：**Promise 形态与回调形态都拿到"由 want 算出"的 resultCode 与 want**。
+另有两条小更正：`startAbility` 原来并**没有**实现（原文写"已实现，补 result 分支"——
+context 上当初只有 `getApplicationContext`/`resourceManager`）；`.d.ts` 里
+`import` 的模块名是 `@ohos.promptAction`（`@kit.ArkUI` 再导出 `promptAction`）。
 
-**验收**：断言 `startAbilityForResult` 的 `onResult` 被调用且 `resultCode` 符合预期；`showDialog` 后 DOM 里出现对话框节点、点确认后消失。
+**ability = 一份生命周期 + 一个窗口**：子 ability 渲染进新建的窗口容器
+（`div[data-arkui-ability-window]`），结束顺序 `onWindowStageDestroy → onDestroy` → **移除窗口**
+→ 把结果交回调用方。窗口移除前把它当时渲染出的文本快照进 `__arkui_dom_abilityWindows().history`，
+这样"被启动方真的渲染了自己的页面"才有证据（不是只记一行日志）。
+
+**被启动方用自己的页面**：`pages/Callee`（不是把调用方页面再渲染一遍），这样"起了第二个 ability"
+在 DOM 里是可见的；ability 用 `want.parameters.role` 区分 caller/callee。
+
+**结果必须由 want 算出来**：`resultCode = 200 + q`、`want.parameters.answer = q × 2` ——
+写死结果会被断言抓住（破坏验证 B1）。
+
+**一个关键次序**：结果接收者要在**跑子 ability 生命周期之前**登记好——子 ability 完全可能在
+自己的 `onWindowStageCreate` 里**同步**就 `terminateSelfWithResult`（"拿到结果就走"）。
+次序写反不会报错，而是**结果永远不回来**（破坏验证 B8）。
+
+**promptAction 的三个非显然细节**（全部照 `.d.ts` 实现并断言）：
+`showToast` **返回 void**（不是 Promise）；`duration` 默认 **1500**、范围 **[1500,10000]**、
+**小于 1500 用默认值 / 大于 10000 取上限**（断言不止看自省值，还看 **1500ms 的两条真的消失、
+10000ms 的仍在**）；`showDialog` resolve 的 `index` 是**被点按钮的下标（从 0 起）**。
+两者自 API 18 起 **deprecated**（`@useinstead UIContext.PromptAction#…`）。
+
+**抛还是拒——靠编译器的警告差异定音**：编译器对 `showToast`（void 版）报
+"Function may throw exceptions. Special handling is required."，对 `showDialog`（Promise 版）**不报**
+→ 实现取 **void 版同步抛 401、Promise 版 reject**；fixture 一条用 `try/catch`、一条用 `.catch`。
+（补上 try/catch 后那批警告归零，反向印证了该解释。）
+
+**"没有按钮的对话框"响亮失败**：没有按钮就没有结束方式，而点遮罩结束时的 `index` 语义
+`.d.ts` 未规定 → 与其造一个永远点不掉的假对话框，不如 reject 401 并说明要传 `buttons`。
+断言钉住"只有一个对话框节点"（没偷偷造第二个）。
+
+**验收（已执行）**：`bash run.sh promptaction` / `bash electron/run.sh promptaction` —— **37 条断言**，双端通过：
+被启动窗口建了/渲染了自己的页面/已关闭且 DOM 已移除、调用方页面仍在；
+`promise-formed: code=207 answer=14`（200+7 / 7×2）与回调形态 `code=203 answer=6`（200+3 / 3×2）；
+`terminateSelf()` 无结果时调用方不挂住；结束走 `onWindowStageDestroy → onDestroy`；
+`showToast` 三条 toast 的 DOM 与 `duration` 夹取（`1500,1500,10000`）、缺 `message` 同步抛 401；
+`showDialog` 的标题/正文/按钮顺序、点"确定"后节点消失且 `idx=1;`、无按钮时响亮失败；
+1500ms 的 toast 自动消失而 10000ms 的还在。
+
+**破坏验证**（7 个注入错误实现，各被精确抓住）：① `terminateSelfWithResult` 忽略 `resultCode` → 2 条红；
+② 关窗只记账不摘 DOM → 2 条红；③ 子 ability 渲染进调用方的根（不做窗口隔离）→ 9 条红；
+④ `duration` 不夹取 → 3 条红；⑤ `showDialog` 的 `index` 写死 0 → 1 条红；⑥ 允许"没有按钮的对话框" → 3 条红；
+⑦ 结果接收者登记晚了（子 ability 同步结束就丢结果）→ 5 条红。
+
+**已知限制**：只启动 `__arkui_dom_startAbility` 注册的那一个类（不按 `abilityName` 路由，无 `requestCode`）；
+`StartOptions` 接受不解释；多窗口层叠/返回栈未实现；子 ability 的**异步**重渲染不支持；
+`terminateSelf()` 不带结果时 resultCode 取 0（**`.d.ts` 未规定**，是本实现的约定）；
+`autoCancel`/`isModal`/`maskRect`/`alignment`/`offset`/`showInSubWindow` 仅接受不解释（不实现点遮罩关闭）；
+`closeToast`/`openToast`/`showActionMenu` 与 `UIContext#getPromptAction` 未实现；
+`string | Resource` 的 `Resource` 不解析。
+
+**触及**：`runtime/arkui-dom-runtime.js`（ability 栈 + `__arkui_dom_abilityWindows`）、
+`runtime/ohos-shims.js`（`@ohos:promptAction` + `__arkui_dom_prompt`）、
+`fixtures/entryability/PromptAbility.ts`、`fixtures/pages/PromptAct.ts`、`fixtures/pages/Callee.ts`、
+`harmony-proj/`（三个 .ets 源码 + module.json5 的第二个 ability + main_pages.json）、
+`test/promptaction.html`、`run.sh`、`electron/run.sh`
 
 ### R21 — 浏览器真文件系统
 

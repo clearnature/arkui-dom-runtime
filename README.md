@@ -79,18 +79,18 @@ runtime/arkui-dom-runtime.js   运行时核心（经典脚本，加载后安装�
   ├ 布局（alignRules 六键 / 文本截断 / Stack 叠放 / Scroller）、LazyForEach 虚拟滚动
   └ 页面栈与路由
 runtime/generated-components.js 149 个组件骨架（生成物，不要手改）
-runtime/ohos-shims.js          13 个 @ohos:* 平台模块 + 持久化三级后端
+runtime/ohos-shims.js          14 个 @ohos:* 平台模块 + 持久化三级后端
 tools/extract.mjs              从 hvigor cache 抽转换产物 + 去 TS 类型 + v2 装饰器绑定前奏
 tools/gen-components.mjs       由 ets-loader 的组件 JSON 生成骨架（--check 只校验不写）
 tools/serve.py                 极简静态服务（端口由 OS 分配，避免冲突）
 tools/preflight.mjs            环境自检（工具链 / 宿主 / 可执行位）
 tools/check-all.sh             一条命令做完所有验收
 tools/stats.mjs                覆盖范围统计（文档里的数字都来自它）
-test/*.html                    断言页（25 个用例）
-fixtures/                      冻结的 ets-loader 转换产物（23 个，测试的输入）
+test/*.html                    断言页（26 个用例）
+fixtures/                      冻结的 ets-loader 转换产物（25 个，测试的输入）
 harmony-proj/                  HarmonyOS 工程（页面 .ets 源码，转换产物的来源；构建输出不入库）
-run.sh                         浏览器 25 用例驱动
-electron/run.sh                Electron 24 用例 + 真实磁盘验证
+run.sh                         浏览器 26 用例驱动
+electron/run.sh                Electron 25 用例 + 真实磁盘验证
 docs/                          ARCHITECTURE / DEVELOPING / ROADMAP / CAPABILITY
 ```
 
@@ -562,6 +562,58 @@ rect 已经把这位移算进去（b 明明 `offset=(40,20)`，rect 却是 `(0,0
 去掉错轴守卫 → 1 条失败（并因此发现原来那条断言**没有牙齿**：横线自身 `x=0`，
 用 `Start` 对齐时"错轴返回 0"与"没做判断"碰巧同值，改用 `Center` 才分离成 0 vs 150）。
 
+## R20：`startAbilityForResult` + `promptAction` ✅
+
+```
+$ bash run.sh promptaction
+=== ALL PASS ===                    （37 条断言）
+PASS 起了 2 个被启动 ability 窗口（created=2）
+PASS 两个窗口都已关闭（closed=2 open=0）
+PASS 窗口载入的是被启动方自己的页面：["pages/Callee","pages/Callee"]
+PASS 窗口里真的渲染过被启动方的页面：["被启动的 ability 窗口",…]
+PASS 终态：被启动窗口的 DOM 已移除（回到调用方窗口）
+PASS startAbilityForResult(promise) 拿到结果：promise-formed: code=207 answer=14
+PASS 回调拿到的 resultCode 也由 want 算出（200+3=203）
+PASS 被启动方 terminateSelf() 不给结果时，调用方没挂住：no-result-formed: code=0
+PASS duration 夹取符合声明（100→1500、1500→1500、999999→10000）：'1500,1500,10000'
+PASS 缺 message 时同步抛出且点名字段（void 版的 @throws 契约）
+PASS 点"确定"后对话框节点消失
+PASS resolve 出被点按钮的下标（从 0 起）：'idx=1;'
+PASS 1500ms 生效时长的两条已自动消失（剩 ["提示丙"]）
+PASS 夹到 10000ms 的那条还在（说明生效时长确实是 10000，不只是记了个数）
+```
+
+**先纠一个前提**：ROADMAP 原先要断言的 `onResult`（`onAbilityResult`）在 API 26 SDK 里**不存在** ——
+`grep -r onAbilityResult <SDK>/ets/api/` **0 命中**。stage 模型的结果**只**从
+`startAbilityForResult` 回来（Promise 与 AsyncCallback 两种形态）。验收据此改成"两种形态都拿到
+**由 want 算出的** resultCode 与 want"（`resultCode = 200 + q`、`answer = q × 2`，写死会被抓住）。
+顺带两条小更正：`startAbility` 其实**没有**实现过；模块名是 `@ohos.promptAction`。
+
+**ability = 一份生命周期 + 一个窗口**：子 ability 渲染进新建的窗口容器
+（`div[data-arkui-ability-window]`），结束顺序 `onWindowStageDestroy → onDestroy` → 移除窗口 → 交回结果。
+**窗口移除前把它的 `textContent` 快照存起来** —— 不然"被启动方真的渲染了自己的页面"就只剩一行日志可说。
+
+**一个必须的次序**：结果接收者要在**跑子 ability 生命周期之前**登记好。子 ability 完全可能在自己的
+`onWindowStageCreate` 里**同步**就 `terminateSelfWithResult`（"拿到结果就走"）。次序写反**不报错，
+而是结果永远不回来** —— 破坏验证里专门注入了这一版，被 5 条断言抓住。
+
+**`promptAction` 的三个非显然细节**（全部照 `.d.ts`）：`showToast` **返回 void**（不是 Promise）；
+`duration` 默认 **1500**、范围 **[1500,10000]**、**小于 1500 用默认、大于 10000 取上限**；
+`showDialog` 的 `index` 是**被点按钮下标（从 0 起）**。两个函数自 API 18 起 **deprecated**
+（`@useinstead UIContext.PromptAction#…`）。
+
+**"抛"还是"拒"——靠编译器的警告差异定音**：编译器对 `showToast`（void 版）报
+*"Function may throw exceptions. Special handling is required."*，对 `showDialog`（Promise 版）**不报**
+→ 实现取 **void 版同步抛 401、Promise 版 reject**；fixture 一条 `try/catch`、一条 `.catch` 各接一种。
+（补上 try/catch 后那批警告归零，反向印证了这个解释。）
+
+**没有按钮的对话框：响亮失败**。没有按钮就没有结束方式，而点遮罩结束时的 `index` 语义 `.d.ts` 未规定
+→ 与其造一个永远点不掉的假对话框，不如 reject 401 并说明要传 `buttons`。断言还钉住"只有一个对话框节点"。
+
+**破坏验证**（7 个注入错误实现，各被精确抓住）：忽略传进来的 `resultCode`（2 条红）/
+关窗只记账不摘 DOM（2 条）/ 子 ability 渲染进调用方的根、不做窗口隔离（9 条）/ `duration` 不夹取（3 条）/
+`index` 写死 0（1 条）/ 允许没有按钮的对话框（3 条）/ 结果接收者登记晚了（5 条）。
+
 ## R19：通知 `@ohos.notificationManager` ✅
 
 ```
@@ -830,17 +882,17 @@ PASS starStyle 的图片 URI 不可用已记警告
 | 文档数字守门 | `npm run stats:check-doc` | `ARCHITECTURE.md` §6 的整块实测数字逐行比对，漂移即非 0 退出；`stats:write-doc` 就地重写 |
 | 覆盖统计 | `npm run stats` | 文档里的所有数字都由它产出（`--json` 机器可读） |
 
-`npm run check` 当前：**浏览器 25 用例 + Electron 24 用例全绿**。
+`npm run check` 当前：**浏览器 26 用例 + Electron 25 用例全绿**。
 
 ## 下一步
 
 **权威清单在 `docs/ROADMAP.md`**（每项带可复现的验收命令）。当前优先：
 
-1. **R20–R21** 平台模块：`startAbilityForResult`+`promptAction`、浏览器真 fs（R18 图像信息、R19 通知已完成）
+1. **R21** 浏览器真文件系统（探测式降级 + 明确写出后端名）
 2. **R22–R23** 动画（`animateTo`/`transition`）与手势（`Gesture`）
 
 **仍未覆盖**：动画/转场、手势（**含 `Swiper` 的滑动翻页**）、`chainMode`、
-`Navigation` 的**标题栏/工具栏与分栏模式**、其余 85 个骨架组件的视觉语义、`@ohos:media`/`promptAction`。
+`Navigation` 的**标题栏/工具栏与分栏模式**、其余 85 个骨架组件的视觉语义、`@ohos:media`/`UIContext`。
 **别把没验的当结论**——`docs/CAPABILITY.md` 里有逐项的能力矩阵，其中标了哪些语义是**推断**的。
 
 **已知待办（别当已完成）**：

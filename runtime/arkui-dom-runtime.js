@@ -3024,35 +3024,78 @@
     return module.exports;
   }
 
-  // 扮演"框架"启动 ability：onCreate → onWindowStageCreate(loadContent 真的渲染页面)
-  function startAbility(AbilityClass, opts) {
-    const { pagePath = 'pages/Index', rootEl, want = {} } = opts || {};
-    const logs = (global.__arkui_dom_logs = global.__arkui_dom_logs || []);
+  // ────────────────────── ability 栈（R20） ──────────────────────
+  // 一个 ability = 一份生命周期 + 一个窗口。根 ability 由 __arkui_dom_startAbility 起；
+  // 子 ability 由 context.startAbility / startAbilityForResult 起；terminateSelf* 结束自己。
+  //
+  // ⚠️ 实测更正：API 26 SDK 里【没有】onAbilityResult（全 SDK grep 0 命中），
+  // stage 模型的结果只走 startAbilityForResult 的 Promise / AsyncCallback —— 见 docs/ROADMAP R20。
+  const abilityStack = [];
+  const abilityWindowStats = { created: 0, closed: 0, history: [] };
+  let abilityClassForChildren = null;     // 同一进程内再起实例时用的类（不按 abilityName 路由）
 
-    const appContext = {
-      setColorMode(mode) { logs.push({ t: 'setColorMode', mode }); },
-      getApplicationContext() { return appContext; },
-    };
-    const context = {
-      getApplicationContext: () => appContext,
-      resourceManager: {
-        getStringSync: (k) => k,
-        getStringByNameSync: (k) => k,
-      },
-    };
+  function abilityLog(rec) {
+    (global.__arkui_dom_logs = global.__arkui_dom_logs || []).push(rec);
+  }
+  function bizError(code, message) { return Object.assign(new Error(message), { code }); }
+  const okRes = () => ({ code: 0, message: '' });
 
-    const ability = new AbilityClass(context);
-    logs.push({ t: 'ability', name: AbilityClass.name });
+  function makeAbilityWindow(entry) {
+    const el = document.createElement('div');
+    el.setAttribute('data-arkui-ability-window', entry.name);
+    // 真机上被启动的 ability 在【新窗口】里：DOM 里用一个盖满全屏的独立容器表示，
+    // 结束（terminateSelf*）时移除 —— 这样"起了第二个 ability"是可被看见、可被断言的
+    el.setAttribute('style',
+      'position:fixed;left:0;top:0;right:0;bottom:0;background:#fff;z-index:20;overflow:auto');
+    document.body.appendChild(el);
+    abilityWindowStats.created++;
+    abilityLog({ t: 'abilityWindow', op: 'create', ability: entry.name });
+    return el;
+  }
 
-    const windowStage = {
+  function closeAbilityWindow(entry) {
+    const el = entry.windowEl;
+    if (!el) return;
+    // 关窗前把窗口里的文本抓下来：这是"这个窗口真的渲染过页面"的证据（不只一行日志）
+    abilityWindowStats.history.push({
+      ability: entry.name, page: entry.pagePath, text: String(el.textContent || ''),
+    });
+    abilityWindowStats.closed++;
+    abilityLog({ t: 'abilityWindow', op: 'close', ability: entry.name, page: entry.pagePath });
+    el.remove();
+    purgeDetachedRecords();
+    entry.windowEl = null;
+  }
+
+  // loadRoute 用的是单例 rootNode/pageStack：起子 ability 时切成它的窗口，跑完切回来。
+  // 已知限制：子 ability 的【异步】重渲染不在支持范围（它必须在自己生命周期内完成渲染）——
+  // 见 docs/ARCHITECTURE §4.14。
+  function withAbilityWindow(entry, fn) {
+    const savedRoot = rootNode;
+    const savedStack = pageStack.slice();
+    rootNode = entry.windowEl;
+    pageStack.length = 0;
+    try {
+      return fn();
+    } finally {
+      rootNode = savedRoot;
+      pageStack.length = 0;
+      for (const p of savedStack) pageStack.push(p);
+    }
+  }
+
+  function makeWindowStage(entry) {
+    return {
       loadContent(page, cb) {
-        logs.push({ t: 'loadContent', page });
+        abilityLog({ t: 'loadContent', page, ability: entry.name });
         let err = null;
         try {
-          loadRoute(page, rootEl);
+          entry.pagePath = page;
+          if (entry.windowEl) withAbilityWindow(entry, () => loadRoute(page, entry.windowEl));
+          else loadRoute(page, entry.rootEl);
         } catch (e) {
           err = { code: 1, message: e.message };
-          logs.push({ t: 'loadContentError', message: e.message });
+          abilityLog({ t: 'loadContentError', message: e.message });
         }
         // 注意：生成代码是 `if (err.code) …`，【没有 null 检查】——说明官方 API 成功时
         // 也必须传一个 BusinessError 形状的对象（code=0）。传 null 会直接 TypeError。
@@ -3060,11 +3103,122 @@
         return err ? undefined : true;
       },
     };
+  }
+
+  // AsyncCallback：一律【异步】回调（同步回调会让"回调晚于后续同步代码"的假设悄悄不成立）
+  function withCallback(promise, cb) {
+    if (typeof cb !== 'function') return promise;
+    promise.then(
+      (v) => Promise.resolve().then(() => cb(okRes(), v)),
+      (e) => Promise.resolve().then(() => cb(bizError(e.code || 1, e.message), undefined)),
+    );
+    return undefined;
+  }
+
+  function spawnChildAbility(want, parent, onResult) {
+    if (!want || typeof want !== 'object') {
+      throw bizError(401, 'startAbilityForResult: 缺少必填参数 want（BusinessError 401）');
+    }
+    const AbilityClass = abilityClassForChildren;
+    if (typeof AbilityClass !== 'function') {
+      throw bizError(16000001, '没有可启动的 ability：本运行时只会启动 '
+        + '__arkui_dom_startAbility 注册的那个类（不按 want.abilityName 路由，见 docs 已知限制）');
+    }
+    const entry = {
+      name: (want.abilityName !== undefined && want.abilityName !== null) ? String(want.abilityName) : AbilityClass.name,
+      role: 'child', parent, rootEl: null, windowEl: null, pagePath: null,
+      ability: null, context: null, terminated: false,
+      pending: onResult ? [onResult] : [],   // 先登记结果接收者：子 ability 可能在自己的
+    };                                       // 生命周期里【同步】就 terminateSelfWithResult
+    entry.windowEl = makeAbilityWindow(entry);
+    abilityStack.push(entry);
+    entry.context = makeAbilityContext(entry);
+    const ability = new AbilityClass(entry.context);
+    entry.ability = ability;
+    abilityLog({ t: 'ability', name: entry.name, child: true });
+    ability.onCreate(want, { launchReason: 1 });
+    ability.onWindowStageCreate(makeWindowStage(entry));
+    if (!entry.terminated) ability.onForeground();
+    return entry;
+  }
+
+  // parameter 为空 = terminateSelf()：.d.ts 没规定"不带结果结束"时结果是什么 →
+  // 本实现取 resultCode 0（见 docs 已知限制），并保证调用方【不会挂住】
+  function terminateEntry(entry, parameter) {
+    if (entry.terminated) return undefined;      // 幂等：重复 terminateSelf 不重复交结果
+    entry.terminated = true;
+    const result = (parameter && typeof parameter === 'object')
+      ? { resultCode: Number(parameter.resultCode), want: parameter.want }
+      : { resultCode: 0 };
+    const ability = entry.ability;
+    if (ability) {
+      try {
+        ability.onWindowStageDestroy();
+      } finally {
+        ability.onDestroy();
+      }
+    }
+    closeAbilityWindow(entry);
+    const i = abilityStack.indexOf(entry);
+    if (i >= 0) abilityStack.splice(i, 1);
+    for (const w of entry.pending.splice(0)) w.resolve(result);
+    return undefined;
+  }
+
+  function makeAbilityContext(entry) {
+    const appContext = {
+      setColorMode(mode) { abilityLog({ t: 'setColorMode', mode }); },
+      getApplicationContext() { return appContext; },
+    };
+    return {
+      getApplicationContext: () => appContext,
+      resourceManager: {
+        getStringSync: (k) => k,
+        getStringByNameSync: (k) => k,
+      },
+      startAbility(want, optionsOrCb, cbMaybe) {
+        const cb = typeof optionsOrCb === 'function' ? optionsOrCb : cbMaybe;
+        return withCallback(Promise.resolve().then(() => { spawnChildAbility(want, entry, null); }), cb);
+      },
+      // Promise 形态与 AsyncCallback 形态（want, cb）/（want, options, cb）
+      startAbilityForResult(want, optionsOrCb, cbMaybe) {
+        const cb = typeof optionsOrCb === 'function' ? optionsOrCb : cbMaybe;
+        const started = new Promise((resolve, reject) => {
+          spawnChildAbility(want, entry, { resolve, reject });
+        });
+        return withCallback(started, cb);
+      },
+      terminateSelf(cb) {
+        return withCallback(Promise.resolve().then(() => terminateEntry(entry, null)), cb);
+      },
+      terminateSelfWithResult(parameter, cb) {
+        return withCallback(Promise.resolve().then(() => terminateEntry(entry, parameter)), cb);
+      },
+    };
+  }
+
+  // 扮演"框架"启动 ability：onCreate → onWindowStageCreate(loadContent 真的渲染页面) → onForeground
+  function startAbility(AbilityClass, opts) {
+    const { rootEl, want = {} } = opts || {};
+    const logs = (global.__arkui_dom_logs = global.__arkui_dom_logs || []);
+    abilityClassForChildren = AbilityClass;
+
+    const entry = {
+      name: AbilityClass.name, role: 'root', parent: null, rootEl, windowEl: null,
+      pagePath: null, ability: null, context: null, terminated: false, pending: [],
+    };
+    abilityStack.push(entry);
+    const context = makeAbilityContext(entry);
+    entry.context = context;
+
+    const ability = new AbilityClass(context);
+    entry.ability = ability;
+    logs.push({ t: 'ability', name: AbilityClass.name });
 
     ability.onCreate(want, { launchReason: 1 });
-    ability.onWindowStageCreate(windowStage);
-    ability.onForeground();
-    return { ability, logs, context };
+    ability.onWindowStageCreate(makeWindowStage(entry));
+    if (!entry.terminated) ability.onForeground();
+    return { ability, logs, context, entry };
   }
 
   // ────────────────────── 枚举 / 订阅 / 路由 ──────────────────────
@@ -3224,6 +3378,15 @@
     __arkui_dom_defineCommonJS: defineCommonJS,
     __arkui_dom_requireModule: requireModule,
     __arkui_dom_startAbility: startAbility,
+    // R20：ability 栈自省。history 只存【已关闭】窗口的快照（含关窗前的 textContent）——
+    // 那是"这个窗口真的渲染过页面"的证据，不是一句日志。
+    __arkui_dom_abilityWindows: () => ({
+      created: abilityWindowStats.created,
+      closed: abilityWindowStats.closed,
+      open: abilityStack.filter((e) => e.windowEl).length,
+      depth: abilityStack.length,
+      history: abilityWindowStats.history.map((h) => ({ ability: h.ability, page: h.page, text: h.text })),
+    }),
     // 组件骨架（生成）
     __arkui_dom_registerGenerated: registerGeneratedComponents,
     __arkui_dom_componentNames: () => Object.keys(components).sort(),

@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R20 startAbilityForResult + promptAction</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 320px; height: 200px; border: 1px solid #ccc; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R20：startAbilityForResult（结果链路 + 被启动 ability 的窗口）+ promptAction.showToast/showDialog</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <!-- 三个模块：调用方页面 / 被启动方页面 / ability 类 -->
+  <script src="../build/promptact-module.js"></script>
+  <script src="../build/callee-module.js"></script>
+  <script src="../build/promptability-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const el = (id) => root.querySelector('#' + id);
+    const txt = (id) => String(el(id) ? el(id).textContent : '<缺>');
+    const val = (id) => { const s = txt(id); const i = s.indexOf('='); return i < 0 ? '' : s.slice(i + 1); };
+    const group = async (name, fn) => {
+      try { await fn(); } catch (e) {
+        allPass = false;
+        lines.push(`FAIL [${name}] 抛出异常：${e && e.stack ? String(e.stack).split('\n')[0] : e}`);
+      }
+    };
+    const winOf = (sel) => Array.from(document.querySelectorAll(sel));
+    const toastTexts = () => winOf('[data-arkui-toast]').map((n) => n.textContent);
+    const dlgNode = () => winOf('[data-arkui-dialog]')[0] || null;
+
+    let logs = [];
+    try {
+      // CJS 模块在脚本加载时【不执行】（只注册工厂）→ 必须先 requireModule 才会跑 registerNamedRoute
+      __arkui_dom_requireModule('PromptAct');
+      __arkui_dom_requireModule('Callee');
+      // ── 启动调用方 ability：onCreate 里发起两次 startAbilityForResult
+      const mod = __arkui_dom_requireModule('PromptAbility');
+      const Ability = mod.default;
+      const started = __arkui_dom_startAbility(Ability, { pagePath: 'pages/PromptAct', rootEl: root });
+      logs = started.logs || [];
+      await tick(60);
+
+      check(!!el('toast'), 'PromptAct 页面已渲染（loadContent 真的渲染了调用方页面）');
+
+      const msgs = logs.filter((l) => l && l.t === 'hilog').map((l) => String(l.message));
+      const has = (re) => msgs.some((m) => re.test(m));
+      const find = (re) => msgs.find((m) => re.test(m)) || '(无)';
+      lines.push(`RAWLOG ${msgs.length} 条：${msgs.map((m) => m.slice(0, 54)).join(' | ')}`);
+
+      // ══════════ ① 被启动 ability 的窗口：真的建了、渲染了、关掉了 ══════════
+      await group('被启动 ability 的窗口', async () => {
+        const w = __arkui_dom_abilityWindows();
+        check(w.created === 2, `起了 2 个被启动 ability 窗口（created=${w.created}）`);
+        check(w.closed === 2 && w.open === 0,
+          `两个窗口都已关闭（closed=${w.closed} open=${w.open}）`);
+        check(w.history.length === 2 && w.history.every((h) => h.page === 'pages/Callee'),
+          `窗口载入的是被启动方自己的页面：${JSON.stringify(w.history.map((h) => h.page))}`);
+        // 关窗前抓下来的文本 = 窗口里真的渲染过那个页面（不是只记了一行日志）
+        // 注意：要先断 length，否则 history 为空时 .every() 是【空洞为真】
+        check(w.history.length === 2 && w.history.every((h) => h.text.includes('被启动的 ability 窗口')),
+          `窗口里真的渲染过被启动方的页面：${JSON.stringify(w.history.map((h) => h.text.slice(0, 20)))}`);
+        check(winOf('[data-arkui-ability-window]').length === 0,
+          '终态：被启动窗口的 DOM 已移除（回到调用方窗口）');
+        const bodyText = String(document.body.textContent || '');
+        check(bodyText.includes('toastState='), '终态：调用方窗口的页面还在（没被关掉）');
+        // 注意：document.body.textContent 【包含 <script> 的字面量】——本页断言文案里就有这句话，
+        // 直接搜会永远命中。必须排除 SCRIPT 节点（同不变量 6 的 DOM 版）
+        const domText = Array.from(document.body.children)
+          .filter((n) => n.tagName !== 'SCRIPT')
+          .map((n) => String(n.textContent || '')).join('');
+        check(!domText.includes('被启动的 ability 窗口'),
+          '终态：文档里不再有被启动方的页面文本（已排除 <script> 字面量）');
+      });
+
+      // ══════════ ② 结果链路：resultCode 与 want 都由 want 算出来（非常量）══════════
+      await group('结果链路', async () => {
+        check(has(/onCreate role=callee q=7/) && has(/onCreate role=callee-plain q=11/),
+          `被启动方收到了 want.parameters：${find(/onCreate role=callee q=7/)}`);
+        check(has(/loadContent ok: pages\/Callee/), `被启动方 loadContent 成功：${find(/loadContent ok/)}`);
+        // 200 + q、answer = q × 2 —— 写死结果会被这两条抓住
+        check(has(/promise-formed: code=207 answer=14/),
+          `startAbilityForResult(promise) 拿到结果：${find(/promise-formed/)}`);
+        check(has(/callee terminateSelfWithResult returned/),
+          '被启动方的 terminateSelfWithResult 也 resolve 了');
+        check(has(/no-result-formed: code=/),
+          `被启动方 terminateSelf() 不给结果时，调用方没挂住：${find(/no-result-formed/)}`);
+        check(has(/Ability onWindowStageDestroy/) && has(/Ability onDestroy/),
+          '被启动方结束走了 onWindowStageDestroy → onDestroy');
+      });
+
+      // ══════════ ③ 回调重载（直接取模块，不经页面）：异步 + err.code=0 ══════════
+      await group('回调重载', async () => {
+        const ctx = started.context;
+        let sync = true;
+        let cbArgs = null;
+        const ret = ctx.startAbilityForResult(
+          { bundleName: 'com.example.arkuidomprobe', abilityName: 'PromptAbility',
+            parameters: { 'role': 'callee', 'q': 3 } },
+          (err, res) => { cbArgs = { err, res }; sync = false; },
+        );
+        check(ret === undefined, '回调重载返回 undefined（对应 .d.ts 的 void 重载）');
+        check(sync === true, '回调不在调用栈内同步触发（AsyncCallback 语义）');
+        await tick(60);
+        check(!!cbArgs && cbArgs.err && cbArgs.err.code === 0,
+          `成功回调收到 BusinessError 形状且 code=0（${cbArgs && cbArgs.err && cbArgs.err.code}）`);
+        check(!!cbArgs && cbArgs.res && cbArgs.res.resultCode === 203,
+          `回调拿到的 resultCode 也由 want 算出（200+3=${cbArgs && cbArgs.res && cbArgs.res.resultCode}）`);
+        check(!!cbArgs && cbArgs.res && cbArgs.res.want && cbArgs.res.want.parameters
+          && String(cbArgs.res.want.parameters['answer']) === '6',
+          `回调拿到的 want.parameters.answer = q×2（${cbArgs && cbArgs.res && JSON.stringify(cbArgs.res.want && cbArgs.res.want.parameters)}）`);
+      });
+
+      // ══════════ ④ showToast：DOM 出现、duration 夹取、到期消失 ══════════
+      await group('showToast', async () => {
+        const texts = toastTexts();
+        check(texts.length === 3, `3 条 toast 都在 DOM 里（${JSON.stringify(texts)}）`);
+        check(texts.join(',').includes('提示甲') && texts.join(',').includes('提示丙'),
+          'toast 文本来自 message');
+        const p = __arkui_dom_prompt();
+        const ds = p.openToasts.map((t) => t.effectiveDuration);
+        // .d.ts：默认 1500；[1500,10000]；<1500 用默认，>10000 取上限
+        check(ds.join(',') === '1500,1500,10000',
+          `duration 夹取符合声明（100→1500、1500→1500、999999→10000）：'${ds.join(',')}'`);
+        check(typeof p.lastToast === 'object' && p.lastToast.durationRaw === 999999
+          && p.lastToast.effectiveDuration === 10000,
+          `自省同时留下原始值与生效值：raw=${p.lastToast && p.lastToast.durationRaw} → ${p.lastToast && p.lastToast.effectiveDuration}`);
+        // void API 的 @throws 契约：缺 message 必须【同步抛】（fixture 用 try/catch 接的）
+        check(val('toast').startsWith('toast3;') && val('toasterr').startsWith('throw:')
+          && /message/.test(val('toasterr')),
+          `缺 message 时同步抛出且点名字段（'${val('toasterr').slice(0, 60)}'）`);
+      });
+
+      // ══════════ ⑤ showDialog：DOM 出现 → 点"确定" → 消失且 index=1 ══════════
+      await group('showDialog', async () => {
+        check(winOf('[data-arkui-dialog]').length === 1,
+          `只有一个对话框节点（无按钮那条被拒绝，没造出第二个假对话框）：${winOf('[data-arkui-dialog]').length}`);
+        const d = dlgNode();
+        check(!!d && d.textContent.includes('对话框标题') && d.textContent.includes('对话框正文'),
+          `对话框内容来自 options：'${d ? d.textContent.slice(0, 40) : '<缺>'}'`);
+        const btns = d ? Array.from(d.querySelectorAll('[data-arkui-dialog-btn]')) : [];
+        check(btns.length === 2 && btns[0].textContent === '取消' && btns[1].textContent === '确定',
+          `按钮按 options 顺序渲染（${JSON.stringify(btns.map((b) => b.textContent))}）`);
+        check(val('dlgerr').startsWith('nobtn:') && /buttons/.test(val('dlgerr')),
+          `没有 buttons 的 showDialog 响亮失败（'${val('dlgerr').slice(0, 60)}'）`);
+        check(val('dlg') === '', `点确认前 dialogState 还是空的（'${val('dlg')}'）`);
+
+        if (btns[1]) btns[1].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await tick(40);
+        check(winOf('[data-arkui-dialog]').length === 0, '点"确定"后对话框节点消失');
+        check(val('dlg') === 'idx=1;', `resolve 出被点按钮的下标（从 0 起）：'${val('dlg')}'`);
+      });
+
+      // ══════════ ⑥ toast 到期自动消失：夹取后的 duration 真的生效 ══════════
+      await group('toast 到期', async () => {
+        await tick(1700);                 // 1500ms 的两条应已到期，10000ms 的那条还在
+        const texts = toastTexts();
+        check(!texts.join(',').includes('提示甲') && !texts.join(',').includes('提示乙'),
+          `1500ms 生效时长的两条已自动消失（剩 ${JSON.stringify(texts)}）`);
+        check(texts.join(',').includes('提示丙'),
+          `夹到 10000ms 的那条还在（说明生效时长确实是 10000，不只是记了个数）`);
+      });
+
+      // ══════════ ⑦ 直接取模块：void 语义与缺参响亮失败 ══════════
+      await group('promptAction 的声明面', async () => {
+        const pa = __arkui_dom_require('@ohos:promptAction');
+        check(!!pa && typeof pa.showToast === 'function' && typeof pa.showDialog === 'function',
+          '__arkui_dom_require 能取到 promptAction');
+        const ret = pa.showToast({ message: '直接调用', duration: 1500 });
+        check(ret === undefined, `showToast 返回 void（对应 .d.ts 的 void，不是 Promise）：${typeof ret}`);
+        let err = null;
+        try { pa.showToast({}); } catch (e) { err = e; }
+        check(!!err && !!err.code && /message/.test(String(err.message)),
+          `缺 message 时响亮失败且点名字段（code=${err && err.code}）：'${err && String(err.message).slice(0, 60)}'`);
+        check(toastTexts().includes('直接调用'), '直接调用也真的进了 DOM');
+      });
+
+      lines.push(`ELMT ${__arkui_dom_elmtRecords.size}`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

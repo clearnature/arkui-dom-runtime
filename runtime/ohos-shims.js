@@ -866,6 +866,172 @@
     hostCreated: notifStore.hostCreated,
   });
 
+  // ── @ohos:promptAction —— 轻提示与对话框（R20） ──
+  //
+  // 权威来源 @ohos.promptAction.d.ts：
+  //   function showToast(options: ShowToastOptions): void        // 返回 void
+  //   function showDialog(options: ShowDialogOptions): Promise<ShowDialogSuccessResponse>
+  //   function showDialog(options, callback: AsyncCallback<ShowDialogSuccessResponse>): void
+  //   ShowDialogSuccessResponse { index } —— 被点按钮在 buttons 里的下标（从 0 起）
+  //   ShowToastOptions.duration：默认 1500；范围 [1500, 10000]；<1500 用默认值、>10000 取上限
+  //   ShowToastOptions.message / ShowDialogOptions.title|message|buttons —— message 是必填
+  //   两者的 401 errcode 都是 "Mandatory parameters are left unspecified"
+  //   自 API 18 起这两个全局函数 deprecated，@useinstead UIContext.PromptAction#showToast/showDialog
+  //
+  // 抛 vs 拒是【实测】出来的：编译器对 showToast（void 版）警告
+  // "Function may throw exceptions. Special handling is required."，对 showDialog（Promise 版）不警告
+  // → void 版【同步抛】、Promise 版走【reject】。（fixture 里 try/catch 与 .catch 各接一条。）
+  //
+  // 挂载点：toast/对话框都挂 document.body（不挂进页面根），这样页面重渲染不会把它们清掉；
+  // 真机上它们属于窗口而不是页面。z-index 高于 ability 窗口（20）。
+  const promptState = { toasts: [], dialogs: [], lastToast: null, lastDialog: null };
+
+  const promptStr = (v) => {
+    if (typeof v === 'string') return v;
+    if (v === undefined || v === null) return '';
+    if (typeof v === 'object') return '[资源引用未解析]';   // string | Resource；DOM 侧没有资源表
+    return String(v);
+  };
+  const TOAST_MIN_MS = 1500;
+  const TOAST_MAX_MS = 10000;
+  const promptParamErr = (api, field) => fsErr(401,
+    `promptAction.${api}: ${field} 未指定（BusinessError 401 — Mandatory parameters are left unspecified）`);
+
+  function showToast(options) {
+    if (!options || typeof options !== 'object') throw promptParamErr('showToast', 'options');
+    if (options.message === undefined || options.message === null) throw promptParamErr('showToast', 'message');
+    const raw = options.duration;
+    // .d.ts：默认 1500；<1500（含未设置）用默认值；>10000 取上限。两个值都留下，便于自省与断言
+    const effective = (typeof raw === 'number' && raw >= TOAST_MIN_MS)
+      ? Math.min(raw, TOAST_MAX_MS)
+      : TOAST_MIN_MS;
+    const el = document.createElement('div');
+    el.setAttribute('data-arkui-toast', '');
+    el.setAttribute('style', 'position:fixed;left:50%;bottom:80px;transform:translateX(-50%);'
+      + 'max-width:70%;padding:8px 14px;border-radius:16px;background:rgba(0,0,0,0.75);color:#fff;'
+      + 'font:14px system-ui,sans-serif;z-index:40');
+    el.textContent = promptStr(options.message);
+    document.body.appendChild(el);
+    const rec = {
+      message: promptStr(options.message),
+      durationRaw: (typeof raw === 'number') ? raw : null,
+      effectiveDuration: effective,
+      el,
+    };
+    promptState.toasts.push(rec);
+    promptState.lastToast = rec;
+    logs.push(`[promptAction] showToast message='${rec.message}' duration=${rec.durationRaw} → ${effective}ms`);
+    rec.timer = setTimeout(() => {
+      el.remove();
+      const i = promptState.toasts.indexOf(rec);
+      if (i >= 0) promptState.toasts.splice(i, 1);
+      logs.push(`[promptAction] showToast 到期移除 message='${rec.message}'`);
+    }, effective);
+  }
+
+  function showDialog(options) {
+    return new Promise((resolve, reject) => {
+      if (!options || typeof options !== 'object') {
+        reject(promptParamErr('showDialog', 'options'));
+        return;
+      }
+      const rawButtons = Array.isArray(options.buttons) ? options.buttons : [];
+      const btns = rawButtons.filter((b) => b && typeof b === 'object');
+      if (btns.length === 0) {
+        // 不造"永远点不掉"的假对话框：没有按钮就结束不了，而"点遮罩结束"的语义
+        // .d.ts 没规定（autoCancel 默认 true 但没说结束时的 index）→ 响亮失败
+        reject(fsErr(401, 'promptAction.showDialog: buttons 不能为空 —— 本实现不渲染"没有按钮的'
+          + '对话框"（那种对话框只能靠点遮罩结束，而结束时的 index 语义 .d.ts 未规定）；'
+          + '请传 buttons: [{text, color}]'));
+        return;
+      }
+      const overlay = document.createElement('div');
+      overlay.setAttribute('data-arkui-dialog', '');
+      overlay.setAttribute('style', 'position:fixed;left:0;top:0;right:0;bottom:0;'
+        + 'background:rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;z-index:30');
+      const box = document.createElement('div');
+      box.setAttribute('data-arkui-dialog-box', '');
+      box.setAttribute('style', 'min-width:200px;max-width:80%;background:#fff;border-radius:12px;'
+        + 'padding:16px;font:14px system-ui,sans-serif;color:#182431');
+      if (options.title !== undefined) {
+        const t = document.createElement('div');
+        t.setAttribute('data-arkui-dialog-title', '');
+        t.setAttribute('style', 'font-size:16px;font-weight:600;margin-bottom:8px');
+        t.textContent = promptStr(options.title);
+        box.appendChild(t);
+      }
+      if (options.message !== undefined) {
+        const m = document.createElement('div');
+        m.setAttribute('data-arkui-dialog-message', '');
+        m.textContent = promptStr(options.message);
+        box.appendChild(m);
+      }
+      const row = document.createElement('div');
+      row.setAttribute('style', 'display:flex;justify-content:flex-end;gap:8px;margin-top:14px');
+      const rec = {
+        title: promptStr(options.title), message: promptStr(options.message),
+        buttons: btns.map((b) => promptStr(b.text)), index: null, el: overlay,
+      };
+      const settle = (index) => {
+        if (rec.index !== null) return;              // 幂等：连点两次只结算一次
+        rec.index = index;
+        overlay.remove();
+        const i = promptState.dialogs.indexOf(rec);
+        if (i >= 0) promptState.dialogs.splice(i, 1);
+        logs.push(`[promptAction] showDialog 关闭 index=${index}`);
+        resolve({ index });
+      };
+      btns.forEach((b, i) => {
+        const el = document.createElement('button');
+        el.setAttribute('data-arkui-dialog-btn', String(i));
+        el.setAttribute('style', 'border:none;background:transparent;font:inherit;padding:6px 10px;'
+          + `cursor:pointer;color:${promptStr(b.color) || '#007DFF'}`);
+        el.textContent = promptStr(b.text);
+        el.addEventListener('click', () => settle(i));
+        row.appendChild(el);
+      });
+      box.appendChild(row);
+      overlay.appendChild(box);
+      document.body.appendChild(overlay);
+      promptState.dialogs.push(rec);
+      promptState.lastDialog = rec;
+      logs.push(`[promptAction] showDialog title='${rec.title}' buttons=${JSON.stringify(rec.buttons)}`);
+    });
+  }
+
+  // showDialog 的 401 走 reject（不是同步抛）——见上面的实测依据
+  define('promptAction', {
+    showToast,
+    showDialog(options, cb) {
+      const p = showDialog(options);
+      if (typeof cb === 'function') {
+        // AsyncCallback：异步回调（同 R19：回调不在调用栈内触发）
+        p.then((v) => Promise.resolve().then(() => cb(okRes(), v)),
+          (e) => Promise.resolve().then(() => cb({ code: e.code || 1, message: e.message })));
+        return undefined;
+      }
+      return p;
+    },
+  });
+
+  // 供测试/宿主核验：当前打开的 toast / 对话框快照（含 duration 的原始值与生效值）
+  global.__arkui_dom_prompt = () => ({
+    openToasts: promptState.toasts.map((t) => ({
+      message: t.message, durationRaw: t.durationRaw, effectiveDuration: t.effectiveDuration,
+    })),
+    openDialogs: promptState.dialogs.map((d) => ({
+      title: d.title, message: d.message, buttons: d.buttons, index: d.index,
+    })),
+    lastToast: promptState.lastToast ? {
+      message: promptState.lastToast.message,
+      durationRaw: promptState.lastToast.durationRaw,
+      effectiveDuration: promptState.lastToast.effectiveDuration,
+    } : null,
+    lastDialog: promptState.lastDialog ? {
+      title: promptState.lastDialog.title, buttons: promptState.lastDialog.buttons,
+    } : null,
+  });
+
   // 供测试/宿主核验：后端类型、根、读取、真实路径，以及就绪/落盘完成的等待点。
   // 用 getter 而不是快照值：OPFS 失败降级后这里要能反映"当前"后端。
   global.__arkui_dom_fs = {

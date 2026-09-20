@@ -8,8 +8,8 @@
 cd /data/training/cli/arkui-dom-runtime
 npm run check                   # 全部验收：preflight + 生成物一致 + 浏览器 + Electron（退出码可信）
 npm run check:quick             # 跳过 Electron
-./run.sh all                    # 浏览器侧：25 个用例（Chrome headless）
-./electron/run.sh all           # Electron 侧：24 个用例 + 真实磁盘核验
+./run.sh all                    # 浏览器侧：26 个用例（Chrome headless）
+./electron/run.sh all           # Electron 侧：25 个用例 + 真实磁盘核验
 npm run stats                   # 覆盖范围统计（本文档的数字都来自它）
 npm run preflight               # 环境自检（缺工具链/宿主/可执行位会明确报错）
 node tools/gen-components.mjs   # 重新生成 149 个组件骨架
@@ -95,6 +95,9 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 | **通知 `@ohos.notificationManager`**：`publish`（Promise 与**回调**两种重载）/`cancel`/`cancelAll`/`isNotificationEnabled`；`content` 按 `normal`→`longText`→`multiLine` 取文本；空 `content` 响亮失败 | ✅ | measnotify（四条 Promise 链路 + 回调重载成功/失败） |
 | **通知投递路径如实自报**：每条记录带 `via`（`host-Notification`/`record-only`）+ `hostPermission` + `reason`；**只有 `permission='granted'` + 走了宿主 API 才算确证送达**，其余必须写出原因 | ✅ | measnotify（浏览器 `permission=default` → 有原因；Electron `granted` → 确证送达） |
 | **通知降级告警的边界**：浏览器没有系统通知是**预期**降级（只记日志）；Electron（注入了 Node fs）里"没送达"进 `layout_warnings` | ✅ | measnotify（同一条断言两端期望不同：浏览器 0 条 / Electron 1 条） |
+| **ability 结果链路 `startAbilityForResult`**：`(want, options?)` Promise 与 `(want, cb)` / `(want, options, cb)` 回调两种形态；被启动方在新窗口里渲染自己的页面，`terminateSelfWithResult`/`terminateSelf` 结束并把结果交回调用方（结束顺序 `onWindowStageDestroy → onDestroy`） | ✅ | promptaction（`code=207 answer=14` 由 want 算出；无结果结束不挂住） |
+| **轻提示 `promptAction.showToast`**：返回 void；`duration` 默认 1500 / 范围 [1500,10000] / 越界夹取 **真的生效**；缺 `message` 同步抛 401 | ✅ | promptaction（`1500,1500,10000`；1500ms 的到期消失、10000ms 的仍在） |
+| **对话框 `promptAction.showDialog`**：DOM 对话框（标题/正文/按钮按序）；点按钮 resolve `{index}` 并消失；`buttons` 为空响亮失败 | ✅ | promptaction（点"确定"→ `idx=1;` 且节点消失；无按钮 → 401 且没造出第二个对话框节点） |
 | **`onAreaChange`**：`newValue` = 真实宽高 + 相对父/页坐标；尺寸变化后再次触发，`oldValue` 为上一次真实值 | ✅ | measarea（`120x30` == 真实 rect；`0>100` → `100>140`） |
 | **自定义布局协议**（`onMeasureSize` + `onPlaceChildren`）：`Measurable.measure(c)` 回真实测量、返回值覆盖声明尺寸、`Layoutable.layout(pos)` 真摆放 | ✅ | measarea（`measure` 遵守 maxWidth=60、组件宽 = 返回的 60、三子项依次落位） |
 | **真实行数**（`Range.getClientRects()` 数行盒，非"按字宽累加"的模拟） | ✅ | textmeasure（`__arkui_dom_countLines` 直接断言：宽 100 → 4 行、宽 400 → 1 行、无显式宽 → 按容器 2 行） |
@@ -135,7 +138,7 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 |---|---|---|
 | 同一份断言页在 Electron 里跑（不复制测试代码） | ✅ | electron 全矩阵 |
 | 真实渲染 + offscreen 截图（非白像素占比判定，非 `isEmpty()`） | ✅ | electron 各用例 |
-| 同一份断言的双端一致（24 个用例两个 runner 都过） | ✅ | run.sh / electron/run.sh |
+| 同一份断言的双端一致（25 个用例两个 runner 都过） | ✅ | run.sh / electron/run.sh |
 
 ---
 

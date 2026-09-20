@@ -141,6 +141,12 @@ case "${1:-index}" in
     run_one measnotify "$(src_of pages/MeasNotify.ts)" build/measnotify-module.js test/measnotify.html \
       "--cjs --register MeasNotify" || rc=1
     echo
+    # R20：三个模块（调用方页面 / 被启动方页面 / ability 类）
+    "$NODE" tools/extract.mjs "$(src_of pages/Callee.ts)" build/callee-module.js --cjs --register Callee >/dev/null || rc=1
+    "$NODE" tools/extract.mjs "$(src_of pages/PromptAct.ts)" build/promptact-module.js --cjs --register PromptAct >/dev/null || rc=1
+    run_one promptaction "$(src_of entryability/PromptAbility.ts)" build/promptability-module.js test/promptaction.html \
+      "--cjs --register PromptAbility" || rc=1
+    echo
     run_one measure "$(src_of pages/Measure.ts)" build/measure.js test/measure.html || rc=1
     echo
     run_one lazy "$(src_of pages/Lazy.ts)" build/lazy.js test/lazy.html || rc=1
@@ -201,6 +207,12 @@ case "${1:-index}" in
     "$NODE" tools/extract.mjs "$(src_of pages/Index.ts)" build/app.js >/dev/null || exit 1
     run_one ability "$(src_of entryability/EntryAbility.ts)" build/ability-module.js test/ability.html \
       "--cjs --register EntryAbility" ;;
+  promptaction)
+    # 三个模块：调用方页面 / 被启动方页面 / ability 类；被启动方由 ability 的 loadContent 选页
+    "$NODE" tools/extract.mjs "$(src_of pages/Callee.ts)" build/callee-module.js --cjs --register Callee >/dev/null || exit 1
+    "$NODE" tools/extract.mjs "$(src_of pages/PromptAct.ts)" build/promptact-module.js --cjs --register PromptAct >/dev/null || exit 1
+    run_one promptaction "$(src_of entryability/PromptAbility.ts)" build/promptability-module.js test/promptaction.html \
+      "--cjs --register PromptAbility" ;;
   router)
     # 两个页面都要注册；Detail 先单独产出，Home 由 run_one 带 flags 产出
     "$NODE" tools/extract.mjs "$(src_of pages/Detail.ts)" build/detail-module.js --cjs --register Detail >/dev/null || exit 1
@@ -217,5 +229,5 @@ case "${1:-index}" in
     echo
     run_one netfile-2 "$(src_of pages/NetFile.ts)" build/netfile-module.js test/netfile.html \
       "--cjs --register NetFile" "?phase=2" "$PERSIST_PROFILE" "$PERSIST_PORT" ;;
-  *) echo "用法: bash run.sh [index|rich|leak|layout|widgets|tabgrid|swiper|navdemo|reldemo|drawdemo|textmeasure|lazyvh|measarea|measimage|measnotify|measure|lazy|provide|async|ability|router|netfile|all]"; exit 2 ;;
+  *) echo "用法: bash run.sh [index|rich|leak|layout|widgets|tabgrid|swiper|navdemo|reldemo|drawdemo|textmeasure|lazyvh|measarea|measimage|measnotify|promptaction|measure|lazy|provide|async|ability|router|netfile|all]"; exit 2 ;;
 esac
