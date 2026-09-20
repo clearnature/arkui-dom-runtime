@@ -17,14 +17,15 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
+const HERE = path.dirname(path.dirname(new URL(import.meta.url).pathname));   // 仓库根
 const CLT = '/data/training/cli/commandline-tools-linux-x64-26.0.0.821/command-line-tools';
 const TS_PATH = path.join(
   CLT, 'sdk/default/openharmony/ets/build-tools/ets-loader/node_modules/typescript'
 );
 
 const DEFAULT_SRC =
-  '/tmp/hmtest/app/entry/build/default/cache/default/default@CompileArkTS/esmodule/debug/' +
-  'entry/src/main/ets/pages/Index.ts';
+  path.join(HERE, 'harmony-proj/entry/build/default/cache/default/default@CompileArkTS/esmodule/debug/',
+    'entry/src/main/ets/pages/Index.ts');
 
 const argv = process.argv.slice(2);
 const flags = new Set(argv.filter((a) => a.startsWith('--')));

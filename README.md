@@ -79,17 +79,18 @@ runtime/arkui-dom-runtime.js   运行时核心（经典脚本，加载后安装�
   ├ 布局（alignRules 六键 / 文本截断 / Stack 叠放 / Scroller）、LazyForEach 虚拟滚动
   └ 页面栈与路由
 runtime/generated-components.js 149 个组件骨架（生成物，不要手改）
-runtime/ohos-shims.js          10 个 @ohos:* 平台模块 + 持久化三级后端
+runtime/ohos-shims.js          13 个 @ohos:* 平台模块 + 持久化三级后端
 tools/extract.mjs              从 hvigor cache 抽转换产物 + 去 TS 类型 + v2 装饰器绑定前奏
 tools/gen-components.mjs       由 ets-loader 的组件 JSON 生成骨架（--check 只校验不写）
 tools/serve.py                 极简静态服务（端口由 OS 分配，避免冲突）
 tools/preflight.mjs            环境自检（工具链 / 宿主 / 可执行位）
 tools/check-all.sh             一条命令做完所有验收
 tools/stats.mjs                覆盖范围统计（文档里的数字都来自它）
-test/*.html                    断言页（24 个用例）
-fixtures/                      冻结的 ets-loader 转换产物（22 个，测试的输入）
-run.sh                         浏览器 24 用例驱动
-electron/run.sh                Electron 23 用例 + 真实磁盘验证
+test/*.html                    断言页（25 个用例）
+fixtures/                      冻结的 ets-loader 转换产物（23 个，测试的输入）
+harmony-proj/                  HarmonyOS 工程（页面 .ets 源码，转换产物的来源；构建输出不入库）
+run.sh                         浏览器 25 用例驱动
+electron/run.sh                Electron 24 用例 + 真实磁盘验证
 docs/                          ARCHITECTURE / DEVELOPING / ROADMAP / CAPABILITY
 ```
 
@@ -561,6 +562,53 @@ rect 已经把这位移算进去（b 明明 `offset=(40,20)`，rect 却是 `(0,0
 去掉错轴守卫 → 1 条失败（并因此发现原来那条断言**没有牙齿**：横线自身 `x=0`，
 用 `Start` 对齐时"错轴返回 0"与"没做判断"碰巧同值，改用 `Center` 才分离成 0 vs 150）。
 
+## R19：通知 `@ohos.notificationManager` ✅
+
+```
+$ bash run.sh measnotify
+=== ALL PASS ===                    （32 条断言）
+PASS publish×2 + cancel + cancelAll 全部 resolve：'p1;p2;c1;ca;'
+PASS 抛出了错误：'notificationManager.publish(id=3): content 里没有可显示内容 …'
+PASS 第 1 条 payload 被解析：id=1 title='标题A' text='正文A'
+PASS 被拒绝的那条没有进历史（不是"记了又没发"）
+PASS cancelAll 后活动通知为空（active=0）
+PASS 记录了投递路径 via='host-Notification'
+PASS 记录了宿主权限 hostPermission='default'
+PASS 凡不能确证真弹出都写出了原因：'宿主通知权限为 default（已创建通知对象，是否真的弹出由宿主决定）'
+PASS 回调重载返回 undefined（对应 .d.ts 的 void 重载）
+PASS 回调不在调用栈内同步触发
+PASS 权限被拒时 publish 仍然 resolve（拒绝投递 ≠ API 出错）
+PASS 没有"先构造再吞掉"（替身构造次数 0）
+PASS 浏览器（降级是预期）下 notification 告警 0 条（期望 0）
+```
+
+`bash electron/run.sh measnotify` 同一份断言页也全过，且**最后一条的期望值不同**：
+`permission=granted` → `reason` 为空（确证送达）、`Electron（期望真通知）下 notification 告警 1 条（期望 1）`。
+
+**难点不在"调用 API"，在"别谎报送达"**。DOM 里没有"系统通知"这一层，所以每次 `publish` 都如实记下
+`via`（`host-Notification` / `record-only`）、`hostPermission`、`reason`，并守一条不变量：
+
+> **只有 `via='host-Notification'` 且 `hostPermission='granted'` 才算确证送达；其余一切情况都必须写出 `reason`。**
+
+为什么不能压成"两档"：`permission='default'`（未授权）时**浏览器照样能 `new Notification()` 成功**——
+不抛错、也没被拒。把它当作"已送达"就是最典型的"看起来发了"。两端实测差异被断言钉住
+（`hostCreated` 计数 + 权限 + 原因），破坏验证里专门注入了"`via` 说走了宿主但 `reason` 留空"的
+**谎报送达**实现，被该断言精确抓住。
+
+**降级告警的边界**：浏览器没有系统通知是**预期**降级 → 只写日志；Electron（preload 注入过 Node fs）
+里"没送达"意味着用户看不到 → 进 `layout_warnings`。测试把宿主 `Notification` 换成 `permission='denied'`
+的替身来量这条边界，**两端期望值不同**（0 条 / 1 条），并额外断言替身的**构造次数为 0**——
+不允许"先建再吞"。
+
+**回调重载也必须异步**（`AsyncCallback` 语义），且该重载返回 `undefined` 而非 Promise；单独有断言守着。
+
+**页面源码进了仓库**：`harmony-proj/` 是 `devecocli create` 出来的 HarmonyOS 工程（API 26），
+`.ets` 页面源码随之入库 —— 之前工程放在 `/tmp`，一次重启（tmpfs）就没了，fixture 变得不可复现。
+
+**已知限制**：`picture`/`conversation` 内容类型不渲染（不认就响亮失败，不假装发了）；
+`sound`/`vibration`/`slotType`/`badge`/`group` 忽略；`on('click')` 未实现；**不做系统级断言**
+（不依赖桌面环境真的弹出）。
+
 ## R18：图像信息 `@ohos.multimedia.image` ✅
 
 ```
@@ -782,17 +830,17 @@ PASS starStyle 的图片 URI 不可用已记警告
 | 文档数字守门 | `npm run stats:check-doc` | `ARCHITECTURE.md` §6 的整块实测数字逐行比对，漂移即非 0 退出；`stats:write-doc` 就地重写 |
 | 覆盖统计 | `npm run stats` | 文档里的所有数字都由它产出（`--json` 机器可读） |
 
-`npm run check` 当前：**浏览器 24 用例 + Electron 23 用例全绿**。
+`npm run check` 当前：**浏览器 25 用例 + Electron 24 用例全绿**。
 
 ## 下一步
 
 **权威清单在 `docs/ROADMAP.md`**（每项带可复现的验收命令）。当前优先：
 
-1. **R19–R21** 平台模块：`notification`、`startAbilityForResult`+`promptAction`、浏览器真 fs（R18 图像信息已完成）
+1. **R20–R21** 平台模块：`startAbilityForResult`+`promptAction`、浏览器真 fs（R18 图像信息、R19 通知已完成）
 2. **R22–R23** 动画（`animateTo`/`transition`）与手势（`Gesture`）
 
 **仍未覆盖**：动画/转场、手势（**含 `Swiper` 的滑动翻页**）、`chainMode`、
-`Navigation` 的**标题栏/工具栏与分栏模式**、其余 85 个骨架组件的视觉语义、`@ohos:media`/`notification`。
+`Navigation` 的**标题栏/工具栏与分栏模式**、其余 85 个骨架组件的视觉语义、`@ohos:media`/`promptAction`。
 **别把没验的当结论**——`docs/CAPABILITY.md` 里有逐项的能力矩阵，其中标了哪些语义是**推断**的。
 
 **已知待办（别当已完成）**：

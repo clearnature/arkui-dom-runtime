@@ -711,6 +711,161 @@
     },
   });
 
+  // ── @ohos:notificationManager —— 通知（R19） ──
+  //
+  // 权威来源 @ohos.notificationManager.d.ts：
+  //   publish(request: NotificationRequest): Promise<void>      // 另有 (request, AsyncCallback<void>) 重载
+  //   cancel(id: number): Promise<void>   cancelAll(): Promise<void>
+  //   ContentType: NOTIFICATION_CONTENT_BASIC_TEXT / LONG_TEXT / PICTURE / CONVERSATION / MULTILINE / SYSTEM_LIVE_VIEW
+  //
+  // 现实：DOM 里没有"系统通知"这一层。能做且必须做的是两件事——
+  //   ① 如实【记录】调用与 payload（__arkui_dom_logs + __arkui_dom_notifications() 自省）：测试与排障的依据；
+  //   ② 尽力投给【宿主】的通知能力（Electron/浏览器都是 HTML5 Notification），并如实标注
+  //      走了哪条路（via）与没走成的原因（reason）—— 让"看起来发出去了"无处藏身。
+  // 降级本身不总是缺陷：浏览器没有系统通知是预期，只写日志；但 Electron 里注入过 nodeFs
+  // 说明期望真通知，此时"没送达"要进 layout_warnings（否则用户看不到通知又无从察觉）。
+  const notifStore = (global.__arkui_dom_notifStore = global.__arkui_dom_notifStore
+    || { active: [], history: [], hostCreated: 0 });
+
+  // title/text 允许 string | Resource；DOM 侧没有资源表 → 如实标记，不假装解析成功
+  const notifStr = (v) => {
+    if (typeof v === 'string') return v;
+    if (v === undefined || v === null) return '';
+    if (typeof v === 'object') return '[资源引用未解析]';
+    return String(v);
+  };
+
+  // 从 content 推断"拿哪一段显示"：basic text 优先，其次 longText / multiLine。
+  // 只有 picture / conversation 的内容无法在 DOM 里表达 → 都不认，交给调用方响亮失败。
+  function notifTextOf(content) {
+    if (!content || typeof content !== 'object') return { kind: '', title: '', text: '' };
+    const { normal, longText, multiLine } = content;
+    if (normal && typeof normal === 'object') {
+      return { kind: 'normal', title: notifStr(normal.title), text: notifStr(normal.text) };
+    }
+    if (longText && typeof longText === 'object') {
+      return { kind: 'longText', title: notifStr(longText.title), text: notifStr(longText.longText) };
+    }
+    if (multiLine && typeof multiLine === 'object') {
+      return { kind: 'multiLine', title: notifStr(multiLine.title), text: notifStr(multiLine.text) };
+    }
+    return { kind: '', title: '', text: '' };
+  }
+
+  // 投递路径是三档，不是两档 —— 中间的"对象建了但不保证弹"必须如实说出来，
+  // 否则 permission=default（未授权）时会被当成"已送达"。
+  function notifTryHost(title, text, id) {
+    const N = global.Notification;
+    if (typeof N !== 'function') {
+      return { via: 'record-only', reason: '本环境没有 HTML5 Notification API', hostPermission: 'n/a' };
+    }
+    const perm = N.permission;
+    if (perm === 'denied') return { via: 'record-only', reason: '宿主通知权限为 denied', hostPermission: perm };
+    try {
+      const n = new N(title || '(无标题)', { body: text || '', tag: 'arkui-' + id });
+      if (typeof n.show === 'function') n.show();   // Electron 需 show()，浏览器构造即显示
+      notifStore.hostCreated++;
+      return {
+        via: 'host-Notification',
+        reason: perm === 'granted' ? '' : `宿主通知权限为 ${perm}（已创建通知对象，是否真的弹出由宿主决定）`,
+        hostPermission: perm,
+      };
+    } catch (e) {
+      return { via: 'record-only', reason: '宿主 Notification 构造失败：' + (e && e.message), hostPermission: perm };
+    }
+  }
+
+  const notifWarnIfElectron = (reason) => {
+    if (!nodeFs) return;                            // 浏览器降级是预期行为，不进 warnings
+    const w = global.__arkui_dom_layout_warnings;
+    const msg = `[notification] 通知未送达系统：${reason}`;
+    if (w && !w.includes(msg)) w.push(msg);
+  };
+
+  // 把 promise / callback 两种重载收敛到一处；callback 路径也异步回调，与真实实现语义一致
+  function notifCall(run, cb) {
+    if (typeof cb === 'function') {
+      Promise.resolve()
+        .then(run)
+        .then((v) => cb(okRes(), v), (e) => cb(failRes(e)));
+      return undefined;
+    }
+    return Promise.resolve().then(run);
+  }
+
+  const notificationManager = {
+    ContentType: {
+      NOTIFICATION_CONTENT_BASIC_TEXT: 0,
+      NOTIFICATION_CONTENT_LONG_TEXT: 1,
+      NOTIFICATION_CONTENT_PICTURE: 2,
+      NOTIFICATION_CONTENT_CONVERSATION: 3,
+      NOTIFICATION_CONTENT_MULTILINE: 4,
+      NOTIFICATION_CONTENT_SYSTEM_LIVE_VIEW: 5,
+    },
+    publish(request, cb) {
+      return notifCall(() => {
+        if (!request || typeof request !== 'object' || request.id === undefined || request.id === null) {
+          throw fsErr(401, 'notificationManager.publish: 缺少必填字段 id（NotificationRequest.id 是 number）');
+        }
+        const id = Number(request.id);
+        const { kind, title, text } = notifTextOf(request.content);
+        if (!kind) {
+          throw fsErr(401, `notificationManager.publish(id=${id}): content 里没有可显示内容 — `
+            + '需要 normal{title,text} / longText / multiLine 之一（本实现不渲染 picture/conversation，图片类请自行降级为文本）');
+        }
+        const host = notifTryHost(title, text, id);
+        const rec = {
+          op: 'publish', id, kind, title, text,
+          via: host.via, reason: host.reason, hostPermission: host.hostPermission,
+        };
+        notifStore.history.push(rec);
+        notifStore.active = notifStore.active.filter((x) => x.id !== id);
+        notifStore.active.push(rec);
+        logs.push(`[notification] publish id=${id} kind=${kind} title='${title}' text='${text}' `
+          + `via=${host.via} permission=${host.hostPermission}${host.reason ? ' reason=' + host.reason : ''}`);
+        if (host.via !== 'host-Notification') notifWarnIfElectron(host.reason);
+        return undefined;
+      }, cb);
+    },
+    cancel(id, cb) {
+      return notifCall(() => {
+        const n = Number(id);
+        if (!Number.isFinite(n)) {
+          throw fsErr(401, `notificationManager.cancel: id 必须是 number（收到 ${JSON.stringify(id)}）`);
+        }
+        const before = notifStore.active.length;
+        notifStore.active = notifStore.active.filter((x) => x.id !== n);
+        const found = before !== notifStore.active.length;
+        notifStore.history.push({ op: 'cancel', id: n, found });
+        logs.push(`[notification] cancel id=${n} ${found ? '已移除活动通知' : '无匹配的活动通知（系统语义下不算失败）'}`);
+        return undefined;
+      }, cb);
+    },
+    cancelAll(cb) {
+      return notifCall(() => {
+        const cleared = notifStore.active.length;
+        notifStore.active = [];
+        notifStore.history.push({ op: 'cancelAll', cleared });
+        logs.push(`[notification] cancelAll 清除 ${cleared} 条活动通知`);
+        return undefined;
+      }, cb);
+    },
+    isNotificationEnabled(cb) {
+      return notifCall(() => {
+        const N = global.Notification;
+        return typeof N === 'function' && N.permission !== 'denied';
+      }, cb);
+    },
+  };
+  define('notificationManager', notificationManager);
+
+  // 供测试/宿主核验：返回快照（逐条浅拷贝），避免调用方改到内部状态
+  global.__arkui_dom_notifications = () => ({
+    active: notifStore.active.map((x) => Object.assign({}, x)),
+    history: notifStore.history.map((x) => Object.assign({}, x)),
+    hostCreated: notifStore.hostCreated,
+  });
+
   // 供测试/宿主核验：后端类型、根、读取、真实路径，以及就绪/落盘完成的等待点。
   // 用 getter 而不是快照值：OPFS 失败降级后这里要能反映"当前"后端。
   global.__arkui_dom_fs = {

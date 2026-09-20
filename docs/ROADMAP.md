@@ -37,6 +37,7 @@ R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分�
 | ③ | **变高列表项**（实测回填 + 前缀和偏移 + 滚动锚定） | `bash run.sh lazyvh`（22 条断言，双端通过） |
 | ③ | **`onAreaChange` + 自定义布局协议** | `bash run.sh measarea`（28 条断言，双端通过） |
 | ③ | **图像信息**（`@ohos.multimedia.image`） | `bash run.sh measimage`（13 条断言，双端通过） |
+| ③ | **通知**（`@ohos.notificationManager`，含投递路径自省） | `bash run.sh measnotify`（32 条断言，双端通过） |
 | ③ | `@ohos:*` 别名层 + CommonJS 装载 + 真 fetch | `bash run.sh async` |
 | ③ | `UIAbility` 启动链路 | `bash run.sh ability` |
 | ③ | `router` 页面栈（返回时保留状态） | `bash run.sh router` |
@@ -598,11 +599,52 @@ visibility:hidden` —— **不能用 `display:none`**，那样没有布局、�
 `test-assets/*`（4 张已知尺寸图片，含伪装文件）、`fixtures/pages/MeasImage.ts`、
 `test/measimage.html`、`run.sh`、`electron/run.sh`
 
-### R19 — `@ohos:notification`
+### R19 — `@ohos:notificationManager` ✅
 
-**内容**：`notificationManager.publish` → Electron 侧用 `new Notification()`，浏览器侧退化为记录 + 可选 `Notification API`。
+**内容**：`notificationManager.publish` → Electron 侧用 `new Notification()`，浏览器侧退化为记录 + 可选 `Notification API`；
+补 `cancel`/`cancelAll`/`isNotificationEnabled` 与 `(request, AsyncCallback<void>)` 重载。
 
-**验收**：断言调用后 `__arkui_dom_logs` 有记录，且 Electron 侧通知对象被创建（不做系统级断言，避免依赖桌面环境）。
+**权威来源**：`@ohos.notificationManager.d.ts`（模块名 `@ohos.notificationManager`；`@kit.NotificationKit` 只是再导出）。
+
+**三档投递，不许压成两档**（本任务的关键点）：DOM 里没有"系统通知"这一层，所以每次 `publish` 都记下
+`via`（`host-Notification` / `record-only`）、`hostPermission`、`reason`，并守一条不变量：
+
+> **只有 `via='host-Notification'` 且 `hostPermission='granted'` 才算确证送达；其余一切情况都必须写出非空 `reason`。**
+
+`permission='default'`（未授权）时**浏览器照样能 `new Notification()` 成功**——若当成"已送达"，
+就是最典型的"看起来发了"。两端实测（同一条断言、期望值不同）：
+
+```
+浏览器（Chrome headless） via=host-Notification permission=default reason=宿主通知权限为 default（已创建通知对象，是否真的弹出由宿主决定）
+Electron                  via=host-Notification permission=granted reason=-（确证送达，hostCreated +1）
+```
+
+**降级告警的边界**（两端语义刻意不同）：浏览器没有系统通知是**预期**降级 → 只写 `__arkui_dom_logs`；
+Electron（preload 注入过 `global.__arkui_dom_nodeFs`）里"没送达"意味着用户看不到 → 进 `__arkui_dom_layout_warnings`。
+判端用 `nodeFs` 这个既有的"能力注入"信号，不查 `userAgent`。
+
+**验收（已执行）**：`bash run.sh measnotify` / `bash electron/run.sh measnotify` —— **32 条断言**，双端通过：
+四条 Promise 链路（publish×2 + cancel + cancelAll）、空 `content` 被拒绝且错误信息点名 `content`；
+payload 真解析（`id`/`title`/`text`）、被拒绝的那条不进历史、`cancelAll` 后 `active` 为空；
+三档投递的 `via`/`hostPermission`/`reason` 与 `hostCreated`；回调重载（**异步**触发、返回 `undefined`、
+成功 `code=0`/失败非 0）；`cancel('x')` 响亮失败；`isNotificationEnabled()` 是 `Promise<boolean>`；
+把宿主 `Notification` 换成 `permission='denied'` 替身后：publish 仍 resolve、替身**构造次数为 0**、
+告警条数**两端不同**（浏览器 0 / Electron 1）。
+
+**破坏验证**（6 个注入错误实现，各被精确抓住）：① 交换 `title`/`text` → 2 条 payload 断言红；
+② 去掉空 `content` 的拒绝 → 3 个分组共 9 条红（分组隔离生效）；③ 回调改同步 → "不在调用栈内同步触发"单独红；
+④ 记录里去掉 `hostPermission` → 权限断言单独红；⑤ **`via` 说走了宿主但 `reason` 留空（谎报送达）→ 诚实性断言单独红**；
+⑥ 去掉"浏览器/Electron"区分 → 降级告警边界断言红。
+
+**已回落为可复现**：页面源码入仓 `harmony-proj/`（`devecocli create`，API 26）；`run.sh` 的 `CACHE`
+与缺输入提示都指向仓库内工程，不再依赖 `/tmp/hmtest/app`（tmpfs，重启即失效）。
+
+**已知限制**：`picture`/`conversation` 内容类型不渲染（不认就响亮失败，不假装发了）；
+`sound`/`vibration`/`slotType`/`badge`/`group` 忽略；通知点击回调 `on('click')` 未实现；
+**不做系统级断言**（不依赖桌面环境真的弹出）。
+
+**触及**：`runtime/ohos-shims.js`（`@ohos:notificationManager`）、`fixtures/pages/MeasNotify.ts`、
+`harmony-proj/`（页面源码，新增入仓）、`test/measnotify.html`、`run.sh`、`electron/run.sh`
 
 ### R20 — `startAbilityForResult` + `promptAction`
 

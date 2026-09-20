@@ -13,7 +13,7 @@ cd "$HERE"
 
 NODE=/data/training/cli/commandline-tools-linux-x64-26.0.0.821/command-line-tools/tool/node/bin/node
 CHROME=/opt/google/chrome/chrome
-CACHE=/tmp/hmtest/app/entry/build/default/cache/default/default@CompileArkTS/esmodule/debug/entry/src/main/ets
+CACHE="$HERE/harmony-proj/entry/build/default/cache/default/default@CompileArkTS/esmodule/debug/entry/src/main/ets"
 FIXTURES="$HERE/fixtures"
 
 # 优先用项目内固化的转换产物（fixtures/），没有才回落到 hvigor 的 cache。
@@ -52,7 +52,9 @@ run_one() {
   if [ -z "$src" ] || [ ! -f "$src" ]; then
     echo "  ❌ 找不到输入文件"
     echo "     期望：$FIXTURES/<相对路径>  或  $CACHE/<相对路径>"
-    echo "     重新生成：在 HarmonyOS 工程里跑 devecocli build（转换产物会落在 hvigor 的 cache）"
+    echo "     重新生成：cd harmony-proj && /data/training/cli/commandline-tools-linux-x64-26.0.0.821/command-line-tools/bin/devecocli build"
+    echo "     （工程在仓库内 harmony-proj/，页面源码 harmony-proj/entry/src/main/ets/pages/*.ets；"
+    echo "       转换产物落在 hvigor 的 cache，即上面的 \$CACHE）"
     echo "     再固化：cp <cache>/pages/X.ts fixtures/pages/"
     return 2
   fi
@@ -136,6 +138,9 @@ case "${1:-index}" in
     run_one measimage "$(src_of pages/MeasImage.ts)" build/measimage-module.js test/measimage.html \
       "--cjs --register MeasImage" || rc=1
     echo
+    run_one measnotify "$(src_of pages/MeasNotify.ts)" build/measnotify-module.js test/measnotify.html \
+      "--cjs --register MeasNotify" || rc=1
+    echo
     run_one measure "$(src_of pages/Measure.ts)" build/measure.js test/measure.html || rc=1
     echo
     run_one lazy "$(src_of pages/Lazy.ts)" build/lazy.js test/lazy.html || rc=1
@@ -181,6 +186,8 @@ case "${1:-index}" in
   measarea) run_one measarea "$(src_of pages/MeasArea.ts)" build/measarea.js test/measarea.html ;;
   measimage) run_one measimage "$(src_of pages/MeasImage.ts)" build/measimage-module.js test/measimage.html \
       "--cjs --register MeasImage" ;;
+  measnotify) run_one measnotify "$(src_of pages/MeasNotify.ts)" build/measnotify-module.js test/measnotify.html \
+      "--cjs --register MeasNotify" ;;
   measure) run_one measure "$(src_of pages/Measure.ts)" build/measure.js test/measure.html ;;
   lazy) run_one lazy "$(src_of pages/Lazy.ts)" build/lazy.js test/lazy.html ;;
   provide) run_one provide "$(src_of pages/Provide.ts)" build/provide.js test/provide.html ;;
@@ -210,5 +217,5 @@ case "${1:-index}" in
     echo
     run_one netfile-2 "$(src_of pages/NetFile.ts)" build/netfile-module.js test/netfile.html \
       "--cjs --register NetFile" "?phase=2" "$PERSIST_PROFILE" "$PERSIST_PORT" ;;
-  *) echo "用法: bash run.sh [index|rich|leak|layout|widgets|tabgrid|swiper|navdemo|reldemo|drawdemo|textmeasure|lazyvh|measarea|measimage|measure|lazy|provide|async|ability|router|netfile|all]"; exit 2 ;;
+  *) echo "用法: bash run.sh [index|rich|leak|layout|widgets|tabgrid|swiper|navdemo|reldemo|drawdemo|textmeasure|lazyvh|measarea|measimage|measnotify|measure|lazy|provide|async|ability|router|netfile|all]"; exit 2 ;;
 esac

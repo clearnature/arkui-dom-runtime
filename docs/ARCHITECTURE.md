@@ -896,6 +896,48 @@ src.getImageInfo().then((info: image.ImageInfo) => { info.size.width … info.mi
 `PixelMap`/`ImagePacker`/`ImageReceiver`/`createImageSource(buf|fd)` 等未实现（调用会响亮报错）。
 `stride`/`density`/`pixelFormat`/`alphaType` 回常量 0（未从解码器取真实值）。
 
+### 4.13 通知 `@ohos.notificationManager`（R19）
+
+**权威来源** `@ohos.notificationManager.d.ts`：`publish(request: NotificationRequest): Promise<void>`
+**并有 `(request, AsyncCallback<void>)` 重载**；`cancel(id)` / `cancelAll()` / `isNotificationEnabled()`；
+`ContentType` 六个枚举值（`BASIC_TEXT`…`SYSTEM_LIVE_VIEW`）。
+
+**核心问题**：DOM 里**没有"系统通知"这一层**。"实现了"与"看起来实现了"的区别全在一点上——
+**投递路径必须如实说自己走到哪一步**。所以每次 `publish` 都记下三样东西：
+`via`（`host-Notification` / `record-only`）、`hostPermission`、`reason`。
+
+**不变量**：**只有 `via='host-Notification'` 且 `hostPermission='granted'` 才算"确证送达"，
+其余一切情况都必须写出非空 `reason`。** 这条由断言直接守着（见 §7 的 `measnotify`），
+破坏验证里专门注入了"`via` 说走了宿主但 `reason` 留空"的**谎报送达**实现，被该断言精确抓住。
+
+为什么不能压成两档——两端实测（同一条断言、期望值不同）：
+
+```
+浏览器（Chrome headless） via=host-Notification permission=default reason=宿主通知权限为 default（已创建通知对象，是否真的弹出由宿主决定）
+Electron                  via=host-Notification permission=granted reason=-（确证送达，hostCreated 计数 +1）
+```
+
+`permission='default'` 时**浏览器照样能 `new Notification()` 成功**（不抛错、权限也没被拒），
+若把它当成"已送达"，就是最典型的"看起来发了"。
+
+**降级告警的边界**（两端语义刻意不同）：浏览器没有系统通知是**预期**降级 → 只写 `__arkui_dom_logs`；
+Electron（preload 注入过 `global.__arkui_dom_nodeFs`）里"没送达"意味着用户看不到通知 → 进
+`__arkui_dom_layout_warnings`。用 `nodeFs` 判端而不是 `navigator.userAgent`：判端依据取"能力注入"
+这一既有的、单点的信号。`test/measnotify.html` 把宿主 `Notification` 换成 `permission='denied'` 的替身
+来量这条边界，**两端期望值不同**（浏览器 0 条 / Electron 1 条），并且同时断言替身的**构造次数为 0**——
+不允许"先构造再吞掉"。
+
+**内容解析**：`content` 里按 `normal` → `longText` → `multiLine` 取显示文本（`kind` 记下取的是哪段）；
+`picture`/`conversation` **不认就响亮失败**（DOM 表达不了图片通知，与其假装发了不如报错）。
+空的 `content` 抛 BusinessError（`code: 401`）且**错误信息点名 `content`**。
+
+**回调重载的语义**：也必须**异步**触发（`Promise.resolve().then(...)`），且该重载返回 `undefined`
+而非 Promise（对应 `.d.ts` 的 `void` 重载）。这条单独有断言——同步触发会让调用方的"回调先于后续代码"
+假设悄悄不成立。
+
+**已知限制**：`picture`/`conversation` 内容类型不渲染；`sound`/`vibration`/`slotType`/`badge`/`group` 忽略；
+通知点击回调 `on('click')` 未实现；**不做系统级断言**（不依赖桌面环境真的弹出，只看宿主对象是否被创建与权限）。
+
 ---
 
 ## 5. 架构不变量
@@ -984,44 +1026,44 @@ src.getImageInfo().then((info: image.ImageInfo) => { info.size.width … info.mi
   装饰器表合计      12 个（含 v1 的 Observed）
 
 == 平台模块（@ohos:*）==
-  12 个：app.ability.AbilityConstant app.ability.ConfigurationConstant app.ability.UIAbility app.ability.Want data.preferences file.fs hilog measure multimedia.image net.http router window
+  13 个：app.ability.AbilityConstant app.ability.ConfigurationConstant app.ability.UIAbility app.ability.Want data.preferences file.fs hilog measure multimedia.image net.http notificationManager router window
 
 == 用例矩阵 ==
-  浏览器 run.sh     24 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measure lazy provide v2 observe async ability router netfile persist
-  Electron          23 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measure lazy provide async v2 observe
-  测试页            24 个
-  fixtures 转换产物  22 个：AsyncIO Detail DrawDemo Home Index Layout Lazy LazyVar MeasArea MeasImage Measure NavDemo NetFile Observe Provide RelDemo Rich SwiperDemo TabsGrid TextMeasure V2 Widgets
+  浏览器 run.sh     25 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify measure lazy provide v2 observe async ability router netfile persist
+  Electron          24 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify measure lazy provide async v2 observe
+  测试页            25 个
+  fixtures 转换产物  23 个：AsyncIO Detail DrawDemo Home Index Layout Lazy LazyVar MeasArea MeasImage MeasNotify Measure NavDemo NetFile Observe Provide RelDemo Rich SwiperDemo TabsGrid TextMeasure V2 Widgets
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          240.2 KB
-  test             153.9 KB
-  tools            37.9 KB
-  electron(src)    16.4 KB
-  docs             201.1 KB
-  fixtures         171.5 KB
+  runtime          247.7 KB
+  test             164.4 KB
+  tools            38.1 KB
+  electron(src)    16.6 KB
+  docs             211.2 KB
+  fixtures         176.7 KB
 
 == 逐文件（文档"文件职责"表的来源）==
   runtime/arkui-dom-runtime.js     153793 B  150.2 KB
   runtime/generated-components.js   57617 B  56.3 KB
-  runtime/ohos-shims.js             34527 B  33.7 KB
-  tools/extract.mjs                  6457 B  6.3 KB
+  runtime/ohos-shims.js             42186 B  41.2 KB
+  tools/extract.mjs                  6563 B  6.4 KB
   tools/gen-components.mjs           7775 B  7.6 KB
   tools/serve.py                     2901 B  2.8 KB
   tools/stats.mjs                   13415 B  13.1 KB
-  tools/preflight.mjs                5108 B  5.0 KB
+  tools/preflight.mjs                5178 B  5.1 KB
   tools/check-all.sh                 3171 B  3.1 KB
-  run.sh                            11318 B  11.1 KB
-  electron/run.sh                    7858 B  7.7 KB
+  run.sh                            11869 B  11.6 KB
+  electron/run.sh                    8062 B  7.9 KB
   electron/main.js                   6795 B  6.6 KB
   electron/preload.js                1961 B  1.9 KB
   package.json                       1207 B  1.2 KB
   .gitignore                          674 B  0.7 KB
-  README.md                         48423 B  47.3 KB
+  README.md                         51718 B  50.5 KB
   THIRD-PARTY-NOTICES.md             8256 B  8.1 KB
-  docs/ARCHITECTURE.md              81092 B  79.2 KB
-  docs/CAPABILITY.md                26548 B  25.9 KB
-  docs/DEVELOPING.md                36151 B  35.3 KB
-  docs/ROADMAP.md                   42760 B  41.8 KB
+  docs/ARCHITECTURE.md              84922 B  82.9 KB
+  docs/CAPABILITY.md                27456 B  26.8 KB
+  docs/DEVELOPING.md                38277 B  37.4 KB
+  docs/ROADMAP.md                   46267 B  45.2 KB
   docs/surface-measurement.md        6496 B  6.3 KB
   docs/SESSION-2026-09-20.md        12842 B  12.5 KB
   fixtures/pages/AsyncIO.ts          6206 B  6.1 KB
@@ -1034,6 +1076,7 @@ src.getImageInfo().then((info: image.ImageInfo) => { info.size.width … info.mi
   fixtures/pages/LazyVar.ts          7774 B  7.6 KB
   fixtures/pages/MeasArea.ts         8522 B  8.3 KB
   fixtures/pages/MeasImage.ts       12199 B  11.9 KB
+  fixtures/pages/MeasNotify.ts       5355 B  5.2 KB
   fixtures/pages/Measure.ts          6262 B  6.1 KB
   fixtures/pages/NavDemo.ts         14129 B  13.8 KB
   fixtures/pages/NetFile.ts          5039 B  4.9 KB
@@ -1057,6 +1100,7 @@ src.getImageInfo().then((info: image.ImageInfo) => { info.size.width … info.mi
   test/leak.html                     3921 B  3.8 KB
   test/measarea.html                 9231 B  9.0 KB
   test/measimage.html                5110 B  5.0 KB
+  test/measnotify.html              10722 B  10.5 KB
   test/measure.html                  6072 B  5.9 KB
   test/navdemo.html                 13765 B  13.4 KB
   test/netfile.html                  5302 B  5.2 KB
@@ -1088,7 +1132,8 @@ src.getImageInfo().then((info: image.ImageInfo) => { info.size.width … info.mi
 | `Tabs` / `TabContent` 切换 | ✅ 有测试（`run.sh tabgrid`）：`barPosition`、`index`、`TabsController.changeIndex`、`onChange`、点击 bar 切换、切走的面板不销毁 |
 | `Swiper` 轮播 | ✅ 有测试（`run.sh swiper`）：`index`/`loop`（含回卷与边界停住）/`autoPlay`+`interval`/`indicator` 圆点/`SwiperController.showNext`·`showPrevious`·`changeIndex`、切走的页不销毁 |
 | 虚拟滚动（含**变高列表项**） | ✅ 有测试（`run.sh lazyvh`）：偏移 = 逐项 advance 的前缀和、渲染后实测回填、`estItemH` 取已实测均值、滚动锚定、`scrollToIndex` 精确落顶、偏移模型与 DOM **逐项相等**；400 项 → 4~5 个节点 |
-| 平台模块 | ✅ 12 个：`hilog`/`app.ability.*`/`window`/`router`/`data.preferences`/`file.fs`/`net.http`/**`measure`**/**`multimedia.image`**；其余（`media`/`notification`/…）未实现 → 调用时给可操作报错 |
+| **通知 `@ohos.notificationManager`** | ✅ 有测试（`run.sh measnotify`）：`publish`/`cancel`/`cancelAll`/`isNotificationEnabled` + **回调重载**（异步、返回 `void`）；`content` 真解析（`normal`/`longText`/`multiLine`）、空 `content` 响亮失败；**三档投递路径**（`via`/`hostPermission`/`reason`）——不能确证送达就必须写出原因；Electron 侧 `hostCreated` 递增且 `permission=granted` |
+| 平台模块 | ✅ 13 个：`hilog`/`app.ability.*`/`window`/`router`/`data.preferences`/`file.fs`/`net.http`/**`measure`**/**`multimedia.image`**/**`notificationManager`**；其余（`media`/`promptAction`/…）未实现 → 调用时给可操作报错 |
 | **`onAreaChange`** | ✅ 有测试（`run.sh measarea`）：回调的 `newValue.width/height` **等于真实 `getBoundingClientRect()`**、尺寸变化后再次触发且 `oldValue` 是上一次的真实值 |
 | **自定义布局协议** `onMeasureSize`+`onPlaceChildren` | ✅ 有测试（`run.sh measarea`）：`Measurable.measure(constraint)` 回**真实测量**、返回的 `SizeResult` **覆盖**声明尺寸、`Layoutable.layout(position)` 真的摆放（几何断言）、收敛有上限 |
 | 文本真实测量 | ✅ 有测试（`run.sh textmeasure`）：`@ohos:measure` 的 `measureText`（单行、忽略约束）/`measureTextSize`（约束宽高、`maxLines` 夹高、`lineHeight`）；**与同文本同宽度的真实 Text DOM 逐像素一致**；`__arkui_dom_countLines` 直接断言行数 |
@@ -1106,19 +1151,19 @@ src.getImageInfo().then((info: image.ImageInfo) => { info.size.width … info.mi
 |---|---|---|---|
 | `runtime/arkui-dom-runtime.js` | 150.2 KB | v1 状态类 + 深度观测（`@Observed`/`@ObjectLink`）、`ViewPU`/`ViewV2`、装饰器层、组件栈、布局（`alignRules` 多层锚链 + `Guideline` + `bias`、`Grid` 轨道）、`Tabs`/`TabContent`+`TabsController`、`Swiper`+`SwiperController`、`Navigation`/`NavDestination`+`NavPathStack`、**绘制类四件套**（SVG/CSS）、`LazyForEach`、路由 | 实现新语义（**手写优先**） |
 | `runtime/generated-components.js` | 56.3 KB | 149 个组件骨架（**生成物**） | **不手改**；改 `tools/gen-components.mjs` 后重新生成，`--check` 会守门 |
-| `runtime/ohos-shims.js` | 33.7 KB | `@ohos:*` 模块（12 个，含 **`measure`**/**`multimedia.image`**）+ 持久化后端 + 文本/图像测量原语 | 新增平台模块 |
+| `runtime/ohos-shims.js` | 41.2 KB | `@ohos:*` 模块（13 个，含 **`measure`**/**`multimedia.image`**/**`notificationManager`**）+ 持久化后端 + 文本/图像测量原语 | 新增平台模块 |
 | `tools/extract.mjs` | 6.3 KB | hvigor 缓存 `.ts` → 可执行 `.js`；**装饰器作用域内绑定前奏 + 未就绪守卫**（§3.4） | 产物形态/装饰器集合变化时 |
 | `tools/gen-components.mjs` | 7.6 KB | ets-loader 组件 JSON → 骨架注册表（`--check` 只校验不写） | 组件元数据/画像规则更新时 |
-| `tools/serve.py` | 2.6 KB | 静态服务（含显式图片 MIME）+ `/echo` + `/slow`（测超时） | 需要新测试端点/资产类型时 |
-| `tools/stats.mjs` | 13.0 KB | 本文档所有数字的来源（`--json` 机器可读）；**`--check-doc`/`--write-doc` 守 §6 引用块** | 覆盖范围变化时 |
+| `tools/serve.py` | 2.8 KB | 静态服务（含显式图片 MIME）+ `/echo` + `/slow`（测超时） | 需要新测试端点/资产类型时 |
+| `tools/stats.mjs` | 13.1 KB | 本文档所有数字的来源（`--json` 机器可读）；**`--check-doc`/`--write-doc` 守 §6 引用块** | 覆盖范围变化时 |
 | `tools/preflight.mjs` | 5.0 KB | 环境自检（工具链/宿主/可执行位） | 外部依赖变化时 |
 | `tools/check-all.sh` | 3.1 KB | 一条命令做完验收（5 步），退出码只看被调命令 | 新增验收步骤时 |
-| `run.sh` | 11.1 KB | 浏览器 24 用例驱动 | 新增用例 |
-| `electron/run.sh` | 7.7 KB | Electron 23 用例 + 磁盘验证 | 新增用例 |
+| `run.sh` | 11.4 KB | 浏览器 25 用例驱动 | 新增用例 |
+| `electron/run.sh` | 7.9 KB | Electron 24 用例 + 磁盘验证 | 新增用例 |
 | `electron/main.js` | 6.6 KB | 主进程：offscreen 截图、**像素级**空白检测 | 截图/验证策略变化时 |
 | `electron/preload.js` | 1.9 KB | `contextBridge` 暴露 Node fs | 宿主能力变化时 |
-| `fixtures/pages/*.ts` | 172 KB | **冻结的**官方转换产物（22 个，含 `V2.ts`/`Observe.ts`/`TabsGrid.ts`/`SwiperDemo.ts`/`NavDemo.ts`/`RelDemo.ts`/`DrawDemo.ts`/`TextMeasure.ts`/`LazyVar.ts`/`MeasArea.ts`/`MeasImage.ts`） | 几乎不改（见不变量 5） |
-| `test/*.html` | 154 KB | 断言页（读 `#result` 节点文本） | 新增用例 |
+| `fixtures/pages/*.ts` | 176.7 KB | **冻结的**官方转换产物（23 个，含 `V2.ts`/`Observe.ts`/`TabsGrid.ts`/`SwiperDemo.ts`/`NavDemo.ts`/`RelDemo.ts`/`DrawDemo.ts`/`TextMeasure.ts`/`LazyVar.ts`/`MeasArea.ts`/`MeasImage.ts`/`MeasNotify.ts`） | 几乎不改（见不变量 5） |
+| `test/*.html` | 162.1 KB | 断言页（读 `#result` 节点文本） | 新增用例 |
 | `test-assets/*` | 1.1 KB | **已知尺寸的测试图片**（PNG/JPEG/伪装文件）。必须进仓库——放 `/tmp` 会在重启后失效（R5 的教训） | 需要新资产时 |
 
 ---

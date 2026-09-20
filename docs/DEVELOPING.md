@@ -187,9 +187,9 @@ v1 的 `@Observed` **也不挂 global**，走同一张 `__arkui_dom_decorators` 
 1. **先测量产物**。新装饰器（或新版本的工具链）改了产物形态时，**不要猜**。改一个 `.ets`、构建、然后看编译产物：
 
    ```bash
-   cd /tmp/hmtest/app && timeout 560 /data/training/cli/commandline-tools-linux-x64-26.0.0.821/command-line-tools/bin/hvigorw \
+   cd harmony-proj && timeout 560 /data/training/cli/commandline-tools-linux-x64-26.0.0.821/command-line-tools/bin/hvigorw \
      --mode module -p product=default -p module=entry@default -p buildMode=debug assembleHap --no-daemon
-   CACHE=/tmp/hmtest/app/entry/build/default/cache/default/default@CompileArkTS/esmodule/debug/entry/src/main/ets
+   CACHE=../harmony-proj/entry/build/default/cache/default/default@CompileArkTS/esmodule/debug/entry/src/main/ets
    grep -n "__decorate\|Nesed\|ObjectLink" $CACHE/pages/*.ts
    cp $CACHE/pages/<Page>.ts fixtures/pages/
    ```
@@ -290,11 +290,11 @@ const text = document.getElementById('result').textContent;
 只有新增/修改 `.ets` 页面时才需要。
 
 ```bash
-# 1. 在 HarmonyOS 工程里构建
-cd /tmp/hmtest/app && devecocli build
+# 1. 在仓库内的 HarmonyOS 工程里构建（页面源码 harmony-proj/entry/src/main/ets/pages/*.ets）
+cd harmony-proj && devecocli build && cd ..
 
 # 2. 转换产物在 hvigor 的 cache（注意这条长路径）
-CACHE=/tmp/hmtest/app/entry/build/default/cache/default/default@CompileArkTS/esmodule/debug/entry/src/main/ets
+CACHE=harmony-proj/entry/build/default/cache/default/default@CompileArkTS/esmodule/debug/entry/src/main/ets
 
 # 3. 固化到 fixtures
 cp $CACHE/pages/NewPage.ts fixtures/pages/
@@ -392,6 +392,9 @@ node tools/extract.mjs fixtures/pages/NewPage.ts build/newpage.js --cjs --regist
 | 61 | **测试解析"被测页面输出"时凭 token 猜格式**：页面把回调参数拼成 `A\|120x30\|`，我却按"某个 token 以 A 开头且含 x"去找 → 找不到，**一度以为回调没传值**（实际数字完全正确） | 断言前先看**原始输出**（把 `RAWLOG` 打进结果里）；解析用正则整体匹配，不要 `split` 后再猜哪一段是什么。**"看着像坏了"和"真的坏了"要分得开** |
 | 62 | **断言的"错误实现"也可能碰巧得到正确值**：`mimeType` 的断言写成"PNG → `image/png`"，于是把 `mimeType` **写死成 `image/png` 也照样通过** —— 断言等于没测 | **造一个能让错误实现暴露的输入**：加一张真 JPEG（写死 png 会失败）、加一张**伪装文件**（PNG 字节 + `.jpg` 扩展名；用响应头代替真嗅探会失败）。判据同 ㊾：**"把实现改坏"必须真的红** |
 | 63 | **`serve.py` 按扩展名给 MIME，没登记的扩展名退化成 `application/octet-stream`** → 任何对 `Content-Type` 的断言都会失去意义（且看起来"通过了"） | 需要新资产类型时**先在 `extensions_map` 里显式登记**；测试资产要**进仓库**（`test-assets/`），别放 `/tmp`（重启即失效，R5 的教训） |
+| 64 | **把"三档状态"压成两档**：通知的投递路径只有"走了宿主 API / 没走"两档时，`permission='default'`（**未授权**）也会落进"走了宿主"——而浏览器在这个状态下 `new Notification()` **照样成功**（不抛错、也没被拒），于是"对象建了但不会弹出"被当成"已送达"。这正是"看起来发了" | 状态分解要到**能区分"确证"与"未确证"**：加 `hostPermission`，并把不变量写成**"只有 `granted` + 走了宿主才算送达，其余必须给出 `reason`"**，再用一条断言直接守这个不变量（破坏验证里注入"`via` 说走了宿主但 `reason` 留空"的谎报实现，被它抓住）。**判据：任何"降级/未确证"的路径，都必须能说出"降到了哪一档、为什么"** |
+| 65 | **回调重载实现成同步触发**：`publish(req, cb)` 直接 `cb(okRes(), run())`，看起来"更快更简单"，但真实 `AsyncCallback` 是**异步**语义。调用方若依赖"回调晚于后续同步代码"，会写出时序上不成立的逻辑，而测试**照样全绿**（因为断言只看了回调内容） | 回调路径统一走 `Promise.resolve().then(...)`，并**专门断言"不在调用栈内同步触发"**，同时断言该重载**返回 `undefined`**（对应 `.d.ts` 的 `void` 重载，而非返回 Promise）。**凡是对外暴露的"回调版 API"，都要问一句：它在调用栈里跑还是在微任务里跑？** |
+| 66 | **把"可复现的输入"放在 `/tmp`**：HarmonyOS 工程原本在 `/tmp/hmtest/app`，机器重启后（tmpfs）**整个工程消失** —— fixture 变成"没人能再生出来"的产物，而测试还在绿（因为 fixtures 是快照） | 输入源要**进仓库**：`devecocli create` 的工程落在 `harmony-proj/`（`.ets` 页面源码随代码走；构建输出 `entry/build/`、`oh_modules/` 进 `.gitignore`），`run.sh` 的 `CACHE` 与缺输入提示都指向它。**判据：换一台机器 clone 之后，能不能不靠任何外部残留就重新生成 fixtures？** |
 
 ### 确定性与时序
 

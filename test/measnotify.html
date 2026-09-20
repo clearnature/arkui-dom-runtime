@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R19 @ohos.notificationManager 通知</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 320px; height: 200px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R19：notificationManager.publish / cancel / cancelAll（记录 + 宿主通知 + 可操作的降级说明）</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/measnotify-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const el = (id) => root.querySelector('#' + id);
+    const txt = (id) => String(el(id) ? el(id).textContent : '<缺>');
+    const val = (id) => { const s = txt(id); const i = s.indexOf('='); return i < 0 ? '' : s.slice(i + 1); };
+    const group = async (name, fn) => {
+      try { await fn(); } catch (e) {
+        allPass = false;
+        lines.push(`FAIL [${name}] 抛出异常：${e && e.stack ? String(e.stack).split('\n')[0] : e}`);
+      }
+    };
+
+    try {
+      __arkui_dom_requireModule('MeasNotify');
+      __arkui_dom_loadRoute('pages/MeasNotify', root);
+      for (let k = 0; k < 60; k++) {
+        if (val('pub').includes('ca;') && val('badErr') !== '') break;
+        await tick(25);
+      }
+      check(!!el('pub'), 'MeasNotify 页面已渲染');
+
+      // ══════════ ① 四条 Promise 链路都走通（含 cancel / cancelAll）══════════
+      await group('调用链路', async () => {
+        check(val('pub') === 'p1;p2;c1;ca;',
+          `publish×2 + cancel + cancelAll 全部 resolve：'${val('pub')}'`);
+        check(val('err') === '', `没有异常（'${val('err')}'）`);
+      });
+
+      // ══════════ ② 负向：content 为空必须被拒绝（不是静默成功）══════════
+      await group('负向：空 content', async () => {
+        const be = val('badErr');
+        check(!be.includes('p3-bad'), `没有把空 content 当成成功（'${val('pub')}'）`);
+        check(be.length > 0, `抛出了错误：'${be.slice(0, 70)}'`);
+        check(/content/i.test(be), '错误信息里点名 content（可操作）');
+      });
+
+      // ══════════ ③ 记录与自省：payload 真的被解析了，且降级有说明 ══════════
+      await group('记录与自省', async () => {
+        const logs = globalThis.__arkui_dom_logs || [];
+        check(logs.some((l) => /notif|通知|标题A/.test(String(l))),
+          `__arkui_dom_logs 有通知记录（${logs.length} 条日志，命中：`
+          + `'${String(logs.find((l) => /notif|通知|标题A/.test(String(l)))).slice(0, 80)}'）`);
+
+        const info = __arkui_dom_notifications();
+        check(!!info, '自省钩子 __arkui_dom_notifications 可用');
+        const h = (info && info.history) || [];
+        check(h.map((x) => x.op).join(',') === 'publish,publish,cancel,cancelAll',
+          `调用历史顺序 = '${h.map((x) => x.op).join(',')}'`);
+        const p1 = h[0] || {}, p2 = h[1] || {};
+        check(p1.id === 1 && p1.title === '标题A' && p1.text === '正文A',
+          `第 1 条 payload 被解析：id=${p1.id} title='${p1.title}' text='${p1.text}'`);
+        check(p2.id === 2 && p2.title === '标题B' && p2.text === '正文B',
+          `第 2 条（未写 content type）也解析正确：id=${p2.id} title='${p2.title}' text='${p2.text}'`);
+        check(h.filter((x) => x.op === 'publish' && x.id === 3).length === 0,
+          '被拒绝的那条没有进历史（不是"记了又没发"）');
+        check(((info && info.active) || []).length === 0,
+          `cancelAll 后活动通知为空（active=${((info && info.active) || []).length}）`);
+
+        // 宿主 API 的路径要说清楚：用了 / 没用（并给出原因）——让"看起来发了"无处藏身
+        const via = p1.via || '';
+        check(via === 'host-Notification' || via === 'record-only',
+          `记录了投递路径 via='${via}'`);
+        check(typeof p1.hostPermission === 'string',
+          `记录了宿主权限 hostPermission='${p1.hostPermission}'`);
+        // 只有"用了宿主 API 且权限已授予"才算确证送达；其余都要写出原因
+        const certain = via === 'host-Notification' && p1.hostPermission === 'granted';
+        check(certain || (p1.reason && p1.reason.length > 0),
+          `凡不能确证真弹出都写出了原因：'${p1.reason || '(无)'}'`);
+        check(typeof info.hostCreated === 'number',
+          `自省 hostCreated=${info && info.hostCreated}（宿主通知对象创建数）`);
+        lines.push(`NOTIF via=${via} reason=${p1.reason || '-'} hostCreated=${info && info.hostCreated} `
+          + `permission=${typeof Notification === 'function' ? Notification.permission : 'n/a'}`);
+      });
+
+      // ══════════ ④ 回调重载与其他声明 API（直接取模块，不经页面）══════════
+      await group('回调重载与声明 API', async () => {
+        const notif = __arkui_dom_require('@ohos:notificationManager');
+        check(!!notif && typeof notif.publish === 'function',
+          '__arkui_dom_require 能取到 notificationManager');
+
+        // 回调必须是【异步】触发（AsyncCallback 语义），且该重载返回 void 而非 Promise
+        let cbPending = true;
+        let cbErr = null;
+        const ret = notif.publish(
+          { id: 9, content: { normal: { title: '回调标题', text: '回调正文' } } },
+          (err) => { cbErr = err; cbPending = false; },
+        );
+        check(ret === undefined, '回调重载返回 undefined（对应 .d.ts 的 void 重载）');
+        check(cbPending === true, '回调不在调用栈内同步触发');
+        await tick(30);
+        check(!!cbErr && cbErr.code === 0, `成功回调收到 code=0（收到 ${cbErr && cbErr.code}）`);
+
+        let cbBad = null;
+        notif.publish({ id: 10, content: {} }, (err) => { cbBad = err; });
+        await tick(30);
+        check(!!cbBad && cbBad.code !== 0, `失败回调收到非 0 code（收到 ${cbBad && cbBad.code}）`);
+        check(!!cbBad && /content/i.test(String(cbBad.message)),
+          `失败回调的错误点名 content（'${cbBad && cbBad.message}'）`);
+
+        const info2 = __arkui_dom_notifications();
+        check(info2.history.some((x) => x.op === 'publish' && x.id === 9),
+          '回调路径成功的那条进了历史');
+        check(info2.history.filter((x) => x.id === 10).length === 0,
+          '回调路径被拒绝的那条没进历史');
+
+        // 参数类型错误必须响亮失败，不能静默当成 0
+        let cancelErr = null;
+        await notif.cancel('x').then(() => {}, (e) => { cancelErr = e; });
+        check(!!cancelErr && /number/.test(String(cancelErr.message)),
+          `cancel('x') 被拒绝且说明原因：'${cancelErr && cancelErr.message}'`);
+
+        const p = notif.isNotificationEnabled();
+        check(!!p && typeof p.then === 'function', 'isNotificationEnabled() 返回 Promise');
+        const enabled = await p;
+        check(typeof enabled === 'boolean', `isNotificationEnabled 解析为布尔（${enabled}）`);
+        lines.push(`CBPATH id9InHistory=${info2.history.some((x) => x.id === 9)} `
+          + `active=${info2.active.map((x) => x.id).join('|')}`);
+      });
+
+      // ══════════ ⑤ 权限被拒时的边界：两端语义**不同**，且必须都说清楚 ══════════
+      // 把宿主 Notification 换成 permission='denied' 的替身，量三件事：
+      //   ① publish 不因此 reject（拒绝投递 ≠ API 出错）；
+      //   ② 不先去构造通知对象再吞掉（替身的构造计数必须为 0）；
+      //   ③ 告警边界：浏览器只记日志（预期降级），Electron 才进 layout_warnings。
+      await group('权限被拒的边界', async () => {
+        const notif = __arkui_dom_require('@ohos:notificationManager');
+        const own = Object.getOwnPropertyDescriptor(globalThis, 'Notification');
+        const stub = function StubNotification() { stub.created++; };
+        stub.created = 0;
+        stub.permission = 'denied';
+        Object.defineProperty(globalThis, 'Notification', { value: stub, configurable: true, writable: true });
+        let rejected = null;
+        try {
+          await notif.publish({ id: 11, content: { normal: { title: '被拒标题', text: '被拒正文' } } });
+        } catch (e) { rejected = e; }
+        const w = (globalThis.__arkui_dom_layout_warnings || []).filter((m) => /notification/i.test(String(m)));
+        const isElectron = !!globalThis.__arkui_dom_nodeFs;
+        const rec = __arkui_dom_notifications().history.slice(-1)[0] || {};
+        if (own) Object.defineProperty(globalThis, 'Notification', own); else delete globalThis.Notification;
+
+        check(!rejected, `权限被拒时 publish 仍然 resolve（拒绝投递 ≠ API 出错）：${rejected && rejected.message}`);
+        check(stub.created === 0, `没有"先构造再吞掉"（替身构造次数 ${stub.created}）`);
+        check(rec.via === 'record-only' && !!rec.reason,
+          `denied 记为 record-only 且给出原因：'${rec.reason}'`);
+        check(isElectron ? w.length === 1 : w.length === 0,
+          `${isElectron ? 'Electron（期望真通知）' : '浏览器（降级是预期）'}下 notification 告警 ${w.length} 条`
+          + `（期望 ${isElectron ? 1 : 0}）：'${w[0] || '无'}'`);
+        lines.push(`DENIED 端=${isElectron ? 'electron' : 'browser'} warns=${w.length} `
+          + `nodeFs=${!!globalThis.__arkui_dom_nodeFs}`);
+      });
+
+      lines.push(`ELMT ${__arkui_dom_elmtRecords.size}`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

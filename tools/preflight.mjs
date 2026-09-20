@@ -83,9 +83,9 @@ if (fixtureCount > 0) ok('冻结的转换产物', `${fixtureCount} 个 .ts`);
 else bad('fixtures/pages 下没有 .ts', '测试的输入没有了');
 
 // hvigor 缓存：只在需要重新生成 fixtures 时才要，没有不算失败
-const CACHE = '/tmp/hmtest/app/entry/build/default/cache/default/default@CompileArkTS/esmodule/debug/entry/src/main/ets';
+const CACHE = new URL('../harmony-proj/entry/build/default/cache/default/default@CompileArkTS/esmodule/debug/entry/src/main/ets', import.meta.url).pathname;
 if (fs.existsSync(CACHE)) note('hvigor 缓存存在', CACHE);
-else note('hvigor 缓存不在（/tmp 会被清）', '只在新增页面/重新生成 fixtures 时需要');
+else note('hvigor 缓存不在（尚未构建）', '只在新增页面/重新生成 fixtures 时需要：cd harmony-proj && devecocli build');
 
 console.log('');
 if (failures.length === 0) {
