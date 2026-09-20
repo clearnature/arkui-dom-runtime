@@ -8,8 +8,8 @@
 cd /data/training/cli/arkui-dom-runtime
 npm run check                   # 全部验收：preflight + 生成物一致 + 浏览器 + Electron（退出码可信）
 npm run check:quick             # 跳过 Electron
-./run.sh all                    # 浏览器侧：18 个用例（Chrome headless）
-./electron/run.sh all           # Electron 侧：17 个用例 + 真实磁盘核验
+./run.sh all                    # 浏览器侧：19 个用例（Chrome headless）
+./electron/run.sh all           # Electron 侧：18 个用例 + 真实磁盘核验
 npm run stats                   # 覆盖范围统计（本文档的数字都来自它）
 npm run preflight               # 环境自检（缺工具链/宿主/可执行位会明确报错）
 node tools/gen-components.mjs   # 重新生成 149 个组件骨架
@@ -79,6 +79,10 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 | **只有栈顶可见**：push 覆盖上一层，pop 露回下面那个且**实例复用**（`moveToTop` 也是复用不重建） | ✅ | navdemo |
 | **根内容（home）在 push/pop 间状态保留**（被覆盖但不销毁） | ✅ | navdemo |
 | **目标销毁后 elmtId 零泄漏**（3 层栈 + 替换/移除后 clear，记录数回到基线 25 → 25） | ✅ | navdemo |
+| **多层锚链**（c 锚 b、b 锚 a，且可**逆序声明**）：`syncAlignRules` 迭代到不动点 | ✅ | reldemo（a=(0,0) b=(40,20) c=(80,40)） |
+| **`Guideline` 虚拟参考线**：`{id, direction, position:{start\|end}}`；竖线锚水平、横线锚垂直；**错轴值恒为 0**；支持 `'30%'` 这类 Dimension 字符串 | ✅ | reldemo（30%→90、end:30→270、错轴→0） |
+| **`bias` 居中偏置**：同轴两侧都锚定时按比例定位，**默认 0.5**（权威 `@default`） | ✅ | reldemo（0.2→56、0.8→224、不写→140） |
+| **`alignRules` 两套键名**：`left/middle/right` 与本地化的 `start/end/middle`（`middle` 是水平、`center` 是垂直） | ✅ | reldemo + measure |
 | 字符串参数不丢（如 `QRCode('hello')` → `data-content`） | ✅ | widgets |
 
 ## 三、平台能力（`@ohos:*` 别名层）
@@ -116,7 +120,7 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 |---|---|---|
 | 同一份断言页在 Electron 里跑（不复制测试代码） | ✅ | electron 全矩阵 |
 | 真实渲染 + offscreen 截图（非白像素占比判定，非 `isEmpty()`） | ✅ | electron 各用例 |
-| 同一份断言的双端一致（17 个用例两个 runner 都过） | ✅ | run.sh / electron/run.sh |
+| 同一份断言的双端一致（18 个用例两个 runner 都过） | ✅ | run.sh / electron/run.sh |
 
 ---
 
@@ -143,6 +147,11 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
      `indicator` 只支持 boolean，传 `DotIndicator`/`DigitIndicator` 会**退化为默认圆点**并记警告。
   `Swiper` 的直接子项必须是"页"本身：若用 `ForEach` 包一层，那个包裹层是 `display:contents`，
   页面边界识别不出来 → 会记警告（请把 `ForEach` 移到 `Swiper` 之外或用 `@Builder` 展开）。
+- **布局仍不是约束求解器**：`alignRules` 现在支持多层链（不动点迭代）、`Guideline`、`bias` 与两套键名，
+  但 **`chainMode`（链式排列）未实现**；环状锚定不会报错，而是迭代到上限后记一条 warning。
+  `Guideline` 的位置字段只有 `start`/`end`（旧 API 的 `percent` 会被忽略并记警告）。
+  另外 `alignRules` 的解析被**推迟到渲染后**（首渲染 + 每次重渲染各一遍），
+  所以渲染中途读取几何会看到未应用相对定位的临时状态。
 - **`Navigation` 只有 Stack 栈语义**，以下项**未实现并会记 `layoutWarnings`**：
   **标题栏与工具栏**（`title`/`subTitle`/`hideTitleBar`/`hideBackButton`/`titleMode`/`menus`/`menuCount`/
   `toolBar`/`hideToolBar`/`backButtonIcon`/`toolbarConfiguration`——所以**页面看起来没有标题栏和返回按钮**）、
@@ -171,7 +180,7 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 - v1 深度观测的已知边界：`@Observed` 只观测该类的**自身字段**，嵌套的非 `@Observed` 对象内部变更不触发
   （与真机一致，有负向断言守着）；`@Observed` 经 Proxy 实现，**未验证**对 `instanceof`、序列化、
   展开运算符、`for...in` 之外的反射行为有无边界差异
-- 动画/过渡、手势（`gesture`/`panGesture`，**含 `Swiper` 的滑动翻页**）、`Refresh`
+- `chainMode`（相对布局的链式排列）、动画/过渡、手势（`gesture`/`panGesture`，**含 `Swiper` 的滑动翻页**）、`Refresh`
 - `If` 分支的 elmtId 复用优化
 - 父组件重渲染时**子视图内部 elmtId 迁移**未处理（深嵌套自定义组件可能出问题）
 

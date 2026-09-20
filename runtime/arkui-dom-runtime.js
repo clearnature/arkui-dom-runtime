@@ -509,17 +509,80 @@
     if (a.rowsTemplate !== undefined) el.style.gridTemplateRows = normalizeTrackList(a.rowsTemplate);
   }
 
-  // ────────────────────── 布局：alignRules / 文本截断 / 叠放 / Scroller ──────────────────────
-  // ArkUI 的 measure/layout 规则在 DOM 上无法 1:1 复刻；这里实现"容器锚点 + 兄弟锚点"两类
-  // 相对定位、文本截断与叠放对齐，并保留 warnings 以便暴露未支持项（而不是静默忽略）。
+  // ─────────────── 布局：alignRules / Guideline / bias / 文本截断 / 叠放 / Scroller ───────────────
+  // ArkUI 的 measure/layout 规则在 DOM 上无法 1:1 复刻；这里实现"容器锚点 + 兄弟锚点 + Guideline"
+  // 三类相对定位、bias 插值、文本截断与叠放对齐，并保留 warnings 以暴露未支持项（不是静默忽略）。
   const layoutWarnings = (global.__arkui_dom_layout_warnings = []);
+  // 锚点解析会在不动点迭代里跑多趟，同一问题只该留一条痕（否则一条缺失锚点会变成 12 条）
+  const warnOnce = (msg) => { if (!layoutWarnings.includes(msg)) layoutWarnings.push(msg); };
 
-  // 注意：ArkUI 有两套对齐词汇 —— 水平是 start/end，垂直是 top/bottom。
+  // Guideline 的方向（轴）。两者极易记反，以 .d.ts 的 JSDoc 为准：
+  //   Axis.Vertical   → 【竖线】→ 只能锚子组件的【水平】位置（position.start 是距【左】边的距离）
+  //   Axis.Horizontal → 【横线】→ 只能锚子组件的【垂直】位置（position.start 是距【上】边的距离）
+  //   错轴使用 → 值恒为 0（JSDoc："the value is 0 when it is used as the anchor in the …"）
+  // enums.d.ts 里枚举顺序是 Vertical=0 / Horizontal=1，所以也接受数字。
+  const Axis = { Vertical: 'vertical', Horizontal: 'horizontal' };
+  const isHorizontalAxis = (v) => v === 'horizontal' || v === 1;
+
+  // 注意：ArkUI 有两套对齐词汇 —— 水平是 start/end 或 left/right，垂直是 top/bottom。
   // 两者都映射到 0/0.5/1 的分数，同时 dx/dy 的判定也要认这两种写法（踩过的坑）。
   const ALIGN_FRAC = { start: 0, top: 0, center: 0.5, end: 1, bottom: 1 };
   const isStart = (a) => a === 'start' || a === 'top';
   const isEnd = (a) => a === 'end' || a === 'bottom';
   const edgeAt = (base, size, align) => base + size * (ALIGN_FRAC[align] !== undefined ? ALIGN_FRAC[align] : 0);
+  // 键 → 轴。LocalizedAlignRuleOptions 用 start/end/middle（水平）+ top/bottom/center（垂直）；
+  // 老版 AlignRuleOption 用 left/right/middle + top/bottom/center。两套都认（否则 start/end 会漏支持）。
+  const H_KEYS = new Set(['left', 'start', 'middle', 'right', 'end']);
+
+  // Dimension → px：number 是 vp，字符串可带 %（'30%' 按容器对应尺寸换算）
+  function dimOf(v, total) {
+    if (v === undefined || v === null) return 0;
+    const s = String(resolveResource(v));
+    if (s.endsWith('%')) return (parseFloat(s) / 100) * total;
+    const n = parseFloat(s);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  // 容器里所有 Guideline 的位置（相对容器）。只依赖容器尺寸，所以每轮 sync 重算一次即可。
+  // ⚠️ 本 SDK 的 GuideLinePosition 只有 start/end（没有旧版的 percent）。
+  function applyGuideLines(container) {
+    const specs = container.__guideLines;
+    if (!specs) return;
+    const pw = container.offsetWidth, ph = container.offsetHeight;
+    const map = {};
+    for (const g of specs) {
+      if (!g || !g.id) { warnOnce('guideLine: 缺少 id，已跳过'); continue; }
+      const pos = g.position || {};
+      if (pos.percent !== undefined) {
+        warnOnce(`guideLine['${g.id}'].position.percent 不是本 SDK 的字段（本版只有 start/end），已忽略`);
+      }
+      if (isHorizontalAxis(g.direction)) {
+        // 横线：锚垂直位置。start 距顶，end 距底
+        const y = pos.start !== undefined ? dimOf(pos.start, ph) : ph - dimOf(pos.end, ph);
+        map[g.id] = { x: 0, y, w: pw, h: 0, axis: 'h' };
+      } else {
+        // 竖线：锚水平位置。start 距左，end 距右
+        const x = pos.start !== undefined ? dimOf(pos.start, pw) : pw - dimOf(pos.end, pw);
+        map[g.id] = { x, y: 0, w: 0, h: ph, axis: 'v' };
+      }
+    }
+    container.__guideLineBoxes = map;
+  }
+
+  // 锚点解析：'__container__' / Guideline / 兄弟组件，三种
+  function alignBoxOf(parent, anchor, key, pw, ph) {
+    if (!anchor || anchor === '__container__') return { x: 0, y: 0, w: pw, h: ph };
+    const g = parent.__guideLineBoxes && parent.__guideLineBoxes[anchor];
+    if (g) {
+      const needAxis = H_KEYS.has(key) ? 'v' : 'h';   // 要定水平位置 → 需要【竖线】
+      if (g.axis !== needAxis) return { x: 0, y: 0, w: 0, h: 0 };   // 错轴：值恒为 0
+      return g;
+    }
+    const sel = (global.CSS && CSS.escape) ? CSS.escape(anchor) : anchor;
+    const sib = parent.querySelector('#' + sel);
+    if (!sib) return null;
+    return { x: sib.offsetLeft, y: sib.offsetTop, w: sib.offsetWidth, h: sib.offsetHeight };
+  }
 
   function applyAlignRules(el) {
     const rules = el.__alignRules;
@@ -527,42 +590,94 @@
     if (!rules || !parent) return;
     if (getComputedStyle(parent).position === 'static') parent.style.position = 'relative';
     el.style.position = 'absolute';
+    applyGuideLines(parent);                  // 幂等；保证 guideline 锚点已就绪
     const pw = parent.offsetWidth, ph = parent.offsetHeight;
-    const boxOf = (anchor) => {
-      if (!anchor || anchor === '__container__') return { x: 0, y: 0, w: pw, h: ph };
-      const sel = (global.CSS && CSS.escape) ? CSS.escape(anchor) : anchor;
-      const sib = parent.querySelector('#' + sel);
-      if (!sib) return null;
-      return { x: sib.offsetLeft, y: sib.offsetTop, w: sib.offsetWidth, h: sib.offsetHeight };
-    };
-    let dx = 0, dy = 0;                          // 百分比位移：把自身对应边贴到锚点上
-    // ArkUI 的 6 个键分两组（这点极易记错）：
-    //   水平: left(左边缘) / middle(水平中心) / right(右边缘)
-    //   垂直: top(上边缘)  / center(垂直中心) / bottom(下边缘)
+    let dx = 0, dy = 0;                       // 百分比位移：把自身对应边贴到锚点上
+    let leftVal = null, rightVal = null, topVal = null, bottomVal = null;
+    // ArkUI 的键分两组（这点极易记错）：
+    //   水平: left/start(左边缘) / middle(水平中心) / right/end(右边缘)
+    //   垂直: top(上边缘)       / center(垂直中心) / bottom(下边缘)
     for (const key of Object.keys(rules)) {
+      if (key === 'bias') continue;           // bias 要等两侧都解析完再算
       const rule = rules[key];
       if (!rule) continue;
-      const box = boxOf(rule.anchor);
-      if (!box) { layoutWarnings.push(`alignRules.${key}: 找不到锚点 '${rule.anchor}'`); continue; }
+      const box = alignBoxOf(parent, rule.anchor, key, pw, ph);
+      if (!box) { warnOnce(`alignRules.${key}: 找不到锚点 '${rule.anchor}'`); continue; }
       const a = rule.align;
-      if (key === 'left') { el.style.left = edgeAt(box.x, box.w, a) + 'px'; if (a === 'center') dx = -50; else if (isEnd(a)) dx = -100; }
-      else if (key === 'middle') { el.style.left = edgeAt(box.x, box.w, a) + 'px'; dx = -50; }
-      else if (key === 'right') { el.style.right = (pw - edgeAt(box.x, box.w, a)) + 'px'; if (a === 'center') dx = 50; else if (isStart(a)) dx = 100; }
-      else if (key === 'top') { el.style.top = edgeAt(box.y, box.h, a) + 'px'; if (a === 'center') dy = -50; else if (isEnd(a)) dy = -100; }
-      else if (key === 'center') { el.style.top = edgeAt(box.y, box.h, a) + 'px'; dy = -50; }
-      else if (key === 'bottom') { el.style.bottom = (ph - edgeAt(box.y, box.h, a)) + 'px'; if (a === 'center') dy = 50; else if (isStart(a)) dy = 100; }
-      else layoutWarnings.push(`alignRules.${key}: 暂不支持该轴`);
+      if (key === 'left' || key === 'start') {
+        leftVal = edgeAt(box.x, box.w, a);
+        el.style.left = leftVal + 'px';
+        if (a === 'center') dx = -50; else if (isEnd(a)) dx = -100;
+      } else if (key === 'middle') {
+        leftVal = edgeAt(box.x, box.w, a);
+        el.style.left = leftVal + 'px';
+        dx = -50;
+      } else if (key === 'right' || key === 'end') {
+        rightVal = pw - edgeAt(box.x, box.w, a);
+        el.style.right = rightVal + 'px';
+        if (a === 'center') dx = 50; else if (isStart(a)) dx = 100;
+      } else if (key === 'top') {
+        topVal = edgeAt(box.y, box.h, a);
+        el.style.top = topVal + 'px';
+        if (a === 'center') dy = -50; else if (isEnd(a)) dy = -100;
+      } else if (key === 'center') {
+        topVal = edgeAt(box.y, box.h, a);
+        el.style.top = topVal + 'px';
+        dy = -50;
+      } else if (key === 'bottom') {
+        bottomVal = ph - edgeAt(box.y, box.h, a);
+        el.style.bottom = bottomVal + 'px';
+        if (a === 'center') dy = 50; else if (isStart(a)) dy = 100;
+      } else {
+        warnOnce(`alignRules.${key}: 暂不支持该轴`
+          + '（可用 left/start/middle/right/end 与 top/center/bottom）');
+      }
     }
     if (dx || dy) el.style.transform = `translate(${dx}%, ${dy}%)`;
+    applyBias(el, rules.bias, pw, ph, leftVal, rightVal, topVal, bottomVal);
   }
 
-  // 首渲染与每次重渲染后同步一遍：兄弟锚点需要等兄弟节点有几何信息才能算
+  // bias：当【同一轴的两侧都被锚定】时，在可行区间里按比例定位。
+  // 权威默认值来自 common.d.ts 的 JSDoc：`@default {horizontal:0.5,vertical:0.5}`
+  // —— 所以"两侧都锚定但没写 bias"就是【居中】，不是"不生效"。
+  // 语义原话："ratio of the distance to the left/upper anchor to the total distance between anchors"。
+  // 只锚一侧时 CSS 本身就有唯一解，bias 无意义（不记警告）。
+  // 注：JSDoc 只要求 >= 0，所以 >1 会外推到锚点之外——按原文只做下界钳制。
+  function applyBias(el, bias, pw, ph, leftVal, rightVal, topVal, bottomVal) {
+    const bt = bias && typeof bias === 'object' ? bias : {};
+    const ratio = (v) => (v === undefined ? 0.5 : Math.max(0, Number(v) || 0));
+    if (leftVal !== null && rightVal !== null) {
+      const lo = leftVal, hi = (pw - rightVal) - el.offsetWidth;      // 左边缘的可行区间
+      el.style.left = (lo + ratio(bt.horizontal) * (hi - lo)) + 'px';
+      el.style.right = 'auto';
+    }
+    if (topVal !== null && bottomVal !== null) {
+      const lo = topVal, hi = (ph - bottomVal) - el.offsetHeight;
+      el.style.top = (lo + ratio(bt.vertical) * (hi - lo)) + 'px';
+      el.style.bottom = 'auto';
+    }
+  }
+
+  // 首渲染与每次重渲染后同步一遍：兄弟锚点要等兄弟有几何信息才能算。
+  // 锚链可能是【逆序声明】的（c 锚 b、b 锚 a，而 c 写在最前），单趟解析会读到兄弟的旧位置
+  // —— 所以反复扫到不动点为止（链长 N 需要 N 趟）。
   function syncAlignRules(rootEl) {
     const r = rootEl || rootNode;
     if (!r || !r.querySelectorAll) return;
-    for (const el of r.querySelectorAll('*')) {
-      if (el.__alignRules) applyAlignRules(el);
+    const all = [...r.querySelectorAll('*')];
+    for (const c of all) if (c.__guideLines) applyGuideLines(c);
+    const targets = all.filter((el) => el.__alignRules);
+    if (!targets.length) return;
+    const snap = () => targets.map((el) => el.offsetLeft + ',' + el.offsetTop).join('|');
+    const maxPass = Math.min(targets.length + 2, 12);
+    let prev = null;
+    for (let pass = 0; pass < maxPass; pass++) {
+      for (const el of targets) applyAlignRules(el);
+      const now = snap();
+      if (prev !== null && now === prev) return;    // 到不动点
+      prev = now;
     }
+    warnOnce(`alignRules: 锚链在 ${maxPass} 趟内未收敛（可能存在环状锚定），结果可能不正确`);
   }
 
   const TEXT_OVERFLOW_CSS = { none: 'clip', clip: 'clip', ellipsis: 'ellipsis', marquee: 'clip' };
@@ -1418,7 +1533,22 @@
     }
     // 注意：这些必须在 cssPropEnum 之前拦掉 —— 例如 ArkUI 的 alignContent 语义
     // 是"叠放子项的对齐"，与 CSS 的 align-content（内容分布）不是一回事。
-    if (prop === 'alignRules') { node.__alignRules = value; applyAlignRules(node); return; }
+    // alignRules 只登记，不立刻解析：此刻锚点（兄弟/guideline）可能还没建出来 ——
+    // 逆序声明的锚链必然如此。立刻解析既会出错（单趟读到旧位置），又会留下假警告
+    // "找不到锚点 'x'"。真正的解析在每轮 syncAlignRules（首渲染后 + 每次重渲染后），
+    // 它迭代到不动点，那时锚点才齐。
+    if (prop === 'alignRules') { node.__alignRules = value; return; }
+    // guideLine 是【容器级】属性（挂在 RelativeContainer 上），位置要等容器有尺寸才能算 ——
+    // 这里只登记，真正的计算在每轮 syncAlignRules 里（容器尺寸那时才可信）。
+    if (prop === 'guideLine') {
+      if (!Array.isArray(value)) {
+        layoutWarnings.push('guideLine 需要数组（如 [{id, direction, position:{start}}]），已忽略');
+        return;
+      }
+      node.__guideLines = value;
+      applyGuideLines(node);
+      return;
+    }
     if (prop === 'maxLines') { node.__maxLines = Number(resolveResource(value)); applyTextClamp(node, node.__maxLines, node.__textOverflow); return; }
     if (prop === 'textOverflow') { node.__textOverflow = (value && value.overflow) || value; applyTextClamp(node, node.__maxLines, node.__textOverflow); return; }
     if (prop === 'alignContent') { applyAlignment(node, value); return; }
@@ -2285,7 +2415,7 @@
     Swiper, SwiperController,
     Navigation, NavDestination, NavPathStack, NavigationMode,
     FontWeight, VerticalAlign, HorizontalAlign, FlexAlign, TextAlign, ItemAlign, Color,
-    TextOverflow, Alignment, Scroller,
+    TextOverflow, Alignment, Scroller, Axis,
     __arkui_dom_syncAlignRules: syncAlignRules,
     __arkui_dom_layout_warnings: layoutWarnings,
     __arkui_dom_loadRoute: loadRoute,
@@ -2351,6 +2481,14 @@
         mode: st.mode,
         stack: st.stack,
       };
+    },
+    // Guideline 自省：证明"参考线真的按 start/end 与轴向算出了位置"，而不只看子项恰好落在那儿。
+    __arkui_dom_guideLines: (el) => {
+      const m = el && el.__guideLineBoxes;
+      if (!m) return null;
+      const out = {};
+      for (const k of Object.keys(m)) out[k] = { x: m[k].x, y: m[k].y, axis: m[k].axis };
+      return out;
     },
     // 只读自省：供测试断言"装饰器确实在原型上装了访问器"，而不是只看渲染结果。
     // 注意 v2ProtoMeta 是 WeakMap（不可枚举，没有 keys()），所以只按类查询。

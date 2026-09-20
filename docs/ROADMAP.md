@@ -4,9 +4,10 @@
 
 已完成的机制说明见 `docs/ARCHITECTURE.md`；怎么改见 `docs/DEVELOPING.md`。
 
-**当前状态**：`npm run check` 全绿（preflight + 生成物一致 + 文档数字守卫 + 浏览器 18 用例 + Electron 17 用例）。
-v1/v2 状态管理（含 v1 深度观测）、`Grid` 真实轨道、`Tabs` 切换、`Swiper` 轮播、`Navigation` 栈导航均已落地。
-**下一步优先级：R14（多层锚链 + Guideline + bias）→ R13/R15–R17（纯绘制组件、文本换行、变高列表）。**
+**当前状态**：`npm run check` 全绿（preflight + 生成物一致 + 文档数字守卫 + 浏览器 19 用例 + Electron 18 用例）。
+v1/v2 状态管理（含 v1 深度观测）、`Grid` 真实轨道、`Tabs` 切换、`Swiper` 轮播、`Navigation` 栈导航、
+`alignRules` 多层锚链 + `Guideline` + `bias` 均已落地。
+**下一步优先级：R13（纯绘制组件）→ R15–R17（文本换行 / 变高列表 / ForEach 键级 diff）→ R18–R21（平台模块）。**
 R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分发前才需决定。
 
 ---
@@ -30,6 +31,7 @@ R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分�
 | ③ | **`Grid`/`GridItem` 真实轨道** + `Tabs`/`TabContent` 切换 | `bash run.sh tabgrid`（51 条断言，含几何与机制自省；双端通过） |
 | ③ | **`Swiper` 轮播**（loop / autoPlay / 指示点 / 控制器） | `bash run.sh swiper`（41 条断言，双端通过，连跑 3 次稳定） |
 | ③ | **`Navigation` 栈导航**（NavPathStack / 生命周期 / 状态保留 / 零泄漏） | `bash run.sh navdemo`（72 条断言，双端通过） |
+| ③ | **`alignRules` 多层锚链 + `Guideline` + `bias`** | `bash run.sh reldemo`（24 条断言，双端通过） |
 | ③ | `@ohos:*` 别名层 + CommonJS 装载 + 真 fetch | `bash run.sh async` |
 | ③ | `UIAbility` 启动链路 | `bash run.sh ability` |
 | ③ | `router` 页面栈（返回时保留状态） | `bash run.sh router` |
@@ -40,7 +42,7 @@ R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分�
 | **P0** | 统一验收门禁（退出码可信） | `npm run check`；制造漂移 → exit 1 |
 | **P0** | `--check` 真正只校验不落盘 | `node tools/gen-components.mjs --check` |
 
-当前：**浏览器 18 用例 + Electron 17 用例全绿**（`npm run check` → `exit 0`）。
+当前：**浏览器 19 用例 + Electron 18 用例全绿**（`npm run check` → `exit 0`）。
 
 ---
 
@@ -64,7 +66,8 @@ R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分�
 | P2 | ~~R11 Swiper~~ **已完成** | — | — |
 | P2 | ~~R12 Navigation~~ **已完成** | — | — |
 | P2 | R13 其余组件视觉语义 | 中（85 个骨架只有 `data-*`） | 中 |
-| P3 | R14–R17 布局引擎 | 中高（真实页面一定踩） | 高 |
+| P3 | ~~R14 `alignRules` 多层锚链/Guideline/bias~~ **已完成** | — | — |
+| P3 | R15–R17 布局引擎（文本换行 / 变高列表 / 键级 diff） | 中高（真实页面一定踩） | 高 |
 | P4 | R18–R21 平台模块 | 中 | 低–中 |
 | P5 | R22–R23 动画/手势 | 中 | 中 |
 | P6 | R24 ArkVM 路径 | 低（研究） | 高 |
@@ -354,13 +357,43 @@ bash run.sh observe && bash electron/run.sh observe   # 20 条断言双通过
 
 ## P3 布局引擎
 
-### R14 — 多层锚链 + `Guideline` + `bias`
+### ~~R14 — 多层锚链 + `Guideline` + `bias`~~ ✅ 已完成
 
-**内容**：`alignRules` 现在只支持**一层**（容器或兄弟）。补：链式锚（A 锚 B、B 锚 C）、`Guideline`（虚拟参考线）、`bias`（居中偏置）。
+**内容**：`alignRules` 原来只支持**一层**（容器或兄弟）。本轮补上链式锚、`Guideline`（虚拟参考线）、`bias`。
 
-**验收**：三层嵌套锚定的元素位置断言；`Guideline({start:{id:'g1',direction:Axis.Horizontal,position:{percent:30}}})` 后锚到 `g1` 的元素落在 30%。
+**实测纠正了三处"我以为"**（全部以 `.d.ts` 为准）：
+1. **`bias` 默认值是 0.5**（`common.d.ts` 的 `@default {horizontal:0.5,vertical:0.5}`）——
+   所以"两侧都锚定但没写 bias"= **居中**，不是"不生效"。我第一版只在显式给 bias 时插值，是错的。
+2. **`Guideline` 的方向极易记反**：`Axis.Vertical` 是**竖线**、只能锚子组件的**水平**位置；
+   `Axis.Horizontal` 是**横线**、只能锚**垂直**位置；**错轴使用时值恒为 0**（JSDoc 原话）。
+3. **`GuideLinePosition` 只有 `start`/`end`，没有 `percent`** —— 本 ROADMAP 原来写的
+   `{percent:30}` 是旧 API，已改。百分比写 `start:'30%'`；`end` 表示距右边/下边。
 
-**触及**：`runtime/arkui-dom-runtime.js`（`applyAlignRules` / `syncAlignRules`）、`test/layout.html`
+**另外补上两套键名**：`LocalizedAlignRuleOptions` 用 `start/end/middle`（水平）+ `top/bottom/center`（垂直），
+老版 `AlignRuleOption` 用 `left/right/middle`。原实现只认后者，本地化写法会**静默漏支持**。
+
+**实现**：
+- `syncAlignRules` 改为**不动点迭代**（链长 N 需 N 趟，上限 `min(元素数+2, 12)`，超限记 warning），
+  这样**逆序声明**的锚链（c 锚 b、b 锚 a 而 c 写在最前）也能算对
+- 新增 `applyGuideLines`（容器尺寸变化时重算）/ `alignBoxOf`（容器 / Guideline / 兄弟 三种锚点）
+- `applyBias`：按 `[L, (pw-R)-w]` 区间插值，**默认 0.5**，JSDoc 只要求 `>=0` 故只做下界钳制
+- **修掉一个脏警告源**：`alignRules` 原来在属性应用时就立刻解析，那一刻锚点可能还没建出来
+  （逆序声明必然如此）→ 实测留下 **4 条假警告**"找不到锚点 'x'"。现在只登记，
+  解析统一推迟到渲染后的 `syncAlignRules`。
+
+**验收（已执行）**：`bash run.sh reldemo` —— **24 条断言**，双端通过：
+逆序锚链 a/b/c=(0,0)/(40,20)/(80,40) + 右下角重合、Guideline `start:'30%'`→90 / `end:30`→270 /
+**错轴→0** / 经 guideline 的链式锚（gv2→110）、bias 0.2→56 / 0.8→224 / **不写→140**、
+以及"警告通道里没有把已支持项记成未支持"。
+
+**破坏验证**：退化成单趟解析 → 1 条失败；`bias` 默认值改 0 → 2 条失败；去掉错轴守卫 → 1 条失败。
+**并因此发现原来那条"错轴→0"的断言没有牙齿**（横线自身 x=0，用 `Start` 对齐时
+"错轴返回 0"与"没做判断"碰巧同值）→ 改用 `Center` 对齐后分离成 0 vs 150。
+
+**已知限制**：仍**不是约束求解器** —— `chainMode`（链式排列）未实现；环状锚定只记警告。
+
+**触及**：`runtime/arkui-dom-runtime.js`（`applyAlignRules`/`syncAlignRules`/`applyGuideLines`/`applyBias`）、
+`fixtures/pages/RelDemo.ts`、`test/reldemo.html`、`run.sh`、`electron/run.sh`
 
 ### R15 — 文本真实换行/行数测量
 

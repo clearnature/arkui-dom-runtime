@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R14 多层锚链 / Guideline / bias</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  /* 宽 300px 是刻意固定的：三个 RelativeContainer 都是 300 宽，
+     于是 '30%' → 90、bias 0.2 → 0.2×(300-20) = 56 这些数字才成立 */
+  #root { width: 300px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R14：链式锚（逆序声明）/ Guideline（start+end+错轴）/ bias</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../build/reldemo.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const near = (a, b, tol) => Math.abs(a - b) <= (tol === undefined ? 0.6 : tol);
+    // 位置断言读 offsetLeft/offsetTop —— 这是【布局位置】，也正是运行时解析锚链时用的坐标空间
+    // （alignBoxOf 读的就是兄弟的 offset*）。这是刻意选择，不是图省事：
+    // End/Bottom 对齐会加 translate(-100%,-100%)，而 getBoundingClientRect() 把那位移算进去了，
+    // 于是"左上角落在锚点"的元素其 rect 会整整偏掉一个自身尺寸 —— 我第一版就是这么把
+    // 【正确的实现】误判成错的（b 明明 offset=(40,20)，rect 却是 (0,0)）。
+    // 视觉校验改用"边缘重合"（rect vs rect），与 measure.html 的贴角断言同一套约定。
+    const off = (id) => {
+      const e = root.querySelector('#' + id);
+      return { x: e.offsetLeft, y: e.offsetTop, w: e.offsetWidth, h: e.offsetHeight };
+    };
+    const rect = (id) => root.querySelector('#' + id).getBoundingClientRect();
+
+    try {
+      __arkui_dom_loadRoute('pages/RelDemo', root);
+      await tick(60);
+      check((root.textContent || '').includes('c'), 'RelDemo 页面已渲染');
+
+      // ══════════ A 组：多层锚链（fixture 里是【逆序声明】：c→b→a→容器）══════════
+      const rc1 = root.querySelector('#rc1');
+      check(!!rc1, 'RelativeContainer#rc1 已创建');
+      const a = off('a'), b = off('b'), c = off('c');
+      check(near(a.x, 0) && near(a.y, 0), `a 锚容器左上：(x=${a.x}, y=${a.y})`);
+      check(near(b.x, 40) && near(b.y, 20),
+        `b 锚 a 的右下（a 是 40×20）：(x=${b.x}, y=${b.y})`);
+      // 这条是"多层"的判据：只有当 b 先被解析、c 再读 b 时，c 才可能落在 80/40
+      check(near(c.x, 80) && near(c.y, 40),
+        `c 锚 b 的右下（b 是 40×20）：(x=${c.x}, y=${c.y}) —— 逆序声明下仍需正确`);
+      check(['a', 'b', 'c'].every((id) => getComputedStyle(root.querySelector('#' + id)).position === 'absolute'),
+        '三个锚定子项都是 position:absolute');
+      // 视觉校验：b 的右下角应与 a 的右下角重合（这就是 translate(-100%,-100%) 的用途）
+      check(near(rect('b').right, rect('a').right) && near(rect('b').bottom, rect('a').bottom),
+        `b 的右下角与 a 重合（Δ=(${(rect('b').right - rect('a').right).toFixed(1)},`
+        + `${(rect('b').bottom - rect('a').bottom).toFixed(1)})）`);
+
+      // ══════════ B 组：Guideline ══════════
+      const gl = __arkui_dom_guideLines(root.querySelector('#rc2'));
+      check(!!gl, '自省钩子 __arkui_dom_guideLines 可用');
+      check(gl && gl.vline && near(gl.vline.x, 90, 1),
+        `竖线 vline 在 30% 处（x=${gl && gl.vline && gl.vline.x.toFixed(1)}，期望 300×0.3=90）`);
+      check(gl && gl.vline && gl.vline.axis === 'v', `vline 的轴 = '${gl && gl.vline && gl.vline.axis}'（竖线）`);
+      check(gl && gl.hline && near(gl.hline.y, 50, 1),
+        `横线 hline 在 50（y=${gl && gl.hline && gl.hline.y.toFixed(1)}）`);
+      check(gl && gl.vline2 && near(gl.vline2.x, 270, 1),
+        `end 定位的竖线 vline2（x=${gl && gl.vline2 && gl.vline2.x.toFixed(1)}，期望 300-30=270）`);
+
+      const gv = off('gv'), gh = off('gh'), gx = off('gx');
+      check(near(gv.x, 90), `gv 左边缘贴 vline：(x=${gv.x}，期望 90)`);
+      check(near(gh.y, 50), `gh 上边缘贴 hline：(y=${gh.y}，期望 50)`);
+      // 错轴：横线当水平锚 → JSDoc 明确"值为 0"。
+      // 这里刻意用 Center 对齐而不是 Start：横线自身的 x=0，若用 Start，"错轴返回 0" 与
+      // "没做错轴判断（读横线的 x=0）"会碰巧同值 → 断言没牙齿。Center 让两者分离（0 vs 150）。
+      check(near(gx.x, 0), `错轴（横线锚水平）值为 0：(x=${gx.x})`);
+      const gv2 = off('gv2'), gv3 = off('gv3');
+      check(near(gv2.x, 110), `gv2 锚 gv 的右边缘（gv 在 90、宽 20）：(x=${gv2.x}，期望 110)`);
+      check(near(gv3.x, 270), `gv3 锚 vline2：(x=${gv3.x}，期望 270)`);
+      check(near(rect('gv2').right, rect('gv').right),
+        `gv2 的右边缘与 gv 重合（Δ=${(rect('gv2').right - rect('gv').right).toFixed(1)}）`);
+
+      // ══════════ C 组：bias ══════════
+      // 左右同时锚定 → 左边缘的可行区间 [0, 300-20] = [0,280]；bias 在其中插值。
+      // 默认值是 0.5（权威来源：common.d.ts 里 bias 的 JSDoc `@default {horizontal:0.5,vertical:0.5}`）
+      // —— 所以"两侧都锚定但没写 bias"= 居中，而不是"bias 不生效"。
+      const b2 = off('b2'), b8 = off('b8'), bd = off('bd');
+      check(near(b2.w, 20, 1) && near(b8.w, 20, 1), `bias 用例的子项宽 = ${b2.w} / ${b8.w}`);
+      check(near(b2.x, 56, 1), `bias.horizontal=0.2 → x=${b2.x}（期望 0.2×280=56）`);
+      check(near(b8.x, 224, 1), `bias.horizontal=0.8 → x=${b8.x}（期望 0.8×280=224）`);
+      check(near(bd.x, 140, 1), `未写 bias → 取默认 0.5 居中 → x=${bd.x}（期望 140）`);
+      check(near((b2.x + b8.x) / 2, bd.x, 0.6),
+        `三个 bias 的位置满足线性插值（(56+224)/2 = ${((b2.x + b8.x) / 2).toFixed(1)} ≈ ${bd.x}）`);
+
+      // ══════════ D 组：不静默 ══════════
+      const warns = __arkui_dom_layout_warnings || [];
+      const noise = warns.filter((w) => /alignRules|bias|guideLine/.test(String(w)));
+      check(noise.length === 0,
+        `没有把已支持的 alignRules/bias/guideLine 记成"未支持"（${noise.length} 条${noise.length ? ': ' + noise[0] : ''}）`);
+
+      lines.push(`ELMT ${__arkui_dom_elmtRecords.size}`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const el = document.getElementById('result');
+    el.textContent = lines.join('\n');
+    el.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

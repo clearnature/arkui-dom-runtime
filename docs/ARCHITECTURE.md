@@ -584,25 +584,71 @@ item.id = 99      → 没装访问器 → 无人变脏 → 不重渲染 ✅（�
 
 注册到 `__providedVars` 的对象同时提供 `get`/`set`，所以 **v1 的 `@Consume` 和 v2 的 `@Consumer` 可以互相解析**（v1 的 `initializeConsume` 期望拿到带 `get/set` 的 prop 对象）。
 
-### 4.4 布局：`alignRules` 六键语义
+### 4.4 布局：`alignRules` 六键语义 + `Guideline` + `bias` + 多层锚链
 
 ArkUI 的 `RelativeContainer` 用 6 个键，**分两组**（极易记错）：
 
 ```
-水平：left（左边缘） / middle（水平中心） / right（右边缘）
-垂直：top（上边缘）  / center（垂直中心） / bottom（下边缘）
+水平：left / start（左边缘） / middle（水平中心） / right / end（右边缘）
+垂直：top（上边缘）          / center（垂直中心） / bottom（下边缘）
 ```
+
+> 键名有两套：`LocalizedAlignRuleOptions` 用 **start/end/middle + top/bottom/center**，
+> 老版 `AlignRuleOption` 用 **left/right/middle + top/bottom/center**。
+> （`.d.ts` 依据：`left?/start?/end?` 的 param 是 `HorizontalAlign`，`top?/bottom?/center?` 是 `VerticalAlign`。
+> 所以 **`middle` 是水平的、`center` 是垂直的**。）两套都要认，否则本地化写法会静默漏支持。
 
 ```js
 const ALIGN_FRAC = { start: 0, top: 0, center: 0.5, end: 1, bottom: 1 };
 const isStart = (a) => a === 'start' || a === 'top';
 const isEnd   = (a) => a === 'end'   || a === 'bottom';
+const H_KEYS = new Set(['left', 'start', 'middle', 'right', 'end']);   // 靠它判断"这个键要定水平位置"
 ```
 
-- 锚点可以是容器（`{ anchor: '__container__', align: HorizontalAlign.Start }`）或**兄弟节点**（`{ anchor: 'otherBtn', align: ... }`）
-- 实现方式：绝对定位 + 按容器/兄弟的 `offsetLeft/offsetWidth` 算 `left/top`
+- 锚点有**三种**：容器（`'__container__'`）、**Guideline**（按 id）、**兄弟节点**（按 id）
+- 实现方式：绝对定位 + 按锚点的 `offsetLeft/offsetWidth` 算 `left/top`
 - 容器需要 `position: relative`，否则 `offsetTop` 基准错（踩过：`scrollToIndex` 因此偏 100px）
-- 只支持**一层**锚链，无约束求解器、无 `Guideline`、无 `bias`
+
+**① Guideline**（容器级属性 `guideLine([...])`）：
+
+```ts
+.guideLine([{ id: 'vline', direction: Axis.Vertical, position: { start: '30%' } }])
+```
+
+⚠️ **方向极易记反，以 `.d.ts` 的 JSDoc 为准**：
+
+| `direction` | 是什么线 | 能锚的轴 | `position.start` 的量法 |
+|---|---|---|---|
+| `Axis.Vertical`（=0） | **竖线** | 子组件的**水平**位置 | 距容器**左**边 |
+| `Axis.Horizontal`（=1） | **横线** | 子组件的**垂直**位置 | 距容器**上**边 |
+
+**错轴使用时值恒为 0**（JSDoc 原话："the value is 0 when it is used as the anchor in the …"）。
+参考线被建模成"零尺寸的盒子"（竖线 `{x, 0, w:0, h:ph}`），于是 `edgeAt` 对任意 align 都返回该偏移量。
+
+⚠️ **`GuideLinePosition` 只有 `start`/`end`，没有 `percent`**（本 SDK 实测；ROADMAP 里原来那个
+`{percent:30}` 例子是旧 API，已改）。百分比要用 `start: '30%'` 这种 Dimension 字符串。
+`end` 表示"距容器右边/下边"。
+
+**② bias**（同一轴两侧都锚定时决定落在区间里的哪一点）：
+
+```ts
+alignRules({ left: {...}, right: {...}, bias: { horizontal: 0.2 } })
+```
+
+- 权威默认值：`common.d.ts` 的 JSDoc 写着 **`@default {horizontal:0.5,vertical:0.5}`**
+  → **"两侧都锚定但没写 bias"= 居中**，不是"bias 不生效"（我第一版就错在这儿）
+- 语义原话："ratio of the distance to the left/upper anchor to the total distance between anchors"
+  → 左边缘可行区间 `[L, (pw - R) - w]`，`x = L + t·(区间长度)`
+- JSDoc 只要求 `>= 0`，所以只做下界钳制（>1 会外推到锚点之外）
+
+**③ 多层锚链：不动点迭代**。锚链可能是**逆序声明**的（c 锚 b、b 锚 a，而 c 写在最前），
+单趟解析会读到兄弟的旧位置。所以 `syncAlignRules` 反复扫到不动点（链长 N 需要 N 趟，
+上限 `min(元素数+2, 12)`，超限记 warning 而不是静默给错值）。
+
+⚠️ **对齐规则只登记、不立刻解析**。`applyAttr('alignRules')` 只存 `__alignRules`，真正的解析在
+每轮 `syncAlignRules`（首渲染后 + 每次重渲染后）。理由：属性应用时锚点可能还没建出来
+（逆序声明必然如此），立刻解析**既算错又会产生假警告**"找不到锚点 'x'"——实测留下 4 条假警告，
+把警告通道弄脏了。
 
 ### 4.5 `LazyForEach` 虚拟滚动
 
@@ -730,10 +776,10 @@ app.ability.AbilityConstant  app.ability.ConfigurationConstant
   属性元数据总数       1107（平均 7.4／组件，最多 TextInput=70）
 
 == 运行时 API ==
-  global 导出        80 个
+  global 导出        84 个
   状态类            ObservedPropertySimplePU ObservedPropertyObjectPU SynchedPropertySimpleOneWayPU SynchedPropertySimpleTwoWayPU SynchedPropertyNesedObjectPU
   内置组件          Text Button Column Row Stack List ListItem If ForEach LazyForEach RelativeContainer Tabs TabContent Swiper Navigation NavDestination
-  内部钩子 __arkui_dom_*  21 个
+  内部钩子 __arkui_dom_*  22 个
 
 == 状态管理 ==
   v1  状态类        5 个（包装对象模型）
@@ -747,21 +793,21 @@ app.ability.AbilityConstant  app.ability.ConfigurationConstant
   10 个：app.ability.AbilityConstant app.ability.ConfigurationConstant app.ability.UIAbility app.ability.Want data.preferences file.fs hilog net.http router window
 
 == 用例矩阵 ==
-  浏览器 run.sh     18 个：index rich leak layout widgets tabgrid swiper navdemo measure lazy provide v2 observe async ability router netfile persist
-  Electron          17 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo measure lazy provide async v2 observe
-  测试页            18 个
-  fixtures 转换产物  16 个：AsyncIO Detail Home Index Layout Lazy Measure NavDemo NetFile Observe Provide Rich SwiperDemo TabsGrid V2 Widgets
+  浏览器 run.sh     19 个：index rich leak layout widgets tabgrid swiper navdemo reldemo measure lazy provide v2 observe async ability router netfile persist
+  Electron          18 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo measure lazy provide async v2 observe
+  测试页            19 个
+  fixtures 转换产物  17 个：AsyncIO Detail Home Index Layout Lazy Measure NavDemo NetFile Observe Provide RelDemo Rich SwiperDemo TabsGrid V2 Widgets
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          185.1 KB
-  test             101.0 KB
+  runtime          192.3 KB
+  test             108.2 KB
   tools            37.5 KB
-  electron(src)    15.2 KB
-  docs             136.0 KB
-  fixtures         112.3 KB
+  electron(src)    15.3 KB
+  docs             144.5 KB
+  fixtures         121.7 KB
 
 == 逐文件（文档"文件职责"表的来源）==
-  runtime/arkui-dom-runtime.js     108898 B  106.3 KB
+  runtime/arkui-dom-runtime.js     116187 B  113.5 KB
   runtime/generated-components.js   57617 B  56.3 KB
   runtime/ohos-shims.js             23066 B  22.5 KB
   tools/extract.mjs                  6457 B  6.3 KB
@@ -770,18 +816,18 @@ app.ability.AbilityConstant  app.ability.ConfigurationConstant
   tools/stats.mjs                   13295 B  13.0 KB
   tools/preflight.mjs                5108 B  5.0 KB
   tools/check-all.sh                 3171 B  3.1 KB
-  run.sh                             9844 B  9.6 KB
-  electron/run.sh                    6560 B  6.4 KB
+  run.sh                            10047 B  9.8 KB
+  electron/run.sh                    6711 B  6.6 KB
   electron/main.js                   6795 B  6.6 KB
   electron/preload.js                1961 B  1.9 KB
   package.json                       1207 B  1.2 KB
   .gitignore                          674 B  0.7 KB
-  README.md                         31966 B  31.2 KB
+  README.md                         34890 B  34.1 KB
   THIRD-PARTY-NOTICES.md             8256 B  8.1 KB
-  docs/ARCHITECTURE.md              59711 B  58.3 KB
-  docs/CAPABILITY.md                19113 B  18.7 KB
-  docs/DEVELOPING.md                27538 B  26.9 KB
-  docs/ROADMAP.md                   26370 B  25.8 KB
+  docs/ARCHITECTURE.md              63004 B  61.5 KB
+  docs/CAPABILITY.md                20434 B  20.0 KB
+  docs/DEVELOPING.md                28907 B  28.2 KB
+  docs/ROADMAP.md                   29169 B  28.5 KB
   docs/surface-measurement.md        6496 B  6.3 KB
   fixtures/pages/AsyncIO.ts          6206 B  6.1 KB
   fixtures/pages/Detail.ts           3097 B  3.0 KB
@@ -794,6 +840,7 @@ app.ability.AbilityConstant  app.ability.ConfigurationConstant
   fixtures/pages/NetFile.ts          5039 B  4.9 KB
   fixtures/pages/Observe.ts         11906 B  11.6 KB
   fixtures/pages/Provide.ts          6731 B  6.6 KB
+  fixtures/pages/RelDemo.ts          9702 B  9.5 KB
   fixtures/pages/Rich.ts             9256 B  9.0 KB
   fixtures/pages/SwiperDemo.ts       7876 B  7.7 KB
   fixtures/pages/TabsGrid.ts        10513 B  10.3 KB
@@ -812,6 +859,7 @@ app.ability.AbilityConstant  app.ability.ConfigurationConstant
   test/observe.html                  6232 B  6.1 KB
   test/opfs-probe.html               1620 B  1.6 KB
   test/provide.html                  4238 B  4.1 KB
+  test/reldemo.html                  7328 B  7.2 KB
   test/rich.html                     3794 B  3.7 KB
   test/router.html                   4288 B  4.2 KB
   test/swiper.html                   9177 B  9.0 KB
@@ -830,7 +878,7 @@ app.ability.AbilityConstant  app.ability.ConfigurationConstant
 | 状态管理 v1 深度观测（`@Observed` + `@ObjectLink`） | ✅ 有测试（`run.sh observe`，20 条断言；含"非 `@Observed` 嵌套对象内部变更**不**触发重渲染"的负向断言） |
 | 状态管理 v2（`@ComponentV2/@Local/@Param/@Once/@Event/@Monitor/@Provider/@Consumer/@ObservedV2/@Trace/@Computed`） | ✅ 有测试（`run.sh v2`，26 条断言，浏览器 + Electron 双通过） |
 | v2 的已知简化 | ⚠️ `@Computed` 不缓存；`IMonitor.dirty` 每次赋值一条且 `path` 非点分路径；`@Reusable` 复用路径未实测 |
-| 布局 | ⚠️ 部分：`alignRules` 仅一层锚链，无约束求解器 |
+| 布局 | ✅ 有测试（`run.sh reldemo` + `run.sh measure`）：`alignRules` 六键两套键名、**多层锚链**（不动点迭代，逆序声明也对）、`Guideline`（`start`/`end` + 错轴为 0）、`bias`（含 0.5 默认值）；**仍无约束求解器**（不支持 `chainMode` 链式排列、环状锚定只记警告） |
 | `Grid` / `GridItem` 轨道布局 | ✅ 有测试（`run.sh tabgrid`）：`columnsTemplate`/`rowsTemplate` 真实轨道（含 ArkUI 裸数字 vp→px 归一化）、`columnsGap`/`rowsGap`、跨行换行（几何断言） |
 | `Tabs` / `TabContent` 切换 | ✅ 有测试（`run.sh tabgrid`）：`barPosition`、`index`、`TabsController.changeIndex`、`onChange`、点击 bar 切换、切走的面板不销毁 |
 | `Swiper` 轮播 | ✅ 有测试（`run.sh swiper`）：`index`/`loop`（含回卷与边界停住）/`autoPlay`+`interval`/`indicator` 圆点/`SwiperController.showNext`·`showPrevious`·`changeIndex`、切走的页不销毁 |
@@ -847,7 +895,7 @@ app.ability.AbilityConstant  app.ability.ConfigurationConstant
 
 | 文件 | 体积 | 职责 | 改它的时机 |
 |---|---|---|---|
-| `runtime/arkui-dom-runtime.js` | 106.3 KB | v1 状态类 + 深度观测（`@Observed`/`@ObjectLink`）、`ViewPU`/`ViewV2`、装饰器层、组件栈、布局（含 `Grid` 轨道）、`Tabs`/`TabContent`+`TabsController`、`Swiper`+`SwiperController`、`Navigation`/`NavDestination`+`NavPathStack`、`LazyForEach`、路由 | 实现新语义（**手写优先**） |
+| `runtime/arkui-dom-runtime.js` | 113.5 KB | v1 状态类 + 深度观测（`@Observed`/`@ObjectLink`）、`ViewPU`/`ViewV2`、装饰器层、组件栈、布局（`alignRules` 多层锚链 + `Guideline` + `bias`、`Grid` 轨道）、`Tabs`/`TabContent`+`TabsController`、`Swiper`+`SwiperController`、`Navigation`/`NavDestination`+`NavPathStack`、`LazyForEach`、路由 | 实现新语义（**手写优先**） |
 | `runtime/generated-components.js` | 56.3 KB | 149 个组件骨架（**生成物**） | **不手改**；改 `tools/gen-components.mjs` 后重新生成，`--check` 会守门 |
 | `runtime/ohos-shims.js` | 22.5 KB | `@ohos:*` 模块 + 持久化后端 | 新增平台模块 |
 | `tools/extract.mjs` | 6.3 KB | hvigor 缓存 `.ts` → 可执行 `.js`；**装饰器作用域内绑定前奏 + 未就绪守卫**（§3.4） | 产物形态/装饰器集合变化时 |
@@ -856,12 +904,12 @@ app.ability.AbilityConstant  app.ability.ConfigurationConstant
 | `tools/stats.mjs` | 13.0 KB | 本文档所有数字的来源（`--json` 机器可读）；**`--check-doc`/`--write-doc` 守 §6 引用块** | 覆盖范围变化时 |
 | `tools/preflight.mjs` | 5.0 KB | 环境自检（工具链/宿主/可执行位） | 外部依赖变化时 |
 | `tools/check-all.sh` | 3.1 KB | 一条命令做完验收（5 步），退出码只看被调命令 | 新增验收步骤时 |
-| `run.sh` | 9.6 KB | 浏览器 18 用例驱动 | 新增用例 |
-| `electron/run.sh` | 6.4 KB | Electron 17 用例 + 磁盘验证 | 新增用例 |
+| `run.sh` | 9.8 KB | 浏览器 19 用例驱动 | 新增用例 |
+| `electron/run.sh` | 6.6 KB | Electron 18 用例 + 磁盘验证 | 新增用例 |
 | `electron/main.js` | 6.6 KB | 主进程：offscreen 截图、**像素级**空白检测 | 截图/验证策略变化时 |
 | `electron/preload.js` | 1.9 KB | `contextBridge` 暴露 Node fs | 宿主能力变化时 |
-| `fixtures/pages/*.ts` | 110 KB | **冻结的**官方转换产物（16 个，含 `V2.ts`/`Observe.ts`/`TabsGrid.ts`/`SwiperDemo.ts`/`NavDemo.ts`） | 几乎不改（见不变量 5） |
-| `test/*.html` | 97 KB | 断言页（读 `#result` 节点文本） | 新增用例 |
+| `fixtures/pages/*.ts` | 121 KB | **冻结的**官方转换产物（17 个，含 `V2.ts`/`Observe.ts`/`TabsGrid.ts`/`SwiperDemo.ts`/`NavDemo.ts`/`RelDemo.ts`） | 几乎不改（见不变量 5） |
+| `test/*.html` | 107 KB | 断言页（读 `#result` 节点文本） | 新增用例 |
 
 ---
 

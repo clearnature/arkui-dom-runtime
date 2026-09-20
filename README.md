@@ -86,10 +86,10 @@ tools/serve.py                 极简静态服务（端口由 OS 分配，避免
 tools/preflight.mjs            环境自检（工具链 / 宿主 / 可执行位）
 tools/check-all.sh             一条命令做完所有验收
 tools/stats.mjs                覆盖范围统计（文档里的数字都来自它）
-test/*.html                    断言页（18 个用例）
-fixtures/                      冻结的 ets-loader 转换产物（16 个，测试的输入）
-run.sh                         浏览器 18 用例驱动
-electron/run.sh                Electron 17 用例 + 真实磁盘验证
+test/*.html                    断言页（19 个用例）
+fixtures/                      冻结的 ets-loader 转换产物（17 个，测试的输入）
+run.sh                         浏览器 19 用例驱动
+electron/run.sh                Electron 18 用例 + 真实磁盘验证
 docs/                          ARCHITECTURE / DEVELOPING / ROADMAP / CAPABILITY
 ```
 
@@ -518,6 +518,49 @@ builder 真产出了 `NavDestination`（`if/else` 可能没覆盖该 name）—�
 **破坏验证**：去掉"非栈顶隐藏" → 3 条可见性断言失败；交换 `willShow`/`shown` 顺序 → 1 条失败；
 不派发 `onPop` → 1 条失败。
 
+## R14：多层锚链 + `Guideline` + `bias` ✅
+
+```
+$ bash run.sh reldemo
+=== ALL PASS ===                    （24 条断言）
+PASS b 锚 a 的右下（a 是 40×20）：(x=40, y=20)
+PASS c 锚 b 的右下（b 是 40×20）：(x=80, y=40) —— 逆序声明下仍需正确
+PASS b 的右下角与 a 重合（Δ=(0.0,0.0)）
+PASS 竖线 vline 在 30% 处（x=90.0，期望 300×0.3=90）
+PASS end 定位的竖线 vline2（x=270.0，期望 300-30=270）
+PASS 错轴（横线锚水平）值为 0：(x=0)
+PASS gv2 锚 gv 的右边缘（gv 在 90、宽 20）：(x=110，期望 110)
+PASS bias.horizontal=0.2 → x=56（期望 0.2×280=56）
+PASS 未写 bias → 取默认 0.5 居中 → x=140（期望 140）
+PASS 没有把已支持的 alignRules/bias/guideLine 记成"未支持"（0 条）
+```
+
+**三个机制的权威依据都来自 `.d.ts`，不是印象**：
+
+| 机制 | 我原以为 | `.d.ts` 的权威说法 |
+|---|---|---|
+| `bias` 默认值 | "不写就不生效" | `@default {horizontal:0.5,vertical:0.5}` → **不写就是居中** |
+| `Guideline` 方向 | 易记反 | `Axis.Vertical` = **竖线** → 锚**水平**位置；`Axis.Horizontal` = **横线** → 锚**垂直**位置；**错轴值恒为 0** |
+| `GuideLinePosition` | ROADMAP 里写的 `{percent:30}` | **本 SDK 只有 `start`/`end`**（`percent` 是旧 API），百分比要写 `start:'30%'` |
+
+**多层锚链靠不动点迭代**：锚链可能是**逆序声明**的（c 锚 b、b 锚 a，而 c 写在最前），
+单趟解析会读到兄弟的旧位置。所以反复扫到不动点（链长 N 需要 N 趟，上限 12，超限记警告）。
+
+**顺带修掉一个把警告通道弄脏的问题**：`alignRules` 原来在**属性应用时**就立刻解析，
+而那一刻锚点可能还没建出来（逆序声明必然如此）→ 实测留下 4 条假警告"找不到锚点 'x'"。
+现在只登记、解析统一推迟到渲染后的 `syncAlignRules`。
+
+**我犯的一个测量错误（值得单独记）**：第一版测试用 `getBoundingClientRect()` 比左上角，
+于是把**正确的实现**判成了错的 —— `End`/`Bottom` 对齐会加 `translate(-100%,-100%)`，
+rect 已经把这位移算进去（b 明明 `offset=(40,20)`，rect 却是 `(0,0)`）。
+位置断言必须读 `offsetLeft/offsetTop`（那也是运行时解析锚链用的坐标空间）；
+视觉校验要用"**边缘重合**"（rect vs rect），与 `measure.html` 同一套约定。
+我是靠一个临时探针页打印真实 DOM + `querySelector` 结果才定位到这一点的 —— **测量方法本身也要被验证**。
+
+**破坏验证**：退化成单趟解析 → 1 条失败；`bias` 默认值改成 0 → 2 条失败；
+去掉错轴守卫 → 1 条失败（并因此发现原来那条断言**没有牙齿**：横线自身 `x=0`，
+用 `Start` 对齐时"错轴返回 0"与"没做判断"碰巧同值，改用 `Center` 才分离成 0 vs 150）。
+
 ## 工程化 ✅
 
 项目最初不是 git 仓库（287 MB 里 283 MB 是解压的 Electron），改动不可审计、回归不可复现。
@@ -532,17 +575,18 @@ builder 真产出了 `NavDestination`（`if/else` 可能没覆盖该 name）—�
 | 文档数字守门 | `npm run stats:check-doc` | `ARCHITECTURE.md` §6 的整块实测数字逐行比对，漂移即非 0 退出；`stats:write-doc` 就地重写 |
 | 覆盖统计 | `npm run stats` | 文档里的所有数字都由它产出（`--json` 机器可读） |
 
-`npm run check` 当前：**浏览器 18 用例 + Electron 17 用例全绿**。
+`npm run check` 当前：**浏览器 19 用例 + Electron 18 用例全绿**。
 
 ## 下一步
 
 **权威清单在 `docs/ROADMAP.md`**（每项带可复现的验收命令）。当前优先：
 
-1. **R14** 多层锚链 + `Guideline` + `bias`（`alignRules` 目前只支持一层）
-2. **R13/R15–R17** 纯绘制类组件（`Gauge`/`DataPanel`/`Rating`）、真实文本换行测量、变高列表项
+1. **R13** 纯绘制类组件（`Gauge`/`DataPanel`/`Rating`）
+2. **R15–R17** 真实文本换行测量、变高列表项、`ForEach` 键级 diff
+3. **R18–R21** `@ohos:media`/`notification`/`promptAction`、浏览器侧真文件系统
 
-**仍未覆盖**：动画/转场、手势（**含 `Swiper` 的滑动翻页**）、`Navigation` 的**标题栏/工具栏与分栏模式**、
-`@ohos:media`/`notification`、浏览器侧真文件系统（OPFS 在 headless Chrome 会挂起，现用 `localStorage` 兜底）。
+**仍未覆盖**：动画/转场、手势（**含 `Swiper` 的滑动翻页**）、`chainMode`（相对布局的链式排列）、
+`Navigation` 的**标题栏/工具栏与分栏模式**、`@ohos:media`/`notification`。
 **别把没验的当结论**——`docs/CAPABILITY.md` 里有逐项的能力矩阵，其中标了哪些语义是**推断**的。
 
 **已知待办（别当已完成）**：
@@ -550,9 +594,9 @@ builder 真产出了 `NavDestination`（`if/else` 可能没覆盖该 name）—�
 - `ForEach` 现在是「数组变了就整体重建」，**没有键级 diff**
 - 父组件重渲染时参数推送走 `updateStateVarsOfChildByElmtId`，但**子视图内部的 elmtId 迁移未处理**（复杂嵌套可能出问题）
 - `Repeat` / 动画 / `Tabs.vertical`·`barMode` / `Swiper` 的动画与 `displayCount` /
-  `Navigation` 的标题栏与分栏 / `Grid` 无模板时的 `cellLength` 自适应 **未覆盖**
+  `Navigation` 的标题栏与分栏 / `Grid` 无模板时的 `cellLength` 自适应 / `chainMode` **未覆盖**
   （这些会记 `layoutWarnings`，不是静默忽略）
-- **布局语义仍不完整**：没有约束求解器，`alignRules` 只支持一层锚链
+- **布局仍不是约束求解器**：多层锚链靠不动点迭代（有上限），环状锚定只记警告
 
 ---
 

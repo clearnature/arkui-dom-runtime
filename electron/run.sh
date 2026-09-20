@@ -43,6 +43,7 @@ prepare() {
     tabgrid) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/TabsGrid.ts" "$ROOT/build/tabsgrid.js" >/dev/null || return 1 ;;
     swiper) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/SwiperDemo.ts" "$ROOT/build/swiperdemo.js" >/dev/null || return 1 ;;
     navdemo) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/NavDemo.ts" "$ROOT/build/navdemo.js" >/dev/null || return 1 ;;
+    reldemo) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/RelDemo.ts" "$ROOT/build/reldemo.js" >/dev/null || return 1 ;;
     measure) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/Measure.ts" "$ROOT/build/measure.js" >/dev/null || return 1 ;;
     lazy) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/Lazy.ts" "$ROOT/build/lazy.js" >/dev/null || return 1 ;;
     provide) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/Provide.ts" "$ROOT/build/provide.js" >/dev/null || return 1 ;;
@@ -110,7 +111,7 @@ case "${1:-layout}" in
   all)
     rc=0
     # 全矩阵：每个用例都是独立 Electron 进程
-    for t in index rich layout widgets tabgrid swiper navdemo measure lazy provide v2 observe ability router async; do
+    for t in index rich layout widgets tabgrid swiper navdemo reldemo measure lazy provide v2 observe ability router async; do
       run_one "$t" || rc=1
       echo
     done
@@ -130,6 +131,6 @@ case "${1:-layout}" in
     run_one netfile "?phase=2" netfile-2 || exit 1
     echo
     verify_disk ;;
-  layout|rich|index|leak|ability|router|widgets|tabgrid|swiper|navdemo|measure|lazy|provide|async|v2|observe) run_one "$1" ;;
-  *) echo "用法: bash electron/run.sh [layout|rich|index|leak|ability|router|widgets|tabgrid|swiper|navdemo|measure|lazy|provide|async|v2|observe|netfile|all]"; exit 2 ;;
+  layout|rich|index|leak|ability|router|widgets|tabgrid|swiper|navdemo|reldemo|measure|lazy|provide|async|v2|observe) run_one "$1" ;;
+  *) echo "用法: bash electron/run.sh [layout|rich|index|leak|ability|router|widgets|tabgrid|swiper|navdemo|reldemo|measure|lazy|provide|async|v2|observe|netfile|all]"; exit 2 ;;
 esac

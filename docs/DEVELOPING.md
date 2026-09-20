@@ -372,6 +372,9 @@ node tools/extract.mjs fixtures/pages/NewPage.ts build/newpage.js --cjs --regist
 | ㊶ | **把"由运行时驱动的 builder"当成页面的渲染**：`Navigation` 的 `navDestination` builder 不在 `initialRender` 里，是压栈时被调的。直接 `builder(...)` 会让里面的组件挂到**错误的父节点**（当时栈顶是什么就挂到哪） | 走"**预压容器 → 调 builder → `restore()` → 校验产出 → 失败回滚**"（不变量 17）。**校验不能省**：`if/else` 没覆盖该 name 时 builder 会**静默什么都不建** |
 | ㊷ | **回调登记了却永远不会被调**：`NavDestination.onBackPressed` 在本运行时没有触发源（没有系统返回键）。若只 `store` 不发声，就是最坏的一种静默 | 登记时**立刻记 `layoutWarnings`** 说明"没有触发源、请走哪条路"。**"存了不调"必须出声** |
 | ㊸ | **把被拒绝的 `edit` 当成成功**：我插入一大块实现时，工具返回的是 `File … has been modified since you last read it`（**这是错误**），我误读成成功，后续编辑建立在"那块代码已存在"的假设上——直到 `grep` 发现符号全都不存在 | 大块插入后 `grep` 一次新符号名确认真的落盘（或 `node --check`）；`grep` 不到就是没写进去，别继续往下做 |
+| ㊹ | **用 `getBoundingClientRect()` 断言"左上角落在锚点"**：`End`/`Bottom` 对齐会用 `translate(-100%,-100%)` 把元素推回去，**rect 已含这个位移**。于是 `b`（`offset=(40,20)`）的 rect 读出来是 `(0,0)` —— 我据此把**正确的实现**判成了错的，白查了一轮 | 位置断言读 **`offsetLeft/offsetTop`**（那也是运行时解析锚链用的坐标空间）；要验视觉就用**边缘重合**（rect vs rect，如"b 的右下角与 a 重合"），与 `measure.html` 同一套约定 |
+| ㊺ | **在属性应用时就做需要邻居/尺寸才能算的事**：`alignRules` 原来在 `applyAttr` 里立刻解析，而那一刻锚点可能还没建出来（逆序声明必然如此）→ 算出错值**并且留下 4 条假警告**"找不到锚点 'x'"，把警告通道弄脏 | 只**登记**，解析推迟到渲染后的 `syncAlignRules`；需要容器尺寸的容器级属性（`guideLine`）同理 |
+| ㊻ | **测量方法本身没被验证**：㊹ 那次我盯着断言红了一轮都在怀疑实现。真正的定位手段是**临时探针页**——打印真实 DOM、`querySelector` 结果、`offset*` 与 `rect` 两套读数对比 | 断言集体失败且方向不明时，先写个探针把**原始事实**打出来，别在脑子里推演。探针用完删掉（别留在 `test/` 里被 runner 当用例） |
 
 ### 确定性与时序
 
