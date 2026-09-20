@@ -387,6 +387,9 @@ node tools/extract.mjs fixtures/pages/NewPage.ts build/newpage.js --cjs --regist
 | 56 | **混淆"渲染空间序号"与"数据空间索引"**：虚拟列表里 `querySelectorAll(ListItem)` 拿到的是**当前窗口**的渲染项，`items[i]` 是"窗口内第 i 个"，对应数据索引是 `window[0] + i`。实测 `scrollToIndex(0)` 因此跳到了 100 段 | 凡是有"窗口/分页/过滤"的列表，**下标一律换算到数据空间再用**；问自己"这个下标是相对谁的？" |
 | 57 | **`scrollHeight` 被当成内容高度**：内容比视口矮时它被钳到 `clientHeight`（DOM 语义，不是 bug） | 断言用 `max(clientHeight, 内容高度)`；内容高度取"末项 `offsetTop` + 末项 `offsetHeight`"，**别去建模 gap/行盒** |
 | 58 | **用例名与页面文件名不一致**（`lazyvh` vs `lazyvar.html`）→ Electron runner 去加载不存在的 `test/lazyvh.html`，404 页没有 `#result`，断言读到**空串**，表现为"页面没输出"而不是报错 | 名字不同的必须登记进 `electron/run.sh` 的 `page_of()`。**这是本项目第二次踩**（第一次是 `widgets`→`components`）→ 以后**用例名直接取页面名**，能不映射就不映射 |
+| 59 | **把"编译器合成的组件名"当成不存在**：`KidLayout().id('x')` 会被 emit 成 `__Common__.create(true); …; __Common__.pop();` —— `__Common__` **不在 149 组件注册表**里，运行时不给它定义就 `ReferenceError` | 实现任何"给自定义组件加链式属性"的页面时，**先把产物 grep 一遍合成名**（`grep -o '__[A-Za-z]*__'`）；合成名与注册表无关，得单独实现 |
+| 60 | **以为"多子项 build"哪儿都能用**：编译器明确拒绝 —— `@Entry` 的 build **只能有一个【容器】根节点**（原话："can have only one root node, which must be a container component"）。我为自定义布局写了两版 build 都被拒 | 自定义布局的"多子项 builder 模式"**只适用于嵌套 `@Component`**。**先测一次再写实现**：10 秒的构建能省掉一轮错误设计 |
+| 61 | **测试解析"被测页面输出"时凭 token 猜格式**：页面把回调参数拼成 `A\|120x30\|`，我却按"某个 token 以 A 开头且含 x"去找 → 找不到，**一度以为回调没传值**（实际数字完全正确） | 断言前先看**原始输出**（把 `RAWLOG` 打进结果里）；解析用正则整体匹配，不要 `split` 后再猜哪一段是什么。**"看着像坏了"和"真的坏了"要分得开** |
 
 ### 确定性与时序
 

@@ -6,8 +6,8 @@
 
 **当前状态**：`npm run check` 全绿（preflight + 生成物一致 + 文档数字守卫 + 浏览器 19 用例 + Electron 18 用例）。
 v1/v2 状态管理（含 v1 深度观测）、`Grid` 真实轨道、`Tabs` 切换、`Swiper` 轮播、`Navigation` 栈导航、
-`alignRules` 多层锚链 + `Guideline` + `bias`、纯绘制四件套、文本真实测量（`@ohos:measure`）、变高列表项均已落地。
-**下一步优先级：R17（onMeasureSize/onAreaChange 与真实布局对齐）→ R18–R21（平台模块）→ R22–R23（动画/手势）。**
+`alignRules` 多层锚链 + `Guideline` + `bias`、纯绘制四件套、文本真实测量（`@ohos:measure`）、变高列表项、`onAreaChange` 与自定义布局协议均已落地。
+**下一步优先级：R18–R21（平台模块）→ R22–R23（动画/手势）→ R24（`.abc` 路径调研）。**
 R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分发前才需决定。
 
 ---
@@ -35,6 +35,7 @@ R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分�
 | ③ | **纯绘制四件套**（`Progress`/`Gauge`/`DataPanel`/`Rating`） | `bash run.sh drawdemo`（47 条断言，双端通过） |
 | ③ | **文本真实测量**（`@ohos:measure` + `__arkui_dom_countLines`） | `bash run.sh textmeasure`（25 条断言，双端通过） |
 | ③ | **变高列表项**（实测回填 + 前缀和偏移 + 滚动锚定） | `bash run.sh lazyvh`（22 条断言，双端通过） |
+| ③ | **`onAreaChange` + 自定义布局协议** | `bash run.sh measarea`（28 条断言，双端通过） |
 | ③ | `@ohos:*` 别名层 + CommonJS 装载 + 真 fetch | `bash run.sh async` |
 | ③ | `UIAbility` 启动链路 | `bash run.sh ability` |
 | ③ | `router` 页面栈（返回时保留状态） | `bash run.sh router` |
@@ -45,7 +46,7 @@ R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分�
 | **P0** | 统一验收门禁（退出码可信） | `npm run check`；制造漂移 → exit 1 |
 | **P0** | `--check` 真正只校验不落盘 | `node tools/gen-components.mjs --check` |
 
-当前：**浏览器 22 用例 + Electron 21 用例全绿**（`npm run check` → `exit 0`）。
+当前：**浏览器 23 用例 + Electron 22 用例全绿**（`npm run check` → `exit 0`）。
 
 ---
 
@@ -72,7 +73,7 @@ R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分�
 | P3 | ~~R14 `alignRules` 多层锚链/Guideline/bias~~ **已完成** | — | — |
 | P3 | ~~R15 文本真实测量~~ **已完成** | — | — |
 | P3 | ~~R16 变高列表项~~ **已完成** | — | — |
-| P3 | R17 onMeasureSize/onAreaChange | 中 | 高 |
+| P3 | ~~R17 onAreaChange + 自定义布局协议~~ **已完成** | — | — |
 | P4 | R18–R21 平台模块 | 中 | 低–中 |
 | P5 | R22–R23 动画/手势 | 中 | 中 |
 | P6 | R24 ArkVM 路径 | 低（研究） | 高 |
@@ -510,13 +511,49 @@ visibility:hidden` —— **不能用 `display:none`**，那样没有布局、�
 **触及**：`runtime/arkui-dom-runtime.js`（`createLazyForEach` / `scrollToIndex` / `__arkui_dom_lazyInfo`）、
 `fixtures/pages/LazyVar.ts`、`test/lazyvar.html`、`run.sh`、`electron/run.sh`
 
-### R17 — `onMeasureSize` / `onAreaChange` 对齐
+### ~~R17 — `onAreaChange` + 自定义布局协议~~ ✅ 已完成
 
-**内容**：回传的尺寸要来自真实布局结果，而不是近似值。
+**⚠️ 原前提是错的**。本任务原来写成"`onMeasureSize`/`onAreaChange` 回传尺寸"，实测后拆成两件
+互不相关的事：
 
-**依赖**：R15、R16（都需要真实测量）。
+| | 实际是什么 |
+|---|---|
+| `onAreaChange(cb)` | **链式 `CommonMethod`** —— 这才是"回传真实尺寸"的那条 |
+| `onMeasureSize` / `onPlaceChildren` | **组件结构体上的方法** = ArkUI 的**自定义布局协议**（不是尺寸回调） |
 
-**验收**：断言回调拿到的 `width/height` 与 `getBoundingClientRect()` 一致。
+**`onAreaChange`**：JSDoc 明确 `newValue` = 变化后的宽高 + **相对父元素**坐标 + **相对页面左上角**坐标。
+实现放在渲染后的 `syncAreas()`（与不变量 18 同一条纪律：不能在属性应用时算），只在面积真的变了
+（或首次）时派发，`oldValue` 取上一次的真实值。
+
+**自定义布局协议**（`common.d.ts`）：`onMeasureSize(selfLayoutInfo, Measurable[], ConstraintSizeOptions): SizeResult`
++ `onPlaceChildren(selfLayoutInfo, Layoutable[], ConstraintSizeOptions): void`，**必须成对实现**，
+**返回值优先级高于组件声明的 `width/height`**，`Measurable.measure(c)` 要回**真实测量**、
+`Layoutable.layout(pos)` 负责摆放。
+
+**测出来的两条硬约束（各花掉一次编译失败）**：
+1. **`@Entry` 的 `build` 只能有一个【容器】根节点**（编译器原话："can have only one root node,
+   which must be a container component"）→ "多子项 builder 模式"只适用于**嵌套 `@Component`**。
+2. **带链式属性的自定义组件会被编译器包一层 `__Common__`**（`__Common__.create(true); …; __Common__.pop();`）
+   —— 它**不在 149 组件注册表**里，不实现就 `ReferenceError`。
+
+**验收（已执行）**：`bash run.sh measarea` —— **28 条断言**，双端通过：
+`onAreaChange` 的 `newValue.width/height` **等于真实 `getBoundingClientRect()`**（原始日志 `A|120x30|`）、
+尺寸变化后再次触发且 `oldValue` 为变化前的真实值（`B|100>140|`）、
+`measure()` 遵守约束且回真实测量、返回的 `SizeResult` **覆盖**声明尺寸（组件宽 60，父容器 320）、
+`layout(pos)` 的三子项依次落位（几何断言）、收敛趟数有上限。
+
+**我这轮又栽在"测试解析页面输出"上**：页面把回调参数拼成 `A|120x30|`，我却按"token 以 A 开头"去找
+→ 找不到，一度以为回调没传值；**实际数字完全正确**。改成正则直接解析并把原始日志打进输出（`RAWLOG`）。
+
+**破坏验证（4 处）**：面积不算真实值 / `measure()` 不真实测量 / 不应用返回的 `SizeResult` /
+`layout()` 不摆放 → **12 条失败、跨 5 组**。
+
+**已知限制**：`measure()` 会把约束**永久**写到子项上；`onMeasureSize` 会被调用多趟以收敛（上限 3）；
+实现了 `onMeasureSize` 却没有 `onPlaceChildren` 时子项**不会被摆放**（记警告）。
+
+**触及**：`runtime/arkui-dom-runtime.js`（`syncAreas` / `runCustomLayout` / `__Common__` /
+`ViewPU.create` 钩子 / `__arkui_dom_customLayout`）、`fixtures/pages/MeasArea.ts`、
+`test/measarea.html`、`run.sh`、`electron/run.sh`
 
 ---
 

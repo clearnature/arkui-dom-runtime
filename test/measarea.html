@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R17 onAreaChange（真实面积）+ 自定义布局协议</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 320px; height: 500px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R17：onAreaChange 的真实 old/new Area；onMeasureSize/onPlaceChildren 按真实几何测量与摆放</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../build/measarea.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const near = (a, b, tol) => Math.abs(a - b) <= (tol === undefined ? 0.6 : tol);
+    const el = (id) => root.querySelector('#' + id);
+    const group = async (name, fn) => {
+      try { await fn(); } catch (e) {
+        allPass = false;
+        lines.push(`FAIL [${name}] 抛出异常：${e && e.stack ? String(e.stack).split('\n')[0] : e}`);
+      }
+    };
+    const logVal = () => String(el('logline').textContent || '').replace(/^log=/, '');
+    // 页面把回调参数拼成 'A|<宽>x<高>|' / 'B|<旧宽>><新宽>|'；直接按正则解析，
+    // 不要去 split('|') 再找 token（第一版就是这么写错的：数字段既不以 A 开头也不含 x）
+    const areaA = () => /A\|(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)\|/.exec(logVal());
+    const areaB = () => [...logVal().matchAll(/B\|(\d+(?:\.\d+)?)>(\d+(?:\.\d+)?)\|/g)];
+
+    try {
+      __arkui_dom_loadRoute('pages/MeasArea', root);
+      await tick(120);
+      check(!!el('logline'), 'MeasArea 页面已渲染');
+
+      // ══════════ ① onAreaChange：newValue 必须等于真实渲染几何 ══════════
+      await group('onAreaChange 真实面积', async () => {
+        const t1 = el('t1');
+        const r1 = t1.getBoundingClientRect();
+        const m = areaA();
+        lines.push(`RAWLOG ${JSON.stringify(logVal())}`);
+        check(!!m, `onAreaChange 已触发且回传了宽高（日志 ${JSON.stringify(logVal())}）`);
+        // ROADMAP 的验收：回调拿到的 width/height 与 getBoundingClientRect() 一致
+        check(m && near(parseFloat(m[1]), r1.width, 1),
+          `回调宽度 ${m && m[1]} == 真实 rect 宽度 ${r1.width.toFixed(1)}`);
+        check(m && near(parseFloat(m[2]), r1.height, 1),
+          `回调高度 ${m && m[2]} == 真实 rect 高度 ${r1.height.toFixed(1)}`);
+      });
+
+      // ══════════ ② 尺寸变化后再次触发，oldValue = 上一次的真实值 ══════════
+      await group('onAreaChange 变化与 oldValue', async () => {
+        const t2 = el('t2');
+        const before = t2.getBoundingClientRect().width;
+        const b0 = areaB();
+        check(b0.length >= 1, `首次布局就触发了一次（oldWidth=${b0[0] && b0[0][1]}）`);
+        el('btn').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await tick(120);
+        const after = t2.getBoundingClientRect().width;
+        check(near(after - before, 40, 1.5), `宽度确实变了 +40（${before.toFixed(1)} → ${after.toFixed(1)}）`);
+        const b1 = areaB();
+        check(b1.length >= 2, `尺寸变化后再次触发（共 ${b1.length} 次）`);
+        const last = b1[b1.length - 1];
+        check(last && near(parseFloat(last[1]), before, 1),
+          `oldValue 宽度 ${last && last[1]} == 变化前的真实值 ${before.toFixed(1)}`);
+        check(last && near(parseFloat(last[2]), after, 1),
+          `newValue 宽度 ${last && last[2]} == 变化后的真实值 ${after.toFixed(1)}`);
+      });
+
+      // ══════════ ③ 自定义布局：measure() 必须回真实测量值 ══════════
+      await group('自定义布局 measure()', async () => {
+        const kid = el('kid');
+        check(!!kid, '嵌套的自定义布局组件 KidLayout 已挂载');
+        const info = __arkui_dom_customLayout(kid);
+        check(!!info, '自省钩子 __arkui_dom_customLayout 可用');
+        check(info && info.measured === true, `检测到并执行了自定义布局（measured=${info && info.measured}）`);
+        check(info && info.children === 3, `子节点数 = ${info && info.children}（builder 里的 3 个顶层子项）`);
+        const ms = (info && info.measures) || [];
+        // 每趟 onMeasureSize 都会把每个子项各测一次 → 总次数 = 子项数 × 趟数
+        check(ms.length === 3 * (info && info.passes) && ms.length >= 3,
+          `measure() 调用 ${ms.length} 次 = 3 子项 × ${info && info.passes} 趟`);
+        // 约束是 maxWidth:60 → 每个子项按真实布局量出的宽度不得超过 60
+        check(ms.every((r) => r.width <= 60.5),
+          `measure() 的返回值遵守了约束 maxWidth=60（实测 ${ms.map((r) => r.width).join(', ')}）`);
+        check(ms.every((r) => r.height > 0), `measure() 回传的高度来自真实布局（${ms.map((r) => r.height).join(', ')}）`);
+        lines.push(`CM self=${JSON.stringify(info && info.selfSize)} constraint=${JSON.stringify(info && info.constraint)}`);
+      });
+
+      // ══════════ ④ 自定义布局：约束/自身尺寸都来自真实布局；返回值覆盖尺寸 ══════════
+      await group('SizeResult 覆盖尺寸', async () => {
+        const kid = el('kid');
+        const rect = kid.getBoundingClientRect();
+        const info = __arkui_dom_customLayout(kid);
+        // onMeasureSize 返回 {width:60, height:各子项高之和} → 覆盖组件自身尺寸
+        check(near(rect.width, 60, 1.5), `组件宽度 = 返回的 width 60（实测 ${rect.width.toFixed(1)}）`);
+        check(near(rect.height, info && info.returned.height, 1.5),
+          `组件高度 = 返回的 height ${info && info.returned.height}（实测 ${rect.height.toFixed(1)}）`);
+        // selfLayoutInfo 是【覆盖之前】的真实尺寸：父容器内容宽度（不是估的、也不是最终值）
+        const parentW = kid.parentElement.clientWidth;
+        check(info && near(info.selfSize.width, parentW, 1.5),
+          `selfLayoutInfo.width ${info && info.selfSize.width} == 父容器内容宽 ${parentW}（覆盖前的真实尺寸）`);
+        check(info && near(info.constraint.maxWidth, parentW, 1.5),
+          `constraint.maxWidth ${info && info.constraint.maxWidth} == 父容器内容宽 ${parentW}（来自真实布局）`);
+      });
+
+      // ══════════ ⑤ 自定义布局：layout() 真正摆放了子节点（几何断言）══════════
+      await group('layout() 真实摆放', async () => {
+        const kid = el('kid');
+        const base = kid.getBoundingClientRect().top;
+        const c1 = el('c1'), c2 = el('c2'), c3 = el('c3');
+        check(!!c1 && !!c2 && !!c3, '三个子项都已渲染');
+        const y1 = c1.getBoundingClientRect().top - base;
+        const y2 = c2.getBoundingClientRect().top - base;
+        const y3 = c3.getBoundingClientRect().top - base;
+        check(near(y1, 0, 1), `第 1 项在 y=0（实测 ${y1.toFixed(1)}）`);
+        check(y2 > y1 && near(y2, c1.getBoundingClientRect().height, 1.5),
+          `第 2 项紧接在第 1 项下方（y=${y2.toFixed(1)} ≈ 第 1 项高 ${c1.getBoundingClientRect().height.toFixed(1)}）`);
+        check(y3 > y2 && near(y3, y2 + c2.getBoundingClientRect().height, 1.5),
+          `第 3 项紧接在第 2 项下方（y=${y3.toFixed(1)}）`);
+        check([c1, c2, c3].every((e) => getComputedStyle(e).position === 'absolute'),
+          'layout(position) 用绝对定位落位（与 ArkUI 的"摆放即定位"一致）');
+      });
+
+      // ══════════ ⑥ 收敛：不能无限回调 ══════════
+      await group('收敛', async () => {
+        const info = __arkui_dom_customLayout(el('kid'));
+        check(info && info.passes <= 3, `自定义布局执行 ${info && info.passes} 趟（有上限，不无限回调）`);
+        check(info && info.layoutCalls === 3, `layout() 被调用 ${info && info.layoutCalls} 次（每个子项一次）`);
+        const warns = __arkui_dom_layout_warnings || [];
+        check(warns.length === 0, `布局告警为空（${warns.length}${warns.length ? ': ' + warns[0] : ''}）`);
+      });
+
+      lines.push(`ELMT ${__arkui_dom_elmtRecords.size}`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

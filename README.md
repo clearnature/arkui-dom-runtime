@@ -86,10 +86,10 @@ tools/serve.py                 极简静态服务（端口由 OS 分配，避免
 tools/preflight.mjs            环境自检（工具链 / 宿主 / 可执行位）
 tools/check-all.sh             一条命令做完所有验收
 tools/stats.mjs                覆盖范围统计（文档里的数字都来自它）
-test/*.html                    断言页（22 个用例）
-fixtures/                      冻结的 ets-loader 转换产物（20 个，测试的输入）
-run.sh                         浏览器 22 用例驱动
-electron/run.sh                Electron 21 用例 + 真实磁盘验证
+test/*.html                    断言页（23 个用例）
+fixtures/                      冻结的 ets-loader 转换产物（21 个，测试的输入）
+run.sh                         浏览器 23 用例驱动
+electron/run.sh                Electron 22 用例 + 真实磁盘验证
 docs/                          ARCHITECTURE / DEVELOPING / ROADMAP / CAPABILITY
 ```
 
@@ -561,6 +561,46 @@ rect 已经把这位移算进去（b 明明 `offset=(40,20)`，rect 却是 `(0,0
 去掉错轴守卫 → 1 条失败（并因此发现原来那条断言**没有牙齿**：横线自身 `x=0`，
 用 `Start` 对齐时"错轴返回 0"与"没做判断"碰巧同值，改用 `Center` 才分离成 0 vs 150）。
 
+## R17：`onAreaChange` + 自定义布局协议 ✅
+
+```
+$ bash run.sh measarea
+=== ALL PASS ===                    （28 条断言）
+PASS onAreaChange 已触发且回传了宽高（日志 "A|120x30|B|0>100|"）
+PASS 回调宽度 120.0 == 真实 rect 宽度 120.0        ← ROADMAP 的验收
+PASS oldValue 宽度 100.0 == 变化前的真实值 100.0
+PASS newValue 宽度 140.0 == 变化后的真实值 140.0
+PASS measure() 的返回值遵守了约束 maxWidth=60（实测 14.9 × 6 次）
+PASS 组件宽度 = 返回的 width 60（实测 60.0）        ← 返回值覆盖声明尺寸
+PASS selfLayoutInfo.width 320 == 父容器内容宽 320（覆盖前的真实尺寸）
+PASS 第 2 项紧接在第 1 项下方（y=20.0 ≈ 第 1 项高 20.0）
+PASS layout(position) 用绝对定位落位
+PASS 自定义布局执行 2 趟（有上限，不无限回调）
+```
+
+**R17 的原始前提是错的**，实测后拆成两件互不相关的事：
+
+| | 是什么 | 关键事实 |
+|---|---|---|
+| `onAreaChange(cb)` | **链式** `CommonMethod` | 这才是"回传真实尺寸"的那条：`newValue` = 真实宽高 + 相对父/页坐标 |
+| `onMeasureSize`/`onPlaceChildren` | **组件结构体上的方法** = **自定义布局协议** | 必须成对实现；**返回值优先级高于声明的 width/height**；`Measurable.measure(c)` 要回真实测量；`Layoutable.layout(pos)` 负责摆放 |
+
+**测出来的两条硬约束（各花掉一次编译失败）**：
+
+1. **`@Entry` 的 `build` 只能有一个【容器】根节点**（编译器原话："can have only one root node, which must be a container component"）→ "多子项 builder 模式"只适用于**嵌套 `@Component`**。
+2. **带链式属性的自定义组件会被编译器包一层 `__Common__`**（`__Common__.create(true); …; __Common__.pop();`）—— 它**不在 149 组件注册表里**，不实现就 `ReferenceError`。
+
+**实现要点**：`onAreaChange` 在渲染后按真实几何派发（与不变量 18 同一条纪律：不能在属性应用时算）；
+自定义布局由 `ViewPU.create` 在 `childView.initialRender()` **之后**触发，`measure()` 直接读真实 rect，
+返回的尺寸写到"带 `.id()` 的那一层"（可能是 `__Common__` 包装器），`layout(pos)` 落绝对定位，收敛上限 3 趟。
+
+**我这轮又栽在"测试解析页面输出的格式"上**：页面把回调参数拼成 `A|120x30|`，
+我却按"token 以 A 开头"去找 → 找不到，一度以为回调没传值。**实际日志里数字完全正确**。
+→ 改成用正则直接解析，并把原始日志打进输出（`RAWLOG`）便于核对。
+
+**破坏验证（4 处）**：面积不算真实值 / `measure()` 不真实测量 / 不应用返回的 `SizeResult` /
+`layout()` 不摆放 → **12 条失败、跨 5 组**。
+
 ## R16：`LazyForEach` 变高列表项 ✅
 
 ```
@@ -701,15 +741,14 @@ PASS starStyle 的图片 URI 不可用已记警告
 | 文档数字守门 | `npm run stats:check-doc` | `ARCHITECTURE.md` §6 的整块实测数字逐行比对，漂移即非 0 退出；`stats:write-doc` 就地重写 |
 | 覆盖统计 | `npm run stats` | 文档里的所有数字都由它产出（`--json` 机器可读） |
 
-`npm run check` 当前：**浏览器 22 用例 + Electron 21 用例全绿**。
+`npm run check` 当前：**浏览器 23 用例 + Electron 22 用例全绿**。
 
 ## 下一步
 
 **权威清单在 `docs/ROADMAP.md`**（每项带可复现的验收命令）。当前优先：
 
-1. **R17** `onMeasureSize`/`onAreaChange` 与真实布局对齐（R16 变高列表已完成，R17 可直接复用这套实测原语）
-2. **R18–R21** 平台模块：`@ohos:media`、`notification`、`startAbilityForResult`+`promptAction`、浏览器真 fs
-3. **R22–R23** 动画（`animateTo`/`transition`）与手势（`Gesture`）
+1. **R18–R21** 平台模块：`@ohos:media`、`notification`、`startAbilityForResult`+`promptAction`、浏览器真 fs
+2. **R22–R23** 动画（`animateTo`/`transition`）与手势（`Gesture`）
 
 **仍未覆盖**：动画/转场、手势（**含 `Swiper` 的滑动翻页**）、`chainMode`、
 `Navigation` 的**标题栏/工具栏与分栏模式**、其余 85 个骨架组件的视觉语义、`@ohos:media`/`notification`。

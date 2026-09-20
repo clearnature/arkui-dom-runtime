@@ -801,6 +801,67 @@ DOM 侧有两条路，按形状天然二分：
 since 18`**（官方建议改用 `UIContext.getMeasureUtils()`）——本实现只做了前者，页面若走
 `this.getUIContext()` 会得到响亮的 `TypeError`（不是静默错值）。
 
+### 4.11 `onAreaChange` 与自定义布局协议（R17）
+
+R17 的原始描述（"`onMeasureSize`/`onAreaChange` 回传尺寸"）**前提是错的**，实测后拆成两件互不相关的事：
+
+**① `onAreaChange(cb)`** —— 链式 `CommonMethod`，是"回传真实尺寸"的那条：
+
+```ts
+Text('a').width(120).height(30).onAreaChange((oldV: Area, newV: Area) => { … })
+```
+
+`.d.ts` JSDoc 的权威语义：`newValue` = 变化后的**宽高** + **相对父元素**的坐标 + **相对页面左上角**的坐标。
+`Area = {width, height, position:{x,y}, globalPosition:{x,y}}`。
+
+实现：**渲染后**由 `syncAreas()` 按真实几何（`getBoundingClientRect` + `offsetLeft/Top`）派发，
+只在面积真的变了（或首次）时触发；`oldValue` 取上一次派发时记下的真实值。
+→ **绝对不能在 `applyAttr` 里立刻派发**（那时还没布局，与不变量 18 同一条纪律）。
+
+⚠️ **"首次布局也派发一次（oldValue 全 0）"是我按实践惯例定的**，真机 JSDoc 只说"面积变化时触发"，
+**此点未在真机核对**。
+
+**② `onMeasureSize` / `onPlaceChildren`** —— **不是链式属性**，而是**组件结构体上的方法**，
+即 ArkUI 的**自定义布局协议**（`common.d.ts`）：
+
+```ts
+onMeasureSize?(selfLayoutInfo: GeometryInfo, children: Array<Measurable>, constraint: ConstraintSizeOptions): SizeResult;
+onPlaceChildren?(selfLayoutInfo: GeometryInfo, children: Array<Layoutable>, constraint: ConstraintSizeOptions): void;
+```
+
+- **必须成对实现**（JSDoc 明确），否则布局不显示
+- **返回的 `SizeResult` 优先级高于组件自身声明的 `width/height`**（JSDoc 明确）
+- `Measurable.measure(constraint)` 要回**真实测量**的尺寸；`Layoutable.layout(position)` 负责摆放
+- `ConstraintSizeOptions` 只有 **min/max 四界**（没有固定宽高）；`SizeResult`/`MeasureResult` 是 **px 数字**
+
+**实测（决定实现方式的两条硬约束）**：
+1. **`@Entry` 的 `build` 只能有一个【容器】根节点**（编译器原话："In an '@Entry' decorated component,
+   the 'build' method can have only one root node, which must be a container component"）→
+   所以"多子项 builder 模式"只适用于**非 `@Entry` 的嵌套 `@Component`**。测出这条之前我写了两次都编译失败。
+2. **带链式属性的自定义组件会被编译器包一层 `__Common__`**：
+   `KidLayout().id('kid')` → `__Common__.create(true); __Common__.id('kid'); … __Common__.pop();`。
+   `__Common__` **不在 149 组件注册表里**，不实现就 `ReferenceError`。
+
+实现（`runCustomLayout`，由 `ViewPU.create` 在 `childView.initialRender()` 之后触发）：
+
+```
+子节点      = 该组件 builder 直接产出的元素（在它的 display:contents 容器里）
+measure(c)  = 把 min/max 约束写到该子项上，再读【真实 rect】→ 回 px（不做任何估算）
+selfLayout  = host（带 .id() 的那层，可能是 __Common__ 包装器）覆盖【之前】的真实尺寸 + 边框/内外边距
+constraint  = 父容器的真实内容盒 → {minWidth:0, maxWidth, minHeight:0, maxHeight}
+onMeasureSize 的返回 → 写到 host 上（覆盖声明尺寸）→ 若尺寸还没稳定，再来一趟（上限 3 趟）
+layout(pos) → 该子项 position:absolute + left/top
+```
+
+**为什么尺寸施加在 host 而不是容器**：`onMeasureSize` 回的是"组件自身"的尺寸，而 `.id()` 也标在组件上
+—— 二者必须是同一个盒子，否则"组件的尺寸"和"带 id 的盒子"会分裂。
+
+自省钩子 `__arkui_dom_customLayout(el)` → `{measured, children, selfSize, constraint, returned, measures, layoutCalls, passes}`。
+
+**已知限制**：`measure()` 是**永久**把约束写到子项上（真机是"请求尺寸"、父容器随后决定）；
+`onMeasureSize` 会被调用多趟以收敛（趟数记在 `passes`，上限 3）；`getMargin/Padding/BorderWidth`
+回的是计算样式的四边值；实现了 `onMeasureSize` 却没有 `onPlaceChildren` 时会记警告。
+
 ---
 
 ## 5. 架构不变量
@@ -848,6 +909,10 @@ since 18`**（官方建议改用 `UIContext.getMeasureUtils()`）——本实现
     - 弧的半径（`.width/.height` 是 create 之后才应用的，create 时 `offsetWidth` 是 0）
     - `guideLine` 的位置（要容器尺寸）
     违反这条的症状是双重的：**算出错值** + **留下一堆假警告**（把警告通道弄脏）。
+19. **`onAreaChange` / 自定义布局协议同属"要真实几何"那一类**，也都放在渲染后同步阶段
+    （`syncAreas`）；`ViewPU.create` 里对子组件的 `onMeasureSize` 检测必须发生在
+    `childView.initialRender()` **之后**（那时子节点才存在，`measure()` 才有东西可量）。
+    协议里**返回的尺寸优先**于声明尺寸，施加在"带 `.id()` 的那一层"（可能是编译器合成的 `__Common__`）。
 
 ---
 
@@ -871,10 +936,10 @@ since 18`**（官方建议改用 `UIContext.getMeasureUtils()`）——本实现
   属性元数据总数       1078（平均 7.2／组件，最多 TextInput=70）
 
 == 运行时 API ==
-  global 导出        112 个
+  global 导出        114 个
   状态类            ObservedPropertySimplePU ObservedPropertyObjectPU SynchedPropertySimpleOneWayPU SynchedPropertySimpleTwoWayPU SynchedPropertyNesedObjectPU
   内置组件          Text Button Column Row Stack List ListItem If ForEach LazyForEach RelativeContainer Tabs TabContent Swiper Navigation NavDestination Progress Gauge DataPanel Rating
-  内部钩子 __arkui_dom_*  25 个
+  内部钩子 __arkui_dom_*  26 个
 
 == 状态管理 ==
   v1  状态类        5 个（包装对象模型）
@@ -888,21 +953,21 @@ since 18`**（官方建议改用 `UIContext.getMeasureUtils()`）——本实现
   11 个：app.ability.AbilityConstant app.ability.ConfigurationConstant app.ability.UIAbility app.ability.Want data.preferences file.fs hilog measure net.http router window
 
 == 用例矩阵 ==
-  浏览器 run.sh     22 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measure lazy provide v2 observe async ability router netfile persist
-  Electron          21 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measure lazy provide async v2 observe
-  测试页            22 个
-  fixtures 转换产物  20 个：AsyncIO Detail DrawDemo Home Index Layout Lazy LazyVar Measure NavDemo NetFile Observe Provide RelDemo Rich SwiperDemo TabsGrid TextMeasure V2 Widgets
+  浏览器 run.sh     23 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measure lazy provide v2 observe async ability router netfile persist
+  Electron          22 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measure lazy provide async v2 observe
+  测试页            23 个
+  fixtures 转换产物  21 个：AsyncIO Detail DrawDemo Home Index Layout Lazy LazyVar MeasArea Measure NavDemo NetFile Observe Provide RelDemo Rich SwiperDemo TabsGrid TextMeasure V2 Widgets
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          226.4 KB
-  test             139.9 KB
+  runtime          235.2 KB
+  test             148.9 KB
   tools            37.6 KB
-  electron(src)    16.1 KB
-  docs             171.2 KB
-  fixtures         151.3 KB
+  electron(src)    16.3 KB
+  docs             181.5 KB
+  fixtures         159.6 KB
 
 == 逐文件（文档"文件职责"表的来源）==
-  runtime/arkui-dom-runtime.js     144769 B  141.4 KB
+  runtime/arkui-dom-runtime.js     153793 B  150.2 KB
   runtime/generated-components.js   57617 B  56.3 KB
   runtime/ohos-shims.js             29448 B  28.8 KB
   tools/extract.mjs                  6457 B  6.3 KB
@@ -911,18 +976,18 @@ since 18`**（官方建议改用 `UIContext.getMeasureUtils()`）——本实现
   tools/stats.mjs                   13385 B  13.1 KB
   tools/preflight.mjs                5108 B  5.0 KB
   tools/check-all.sh                 3171 B  3.1 KB
-  run.sh                            10794 B  10.5 KB
-  electron/run.sh                    7504 B  7.3 KB
+  run.sh                            11007 B  10.7 KB
+  electron/run.sh                    7661 B  7.5 KB
   electron/main.js                   6795 B  6.6 KB
   electron/preload.js                1961 B  1.9 KB
   package.json                       1207 B  1.2 KB
   .gitignore                          674 B  0.7 KB
-  README.md                         43563 B  42.5 KB
+  README.md                         46221 B  45.1 KB
   THIRD-PARTY-NOTICES.md             8256 B  8.1 KB
-  docs/ARCHITECTURE.md              72970 B  71.3 KB
-  docs/CAPABILITY.md                24569 B  24.0 KB
-  docs/DEVELOPING.md                34021 B  33.2 KB
-  docs/ROADMAP.md                   37302 B  36.4 KB
+  docs/ARCHITECTURE.md              78130 B  76.3 KB
+  docs/CAPABILITY.md                25547 B  24.9 KB
+  docs/DEVELOPING.md                35327 B  34.5 KB
+  docs/ROADMAP.md                   40327 B  39.4 KB
   docs/surface-measurement.md        6496 B  6.3 KB
   fixtures/pages/AsyncIO.ts          6206 B  6.1 KB
   fixtures/pages/Detail.ts           3097 B  3.0 KB
@@ -932,6 +997,7 @@ since 18`**（官方建议改用 `UIContext.getMeasureUtils()`）——本实现
   fixtures/pages/Layout.ts           3434 B  3.4 KB
   fixtures/pages/Lazy.ts             4485 B  4.4 KB
   fixtures/pages/LazyVar.ts          7774 B  7.6 KB
+  fixtures/pages/MeasArea.ts         8522 B  8.3 KB
   fixtures/pages/Measure.ts          6262 B  6.1 KB
   fixtures/pages/NavDemo.ts         14129 B  13.8 KB
   fixtures/pages/NetFile.ts          5039 B  4.9 KB
@@ -953,6 +1019,7 @@ since 18`**（官方建议改用 `UIContext.getMeasureUtils()`）——本实现
   test/lazy.html                     4380 B  4.3 KB
   test/lazyvar.html                 10093 B  9.9 KB
   test/leak.html                     3921 B  3.8 KB
+  test/measarea.html                 9231 B  9.0 KB
   test/measure.html                  6072 B  5.9 KB
   test/navdemo.html                 13765 B  13.4 KB
   test/netfile.html                  5302 B  5.2 KB
@@ -985,6 +1052,8 @@ since 18`**（官方建议改用 `UIContext.getMeasureUtils()`）——本实现
 | `Swiper` 轮播 | ✅ 有测试（`run.sh swiper`）：`index`/`loop`（含回卷与边界停住）/`autoPlay`+`interval`/`indicator` 圆点/`SwiperController.showNext`·`showPrevious`·`changeIndex`、切走的页不销毁 |
 | 虚拟滚动（含**变高列表项**） | ✅ 有测试（`run.sh lazyvh`）：偏移 = 逐项 advance 的前缀和、渲染后实测回填、`estItemH` 取已实测均值、滚动锚定、`scrollToIndex` 精确落顶、偏移模型与 DOM **逐项相等**；400 项 → 4~5 个节点 |
 | 平台模块 | ✅ 11 个：`hilog`/`app.ability.*`/`window`/`router`/`data.preferences`/`file.fs`/`net.http`/**`measure`**；其余（`media`/`notification`/…）未实现 → 调用时给可操作报错 |
+| **`onAreaChange`** | ✅ 有测试（`run.sh measarea`）：回调的 `newValue.width/height` **等于真实 `getBoundingClientRect()`**、尺寸变化后再次触发且 `oldValue` 是上一次的真实值 |
+| **自定义布局协议** `onMeasureSize`+`onPlaceChildren` | ✅ 有测试（`run.sh measarea`）：`Measurable.measure(constraint)` 回**真实测量**、返回的 `SizeResult` **覆盖**声明尺寸、`Layoutable.layout(position)` 真的摆放（几何断言）、收敛有上限 |
 | 文本真实测量 | ✅ 有测试（`run.sh textmeasure`）：`@ohos:measure` 的 `measureText`（单行、忽略约束）/`measureTextSize`（约束宽高、`maxLines` 夹高、`lineHeight`）；**与同文本同宽度的真实 Text DOM 逐像素一致**；`__arkui_dom_countLines` 直接断言行数 |
 | 持久化 | ✅ Electron 真磁盘（shell 级验证）；浏览器 `localStorage` |
 | 动画 / 手势 | ❌ 未实现（`Swiper` 也无手势滑动，只有控制器/指示点/autoPlay 三条切换路径） |
@@ -998,7 +1067,7 @@ since 18`**（官方建议改用 `UIContext.getMeasureUtils()`）——本实现
 
 | 文件 | 体积 | 职责 | 改它的时机 |
 |---|---|---|---|
-| `runtime/arkui-dom-runtime.js` | 141.4 KB | v1 状态类 + 深度观测（`@Observed`/`@ObjectLink`）、`ViewPU`/`ViewV2`、装饰器层、组件栈、布局（`alignRules` 多层锚链 + `Guideline` + `bias`、`Grid` 轨道）、`Tabs`/`TabContent`+`TabsController`、`Swiper`+`SwiperController`、`Navigation`/`NavDestination`+`NavPathStack`、**绘制类四件套**（SVG/CSS）、`LazyForEach`、路由 | 实现新语义（**手写优先**） |
+| `runtime/arkui-dom-runtime.js` | 150.2 KB | v1 状态类 + 深度观测（`@Observed`/`@ObjectLink`）、`ViewPU`/`ViewV2`、装饰器层、组件栈、布局（`alignRules` 多层锚链 + `Guideline` + `bias`、`Grid` 轨道）、`Tabs`/`TabContent`+`TabsController`、`Swiper`+`SwiperController`、`Navigation`/`NavDestination`+`NavPathStack`、**绘制类四件套**（SVG/CSS）、`LazyForEach`、路由 | 实现新语义（**手写优先**） |
 | `runtime/generated-components.js` | 56.3 KB | 149 个组件骨架（**生成物**） | **不手改**；改 `tools/gen-components.mjs` 后重新生成，`--check` 会守门 |
 | `runtime/ohos-shims.js` | 28.8 KB | `@ohos:*` 模块（11 个，含 **`measure`**）+ 持久化后端 + 文本测量原语 | 新增平台模块 |
 | `tools/extract.mjs` | 6.3 KB | hvigor 缓存 `.ts` → 可执行 `.js`；**装饰器作用域内绑定前奏 + 未就绪守卫**（§3.4） | 产物形态/装饰器集合变化时 |
@@ -1007,12 +1076,12 @@ since 18`**（官方建议改用 `UIContext.getMeasureUtils()`）——本实现
 | `tools/stats.mjs` | 13.0 KB | 本文档所有数字的来源（`--json` 机器可读）；**`--check-doc`/`--write-doc` 守 §6 引用块** | 覆盖范围变化时 |
 | `tools/preflight.mjs` | 5.0 KB | 环境自检（工具链/宿主/可执行位） | 外部依赖变化时 |
 | `tools/check-all.sh` | 3.1 KB | 一条命令做完验收（5 步），退出码只看被调命令 | 新增验收步骤时 |
-| `run.sh` | 10.5 KB | 浏览器 22 用例驱动 | 新增用例 |
-| `electron/run.sh` | 7.3 KB | Electron 21 用例 + 磁盘验证 | 新增用例 |
+| `run.sh` | 10.7 KB | 浏览器 23 用例驱动 | 新增用例 |
+| `electron/run.sh` | 7.5 KB | Electron 22 用例 + 磁盘验证 | 新增用例 |
 | `electron/main.js` | 6.6 KB | 主进程：offscreen 截图、**像素级**空白检测 | 截图/验证策略变化时 |
 | `electron/preload.js` | 1.9 KB | `contextBridge` 暴露 Node fs | 宿主能力变化时 |
-| `fixtures/pages/*.ts` | 151 KB | **冻结的**官方转换产物（20 个，含 `V2.ts`/`Observe.ts`/`TabsGrid.ts`/`SwiperDemo.ts`/`NavDemo.ts`/`RelDemo.ts`/`DrawDemo.ts`/`TextMeasure.ts`/`LazyVar.ts`） | 几乎不改（见不变量 5） |
-| `test/*.html` | 140 KB | 断言页（读 `#result` 节点文本） | 新增用例 |
+| `fixtures/pages/*.ts` | 160 KB | **冻结的**官方转换产物（21 个，含 `V2.ts`/`Observe.ts`/`TabsGrid.ts`/`SwiperDemo.ts`/`NavDemo.ts`/`RelDemo.ts`/`DrawDemo.ts`/`TextMeasure.ts`/`LazyVar.ts`/`MeasArea.ts`） | 几乎不改（见不变量 5） |
+| `test/*.html` | 149 KB | 断言页（读 `#result` 节点文本） | 新增用例 |
 
 ---
 
