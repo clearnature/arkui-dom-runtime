@@ -1032,6 +1032,149 @@
     } : null,
   });
 
+  // ── 文件系统后端的探测与【如实自报】（R21） ──
+  //
+  // 「能持久化」和「落到了文件系统」是两件事。localStorage 也能跨会话持久化，但它没有路径、
+  // 没有目录、有配额、清站点数据就消失 —— 把它说成"文件系统"就是撒谎。所以这里做两件事：
+  //
+  //   ① 【探测】真的去 OPFS 里走一遍（getDirectory → getFileHandle → createWritable → 读回 → 清理），
+  //      每一步带超时，结论记录"在哪一步失败、花了多少毫秒"。不是把注释里那句"本机会挂"当结论 ——
+  //      注释会过期，探测不会。
+  //   ② 【如实自报】后端名 + 是否文件系统 + 是否有 OS 可见路径 + 一句人话；
+  //      并且严格区分【实测不可用】与【可用，但本项目默认不启用（为了两次运行选到同一后端）】——
+  //      "我们没启用"绝不能说成"不可用"。
+  const FS_TRUTH = {
+    'node-fs': {
+      isFileSystem: true, osVisiblePath: true,
+      text: '真文件系统（Node fs：真磁盘、OS 可见路径）',
+    },
+    'opfs': {
+      isFileSystem: true, osVisiblePath: false,
+      text: '文件系统（OPFS：浏览器管理的文件系统，无 OS 可见路径）',
+    },
+    'localStorage': {
+      isFileSystem: false, osVisiblePath: false,
+      text: '非真文件系统（localStorage：键值存储，无路径、有配额、清站点数据即失效）',
+    },
+  };
+  const OPFS_PROBE_NAME = '__arkui_dom_probe__.txt';
+  let opfsProbeResult = null;
+
+  async function probeOpfs(timeoutMs) {
+    const budget = Number(timeoutMs || global.__arkui_dom_opfs_timeout_ms || 1200);
+    const t0 = Date.now();
+    const steps = [];
+    if (!(global.navigator && global.navigator.storage && global.navigator.storage.getDirectory)) {
+      return {
+        ok: false, timeoutMs: budget, ms: 0, steps,
+        failedAt: 'navigator.storage.getDirectory 不存在',
+        error: '本环境没有提供 OPFS API',
+      };
+    }
+    const withTimeout = (p, what) => Promise.race([
+      p,
+      new Promise((_, rej) => setTimeout(() => rej(new Error(`${what} 超时 ${budget}ms`)), budget)),
+    ]);
+    const step = async (name, fn) => {
+      const s = Date.now();
+      try {
+        const v = await withTimeout(fn(), name);
+        steps.push({ name, ok: true, ms: Date.now() - s });
+        return v;
+      } catch (e) {
+        steps.push({ name, ok: false, ms: Date.now() - s, error: e.message });
+        throw Object.assign(new Error(e.message), { failedAt: name });
+      }
+    };
+    const cleanup = () => {
+      // 【不 await】清理必须也是"有界"的：失败路径上 getDirectory() 可能永远不 resolve，
+      // 早先这里 await 了它，结果把探测耗时从 200ms 撑到 2172ms（实测踩到）。
+      withTimeout(global.navigator.storage.getDirectory()
+        .then((r) => r.removeEntry(OPFS_PROBE_NAME)), 'cleanup')
+        .catch(() => { /* 尽力而为 */ });
+    };
+    try {
+      const root = await step('getDirectory()', () => global.navigator.storage.getDirectory());
+      const fh = await step('getFileHandle(create)', () => root.getFileHandle(OPFS_PROBE_NAME, { create: true }));
+      const w = await step('createWritable()', () => fh.createWritable());
+      await step('write+close', async () => { await w.write('probe'); await w.close(); });
+      const back = await step('读回', async () => {
+        const f = await (await root.getFileHandle(OPFS_PROBE_NAME)).getFile();
+        return f.text();
+      });
+      await step('清理', () => root.removeEntry(OPFS_PROBE_NAME));
+      const ok = back === 'probe';
+      return {
+        ok, timeoutMs: budget, ms: Date.now() - t0, steps,
+        failedAt: ok ? null : '读回内容不符', error: ok ? null : `读回 '${back}'`,
+      };
+    } catch (e) {
+      await cleanup();
+      return {
+        ok: false, timeoutMs: budget, ms: Date.now() - t0, steps,
+        failedAt: e.failedAt || '未知', error: e.message,
+      };
+    }
+  }
+
+  function describeFs() {
+    const kind = backend.kind;
+    const truth = FS_TRUTH[kind] || { isFileSystem: false, osVisiblePath: false, text: `未知后端 ${kind}` };
+    const notes = [];
+    if (kind === 'node-fs') {
+      notes.push('Electron 注入了 __arkui_dom_nodeFs，直接用 Node 真 fs（不探测 OPFS）');
+    } else if (kind === 'localStorage') {
+      if (!hasOpfs) {
+        notes.push('本环境没有 navigator.storage.getDirectory → OPFS 无从谈起');
+      } else if (opfsProbeResult && opfsProbeResult.ok) {
+        notes.push(`OPFS 实测【可用】（${opfsProbeResult.ms}ms，含 ${opfsProbeResult.steps.length} 步），`
+          + '但本项目默认不启用它 —— 两次运行必须选到同一个后端（跨阶段互不可见会伪装成"持久化失效"）');
+      } else if (opfsProbeResult) {
+        notes.push(`OPFS 实测【不可用】：卡在 ${opfsProbeResult.failedAt}（${opfsProbeResult.error}），`
+          + `预算 ${opfsProbeResult.timeoutMs}ms/步，实测 ${opfsProbeResult.ms}ms`);
+      } else {
+        notes.push('OPFS 尚未探测');
+      }
+    } else if (kind === 'opfs') {
+      notes.push('OPFS 由 __arkui_dom_force_backend/__arkui_dom_enable_opfs 显式启用；水合失败会切到 localStorage');
+    }
+    const probe = nodeBackend
+      ? { skipped: 'Electron 用 Node 真 fs' }
+      : (opfsProbeResult || { skipped: hasOpfs ? '尚未探测' : '本环境没有 OPFS API' });
+    const text = `FS backend=${kind} isFileSystem=${truth.isFileSystem} `
+      + `osVisiblePath=${truth.osVisiblePath} root=${backend.root}`
+      + (opfsProbeResult
+        ? ` | OPFS 探测 ok=${opfsProbeResult.ok}${opfsProbeResult.failedAt ? ` 卡在=${opfsProbeResult.failedAt}` : ''}`
+          + ` ${opfsProbeResult.ms}ms`
+        : ' | OPFS 探测：未做');
+    return {
+      backend: kind,
+      isFileSystem: truth.isFileSystem,
+      osVisiblePath: truth.osVisiblePath,
+      root: backend.root,
+      text,
+      describeText: truth.text,
+      notes,
+      probe,
+      forced: forced || null,
+      opfsAvailable: hasOpfs,
+    };
+  }
+
+  // 启动时自动探测一次（浏览器侧；Electron 用真 fs，不需要）。fire-and-forget，不阻塞任何同步 API；
+  // 把 Promise 暴露出去（startupProbe）是为了让测试能【等】它 —— 否则"启动探测有没有留痕"会变成竞态。
+  let startupProbe = null;
+  if (!nodeBackend && hasOpfs) {
+    startupProbe = probeOpfs().then((r) => {
+      opfsProbeResult = r;
+      logs.push({
+        t: 'fs.opfsProbe', ok: r.ok, failedAt: r.failedAt, error: r.error,
+        ms: r.ms, timeoutMs: r.timeoutMs, steps: r.steps,
+      });
+      return r;
+    });
+  }
+
   // 供测试/宿主核验：后端类型、根、读取、真实路径，以及就绪/落盘完成的等待点。
   // 用 getter 而不是快照值：OPFS 失败降级后这里要能反映"当前"后端。
   global.__arkui_dom_fs = {
@@ -1043,5 +1186,11 @@
     readTextSync: (p) => backend.read(p),
     existsSync: (p) => backend.exists(p),
     realPathOf: (p) => backend.realPath(p),
+    // R21：如实自报 + 现场探测
+    describe: () => describeFs(),
+    text: () => describeFs().text,
+    probeOpfs: (timeoutMs) => probeOpfs(timeoutMs).then((r) => { opfsProbeResult = r; return r; }),
+    opfsProbe: () => opfsProbeResult,
+    get startupProbe() { return startupProbe; },   // 可 await：避免"启动探测有没有留痕"变成竞态
   };
 })(typeof globalThis !== 'undefined' ? globalThis : self);

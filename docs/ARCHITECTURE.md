@@ -731,6 +731,46 @@ app.ability.AbilityConstant  app.ability.ConfigurationConstant
 
 > **为什么要两级验证**：浏览器 `localStorage` 是"看起来持久化"。用户明确要求"**不能存内存，断电就丢**"。所以 Electron 侧做**三阶段**验证：① 页面内断言写入成功 → ② 跨进程重新加载后再读 → ③ **shell 层面直接检查磁盘文件内容**。第 ③ 步是唯一有说服力的证据。
 
+#### 4.7.1 后端自报：是文件系统就说，不是就别说（R21）
+
+「能持久化」和「落到了文件系统」是**两件事**。localStorage 也能跨会话持久化，但它没有路径、没有目录、
+有配额、清站点数据就消失 —— 把它说成"文件系统"就是撒谎。所以 `__arkui_dom_fs.describe()` 给出一张
+**真值表**（不是随手定的：只有 node-fs 有 OS 可见路径；OPFS 是文件系统但对 OS 不可见）：
+
+| 后端 | `isFileSystem` | `osVisiblePath` | 人话 |
+|---|---|---|---|
+| `node-fs` | true | true | 真文件系统（Node fs：真磁盘、OS 可见路径） |
+| `opfs` | true | false | 文件系统（OPFS：浏览器管理的文件系统，无 OS 可见路径） |
+| `localStorage` | false | false | **非真文件系统**（键值存储，无路径、有配额、清站点数据即失效） |
+
+`text()` 给出一行人话，测试直接**打印并断言**它 —— 让"看起来持久化"无处藏身：
+
+```
+浏览器  FS backend=localStorage isFileSystem=false osVisiblePath=false root=(localStorage) | OPFS 探测 ok=false 卡在=getDirectory() 200ms
+Electron FS backend=node-fs isFileSystem=true osVisiblePath=true root=<repo>/electron/data | OPFS 探测 ok=true 28ms
+```
+
+**探测（不是把注释当结论）**：`__arkui_dom_fs.probeOpfs(budget)` 真的去 OPFS 里走一遍
+（`getDirectory` → `getFileHandle(create)` → `createWritable` → `write+close` → **读回** → 清理），
+**每一步带超时**，返回 `{ok, failedAt, error, ms, timeoutMs, steps[{name, ok, ms}]}`；
+启动时也会自动探一次（fire-and-forget，`startupProbe` 可 await，避免测试竞态）。
+同一台机器上**两端结论不同**，这正是要报出来的东西：headless Chrome 卡在第一步
+（`getDirectory()` 200ms 超时），而 Electron 的 Chromium 里 6 步全过（28ms）。
+
+**两条不变量**：
+
+1. **"我们没启用"≠"不可用"**。默认不启用 OPFS 是为了确定性（两次运行必须选到同一后端，
+   见上），所以在 `probe.ok===true` 时自报必须说【可用】（并说明为何未启用），
+   绝不许说成"不可用"。断言直接钉住：`opfsProbe.ok && notes` 里不得出现"不可用"。
+2. **探测必须【有界】**。失败路径上 `getDirectory()` 可能**永不 resolve**，所以连"清理"都不能 await
+   一个没有超时的调用 —— 早先这里 await 了它，把 200ms 的探测撑成 **2172ms**（实测踩到）。
+
+**一条被破坏验证逼着加强的断言**：非 OS 可见后端"不冒充真路径"，最初写成
+`!p.startsWith('/')`；破坏验证时把 `realPath` 换成 `() => 'B5: 骗你一个真路径'`，
+**断言照样通过**（那个串不以 `/` 开头）。也就是说：只否定"像路径"的写法，任何别的串都能蒙过去。
+改成要求**明确声明**之后（要么 `opfs://` 这样的 scheme、要么写"无真实路径"），
+把 `realPath` 换成 `(p) => p`（原样吐回 vfs 路径 `/vfs/files/demo.txt`）就立刻被抓住。
+
 ### 4.8 页面栈与导航
 
 - `pageStack` 存 `{ path, view }`——**存 view 是为了保留页面实例**（状态不丢）
@@ -1108,41 +1148,41 @@ interface ShowDialogSuccessResponse { index: number }   // 被点按钮在 butto
   14 个：app.ability.AbilityConstant app.ability.ConfigurationConstant app.ability.UIAbility app.ability.Want data.preferences file.fs hilog measure multimedia.image net.http notificationManager promptAction router window
 
 == 用例矩阵 ==
-  浏览器 run.sh     26 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify measure lazy provide v2 observe async ability promptaction router netfile persist
-  Electron          25 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction measure lazy provide async v2 observe
-  测试页            26 个
+  浏览器 run.sh     27 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify measure lazy provide v2 observe async ability promptaction realfs router netfile persist
+  Electron          26 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs measure lazy provide async v2 observe
+  测试页            27 个
   fixtures 转换产物  25 个：AsyncIO Callee Detail DrawDemo Home Index Layout Lazy LazyVar MeasArea MeasImage MeasNotify Measure NavDemo NetFile Observe PromptAct Provide RelDemo Rich SwiperDemo TabsGrid TextMeasure V2 Widgets
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          263.5 KB
-  test             176.8 KB
+  runtime          270.5 KB
+  test             187.3 KB
   tools            38.1 KB
-  electron(src)    17.2 KB
-  docs             226.2 KB
+  electron(src)    17.4 KB
+  docs             235.1 KB
   fixtures         189.7 KB
 
 == 逐文件（文档"文件职责"表的来源）==
   runtime/arkui-dom-runtime.js     161544 B  157.8 KB
   runtime/generated-components.js   57617 B  56.3 KB
-  runtime/ohos-shims.js             50645 B  49.5 KB
+  runtime/ohos-shims.js             57789 B  56.4 KB
   tools/extract.mjs                  6563 B  6.4 KB
   tools/gen-components.mjs           7775 B  7.6 KB
   tools/serve.py                     2901 B  2.8 KB
   tools/stats.mjs                   13415 B  13.1 KB
   tools/preflight.mjs                5178 B  5.1 KB
   tools/check-all.sh                 3171 B  3.1 KB
-  run.sh                            12960 B  12.7 KB
-  electron/run.sh                    8680 B  8.5 KB
+  run.sh                            13338 B  13.0 KB
+  electron/run.sh                    8859 B  8.7 KB
   electron/main.js                   6795 B  6.6 KB
   electron/preload.js                1961 B  1.9 KB
   package.json                       1207 B  1.2 KB
   .gitignore                          674 B  0.7 KB
-  README.md                         55618 B  54.3 KB
+  README.md                         58593 B  57.2 KB
   THIRD-PARTY-NOTICES.md             8256 B  8.1 KB
-  docs/ARCHITECTURE.md              92223 B  90.1 KB
-  docs/CAPABILITY.md                28413 B  27.7 KB
-  docs/DEVELOPING.md                40047 B  39.1 KB
-  docs/ROADMAP.md                   51633 B  50.4 KB
+  docs/ARCHITECTURE.md              95368 B  93.1 KB
+  docs/CAPABILITY.md                29271 B  28.6 KB
+  docs/DEVELOPING.md                41794 B  40.8 KB
+  docs/ROADMAP.md                   54992 B  53.7 KB
   docs/surface-measurement.md        6496 B  6.3 KB
   docs/SESSION-2026-09-20.md        12842 B  12.5 KB
   fixtures/pages/AsyncIO.ts          6206 B  6.1 KB
@@ -1189,6 +1229,7 @@ interface ShowDialogSuccessResponse { index: number }   // 被点按钮在 butto
   test/opfs-probe.html               1620 B  1.6 KB
   test/promptaction.html            12719 B  12.4 KB
   test/provide.html                  4238 B  4.1 KB
+  test/realfs.html                  10788 B  10.5 KB
   test/reldemo.html                  7328 B  7.2 KB
   test/rich.html                     3794 B  3.7 KB
   test/router.html                   4288 B  4.2 KB
@@ -1235,19 +1276,19 @@ interface ShowDialogSuccessResponse { index: number }   // 被点按钮在 butto
 |---|---|---|---|
 | `runtime/arkui-dom-runtime.js` | 157.8 KB | v1 状态类 + 深度观测（`@Observed`/`@ObjectLink`）、`ViewPU`/`ViewV2`、装饰器层、组件栈、布局（`alignRules` 多层锚链 + `Guideline` + `bias`、`Grid` 轨道）、`Tabs`/`TabContent`+`TabsController`、`Swiper`+`SwiperController`、`Navigation`/`NavDestination`+`NavPathStack`、**绘制类四件套**（SVG/CSS）、`LazyForEach`、路由、**ability 栈**（`startAbilityForResult`/`terminateSelf*`） | 实现新语义（**手写优先**） |
 | `runtime/generated-components.js` | 56.3 KB | 149 个组件骨架（**生成物**） | **不手改**；改 `tools/gen-components.mjs` 后重新生成，`--check` 会守门 |
-| `runtime/ohos-shims.js` | 49.5 KB | `@ohos:*` 模块（14 个，含 **`measure`**/**`multimedia.image`**/**`notificationManager`**/**`promptAction`**）+ 持久化后端 + 文本/图像测量原语 | 新增平台模块 |
+| `runtime/ohos-shims.js` | 56.4 KB | `@ohos:*` 模块（14 个，含 **`measure`**/**`multimedia.image`**/**`notificationManager`**/**`promptAction`**）+ 持久化后端（含 R21 的探测与自报）+ 文本/图像测量原语 | 新增平台模块 |
 | `tools/extract.mjs` | 6.3 KB | hvigor 缓存 `.ts` → 可执行 `.js`；**装饰器作用域内绑定前奏 + 未就绪守卫**（§3.4） | 产物形态/装饰器集合变化时 |
 | `tools/gen-components.mjs` | 7.6 KB | ets-loader 组件 JSON → 骨架注册表（`--check` 只校验不写） | 组件元数据/画像规则更新时 |
 | `tools/serve.py` | 2.8 KB | 静态服务（含显式图片 MIME）+ `/echo` + `/slow`（测超时） | 需要新测试端点/资产类型时 |
 | `tools/stats.mjs` | 13.1 KB | 本文档所有数字的来源（`--json` 机器可读）；**`--check-doc`/`--write-doc` 守 §6 引用块** | 覆盖范围变化时 |
 | `tools/preflight.mjs` | 5.0 KB | 环境自检（工具链/宿主/可执行位） | 外部依赖变化时 |
 | `tools/check-all.sh` | 3.1 KB | 一条命令做完验收（5 步），退出码只看被调命令 | 新增验收步骤时 |
-| `run.sh` | 12.7 KB | 浏览器 26 用例驱动 | 新增用例 |
-| `electron/run.sh` | 8.5 KB | Electron 25 用例 + 磁盘验证 | 新增用例 |
+| `run.sh` | 13.0 KB | 浏览器 27 用例驱动 | 新增用例 |
+| `electron/run.sh` | 8.6 KB | Electron 26 用例 + 磁盘验证 | 新增用例 |
 | `electron/main.js` | 6.6 KB | 主进程：offscreen 截图、**像素级**空白检测 | 截图/验证策略变化时 |
 | `electron/preload.js` | 1.9 KB | `contextBridge` 暴露 Node fs | 宿主能力变化时 |
 | `fixtures/pages/*.ts` | 183.2 KB | **冻结的**官方转换产物（25 个，含 `V2.ts`/`Observe.ts`/`TabsGrid.ts`/`SwiperDemo.ts`/`NavDemo.ts`/`RelDemo.ts`/`DrawDemo.ts`/`TextMeasure.ts`/`LazyVar.ts`/`MeasArea.ts`/`MeasImage.ts`/`MeasNotify.ts`/`PromptAct.ts`/`Callee.ts`），另有 `fixtures/entryability/*.ts`（`EntryAbility.ts`/`PromptAbility.ts`） | 几乎不改（见不变量 5） |
-| `test/*.html` | 176.8 KB | 断言页（读 `#result` 节点文本） | 新增用例 |
+| `test/*.html` | 183.1 KB | 断言页（读 `#result` 节点文本） | 新增用例 |
 | `test-assets/*` | 1.1 KB | **已知尺寸的测试图片**（PNG/JPEG/伪装文件）。必须进仓库——放 `/tmp` 会在重启后失效（R5 的教训） | 需要新资产时 |
 
 ---

@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R21 浏览器真文件系统（探测式降级 + 如实自报）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 300px; height: 200px; border: 1px solid #ccc; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R21：后端是什么就说是什么（localStorage 不是文件系统）+ OPFS 现场探测</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/netfile-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const pageText = () => String(root.textContent || '');
+    // 页面文本形如 'NetFilefile=<内容>http=<...>' —— 必须用"到 http= 为止"来切，
+    // 早先用 /file=([^h]*)/ 想跳过 http，结果 'hello...' 的 h 直接把匹配断成空串（实测踩到）
+    const fileLine = () => {
+      const m = /file=([\s\S]*?)(?:http=|$)/.exec(pageText());
+      return m ? m[1].trim() : '';
+    };
+    const btn = (label) => Array.from(root.querySelectorAll('button'))
+      .find((b) => String(b.textContent).trim() === label);
+    const group = async (name, fn) => {
+      try { await fn(); } catch (e) {
+        allPass = false;
+        lines.push(`FAIL [${name}] 抛出异常：${e && e.stack ? String(e.stack).split('\n')[0] : e}`);
+      }
+    };
+
+    try {
+      __arkui_dom_requireModule('NetFile');
+      __arkui_dom_loadRoute('pages/NetFile', root);
+      await tick(30);
+      check(!!btn('write') && !!btn('read'), 'NetFile 页面已渲染（write/read 按钮都在）');
+
+      // ══════════ ① 产品真的通过 @ohos:file.fs 写了一笔、又读回来了 ══════════
+      await group('产品读写', async () => {
+        btn('write').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await tick(30);
+        check(fileLine() === 'written', `点 write 后产品报了 written（'${fileLine()}'）`);
+        btn('read').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await tick(30);
+        check(fileLine() === 'hello from arkts', `点 read 读回内容（'${fileLine()}'）`);
+      });
+
+      // ══════════ ② 后端是什么就说是什么 ══════════
+      // 先【现场探测】再自报：启动时的自动探测是 fire-and-forget，此刻可能还没落地。
+      // 探测本身有界（200ms/步），所以这里等得起。
+      const probe = await __arkui_dom_fs.probeOpfs(200);
+      const d = __arkui_dom_fs.describe();
+      lines.push(d.text);
+      d.notes.forEach((n) => lines.push(`NOTE ${n}`));
+      lines.push(`TRUTH ${d.describeText}`);
+      lines.push(`PROBE ${JSON.stringify((probe.steps || []).map((s) => `${s.name}:${s.ms}ms${s.ok ? '' : '✗'}`))}`);
+      await group('后端自报', async () => {
+        check(['node-fs', 'opfs', 'localStorage'].includes(d.backend),
+          `后端名是三者之一：'${d.backend}'`);
+        check(!!d.text && d.text.startsWith('FS backend=') && d.text.includes('isFileSystem='),
+          `一行自报里写明了后端名与是否文件系统`);
+        // 真值表不是随手定的：只有 node-fs 给出 OS 可见路径；OPFS 是文件系统但对 OS 不可见
+        check(d.isFileSystem === (d.backend === 'node-fs' || d.backend === 'opfs'),
+          `isFileSystem 与后端一致（${d.backend} → ${d.isFileSystem}）`);
+        check(d.osVisiblePath === (d.backend === 'node-fs'),
+          `osVisiblePath 与后端一致（${d.backend} → ${d.osVisiblePath}）`);
+        // "非真文件系统" 里含 "真文件系统" 子串 —— 断言必须用【否定词】先判
+        check(d.isFileSystem ? (/真文件系统/.test(d.describeText) && !/非真文件系统/.test(d.describeText))
+          : /非真文件系统/.test(d.describeText),
+          `人话与标志位一致：'${d.describeText.slice(0, 40)}'`);
+        check(Array.isArray(d.notes) && d.notes.length >= 1,
+          `给出了原因（${d.notes.length} 条）：'${d.notes[0].slice(0, 60)}'`);
+      });
+
+      // ══════════ ③ 自报与【实际行为】一致（两端期望不同，这是重点）══════════
+      await group('自报与行为一致', async () => {
+        // 注意：nodeFs.existsSync 收的是【vfs 路径】（preload 里 toReal 会映射到真实目录），
+        // 把 realPathOf 返回的真实路径再传进去会被【再映射一次】→ 恒为 false（这里踩过）
+        const vfsPath = '/vfs/files/demo.txt';
+        const p = __arkui_dom_fs.realPathOf(vfsPath);
+        if (d.osVisiblePath) {
+          check(p.startsWith('/'), `OS 可见后端给的是真路径：'${p}'`);
+          const nodeFs = globalThis.__arkui_dom_nodeFs;
+          check(!!nodeFs && nodeFs.existsSync(vfsPath),
+            `该文件在真磁盘上确实存在（外部核验，不靠页面自报）：vfs=${vfsPath} → real=${p}`);
+          check(p.endsWith('/files/demo.txt'),
+            `真实路径确实指向刚写的那个文件：'${p}'`);
+        } else {
+          // 光"不像真路径"不够 —— 一个把 vfs 路径原样吐回来的实现也不以 / 开头吗？（它其实以 / 开头）
+          // 所以这里要求【明确声明】：要么 opfs:// 这样的 scheme，要么就写"无真实路径"。
+          // 这一条是被破坏验证逼出来的：最初的假路径 'B5: 骗你一个真路径' 没能让弱版本失败。
+          check(!p.startsWith('/') && /(无真实路径|不是真实路径|opfs:\/\/)/.test(p),
+            `非 OS 可见后端必须明确声明"这不是 OS 路径"，而不是给个看着像的字符串：'${p}'`);
+        }
+        // 关键一条：能持久化 ≠ 落到了文件系统。两者可以同时成立，但必须分开说
+        check(fileLine() === 'hello from arkts',
+          `即便后端不是文件系统，读写依然成立（'${fileLine()}'）——"能持久化"与"是文件系统"是两件事`);
+      });
+
+      // ══════════ ④ OPFS 探测：结论要有实测依据；【未启用 ≠ 不可用】══════════
+      await group('OPFS 探测', async () => {
+        const notes = d.notes.join(' | ');
+        if (!probe) {
+          check(!!d.probe.skipped, `没探测时必须说明原因：'${d.probe.skipped || '(无)'}'`);
+        } else {
+          check(Array.isArray(probe.steps) && probe.steps.length >= 1,
+            `探测有逐步记录（${(probe.steps || []).length} 步）`);
+          check(probe.steps.every((s) => typeof s.ms === 'number' && s.ms >= 0 && typeof s.name === 'string'),
+            `每步都有耗时：${JSON.stringify(probe.steps.map((s) => `${s.name}:${s.ms}ms`))}`);
+          check(typeof probe.timeoutMs === 'number' && probe.timeoutMs > 0,
+            `记录了超时预算 ${probe.timeoutMs}ms/步`);
+          // 探测必须【有界】：失败路径上不许被"永不 resolve 的调用"拖住
+          check(probe.ms <= probe.timeoutMs * (probe.steps.length + 1) + 500,
+            `探测耗时 ${probe.ms}ms 在预算内（${probe.steps.length} 步 × ${probe.timeoutMs}ms）`);
+          // 只有"后端选择会用到探测结论"的后端，自报里才该出现探测结论；
+          // node-fs（Electron）根本不参与 OPFS 选择，它该说的是"不探测 OPFS"
+          const notesUseProbe = (d.backend === 'localStorage' || d.backend === 'opfs');
+          if (!probe.ok) {
+            check(!!probe.failedAt && !!probe.error,
+              `失败时点名卡在哪一步：${probe.failedAt} — ${probe.error}`);
+            if (notesUseProbe) {
+              check(notes.includes('实测【不可用】') && notes.includes(probe.failedAt),
+                `自报里把"不可用"说成【实测】结论并给出步骤：'${notes.slice(0, 80)}'`);
+            }
+          } else if (notesUseProbe) {
+            check(notes.includes('实测【可用】') && !notes.includes('不可用'),
+              `OPFS 实测可用时不许说成"不可用"（未启用 ≠ 不可用）：'${notes.slice(0, 90)}'`);
+          } else {
+            check(notes.includes('不探测 OPFS'),
+              `node-fs 后端不参与 OPFS 选择，自报里说明这一点：'${notes.slice(0, 60)}'`);
+          }
+        }
+        // 现场再探一次：探测是可选时刻调用的能力，不是启动时写死的常量
+        const again = await __arkui_dom_fs.probeOpfs(200);
+        check(!!again && Array.isArray(again.steps) && typeof again.ms === 'number',
+          `现场重探可用（${again && again.steps.length} 步，${again && again.ms}ms，ok=${again && again.ok}）`);
+        // 启动时的自动探测也要真的发生（浏览器侧）——它写进日志，便于事后复查。
+        // 用 startupProbe 的 Promise 等它，不靠 sleep 猜时间（否则就是竞态）
+        const startup = __arkui_dom_fs.startupProbe;
+        if (startup) {
+          const sr = await startup;
+          check(!!sr && typeof sr.ms === 'number',
+            `启动时的自动探测可等待（ok=${sr && sr.ok}，${sr && sr.ms}ms）`);
+          const probeLogs = (globalThis.__arkui_dom_logs || []).filter((l) => l && l.t === 'fs.opfsProbe');
+          check(probeLogs.length >= 1,
+            `启动探测有留痕可复查（${probeLogs.length} 条：ok=${probeLogs[0] && probeLogs[0].ok}）`);
+        } else {
+          check(!!globalThis.__arkui_dom_nodeFs,
+            '没有启动探测时必须是因为 Electron 用了真 fs（而不是"忘了探"）');
+        }
+      });
+
+      check(__arkui_dom_fs.backend === d.backend, '自省钩子与 describe 的后端一致');
+      lines.push(`ELMT ${__arkui_dom_elmtRecords.size}`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

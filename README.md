@@ -86,11 +86,11 @@ tools/serve.py                 极简静态服务（端口由 OS 分配，避免
 tools/preflight.mjs            环境自检（工具链 / 宿主 / 可执行位）
 tools/check-all.sh             一条命令做完所有验收
 tools/stats.mjs                覆盖范围统计（文档里的数字都来自它）
-test/*.html                    断言页（26 个用例）
+test/*.html                    断言页（27 个用例）
 fixtures/                      冻结的 ets-loader 转换产物（25 个，测试的输入）
 harmony-proj/                  HarmonyOS 工程（页面 .ets 源码，转换产物的来源；构建输出不入库）
-run.sh                         浏览器 26 用例驱动
-electron/run.sh                Electron 25 用例 + 真实磁盘验证
+run.sh                         浏览器 27 用例驱动
+electron/run.sh                Electron 26 用例 + 真实磁盘验证
 docs/                          ARCHITECTURE / DEVELOPING / ROADMAP / CAPABILITY
 ```
 
@@ -562,6 +562,49 @@ rect 已经把这位移算进去（b 明明 `offset=(40,20)`，rect 却是 `(0,0
 去掉错轴守卫 → 1 条失败（并因此发现原来那条断言**没有牙齿**：横线自身 `x=0`，
 用 `Start` 对齐时"错轴返回 0"与"没做判断"碰巧同值，改用 `Center` 才分离成 0 vs 150）。
 
+## R21：后端是什么就说是什么 ✅
+
+```
+$ bash run.sh realfs
+=== ALL PASS ===                    （21 条断言）
+FS backend=localStorage isFileSystem=false osVisiblePath=false root=(localStorage) | OPFS 探测 ok=false 卡在=getDirectory() 200ms
+NOTE OPFS 实测【不可用】：卡在 getDirectory()（getDirectory() 超时 200ms），预算 200ms/步，实测 200ms
+TRUTH 非真文件系统（localStorage：键值存储，无路径、有配额、清站点数据即失效）
+PROBE ["getDirectory():200ms✗"]
+PASS 点 write 后产品报了 written
+PASS 点 read 读回内容（'hello from arkts'）
+PASS 非 OS 可见后端必须明确声明"这不是 OS 路径"，而不是给个看着像的字符串：'(localStorage 无真实路径)'
+PASS 即便后端不是文件系统，读写依然成立（'hello from arkts'）——"能持久化"与"是文件系统"是两件事
+```
+
+`bash electron/run.sh realfs` 也全过，且**自报完全不同**（同一台机器、同一个 API）：
+
+```
+FS backend=node-fs isFileSystem=true osVisiblePath=true root=<repo>/electron/data | OPFS 探测 ok=true 28ms
+PROBE ["getDirectory():28ms","getFileHandle(create):9ms","createWritable():1ms","write+close:2ms","读回:3ms","清理:1ms"]
+PASS 该文件在真磁盘上确实存在（外部核验，不靠页面自报）：vfs=/vfs/files/demo.txt → real=…/electron/data/files/demo.txt
+```
+
+**要点**：「能持久化」和「落到了文件系统」是**两件事**。`describe()` 给出**真值表**
+（`node-fs` → 文件系统 + OS 可见路径；`opfs` → 文件系统但无 OS 可见路径；`localStorage` → **非真**文件系统），
+测试把那一行人话**打印并断言** —— 让"看起来持久化"无处藏身。
+
+**两条不变量**：
+
+1. **"我们没启用"≠"不可用"**。默认不用 OPFS 是为了两次运行选到同一后端（确定性），
+   所以探测 `ok=true` 时必须说【可用】并说明为何未启用，绝不许说成"不可用"。
+2. **探测必须【有界】**。失败路径上 `getDirectory()` **永不 resolve**，连"清理"都不能 await 没有超时的调用
+   —— 早先就是这么写的，把 200ms 的探测撑成 **2172ms**（实测踩到）。
+
+**探测不是把注释当结论**：`probeOpfs(budget)` 真的走 getDirectory → getFileHandle → createWritable →
+write+close → **读回** → 清理，每步带超时并记耗时。顺带纠正一句旧结论："OPFS 会挂"应说成
+"**headless Chrome 里**卡在 `getDirectory()`" —— Electron 的 Chromium 里 28ms 全过。
+
+**破坏验证**（4 项）：谎报"localStorage 是真文件系统" → **5 条红**（连外部核验都跟着失败）；
+cleanup 改回不限时 → **整个用例挂住、120s 超时**；不看探测结论就说【可用】→ 1 条红；
+`realPath` 原样吐回 vfs 路径 → 1 条红，**并因此发现最初那条 `!p.startsWith('/')` 断言没有牙齿**
+（换个串就蒙过去）→ 改成要求"明确声明不是 OS 路径"。
+
 ## R20：`startAbilityForResult` + `promptAction` ✅
 
 ```
@@ -882,14 +925,14 @@ PASS starStyle 的图片 URI 不可用已记警告
 | 文档数字守门 | `npm run stats:check-doc` | `ARCHITECTURE.md` §6 的整块实测数字逐行比对，漂移即非 0 退出；`stats:write-doc` 就地重写 |
 | 覆盖统计 | `npm run stats` | 文档里的所有数字都由它产出（`--json` 机器可读） |
 
-`npm run check` 当前：**浏览器 26 用例 + Electron 25 用例全绿**。
+`npm run check` 当前：**浏览器 27 用例 + Electron 26 用例全绿**。
 
 ## 下一步
 
 **权威清单在 `docs/ROADMAP.md`**（每项带可复现的验收命令）。当前优先：
 
-1. **R21** 浏览器真文件系统（探测式降级 + 明确写出后端名）
-2. **R22–R23** 动画（`animateTo`/`transition`）与手势（`Gesture`）
+1. **R22–R23** 动画（`animateTo`/`transition`）与手势（`Gesture`）
+2. **R24** `.abc` 路径调研（研究性）
 
 **仍未覆盖**：动画/转场、手势（**含 `Swiper` 的滑动翻页**）、`chainMode`、
 `Navigation` 的**标题栏/工具栏与分栏模式**、其余 85 个骨架组件的视觉语义、`@ohos:media`/`UIContext`。

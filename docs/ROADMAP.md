@@ -39,6 +39,7 @@ R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分�
 | ③ | **图像信息**（`@ohos.multimedia.image`） | `bash run.sh measimage`（13 条断言，双端通过） |
 | ③ | **通知**（`@ohos.notificationManager`，含投递路径自省） | `bash run.sh measnotify`（32 条断言，双端通过） |
 | ③ | **ability 结果链路 + 轻提示/对话框**（`startAbilityForResult`、`promptAction`） | `bash run.sh promptaction`（37 条断言，双端通过） |
+| ③ | **后端如实自报 + OPFS 现场探测**（"能持久化 ≠ 是文件系统"） | `bash run.sh realfs`（21 条断言，双端通过） |
 | ③ | `@ohos:*` 别名层 + CommonJS 装载 + 真 fetch | `bash run.sh async` |
 | ③ | `UIAbility` 启动链路 | `bash run.sh ability` |
 | ③ | `router` 页面栈（返回时保留状态） | `bash run.sh router` |
@@ -717,11 +718,49 @@ context 上当初只有 `getApplicationContext`/`resourceManager`）；`.d.ts` �
 `harmony-proj/`（三个 .ets 源码 + module.json5 的第二个 ability + main_pages.json）、
 `test/promptaction.html`、`run.sh`、`electron/run.sh`
 
-### R21 — 浏览器真文件系统
+### R21 — 浏览器真文件系统（探测式降级 + 如实自报）✅
 
-**内容**：OPFS 在 headless Chrome 里挂起（已踩），`localStorage` 是"看起来持久化"。做**探测式降级**：先探测可用性（带超时），可用则用 OPFS，不可用明确标注"当前后端是 localStorage，非真文件系统"，并在测试输出里体现。
+**内容**：后端**是什么就说是什么**：`__arkui_dom_fs.describe()` 给出后端名 + `isFileSystem` +
+`osVisiblePath` + 一句人话；`probeOpfs(budget)` 真的走一遍 OPFS（每步带超时）来判断可用性，
+而不是把"headless Chrome 会挂"这句注释当结论。
 
-**验收**：断言测试输出**明确写出**当前后端名与是否真文件系统（让"看起来持久化"无处藏身）。
+**真值表**（不是随手定的）：`node-fs` → 文件系统 + OS 可见路径；`opfs` → 文件系统但**无** OS 可见路径；
+`localStorage` → **非真文件系统**（无路径、有配额、清站点数据即失效）。
+`text()` 的一行人话被测试**打印并断言**，让"看起来持久化"无处藏身。
+
+**实测（同一台机器，两端结论不同 —— 这正是要报出来的东西）**：
+```
+浏览器  FS backend=localStorage isFileSystem=false osVisiblePath=false root=(localStorage) | OPFS 探测 ok=false 卡在=getDirectory() 200ms
+Electron FS backend=node-fs      isFileSystem=true  osVisiblePath=true  root=<repo>/electron/data | OPFS 探测 ok=true 28ms
+```
+（顺带纠正一句文档里的旧话："OPFS 在浏览器里会挂"应说成"**在 headless Chrome 里**卡在
+`getDirectory()`"；Electron 的 Chromium 里 6 步全过。）
+
+**两条不变量**：
+1. **"我们没启用"≠"不可用"**：默认不启用 OPFS 是为了两次运行选到同一后端（确定性），
+   所以探测 `ok=true` 时自报必须说【可用】并说明为何未启用，绝不许说成"不可用"。
+2. **探测必须【有界】**：失败路径上 `getDirectory()` 永不 resolve —— 连**清理**都不能 await 没有超时的调用
+   （早先 await 了，把 200ms 的探测撑成 2172ms，实测踩到）。
+
+**验收（已执行）**：`bash run.sh realfs` / `bash electron/run.sh realfs` —— **21 条断言**，双端通过：
+产品通过 `@ohos:file.fs` 真写/真读（点 write/read 按钮）；后端名与两个标志位与真值表一致；
+"人话"与标志位一致（`非真文件系统` 里含 `真文件系统` 子串，断言必须用否定词先判）；
+非 OS 可见后端**明确声明**不是 OS 路径；OS 可见后端给的真路径**在真磁盘上存在**（用 preload 暴露的
+`existsSync` 外部核验，不靠页面自报）；探测的逐步耗时/预算/有界性；启动探测有留痕（用 `startupProbe` 的
+Promise 等它，不靠 sleep 猜）；**"能持久化 ≠ 是文件系统"两件事同时成立也被断言**。
+
+**破坏验证**（4 项，各被抓住）：① 把 localStorage 谎报成"真文件系统" → **5 条红**（连外部核验都跟着失败）；
+② 失败路径的 cleanup 改回不限时 → **整个用例挂住、120s 超时、退出码非 0**（有界性失效的直接症状）；
+③ 不看探测结论就宣称 OPFS【可用】 → 1 条红；④ `realPath` 原样吐回 vfs 路径 → 1 条红
+（**并因此发现最初那条 `!p.startsWith('/')` 断言没有牙齿**：换成别的串就蒙过去了 → 改成要求"明确声明"）。
+
+**已知限制**：默认浏览器后端仍是 localStorage（确定性优先）；OPFS 需显式启用
+（`__arkui_dom_force_backend='opfs'` / `__arkui_dom_enable_opfs`），且**探测通过≠水合通过**
+（水合失败会 `switchToLocalStorage` 并记录原因）；探测只覆盖"能不能读写"，不测配额/并发；
+`localStorage` 的配额与"清站点数据即失效"未做量化。
+
+**触及**：`runtime/ohos-shims.js`（`probeOpfs` / `describeFs` / `__arkui_dom_fs.describe|text|probeOpfs|startupProbe`）、
+`test/realfs.html`、`run.sh`、`electron/run.sh`（复用 `fixtures/pages/NetFile.ts` 做真实读写）
 
 ---
 
