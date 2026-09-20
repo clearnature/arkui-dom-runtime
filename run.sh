@@ -16,6 +16,21 @@ CHROME=/opt/google/chrome/chrome
 CACHE="$HERE/harmony-proj/entry/build/default/cache/default/default@CompileArkTS/esmodule/debug/entry/src/main/ets"
 FIXTURES="$HERE/fixtures"
 
+# 断言计数守门：把本次实测的「每用例 emit 了多少条 PASS」与文档里手写的「（N 条断言）」比对。
+#  · 为什么用 EXIT trap：这样**单个用例**也受守门（`bash run.sh gesturedemo` 也会核 24 条）；
+#  · 为什么数字由 runner 落盘、而不是 grep test/*.html 里的 check(：
+#    realfs.html 有 28 处 check(，两端各只执行 21 条（7 处在互斥分支里没走到）——
+#    静态计数会把"没跑到的断言"也算进去。唯一权威是运行期真的 emit 出来的 PASS 行。
+RUN_COUNTS="$HERE/build/assert-counts-browser.tsv"
+mkdir -p "$HERE/build"
+: > "$RUN_COUNTS"          # 每次调用都重开，避免旧记录冒充本次实测
+finalize_counts() {
+  local rc=$?
+  if [ -s "$RUN_COUNTS" ]; then "$NODE" tools/assert-counts.mjs --browser "$RUN_COUNTS" || rc=1; fi
+  exit $rc
+}
+trap finalize_counts EXIT
+
 # 优先用项目内固化的转换产物（fixtures/），没有才回落到 hvigor 的 cache。
 # fixtures 是 ets-loader 的输出快照——固化它是为了让本项目不依赖 /tmp 与 HarmonyOS 工具链即可复现。
 src_of() {
@@ -88,6 +103,8 @@ m = re.search(r'<div id=\"result\"[^>]*>(.*?)</div>', d, re.S)
 print(html.unescape(m.group(1)) if m else '（未取到 result 节点）')
 ")"
   echo "$result" | sed 's/^/  /'
+  # 记下本用例实测 emit 的 PASS 条数（断言计数守门的输入；退出时统一比对，见文件头 finalize_counts）
+  printf '%s\t%s\n' "$name" "$(printf '%s\n' "$result" | grep -cE '^[[:space:]]*PASS ')" >> "$RUN_COUNTS"
 
   mkdir -p build
   timeout 60 "$CHROME" --headless --disable-gpu --no-sandbox \

@@ -19,6 +19,18 @@ fi
 NODE=/data/training/cli/commandline-tools-linux-x64-26.0.0.821/command-line-tools/tool/node/bin/node
 FIXTURES="$ROOT/fixtures"
 
+# 断言计数守门（与浏览器侧同构，为什么这么做见 run.sh 顶部那段说明）：
+# 实测值由本脚本落盘，退出时交给 tools/assert-counts.mjs 与文档里手写的数字比对。
+RUN_COUNTS="$ROOT/build/assert-counts-electron.tsv"
+mkdir -p "$ROOT/build"
+: > "$RUN_COUNTS"
+finalize_counts() {
+  local rc=$?
+  if [ -s "$RUN_COUNTS" ]; then "$NODE" "$ROOT/tools/assert-counts.mjs" --electron "$RUN_COUNTS" || rc=1; fi
+  exit $rc
+}
+trap finalize_counts EXIT
+
 # 用例名 → 页面文件名（两者不同的必须映射；曾因用错导致加载 404 页、断言读到空串）
 page_of() {
   case "$1" in
@@ -95,13 +107,19 @@ run_one() {
   # --no-sandbox：chrome-sandbox 需要 root:4755，本机未设
   # --disable-gpu：本机 Mesa 被 ROCm 修改，Electron GPU 进程易崩（见 memory）
   # ARKUI_OFFSCREEN=1：隐藏窗口的合成器不产帧，capturePage 会挂；offscreen 模式用 paint 帧截图
+  # 让输出既实时透出（sed 缩进显示）、又留一份**没有缩进**的原文用于数 PASS 行：
+  # 断言计数守门要的是运行期实测值，不能靠 grep test/*.html（realfs 有 28 处 check( 但只跑 21 条）。
+  local outf; outf="$(mktemp /tmp/arkui-electron-out-XXXXXX)"
   ARKUI_TEST="$label" \
   ARKUI_PAGE_URL="http://127.0.0.1:$port/test/$(page_of "$page").html$query" \
   ARKUI_OFFSCREEN="${ARKUI_OFFSCREEN:-1}" \
     timeout 180 "$ELECTRON" --no-sandbox --disable-gpu "$HERE" 2>&1 \
     | grep -v -E 'Fontconfig|libva|GLX|dbus|MESA|Mesa|vulkan|Vulkan|gbm|DRM|drm' \
+    | tee "$outf" \
     | sed 's/^/  /'
   local rc=${PIPESTATUS[0]}
+  printf '%s\t%s\n' "$label" "$(grep -cE '^[[:space:]]*PASS ' "$outf")" >> "$RUN_COUNTS"
+  rm -f "$outf"
   kill $server_pid 2>/dev/null; wait $server_pid 2>/dev/null; rm -f "$logf"
   return $rc
 }

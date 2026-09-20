@@ -354,7 +354,7 @@ PASS @Event 字段未装观测访问器：[label,seed,mode,inner,hitCount]
 PASS 无 v2 相关告警（0）
 ```
 
-26 条断言在**浏览器与 Electron 双通过**。完整契约（11 个装饰器、`ViewV2` 的 11 个方法、
+`bash run.sh v2` 的 **25 条断言**在浏览器与 Electron 双通过。完整契约（11 个装饰器、`ViewV2` 的 11 个方法、
 `IMonitor` 的权威形状）见 `docs/ARCHITECTURE.md` §3.4。
 
 **一个必须记住的设计约束**：v2 装饰器**不能挂 global**——`Event` 既是装饰器名也是浏览器全局，
@@ -391,7 +391,7 @@ PASS 替换 item.child 整体（@Observed 的字段写入）触发重渲染：'m
 
 ## R9/R10：`Grid` 真实轨道 + `Tabs` 切换 ✅
 
-`Grid`/`Tabs` 此前只是"能建出节点"（生成的骨架），本轮补上真实语义（51 条断言，双端通过）。
+`Grid`/`Tabs` 此前只是"能建出节点"（生成的骨架），本轮补上真实语义（51 条断言，双端通过；`bash run.sh tabgrid`）。
 
 **先测量**：新建 `fixtures/pages/TabsGrid.ts` 在 HarmonyOS 工程里 `devecocli build`，
 读 hvigor 缓存里的转换产物，才发现 `TabContent` 的形态和别的容器**都不一样**：
@@ -1026,9 +1026,16 @@ PASS starStyle 的图片 URI 不可用已记警告
 
 **已知待办（别当已完成）**：
 
-- 文档里手写的「（N 条断言）」**没有守门**（§6 那一块有守门，散落的用例计数没有）——
-  本轮就发现 R22 记成 35、实际 **36**（`grep -c "check(" test/animdemo.html` 与 runner 输出都指向 36）。
-  该做的第 6 步：让 `stats.mjs` 也统计每个 `test/*.html` 的断言数，`--check-doc` 一并比对
+- ~~文档里手写的「（N 条断言）」**没有守门**~~ → **已加守门（2026-09-21）**。做法与当初设想的"第 6 步：让
+  `stats.mjs` 数 `test/*.html`"**不同**，因为那个设想本身是错的：`test/realfs.html` 有 28 处 `check(`，
+  但两端各只**执行** 21 条（7 处在互斥分支里没走到，浏览器走 `localStorage` 那支、Electron 走 `node-fs` 那支）。
+  静态计数会把"没跑到的断言"也算进去。所以改成：`run.sh` / `electron/run.sh` 在 `run_one` 里落盘
+  `build/assert-counts-<端>.tsv`（**运行期**真的 emit 了多少条 PASS 行），退出时由 `tools/assert-counts.mjs`
+  与文档声明比对——用 **EXIT trap**，所以**单个用例**也受守门（`bash run.sh gesturedemo` 也会核 24 条）。
+  加守门的当天就查出 **7 处**旧错：v2 记成 26（实际 **25**）、observe 记成 20（实际 **19**），跨 3 个文件；
+  另把 README 里两处"有数字但没写用例名"的散文改成规范写法（否则守门认不出来）。
+  规范写法只有两种：① 同行写 `bash run.sh <用例>` …（N 条断言…）；② 围栏块内先出现 `run.sh <用例>`，
+  块内随后的「（N 条断言）」归它。细节与判据见 `docs/DEVELOPING.md` 坑 77
 - `ForEach` 现在是「数组变了就整体重建」，**没有键级 diff**
 - 父组件重渲染时参数推送走 `updateStateVarsOfChildByElmtId`，但**子视图内部的 elmtId 迁移未处理**（复杂嵌套可能出问题）
 - `Repeat` / 动画 / `Tabs.vertical`·`barMode` / `Swiper` 的动画与 `displayCount` /

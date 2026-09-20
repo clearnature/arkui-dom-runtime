@@ -26,8 +26,8 @@ R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分�
 | ② | 测量接口对齐 | `bash run.sh measure` |
 | ③ | `LazyForEach` 虚拟滚动（1000 项 → 11 节点） | `bash run.sh lazy` |
 | ③ | `@Provide` / `@Consume` / `@Watch` | `bash run.sh provide` |
-| ③ | **V1 深度观测**（`@Observed` + `@ObjectLink`，Proxy 实现） | `bash run.sh observe`（20 条断言，含负向） |
-| ③ | **状态管理 v2**（`ViewV2` + 11 个装饰器） | `bash run.sh v2`（26 条断言，浏览器 + Electron 双通过） |
+| ③ | **V1 深度观测**（`@Observed` + `@ObjectLink`，Proxy 实现） | `bash run.sh observe`（19 条断言，含负向） |
+| ③ | **状态管理 v2**（`ViewV2` + 11 个装饰器） | `bash run.sh v2`（25 条断言，浏览器 + Electron 双通过） |
 | ③ | **`Grid`/`GridItem` 真实轨道** + `Tabs`/`TabContent` 切换 | `bash run.sh tabgrid`（51 条断言，含几何与机制自省；双端通过） |
 | ③ | **`Swiper` 轮播**（loop / autoPlay / 指示点 / 控制器） | `bash run.sh swiper`（38 条断言，双端通过，连跑 3 次稳定） |
 | ③ | **`Navigation` 栈导航**（NavPathStack / 生命周期 / 状态保留 / 零泄漏） | `bash run.sh navdemo`（72 条断言，双端通过） |
@@ -200,7 +200,7 @@ Chrome、Electron、**入口脚本可执行位**、核心文件齐备、fixtures
 `@Monitor` 派发、`@Provider`/`@Consumer` 在 `finalizeConstruction` 绑定、
 `@Computed` 不缓存实现、`@ObservedV2`/`@Trace` 深度观测）。
 
-**验收（已执行）**：`bash run.sh v2` + `bash electron/run.sh v2` → **26 条断言双通过**，
+**验收（已执行）**：`bash run.sh v2` + `bash electron/run.sh v2` → **25 条断言双通过**，
 其中包含"机制正确"类断言（`@Event` 不参与观测、非 `@Trace` 字段不触发重渲染、
 装饰器确实装上了访问器）。
 
@@ -231,7 +231,7 @@ Chrome、Electron、**入口脚本可执行位**、核心文件齐备、fixtures
 
 **验收（已执行）**：
 ```bash
-bash run.sh observe && bash electron/run.sh observe   # 20 条断言双通过
+bash run.sh observe && bash electron/run.sh observe   # 19 条断言双通过
 ```
 断言含**负向**项：改嵌套的**非** `@Observed` 对象内部**不应**触发重渲染（`item.child.label` 改了但文本不变）。
 

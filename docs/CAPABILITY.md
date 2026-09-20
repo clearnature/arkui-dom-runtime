@@ -16,6 +16,10 @@ node tools/gen-components.mjs   # 重新生成 149 个组件骨架
 node tools/gen-components.mjs --check   # 只校验生成物与生成器是否一致（不落盘）
 ```
 
+**断言计数自动受守门**：两个 runner 每次退出时都会把「本次实测每个用例 emit 了多少条 PASS」与文档里手写的
+「（N 条断言）」比对（`tools/assert-counts.mjs`），不一致就红。所以**改断言必须同步改数字**，
+而数字只能来自运行期（不许用 `grep` 数 `test/*.html` 里的 `check(`，理由见 `docs/DEVELOPING.md` 坑 77）。
+
 ## 一、运行时（语言/框架语义）
 
 | 能力 | 状态 | 证明用例 |

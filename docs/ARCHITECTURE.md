@@ -1245,9 +1245,9 @@ globalThis.Gesture.pop();                         // ③ 关作用域 → 挂到
 == 体积（源码，不含产物/Electron 运行时）==
   runtime          294.8 KB
   test             208.2 KB
-  tools            39.1 KB
-  electron(src)    17.8 KB
-  docs             253.8 KB
+  tools            46.4 KB
+  electron(src)    18.7 KB
+  docs             255.6 KB
   fixtures         202.4 KB
 
 == 逐文件（文档"文件职责"表的来源）==
@@ -1257,20 +1257,21 @@ globalThis.Gesture.pop();                         // ③ 关作用域 → 挂到
   tools/extract.mjs                  6563 B  6.4 KB
   tools/gen-components.mjs           7775 B  7.6 KB
   tools/serve.py                     3887 B  3.8 KB
-  tools/stats.mjs                   13415 B  13.1 KB
+  tools/stats.mjs                   13442 B  13.1 KB
+  tools/assert-counts.mjs            7476 B  7.3 KB
   tools/preflight.mjs                5178 B  5.1 KB
   tools/check-all.sh                 3171 B  3.1 KB
-  run.sh                            14096 B  13.8 KB
-  electron/run.sh                    9260 B  9.0 KB
+  run.sh                            15230 B  14.9 KB
+  electron/run.sh                   10174 B  9.9 KB
   electron/main.js                   6795 B  6.6 KB
   electron/preload.js                1961 B  1.9 KB
   package.json                       1207 B  1.2 KB
   .gitignore                          674 B  0.7 KB
-  README.md                         64982 B  63.5 KB
+  README.md                         65955 B  64.4 KB
   THIRD-PARTY-NOTICES.md             8256 B  8.1 KB
-  docs/ARCHITECTURE.md             103359 B  100.9 KB
-  docs/CAPABILITY.md                30455 B  29.7 KB
-  docs/DEVELOPING.md                44834 B  43.8 KB
+  docs/ARCHITECTURE.md             103411 B  101.0 KB
+  docs/CAPABILITY.md                30858 B  30.1 KB
+  docs/DEVELOPING.md                46216 B  45.1 KB
   docs/ROADMAP.md                   61906 B  60.5 KB
   docs/surface-measurement.md        6496 B  6.3 KB
   docs/SESSION-2026-09-20.md        12842 B  12.5 KB
@@ -1340,8 +1341,8 @@ globalThis.Gesture.pop();                         // ③ 关作用域 → 挂到
 |---|---|
 | ArkTS 语法（装饰器/struct/build/控制流） | ✅ 官方产物完整覆盖 |
 | 状态管理 v1（`@State/@Prop/@Link/@Provide/@Consume/@Watch`） | ✅ 有测试（`run.sh provide`） |
-| 状态管理 v1 深度观测（`@Observed` + `@ObjectLink`） | ✅ 有测试（`run.sh observe`，20 条断言；含"非 `@Observed` 嵌套对象内部变更**不**触发重渲染"的负向断言） |
-| 状态管理 v2（`@ComponentV2/@Local/@Param/@Once/@Event/@Monitor/@Provider/@Consumer/@ObservedV2/@Trace/@Computed`） | ✅ 有测试（`run.sh v2`，26 条断言，浏览器 + Electron 双通过） |
+| 状态管理 v1 深度观测（`@Observed` + `@ObjectLink`） | ✅ 有测试（`run.sh observe`，19 条断言；含"非 `@Observed` 嵌套对象内部变更**不**触发重渲染"的负向断言） |
+| 状态管理 v2（`@ComponentV2/@Local/@Param/@Once/@Event/@Monitor/@Provider/@Consumer/@ObservedV2/@Trace/@Computed`） | ✅ 有测试（`run.sh v2`，25 条断言，浏览器 + Electron 双通过） |
 | v2 的已知简化 | ⚠️ `@Computed` 不缓存；`IMonitor.dirty` 每次赋值一条且 `path` 非点分路径；`@Reusable` 复用路径未实测 |
 | 布局 | ✅ 有测试（`run.sh reldemo` + `run.sh measure`）：`alignRules` 六键两套键名、**多层锚链**（不动点迭代，逆序声明也对）、`Guideline`（`start`/`end` + 错轴为 0）、`bias`（含 0.5 默认值）；**仍无约束求解器**（不支持 `chainMode` 链式排列、环状锚定只记警告） |
 | `Grid` / `GridItem` 轨道布局 | ✅ 有测试（`run.sh tabgrid`）：`columnsTemplate`/`rowsTemplate` 真实轨道（含 ArkUI 裸数字 vp→px 归一化）、`columnsGap`/`rowsGap`、跨行换行（几何断言） |
