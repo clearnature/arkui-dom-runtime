@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R23 收口：RotationGesture / GestureGroup / 优先级仲裁</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 320px; height: 560px; border: 1px solid #ccc; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R23 收口：RotationGesture / GestureGroup 三态 / priorityGesture / parallelGesture / GestureMask</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/gesturegroupdemo-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const el = (id) => root.querySelector('#' + id);
+    const txt = (id) => String(el(id) ? el(id).textContent : '<缺>');
+    const val = (id) => { const s = txt(id); const i = s.indexOf('='); return i < 0 ? '' : s.slice(i + 1); };
+    const group = async (name, fn) => {
+      try { await fn(); } catch (e) {
+        allPass = false;
+        lines.push(`FAIL [${name}] 抛出异常：${e && e.stack ? String(e.stack).split('\n')[0] : e}`);
+      }
+    };
+    const pev = (type, x, y, id, extra) => new PointerEvent(type, Object.assign({
+      bubbles: true, cancelable: true, composed: true,
+      clientX: x, clientY: y, pointerId: id || 1, pointerType: 'touch',
+      isPrimary: (id || 1) === 1, button: 0, buttons: (type === 'pointerup' || type === 'pointercancel') ? 0 : 1,
+    }, extra || {}));
+    const down = (t, x, y, id) => t.dispatchEvent(pev('pointerdown', x, y, id));
+    const move = (t, x, y, id) => t.dispatchEvent(pev('pointermove', x, y, id));
+    const up = (t, x, y, id) => t.dispatchEvent(pev('pointerup', x, y, id));
+    const cancel = (t, x, y, id) => t.dispatchEvent(pev('pointercancel', x, y, id));
+    /** 看一次手势内省（arb 只在会话存续期间有意义） */
+    const g = (id) => __arkui_dom_gestures(el(id));
+
+    try {
+      __arkui_dom_requireModule('GestureGroupDemo');
+      __arkui_dom_loadRoute('pages/GestureGroupDemo', root);
+      await tick(80);        // 手势挂在微任务里，等它落地
+      check(!!el('rot') && !!el('glog'), 'GestureGroupDemo 页面已渲染');
+
+      // ══════════ ① 产物契约：loader 发射的名字必须在运行时存在 ══════════
+      // 这一条是本轮修掉的 bug：产物发的是 GesturePriority.Low/High/Parallel（ets-loader 的
+      // pre_define 约定），而 .d.ts 声明的是 {NORMAL, PRIORITY} —— 两套名字都得有。
+      await group('契约', async () => {
+        check(GesturePriority.Low === GesturePriority.NORMAL && GesturePriority.Low === 0,
+          `GesturePriority.Low 与声明名 NORMAL 同值（Low=${GesturePriority.Low}）`);
+        check(GesturePriority.High === GesturePriority.PRIORITY && GesturePriority.High !== GesturePriority.Low,
+          `GesturePriority.High 与声明名 PRIORITY 同值（High=${GesturePriority.High}）`);
+        check(GesturePriority.Parallel !== GesturePriority.Low && GesturePriority.Parallel !== GesturePriority.High,
+          `GesturePriority.Parallel 是独立的第三档（Parallel=${GesturePriority.Parallel}）`);
+        check(GestureMask.Normal === 0 && GestureMask.IgnoreInternal === 1,
+          `GestureMask.Normal/IgnoreInternal 已安装（${GestureMask.Normal}/${GestureMask.IgnoreInternal}）`);
+        check(GestureMode.Sequence === 0 && GestureMode.Parallel === 1 && GestureMode.Exclusive === 2,
+          `GestureMode 三态取值与 .d.ts 声明顺序一致（${GestureMode.Sequence}/${GestureMode.Parallel}/${GestureMode.Exclusive}）`);
+        check(typeof GestureGroup.create === 'function' && typeof GestureGroup.pop === 'function',
+          'GestureGroup 有 create/pop（组作用域协议）');
+      });
+
+      // ══════════ ② 挂载与分组登记：组不是"散落的手势" ══════════
+      await group('挂载', async () => {
+        check(g('rot').types.join(',') === 'rotation', `#rot 上挂着 rotation（'${g('rot').types.join(',')}'）`);
+        const gj = (id) => JSON.stringify(g(id).groups);
+        check(gj('gx') === '[{"mode":"Exclusive","members":["tap","pan"]}]', `#gx 登记为 Exclusive[tap,pan]（${gj('gx')}）`);
+        check(gj('gs') === '[{"mode":"Sequence","members":["longPress","pan"]}]', `#gs 登记为 Sequence[longPress,pan]（${gj('gs')}）`);
+        check(gj('gs2') === '[{"mode":"Sequence","members":["pan","pan"]}]', `#gs2 登记为 Sequence[pan,pan]（${gj('gs2')}）`);
+        check(gj('gp') === '[{"mode":"Parallel","members":["tap","longPress"]}]', `#gp 登记为 Parallel[tap,longPress]（${gj('gp')}）`);
+        check(g('pp').priority.join(',') === 'high' && g('lp').priority.join(',') === 'parallel' && g('dc').priority.join(',') === 'low',
+          `三个属性的档位被分开记录：priorityGesture=${g('pp').priority.join(',')}、parallelGesture=${g('lp').priority.join(',')}、gesture=${g('dc').priority.join(',')}`);
+        check(g('mask').masks.join(',') === 'IgnoreInternal' && g('rot').masks.join(',') === 'Normal',
+          `两参 Gesture.create(priority, mask) 的 mask 被收下（#mask='${g('mask').masks.join(',')}'）`);
+      });
+
+      // ══════════ ③ RotationGesture 识别器 ══════════
+      await group('Rotation', async () => {
+        // 起始线 = 两指连线（水平，40px）；第 2 指绕第 1 指转 90° → 连线变竖直
+        let b = val('glog');
+        down(el('rot'), 10, 10, 1);
+        down(el('rot'), 50, 10, 2);
+        move(el('rot'), 10, 50, 2);          // 第一次跨阈值 → onActionStart
+        await tick(15);
+        check(val('glog').slice(b.length) === 'RS;', `两指转过阈值 → onActionStart 触发一次（'${val('glog').slice(b.length)}'）`);
+        move(el('rot'), 10, 50, 2);          // 再动一次 → onActionUpdate（fixture 在这里记角度）
+        await tick(15);
+        check(val('grot') === 'ang=90', `angle = +90°（顺时针为正，实际 '${val('grot')}'）`);
+        up(el('rot'), 10, 50, 2);
+        up(el('rot'), 10, 10, 1);
+        await tick(15);
+        check(val('glog').slice(b.length) === 'RS;RE;', `最后抬指 → onActionEnd（'${val('glog').slice(b.length)}'）`);
+        check(val('grot') === 'end=90', `结束时角度仍为 90（'${val('grot')}'）`);
+
+        // 单指：fingers:2 未满足 → 一根指头转不动
+        b = val('glog');
+        down(el('rot'), 10, 10, 3);
+        move(el('rot'), 90, 90, 3);
+        up(el('rot'), 90, 90, 3);
+        await tick(15);
+        check(val('glog').slice(b.length) === '', `单指移动不触发 rotation（fingers:2 要真的起作用，'${val('glog').slice(b.length)}'）`);
+
+        // 反向：起始线水平 → 逆时针转 90° → 应为 −90（把符号写死成 + 的实现会露馅）
+        b = val('glog');
+        down(el('rot'), 10, 10, 4);
+        down(el('rot'), 50, 10, 5);
+        move(el('rot'), 10, -30, 5);
+        move(el('rot'), 10, -30, 5);
+        await tick(15);
+        check(val('grot') === 'ang=-90', `反向旋转 → −90°（实际 '${val('grot')}'）`);
+        up(el('rot'), 10, -30, 5);
+        up(el('rot'), 10, 10, 4);
+        await tick(15);
+
+        // 阈值：angle 默认 1°；只转 0.29° 不算
+        b = val('glog');
+        down(el('rot'), 10, 10, 6);
+        down(el('rot'), 50, 10, 7);
+        move(el('rot'), 50, 10.2, 7);
+        await tick(15);
+        check(val('glog').slice(b.length) === '', `只转 0.29° < 阈值 1° → 不触发（'${val('glog').slice(b.length)}'）`);
+        up(el('rot'), 50, 10.2, 7);
+        up(el('rot'), 10, 10, 6);
+        await tick(15);
+      });
+
+      // ══════════ ④ GestureGroup 三态 ══════════
+      await group('Exclusive', async () => {
+        let b = val('ggrp');
+        down(el('gx'), 10, 10); up(el('gx'), 10, 10);
+        await tick(15);
+        check(val('ggrp').slice(b.length) === 'X;', `点一下 → 只有 Tap 认、Pan 不认（'${val('ggrp').slice(b.length)}'）`);
+
+        b = val('ggrp');
+        down(el('gx'), 10, 10);
+        move(el('gx'), 50, 10);
+        await tick(15);
+        check(val('ggrp').slice(b.length) === 'UD;', `拖一下 → 只有 Pan 认、Tap 不认（'${val('ggrp').slice(b.length)}'）`);
+        cancel(el('gx'), 50, 10);
+        await tick(15);
+        check(val('ggrp').slice(b.length) === 'UD;Xc;', `认过之后 pointercancel → 组 onCancel（'${val('ggrp').slice(b.length)}'）`);
+      });
+
+      await group('Sequence', async () => {
+        // #gs = Sequence[LongPress(200ms), Pan(5px)]：长按之后再拖，才能走到第 2 段
+        let b = val('ggrp');
+        down(el('gs'), 10, 10);
+        await tick(260);                     // 长按认 → S1（第 1 段）
+        up(el('gs'), 10, 10);                // 不拖就抬 → 第 2 段没认
+        await tick(15);
+        const half = val('ggrp').slice(b.length);
+        check(half === 'S1;Sc;', `长按后直接抬指 → 第 2 段不认 + 组 onCancel（'${half}'）`);
+
+        b = val('ggrp');
+        down(el('gs'), 10, 10);
+        await tick(260);
+        move(el('gs'), 60, 10);              // 拖 → 第 2 段 pan 认 → S2
+        await tick(15);
+        up(el('gs'), 60, 10);
+        await tick(15);
+        const full = val('ggrp').slice(b.length);
+        check(full === 'S1;S2;S2e;', `长按后拖动 → 按序走完、末位手势能收 End（'${full}'）`);
+
+        // #gs2 = Sequence[Pan(5px), Pan(1px)]：第 2 个 pan 自身阈值只有 1px，
+        // 位移 2px 时它"自己够了"但序列没轮到它 —— 必须被挡住（Sequence 的门控就体现在这里）
+        b = val('ggrp');
+        down(el('gs2'), 10, 10);
+        move(el('gs2'), 12, 10);             // 2px：pan1(<5px) 未达，pan2(≥1px) 到了但没轮到
+        await tick(15);
+        check(val('ggrp').slice(b.length) === '', `位移 2px：阈值 1px 的 pan 被序列门控挡住（'${val('ggrp').slice(b.length)}'）`);
+        move(el('gs2'), 16, 10);             // 6px：pan1 认 → 才轮到 pan2
+        await tick(15);
+        check(val('ggrp').slice(b.length) === 'U1;U2;', `越过第 1 段阈值后两段都认（'${val('ggrp').slice(b.length)}'）`);
+        up(el('gs2'), 16, 10);
+        await tick(15);
+        check(val('ggrp').slice(b.length) === 'U1;U2;U2e;',
+          `只有最后一个手势能收 onActionEnd（非末位 pan 的 End 被挡，'${val('ggrp').slice(b.length)}'）`);
+      });
+
+      await group('Parallel', async () => {
+        let b = val('ggrp');
+        down(el('gp'), 10, 10);
+        await tick(260);                     // 长按 duration=200 → 先认
+        up(el('gp'), 10, 10);                // 抬起 → 点击也认
+        await tick(15);
+        const both = val('ggrp').slice(b.length);
+        check(both.includes('P2;') && both.includes('P1;'),
+          `长按与点击都被认（互不压制，'${both}'）`);
+
+        b = val('ggrp');
+        down(el('gp'), 10, 10);
+        await tick(260);
+        cancel(el('gp'), 10, 10);
+        await tick(15);
+        check(val('ggrp').slice(b.length) === 'P2;Pc;', `认过之后 pointercancel → 组 onCancel（'${val('ggrp').slice(b.length)}'）`);
+      });
+
+      // ══════════ ⑤ 父子优先级仲裁 ══════════
+      await group('仲裁', async () => {
+        // 默认对：父子都普通 .gesture() → 文档口径「子组件优先」
+        let b = val('garb');
+        down(el('dc'), 10, 10); up(el('dc'), 10, 10);
+        await tick(15);
+        check(val('garb').slice(b.length) === 'e;', `默认：子优先、父不被触发（'${val('garb').slice(b.length)}'）`);
+
+        // 点父自身（不在子区域）→ 父照常触发（仲裁只发生在包含链上）
+        b = val('garb');
+        down(el('dp'), 10, 10); up(el('dp'), 10, 10);
+        await tick(15);
+        check(val('garb').slice(b.length) === 'D;', `点父自身区域 → 父的普通手势照常触发（'${val('garb').slice(b.length)}'）`);
+
+        // priorityGesture：父 High 压过子 Low
+        b = val('garb');
+        down(el('pc'), 10, 10);
+        check(g('pp').arb === 'owner' && g('pc').arb === 'suppressed',
+          `仲裁决议可内省：父是 owner、子被 suppressed（父=${g('pp').arb}、子=${g('pc').arb}）`);
+        up(el('pc'), 10, 10);
+        await tick(15);
+        check(val('garb').slice(b.length) === 'P;', `priorityGesture：只有父触发（'${val('garb').slice(b.length)}'）`);
+
+        // parallelGesture：父子都触发（准冒泡）
+        b = val('garb');
+        down(el('lc'), 10, 10); up(el('lc'), 10, 10);
+        await tick(15);
+        check(val('garb').slice(b.length) === 'd;L;', `parallelGesture：子与父都触发（'${val('garb').slice(b.length)}'）`);
+
+        // GestureMask.IgnoreInternal：子组件手势被禁用
+        b = val('ggrp');
+        down(el('maskc'), 10, 10);
+        check(g('mask').arb === 'owner' && g('maskc').arb === 'suppressed',
+          `IgnoreInternal：父是 owner、子被 suppressed（父=${g('mask').arb}、子=${g('maskc').arb}）`);
+        up(el('maskc'), 10, 10);
+        await tick(15);
+        check(val('ggrp').slice(b.length) === 'M;', `GestureMask.IgnoreInternal：子组件手势被禁用（'${val('ggrp').slice(b.length)}'）`);
+
+        // 会话结束后仲裁状态归位
+        check(g('pc').arb === 'idle' && g('pp').arb === 'idle' && g('maskc').arb === 'idle',
+          `会话结束后仲裁状态归位、不残留 suppressed（子=${g('pc').arb}）`);
+      });
+
+      lines.push(`GEST attach=${g('rot').attachCount} rot='${val('grot')}' grp='${val('ggrp')}' arb='${val('garb')}'`);
+      lines.push(`ELMT ${__arkui_dom_elmtRecords.size}`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

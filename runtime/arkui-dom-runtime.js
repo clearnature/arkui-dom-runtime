@@ -771,10 +771,25 @@
   // 这样合成事件（dispatchEvent）与真实指针走的是同一条路。
   const PanDirection = { None: 0, Horizontal: 1, Left: 2, Right: 3, Vertical: 4, Up: 5, Down: 6, All: 7 };
   const SwipeDirection = { None: 0, Horizontal: 1, Vertical: 2, All: 3 };
-  const GesturePriority = { NORMAL: 0, PRIORITY: 1 };
+  // GesturePriority 有【两套名字】，必须同时提供：
+  //  · 产物实发的是 ets-loader 的约定名（sdk/.../ets-loader/lib/pre_define.js）：
+  //      GESTURE_ENUM_KEY="GesturePriority"、GESTURE_ENUM_VALUE_LOW/HIGH/PARALLEL="Low"/"High"/"Parallel"，
+  //      .gesture() / .priorityGesture() / .parallelGesture() 三个属性经 gestureMap 映射成这三个成员
+  //      （实测见 fixtures/pages/GestureGroupDemo.ts：create(GesturePriority.Low|High|Parallel)）。
+  //  · .d.ts 里 `declare enum GesturePriority { NORMAL = 0, PRIORITY = 1 }` 是【另一套】（API 12 的
+  //      addGesture 用的）；源码里手写 NORMAL/PRIORITY 会被 loader 原样透传，所以也得支持。
+  //  对齐关系：NORMAL=Low、PRIORITY=High；Parallel 是产物独有的第三档（父子并列响应，不参与独占仲裁）。
+  //  ⚠️ 旧实现只定义了 {NORMAL, PRIORITY} → 产物的 `GesturePriority.Low` 是 undefined，三个属性在
+  //     运行时**完全区分不开**（都退化成默认档）。这是本轮修掉的 bug。
+  const GesturePriority = { NORMAL: 0, PRIORITY: 1, Low: 0, High: 1, Parallel: 2 };
+  // .d.ts：GestureMask.Normal = 子组件手势按默认顺序参战；IgnoreInternal = **禁用子组件手势**
+  // （含 List 这类内置手势；父子区域部分重叠时只禁重叠区）。后者在仲裁里按"压制所有后代"实现。
+  const GestureMask = { Normal: 0, IgnoreInternal: 1 };
+  // .d.ts 声明顺序即取值：Sequence / Parallel / Exclusive
+  const GestureMode = { Sequence: 0, Parallel: 1, Exclusive: 2 };
 
   const gestureScopes = [];              // Gesture.create/pop 的作用域栈
-  const gestureBuild = [];               // 正在构建的手势记录栈（各手势的 create/pop）
+  const gestureBuild = [];               // 正在构建的手势记录栈（各手势 + 手势组的 create/pop）
   const TAP_SLOP_PX = 10;                // 超过这个位移就不算 tap（ArkUI 内部也有类似的容差）
   const TAP_WINDOW_MS = 300;             // 连续点击的归组窗口
 
@@ -788,12 +803,147 @@
     }, extra || {});
   }
 
-  function fireGesture(rec, kind, ev) {
-    const cb = rec[kind];
-    if (typeof cb !== 'function') return;
-    try { cb(ev); } catch (e) {
-      layoutWarnings.push(`手势 ${rec.type}.${kind} 回调抛错：${e && e.message}`);
+  // ── 手势仲裁（R23 收口）──
+  // 三条规则各有 .d.ts 原文依据，互不干扰：
+  //  ① 元素级（父子包含链）—— CommonMethod 的文档原文：
+  //      · `gesture`：      「By default, the child component preferentially recognizes the gesture
+  //                         specified by gesture」→ 默认【子优先】
+  //      · `priorityGesture`：「the parent component preferentially recognizes the gesture specified by
+  //                         priorityGesture (if set)」→ 父档位高，压过内层
+  //      · `parallelGesture`：「the gesture event is not a bubbling event. When parallelGesture is set
+  //                         for a component, both it and its child component can respond to the same
+  //                         gesture events」→ 准冒泡，父子都触发
+  //      · `GestureMask.IgnoreInternal`：「The gestures of child components are disabled, including the
+  //                         built-in gestures」→ 压制所有后代
+  //  ② 组级（GestureGroup 三态）—— 见 fireGesture 里的分档处理
+  //  ③ 元素内多个作用域：按元素取最高档（block > high > parallel > low），不做逐手势区分
+  //
+  // 元素级仲裁必须在任何识别结果【之前】定下来：pointer 事件由内向外冒泡，所以内层先"认领"，
+  // 外层后到、可以覆盖；识别循环之后只查 isEligible()，不再参与决策。
+  const ARB_BLOCK = 'block', ARB_HIGH = 'high', ARB_PARALLEL = 'parallel', ARB_LOW = 'low';
+  const gestureSessions = new Map();   // pointerId -> {chain:[el], ownerEl, ownerClass, captureEl}
+
+  function gestureArbClass(records) {
+    let high = false, par = false, block = false;
+    for (const r of records) {
+      if (r.__mask === GestureMask.IgnoreInternal) block = true;
+      if (r.__priority === GesturePriority.High) high = true;
+      if (r.__priority === GesturePriority.Parallel) par = true;
     }
+    return block ? ARB_BLOCK : (high ? ARB_HIGH : (par ? ARB_PARALLEL : ARB_LOW));
+  }
+
+  function participate(el, st, ev) {
+    let s = gestureSessions.get(ev.pointerId);
+    if (!s) {
+      s = { chain: [], ownerEl: null, ownerClass: null, captureEl: null };
+      gestureSessions.set(ev.pointerId, s);
+    }
+    if (s.chain.indexOf(el) >= 0) return;          // 同一指针不重复参战
+    s.chain.push(el);
+    const cls = st.arbClass;
+    if (cls === ARB_BLOCK || cls === ARB_HIGH) {
+      // block 能压过内层任意档；high 只压过内层 low（内层同为 high 时按"内层优先"）
+      if (s.ownerEl && (cls === ARB_BLOCK || s.ownerClass === ARB_LOW)) s.ownerEl = null;
+      if (!s.ownerEl) { s.ownerEl = el; s.ownerClass = cls; }
+    } else if (cls === ARB_PARALLEL) {
+      // 不参与独占，但始终可触发（见 gestureArbState）
+    } else if (!s.ownerEl) {
+      s.ownerEl = el; s.ownerClass = ARB_LOW;
+    }
+    // 指针捕获只交给【最先见到的那一个】（=最内层）：捕获只改事件的 target，事件仍沿祖先链冒泡，
+    // 所以链上每个元素都还收得到；交给最内层，才能让"最内层是 parallel 的子元素"继续收到移动。
+    if (!s.captureEl) {
+      s.captureEl = el;
+      try { el.setPointerCapture(ev.pointerId); } catch (_) { /* 合成事件可能不支持 */ }
+    }
+  }
+
+  // 元素对外的仲裁结论（也是内省用的口径）：
+  //   owner=本次会话归它 / parallel=并列参战 / suppressed=被压制 / idle=没有活跃会话
+  function gestureArbState(st) {
+    let seen = false;
+    for (const s of gestureSessions.values()) {
+      if (s.chain.indexOf(st.el) < 0) continue;
+      seen = true;
+      if (s.ownerEl === st.el) return 'owner';
+      if (st.arbClass === ARB_PARALLEL) return 'parallel';
+    }
+    return seen ? 'suppressed' : 'idle';
+  }
+
+  // 会话只能由【冒泡路径上最后参战的那个元素】来删：pointerup 会继续往外冒泡，
+  // 外层元素还要读同一份仲裁结论。若最内层先删，被压制的祖先就会查不到结论而误触发。
+  function isSessionTail(st, ev) {
+    const s = gestureSessions.get(ev.pointerId);
+    return !s || s.chain[s.chain.length - 1] === st.el;
+  }
+
+  // "识别完成"对应的回调名（Exclusive 靠它判先后、Sequence 靠它推进阶段）
+  const GESTURE_RECOG_KIND = {
+    tap: 'onAction', longPress: 'onAction', pan: 'onActionStart',
+    pinch: 'onActionStart', rotation: 'onActionStart', swipe: 'onAction',
+  };
+  const GESTURE_MODE_NAME = ['Sequence', 'Parallel', 'Exclusive'];
+  const GESTURE_MASK_NAME = ['Normal', 'IgnoreInternal'];
+
+  function flattenGestures(records, out) {
+    const acc = out || [];
+    for (const r of records) {
+      if (r && r.__isGroup) flattenGestures(r.gestures, acc);
+      else if (r) acc.push(r);
+    }
+    return acc;
+  }
+
+  function fireGroupCancel(g) {
+    if (typeof g.onCancel !== 'function') return;
+    try { g.onCancel(); } catch (e) {
+      layoutWarnings.push(`手势组 onCancel 回调抛错：${e && e.message}`);
+    }
+  }
+
+  // 会话收尾（所有指头都抬起 / 被系统取消）：
+  //  · Sequence 没走完 = 「某一步没认出 → 后面的不再认」，按文档触发该组 onCancel；
+  //  · 指针被 pointercancel 掉、而该组已认出过成员 → 也触发 onCancel。
+  // 无论是否触发，都把组状态归零，免得下一次手势继承了上一次的 winner/stage。
+  function settleGroups(st, cancelled) {
+    for (const g of st.gestures) {
+      if (!g.__isGroup) continue;
+      let fire = false;
+      if (g.mode === GestureMode.Sequence) fire = g.stage > 0 && g.stage < g.gestures.length;
+      else fire = cancelled && !!g.anyRecognized;
+      g.winner = null; g.stage = 0; g.anyRecognized = false;
+      if (fire) fireGroupCancel(g);
+    }
+  }
+
+  // 返回值 = 这次回调【有没有被仲裁放行】。识别器只在这个返回 true 时才推进内部状态：
+  // 否则会出现"手势标成已开始、但 start 从没发出去"的错位（Sequence 的门控尤其致命）。
+  function fireGesture(st, rec, kind, ev) {
+    if (!rec) return false;
+    if (gestureArbState(st) === 'suppressed') return false;  // ① 元素级（父子链）
+    const g = rec.__group;
+    if (g) {                                                 // ② 组级
+      const recog = GESTURE_RECOG_KIND[rec.type] === kind;
+      if (g.mode === GestureMode.Exclusive) {
+        if (g.winner && g.winner !== rec) return false;      // 先认出者独占，其余作废
+        if (!g.winner && recog) { g.winner = rec; g.anyRecognized = true; }
+      } else if (g.mode === GestureMode.Sequence) {
+        const i = g.gestures.indexOf(rec);
+        if (i > g.stage) return false;                       // 还没轮到它
+        if (kind === 'onActionEnd' && i < g.gestures.length - 1) return false;  // 只有最后一个能收 End
+        if (i === g.stage && recog) { g.stage = i + 1; g.anyRecognized = true; }
+      } else if (recog) {
+        g.anyRecognized = true;                              // Parallel：互不影响，只记账
+      }
+    }
+    if (typeof rec[kind] === 'function') {
+      try { rec[kind](ev); } catch (e) {
+        layoutWarnings.push(`手势 ${rec.type}.${kind} 回调抛错：${e && e.message}`);
+      }
+    }
+    return true;
   }
 
   function gestureDirOk(rec, dx, dy) {
@@ -821,6 +971,20 @@
     return true;
   }
 
+  // RotationGesture 的角度（.d.ts 原文）：
+  //   "the line connecting the two fingers is identified as the starting line ... The rotation angle is
+  //    calculated as arctan2(cy2-cy1, cx2-cx1) - arctan2(y2-y1, x2-x1). With the starting line as the
+  //    reference axis, clockwise rotation ranges from 0 to 180 degrees, and counterclockwise ... 0 to -180"
+  // 屏幕坐标 y 向下，故 atan2 的顺时针为正，正好对上；归一化到 [−180, 180]。
+  const RAD2DEG = 180 / Math.PI;
+  const lineDeg = (p, q) => Math.atan2(q.y - p.y, q.x - p.x) * RAD2DEG;
+  const norm180 = (a) => ((((a + 180) % 360) + 360) % 360) - 180;
+  function rotationDeltaDeg(startLine, p0, p1) {
+    if (!startLine) return 0;
+    return norm180(lineDeg(p0, p1) - lineDeg({ x: startLine.x1, y: startLine.y1 },
+      { x: startLine.x2, y: startLine.y2 }));
+  }
+
   function detachGestures(el) {
     const st = el && el.__arkuiGestureState;
     if (!st) return;
@@ -831,15 +995,27 @@
   }
   function gestureTypes(el) {
     const st = el && el.__arkuiGestureState;
-    return st ? st.gestures.map((g) => g.type) : [];
+    return st ? st.gestures.map((g) => (g.__isGroup ? 'group' : g.type)) : [];
+  }
+  function gestureGroups(el) {
+    const st = el && el.__arkuiGestureState;
+    if (!st) return [];
+    return st.gestures.filter((g) => g.__isGroup).map((g) => ({
+      mode: GESTURE_MODE_NAME[g.mode] || String(g.mode),
+      members: flattenGestures(g.gestures).map((x) => x.type),
+    }));
   }
 
   function attachGestures(el, gestures) {
     detachGestures(el);
     const st = {
+      el,
       gestures: gestures.slice(), listeners: [], longPress: [],
       ptrs: new Map(), recState: new Map(), tapCount: 0, tapTimer: null,
     };
+    st.arbClass = gestureArbClass(st.gestures);
+    // 识别循环一律跑【摊平后】的手势表：组只是登记层，识别与回调仍在元素这一层做
+    const flat = flattenGestures(st.gestures);
     el.__arkuiGestureState = st;
     const on = (k, fn) => { el.addEventListener(k, fn); st.listeners.push([k, fn]); };
     const primary = () => {
@@ -854,17 +1030,18 @@
 
     const onDown = (ev) => {
       if (ev.pointerType === 'mouse' && ev.button !== 0) return;
-      try { el.setPointerCapture(ev.pointerId); } catch (_) { /* 合成事件可能不支持 */ }
       st.ptrs.set(ev.pointerId, {
         seq: st.ptrs.size, id: ev.pointerId, x0: ev.clientX, y0: ev.clientY,
         x: ev.clientX, y: ev.clientY, t: Date.now(),
       });
-      for (const rec of st.gestures) {
+      // 先定仲裁（内含指针捕获，见 participate），再让识别器开局
+      participate(el, st, ev);
+      for (const rec of flat) {
         if (rec.type === 'longPress') {
           const dur = rec.params.duration === undefined ? 500 : Number(rec.params.duration);
           const rs = { rec, timer: null, fired: 0, dur };
           const tick = () => {
-            fireGesture(rec, 'onAction', gestureEvent({ repeat: rs.fired > 0 }));
+            fireGesture(st, rec, 'onAction', gestureEvent({ repeat: rs.fired > 0 }));
             rs.fired++;
             if (rec.params.repeat === true) rs.timer = setTimeout(tick, dur);
           };
@@ -881,6 +1058,16 @@
           st.recState.set(rec, { started: false, d0 });
         } else if (rec.type === 'pan') {
           st.recState.set(rec, { started: false });
+        } else if (rec.type === 'rotation') {
+          // 起始线取【第二指按下时】的两指连线 —— 与 pinch 的 d0 同一时机。
+          // （.d.ts 说"detected 时"，但那一刻基准已被首帧位移吃掉；取按下时刻更确定，
+          //   两者差异的上界恰好就是 angle 阈值本身。）
+          let startLine = null;
+          if (st.ptrs.size >= 2) {
+            const arr = [...st.ptrs.values()].sort((a, b) => a.seq - b.seq);
+            startLine = { x1: arr[0].x, y1: arr[0].y, x2: arr[1].x, y2: arr[1].y };
+          }
+          st.recState.set(rec, { started: false, startLine });
         }
       }
     };
@@ -894,18 +1081,19 @@
       const dy = first ? first.y - first.y0 : 0;
       const dist = Math.hypot(dx, dy);
       if (dist > TAP_SLOP_PX) clearLongPress();            // 动了就不算长按
-      for (const rec of st.gestures) {
+      for (const rec of flat) {
         if (rec.type === 'pan') {
           const th = rec.params.distance === undefined ? 5 : Number(rec.params.distance);
           const rs = st.recState.get(rec) || { started: false };
           st.recState.set(rec, rs);
           if (!rs.started) {
-            if (dist >= th && gestureDirOk(rec, dx, dy)) {
+            // 只有回调真的发出去（没被组仲裁挡下）才把识别器标成已开始
+            if (dist >= th && gestureDirOk(rec, dx, dy)
+              && fireGesture(st, rec, 'onActionStart', gestureEvent({ offsetX: dx, offsetY: dy }))) {
               rs.started = true;
-              fireGesture(rec, 'onActionStart', gestureEvent({ offsetX: dx, offsetY: dy }));
             }
           } else if (gestureDirOk(rec, dx, dy)) {
-            fireGesture(rec, 'onActionUpdate', gestureEvent({ offsetX: dx, offsetY: dy }));
+            fireGesture(st, rec, 'onActionUpdate', gestureEvent({ offsetX: dx, offsetY: dy }));
           }
         } else if (rec.type === 'pinch' && st.ptrs.size >= 2) {
           const arr = [...st.ptrs.values()].sort((a, b) => a.seq - b.seq);
@@ -915,18 +1103,35 @@
           const th = rec.params.distance === undefined ? 5 : Number(rec.params.distance);
           if (!rs.started) {
             if (rs.d0 === 0) rs.d0 = d;
-            else if (Math.abs(d - rs.d0) >= th) {
-              rs.started = true;
-              fireGesture(rec, 'onActionStart', gestureEvent({
+            else if (Math.abs(d - rs.d0) >= th
+              && fireGesture(st, rec, 'onActionStart', gestureEvent({
                 scale: d / rs.d0,
                 pinchCenterX: (arr[0].x + arr[1].x) / 2, pinchCenterY: (arr[0].y + arr[1].y) / 2,
-              }));
+              }))) {
+              rs.started = true;
             }
           } else {
-            fireGesture(rec, 'onActionUpdate', gestureEvent({
+            fireGesture(st, rec, 'onActionUpdate', gestureEvent({
               scale: d / rs.d0,
               pinchCenterX: (arr[0].x + arr[1].x) / 2, pinchCenterY: (arr[0].y + arr[1].y) / 2,
             }));
+          }
+        } else if (rec.type === 'rotation' && st.ptrs.size >= 2) {
+          const arr = [...st.ptrs.values()].sort((a, b) => a.seq - b.seq);
+          const rs = st.recState.get(rec) || { started: false, startLine: null };
+          st.recState.set(rec, rs);
+          if (!rs.startLine) {
+            rs.startLine = { x1: arr[0].x0, y1: arr[0].y0, x2: arr[1].x0, y2: arr[1].y0 };
+          }
+          rs.angle = rotationDeltaDeg(rs.startLine, arr[0], arr[1]);
+          const th = rec.params.angle === undefined ? 1 : Number(rec.params.angle);
+          if (!rs.started) {
+            if (Math.abs(rs.angle) >= th
+              && fireGesture(st, rec, 'onActionStart', gestureEvent({ angle: rs.angle }))) {
+              rs.started = true;
+            }
+          } else {
+            fireGesture(st, rec, 'onActionUpdate', gestureEvent({ angle: rs.angle }));
           }
         }
       }
@@ -942,17 +1147,24 @@
       const dt = Math.max(1, Date.now() - p.t);
       clearLongPress();
       const isLast = st.ptrs.size === 0;
-      for (const rec of st.gestures) {
+      for (const rec of flat) {
         if (rec.type === 'pan') {
           const rs = st.recState.get(rec) || {};
           if (rs.started) {
-            fireGesture(rec, 'onActionEnd', gestureEvent({ offsetX: dx, offsetY: dy }));
+            fireGesture(st, rec, 'onActionEnd', gestureEvent({ offsetX: dx, offsetY: dy }));
             rs.started = false;
           }
         } else if (rec.type === 'pinch') {
           const rs = st.recState.get(rec) || {};
           if (rs.started && st.ptrs.size < 2) {
-            fireGesture(rec, 'onActionEnd', gestureEvent({ scale: rs.d0 ? 1 : 1 }));
+            fireGesture(st, rec, 'onActionEnd', gestureEvent({ scale: rs.d0 ? 1 : 1 }));
+            rs.started = false;
+          }
+        } else if (rec.type === 'rotation') {
+          const rs = st.recState.get(rec) || {};
+          if (rs.started && st.ptrs.size < 2) {
+            // 结束时用【最后一次算出的角度】——抬手后再没有两指连线可算
+            fireGesture(st, rec, 'onActionEnd', gestureEvent({ angle: rs.angle || 0 }));
             rs.started = false;
           }
         } else if (rec.type === 'tap') {
@@ -962,7 +1174,7 @@
             if (st.tapTimer) clearTimeout(st.tapTimer);
             st.tapTimer = setTimeout(() => { st.tapCount = 0; st.tapTimer = null; }, TAP_WINDOW_MS);
             if (st.tapCount % count === 0) {
-              fireGesture(rec, 'onAction', gestureEvent({ repeat: st.tapCount > count }));
+              fireGesture(st, rec, 'onAction', gestureEvent({ repeat: st.tapCount > count }));
             }
           }
         } else if (rec.type === 'swipe' && isLast) {
@@ -971,23 +1183,29 @@
           const th = rec.params.speed === undefined ? 100 : Number(rec.params.speed);
           const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
           if (speed >= th && swipeDirOk(rec, dx, dy)) {
-            fireGesture(rec, 'onAction', gestureEvent({ angle, speed }));
+            fireGesture(st, rec, 'onAction', gestureEvent({ angle, speed }));
           }
         }
       }
+      // 收尾必须在识别循环【之后】：tap 的识别就发生在本次 pointerup 里，
+      // Sequence 的"有没有走完"要看到它刚推进过的阶段。
+      if (isLast) settleGroups(st, false);
+      if (isLast && isSessionTail(st, ev)) gestureSessions.delete(ev.pointerId);
     };
 
     const onCancel = (ev) => {
       const p = st.ptrs.get(ev.pointerId);
       if (p) st.ptrs.delete(ev.pointerId);
       clearLongPress();
-      for (const rec of st.gestures) {
+      for (const rec of flat) {
         const rs = st.recState.get(rec) || {};
-        if ((rec.type === 'pan' || rec.type === 'pinch') && rs.started) {
-          fireGesture(rec, 'onActionCancel', gestureEvent({}));
+        if ((rec.type === 'pan' || rec.type === 'pinch' || rec.type === 'rotation') && rs.started) {
+          fireGesture(st, rec, 'onActionCancel', gestureEvent({}));
           rs.started = false;
         }
       }
+      if (st.ptrs.size === 0) settleGroups(st, true);
+      if (st.ptrs.size === 0 && isSessionTail(st, ev)) gestureSessions.delete(ev.pointerId);
     };
 
     on('pointerdown', onDown);
@@ -1002,6 +1220,24 @@
     TapGesture: 'tap', LongPressGesture: 'longPress', PanGesture: 'pan',
     SwipeGesture: 'swipe', PinchGesture: 'pinch', RotationGesture: 'rotation',
   };
+  // 收一个手势/手势组：归入【最近一层容器】——有手势组就进组，否则进当前手势作用域。
+  // 产物里组是嵌套的（组内 `XxxGesture.pop()` 之后才 `GestureGroup.pop()`），
+  // 所以要从栈顶往下找最近的组，而不是只看栈顶。
+  function pushGestureRecord(rec) {
+    if (!rec) return;
+    for (let i = gestureBuild.length - 1; i >= 0; i--) {
+      if (gestureBuild[i].__isGroup) { gestureBuild[i].gestures.push(rec); rec.__group = gestureBuild[i]; return; }
+    }
+    const scope = gestureScopes[gestureScopes.length - 1];
+    if (!scope) {
+      layoutWarnings.push(`${rec.name || rec.type}.pop() 不在任何 Gesture.create() 作用域里 —— 手势无处挂载`);
+      return;
+    }
+    rec.__priority = scope.priority;
+    rec.__mask = scope.mask;
+    scope.list.push(rec);
+  }
+
   function makeGestureBuilder(name) {
     const type = GESTURE_TYPES[name];
     const impl = {
@@ -1010,15 +1246,8 @@
         gestureBuild.push(rec);
         return rec;
       },
-      // 收一个手势 → 归入【当前手势作用域】（由它统一在 pop 时挂到元素上）
       pop() {
-        const rec = gestureBuild.pop();
-        const scope = gestureScopes[gestureScopes.length - 1];
-        if (!scope) {
-          layoutWarnings.push(`${name}.pop() 不在任何 Gesture.create() 作用域里 —— 手势无处挂载`);
-          return;
-        }
-        if (rec) scope.list.push(rec);
+        pushGestureRecord(gestureBuild.pop());
       },
     };
     // 未列举的 on* 方法一律当"回调 setter"（onAction/onActionStart/onActionUpdate/onActionEnd/onActionCancel）
@@ -1043,13 +1272,68 @@
       },
     });
   }
+  // GestureGroup 走同一套 create/on*/pop 协议，但它是【容器】：产物里
+  //   GestureGroup.create(mode) → GestureGroup.onCancel(cb) → 组内各手势 create/on*/pop → GestureGroup.pop()
+  // 组状态（winner/stage/anyRecognized）挂在组记录上，识别时由 rec.__group 反查（见 fireGesture）。
+  const GestureGroup = new Proxy({
+    create(mode) {
+      const g = {
+        __isGroup: true, name: 'GestureGroup', type: 'group',
+        mode: mode === undefined ? GestureMode.Sequence : mode,
+        gestures: [], winner: null, stage: 0, anyRecognized: false, seq: gestureSeq++,
+      };
+      gestureBuild.push(g);
+      return g;
+    },
+    pop() {
+      const g = gestureBuild.pop();
+      for (let i = gestureBuild.length - 1; i >= 0; i--) {
+        if (gestureBuild[i].__isGroup) {
+          gestureBuild[i].gestures.push(g); g.__group = gestureBuild[i];
+          return;
+        }
+      }
+      const scope = gestureScopes[gestureScopes.length - 1];
+      if (!scope) {
+        layoutWarnings.push('GestureGroup.pop() 不在任何 Gesture.create() 作用域里 —— 手势组无处挂载');
+        return;
+      }
+      g.__priority = scope.priority;
+      g.__mask = scope.mask;
+      scope.list.push(g);
+    },
+  }, {
+    get(target, key) {
+      if (key in target) return target[key];
+      if (typeof key === 'symbol') return undefined;
+      let fn = target['__' + String(key)];
+      if (!fn) {
+        fn = function (cb) {
+          const g = gestureBuild[gestureBuild.length - 1];
+          if (!g || !g.__isGroup) {
+            layoutWarnings.push(`GestureGroup.${String(key)}() 不在任何 GestureGroup.create() 之后 —— 回调无处安放`);
+            return undefined;
+          }
+          g[String(key)] = cb;
+          return undefined;
+        };
+        target['__' + String(key)] = fn;
+      }
+      return fn;
+    },
+  });
   let gestureSeq = 0;
   const gestureBuilders = {};
   for (const name of Object.keys(GESTURE_TYPES)) gestureBuilders[name] = makeGestureBuilder(name);
 
   const Gesture = {
-    create(priority) {
-      gestureScopes.push({ priority: priority === undefined ? GesturePriority.NORMAL : priority, list: [] });
+    // 产物是两参形式：Gesture.create(GesturePriority.Low|High|Parallel[, GestureMask.Xxx])
+    create(priority, mask) {
+      gestureScopes.push({
+        priority: priority === undefined ? GesturePriority.Low : priority,
+        mask: mask === undefined ? GestureMask.Normal : mask,
+        list: [],
+      });
     },
     pop() {
       const scope = gestureScopes.pop();
@@ -4158,17 +4442,28 @@
     // 过渡自省：登记了什么、每次出现/消失实际用了多久/哪个来源（effect / animateTo / default）
     __arkui_dom_transitions: transitionsDescribe,
     // R23：手势。产物里是 `globalThis.Gesture.create(...)` + `PanGesture.create(...)` 这类
-    // 自由变量引用（两层栈），所以这些名字都必须挂在 global 上
-    Gesture, PanDirection, SwipeDirection, GesturePriority,
+    // 自由变量引用（两层栈），所以这些名字都必须挂在 global 上。
+    // R23 收口：`Gesture.create` 是【两参】的（第二参 mask），且优先级名字来自 ets-loader 的
+    // 约定（Low/High/Parallel）—— 见 fixtures/pages/GestureGroupDemo.ts。
+    Gesture, GestureGroup, GestureMode, GestureMask, PanDirection, SwipeDirection, GesturePriority,
     TapGesture: gestureBuilders.TapGesture, LongPressGesture: gestureBuilders.LongPressGesture,
     PanGesture: gestureBuilders.PanGesture, SwipeGesture: gestureBuilders.SwipeGesture,
     PinchGesture: gestureBuilders.PinchGesture, RotationGesture: gestureBuilders.RotationGesture,
-    // 手势自省：证明手势真的挂到了哪个元素上（而不是只登记了一堆回调）
-    __arkui_dom_gestures: (el) => ({
-      types: gestureTypes(el),
-      attachCount: gestureAttachCount,
-      dragState: el && el.__arkuiGestureState ? el.__arkuiGestureState.gestures.length : 0,
-    }),
+    // 手势自省：证明手势真的挂到了哪个元素上（而不是只登记了一堆回调）＋ 分组登记 ＋ 仲裁结论
+    __arkui_dom_gestures: (el) => {
+      const st = el && el.__arkuiGestureState;
+      return {
+        types: gestureTypes(el),
+        attachCount: gestureAttachCount,
+        dragState: st ? st.gestures.length : 0,
+        groups: gestureGroups(el),
+        priority: st ? [...new Set(st.gestures.map((r) => (r.__priority === GesturePriority.High ? 'high'
+          : (r.__priority === GesturePriority.Parallel ? 'parallel' : 'low'))))] : [],
+        masks: st ? [...new Set(st.gestures.map((r) => GESTURE_MASK_NAME[r.__mask] || String(r.__mask)))] : [],
+        arbClass: st ? st.arbClass : 'idle',
+        arb: st ? gestureArbState(st) : 'idle',
+      };
+    },
     // 动画自省：证明"过渡真的挂在被重渲染的节点上、到点真的清掉了"，而不是只看某次 style 非空
     __arkui_dom_animations: () => ({
       active: animWindow ? { seq: animWindow.seq, duration: animWindow.duration, els: animWindow.els.length } : null,

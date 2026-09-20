@@ -4,10 +4,11 @@
 
 已完成的机制说明见 `docs/ARCHITECTURE.md`；怎么改见 `docs/DEVELOPING.md`。
 
-**当前状态**：`npm run check` 全绿（preflight + 生成物一致 + 文档数字守卫 + 浏览器 19 用例 + Electron 18 用例）。
+**当前状态**：`npm run check` 全绿（preflight + 生成物一致 + 文档数字守卫 + 断言计数守门 + 浏览器 31 用例 + Electron 30 用例）。
 v1/v2 状态管理（含 v1 深度观测）、`Grid` 真实轨道、`Tabs` 切换、`Swiper` 轮播、`Navigation` 栈导航、
-`alignRules` 多层锚链 + `Guideline` + `bias`、纯绘制四件套、文本真实测量（`@ohos:measure`）、变高列表项、`onAreaChange` 与自定义布局协议均已落地。
-**下一步优先级：R19–R21（平台模块）→ R22–R23（动画/手势）→ R24（`.abc` 路径调研）。**
+`alignRules` 多层锚链 + `Guideline` + `bias`、纯绘制四件套、文本真实测量（`@ohos:measure`）、变高列表项、`onAreaChange` 与自定义布局协议、
+R19–R24（平台模块 / 动画 / 手势 / `.abc` 路径调研）均已落地。
+**下一步优先级：`Navigation` 的标题栏与分栏模式、其余 85 个骨架组件的视觉语义、`runtime/` 的物理拆分（拆法与实测依据见 `README.md` 的「已知待办」末条）。**
 R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分发前才需决定。
 
 ---
@@ -82,8 +83,8 @@ R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分�
 | P3 | ~~R16 变高列表项~~ **已完成** | — | — |
 | P3 | ~~R17 onAreaChange + 自定义布局协议~~ **已完成** | — | — |
 | P4 | ~~R18 图像信息~~ **已完成** | — | — |
-| P4 | R19–R21 平台模块 | 中 | 低–中 |
-| P5 | R22–R23 动画/手势 | 中 | 中 |
+| P4 | ~~R19–R21 平台模块~~ **已完成** | — | — |
+| P5 | ~~R22–R23 动画/手势~~ **R22 已完成、R22 收口/R23/R23 收口 已完成** | — | — |
 | P6 | ~~R24 ArkVM / `.abc` 路径调研~~ **已完成** | — | — |
 
 ---
@@ -864,7 +865,7 @@ C 的 asymmetric 150/250 + `onFinish(true/false)`、无关变更零记录、共�
 **⚠️ 调用约定（实测产物）**：**两层栈**，全部是自由变量（不走 import）：
 
 ```js
-globalThis.Gesture.create(GesturePriority.LOW);   // ① 打开手势作用域
+globalThis.Gesture.create(GesturePriority.Low);   // ① 打开手势作用域（名字来自 ets-loader，见 R23 收口）
 PanGesture.create({ fingers: 1, direction: PanDirection.All, distance: 5 });
 PanGesture.onActionStart(cb); PanGesture.onActionUpdate(cb); PanGesture.onActionEnd(cb);
 PanGesture.pop();                                 // ② 收一个手势
@@ -896,14 +897,71 @@ globalThis.Gesture.pop();                         // ③ 关作用域 → 挂到
 **其中②第一次注入的是"删掉默认值分支"，而 fixture 显式传了 `distance: 5` → 变异没落在被测路径上，
 断言照样通过（假阴性）；改成真的忽略阈值才红** —— 这条记进了坑表（破坏验证的变异必须落在被测路径上）。
 
-**已知限制**：`RotationGesture`/`GestureGroup` 未实现（`RotationGesture` 已在 `GESTURE_TYPES` 里登记类型但
-没有识别器，不会认出手势）；`priorityGesture`/`parallelGesture` 未实现；手势**优先级与冲突仲裁**
+**已知限制**（其中前两条已由同日的 **R23 收口**补上）：`RotationGesture`/`GestureGroup` 未实现
+（`RotationGesture` 已在 `GESTURE_TYPES` 里登记类型但没有识别器，不会认出手势）；
+`priorityGesture`/`parallelGesture` 未实现；手势**优先级与冲突仲裁**
 （`GesturePriority`/`GestureMode`/`GestureMask`）只记录不参与决策 —— 同一元素上多个手势会**并列触发**；
 `onActionCancel` 只在收到 `pointercancel` 时派发；`fingerList` 恒为空数组（不合成手指轨迹）。
 
 **触及**：`runtime/arkui-dom-runtime.js`（`Gesture`/5 个手势构建器 + 指针识别器 + `__arkui_dom_gestures`）、
 `fixtures/pages/GestureDemo.ts`、`harmony-proj/`（`GestureDemo.ets` + main_pages.json）、
 `test/gesturedemo.html`、`run.sh`、`electron/run.sh`
+
+---
+
+### R23 收口 — 手势分组 / 旋转 / 优先级仲裁 ✅（2026-09-21）
+
+**内容**：R23 明确留下的四项 —— `RotationGesture` 识别器、`GestureGroup`（Sequence/Parallel/Exclusive）、
+`priorityGesture`/`parallelGesture`、以及**元素级优先级仲裁**。
+
+**先测量的三条关键约定**（新增 `pages/GestureGroupDemo.ets` → 官方构建 → 读产物）：
+
+1. 三个属性发射**同一套协议**，只差第一个实参：`.gesture`→`GesturePriority.Low`、
+   `.priorityGesture`→`High`、`.parallelGesture`→`Parallel`；
+   `Gesture.create` 是**两参**的（第二参 `GestureMask`，旧实现只取第一个 → mask 被静默丢掉）。
+2. **这些名字来自 ets-loader，不是 `.d.ts`**：`pre_define.js` 里 `GESTURE_ENUM_KEY="GesturePriority"` +
+   `GESTURE_ENUM_VALUE_LOW/HIGH/PARALLEL="Low"/"High"/"Parallel"`。`.d.ts` 声明的
+   `GesturePriority { NORMAL = 0, PRIORITY = 1 }` 是**另一套**（API 12 `addGesture` 用）。
+   **旧实现只定义了 `{NORMAL, PRIORITY}` → 产物的 `GesturePriority.Low` 是 `undefined`，
+   三个属性运行时完全区分不开**（全退化成默认档）—— 这是本条修掉的 bug。
+3. `GestureGroup` 是**容器式** create/pop：`GestureGroup.create(mode)` → `onCancel` →
+   组内各手势 `create/on*/pop`（进的是**组**）→ `GestureGroup.pop()`（组进**作用域**）。
+
+**仲裁 = 三条独立规则，每条都引 `.d.ts` 原文**（引文见运行时注释）：
+① **元素级（父子链）**：`gesture`="子组件优先"、`priorityGesture`="父组件优先"、
+`parallelGesture`="准冒泡、父子都响应"、`GestureMask.IgnoreInternal`="禁用子组件手势";
+在 `pointerdown` 时**一次性定下**（事件由内向外冒泡 → 内层先认领、外层可覆盖），识别循环只查结论。
+② **组级**：Exclusive 先认出者独占；Sequence 按序推进且"只有最后一个能收 `onActionEnd`"；
+Parallel 互不影响。③ **元素内多作用域**：取最高档（`block > high > parallel > low`），不做逐手势区分。
+
+**验收（已执行）**：`bash run.sh gesturegroupdemo`（39 条断言）与 `bash electron/run.sh gesturegroupdemo` 双端通过：
+Loader 名与声明名同值（`Low===NORMAL`/`High===PRIORITY`/`Parallel` 独立）；
+4 个组各自登记对了 mode 与成员；两指转 90° → `angle=+90`、反向 → `−90`、未达阈值不触发、
+**单指不触发**（`fingers:2`）；Exclusive 点/拖各只认一个 + 认出后 cancel；
+Sequence「长按→拖」走完 vs 半途抬指 → `onCancel`、以及**阈值 1px 的 pan 在没轮到它时被门控挡住**；
+**非末位手势的 `onActionEnd` 被挡**（`U1;U2;U2e;`）；Parallel 长按与点击都被认；
+默认对"子优先"、`priorityGesture` 只有父、`parallelGesture` 父子都出、`IgnoreInternal` 子被禁用；
+以及**仲裁结论可内省**（`arb='owner'/'suppressed'`）、会话结束归位。
+
+**破坏验证**（3 项，各被精确抓住）：① 关掉元素级仲裁门控 → 恰好 3 条红（默认对/priority/mask）；
+② 旋转角度取绝对值 → 恰好 1 条红（反向旋转）；③ 拿掉 Sequence 门控 → 3 条红，
+日志里 `U2;` 抢在 `U1;` 前（乱序可见）。还原后 `md5sum` 与备份逐字节一致。
+
+**修掉的两个真 bug**（都属"静默失效"）：
+① `pointerup` 会**继续往外冒泡**，而会话状态被最内层元素先删掉 → 外层查不到仲裁结论、
+被压制的祖先**误触发**（默认档父子对当场红）→ 改成只由**冒泡路径上最后参战的那个元素**删会话；
+② 识别器在"回调被组门控挡下"时**照样把 `started` 置真** → 被挡的手势此后永远发不出 `onActionStart`
+→ 改成 `fireGesture` 返回"有没有被放行"，识别器只在放行时推进内部状态。
+
+**已知限制**：**这些组/仲裁语义是按 `.d.ts` 文档注释实现的，不是真机实测**（本机没有 ArkVM）；
+`RotationGesture` 起始线取**第二指按下时**的连线（`.d.ts` 写"detected 时"，差异上界即 `angle` 阈值）；
+`IgnoreInternal` 按文档正文实现为"压制所有后代（含并行）"；多指分别落在不同元素时按"每个指针各自认领"
+处理（近似）；`fingerList` 仍恒为空。
+
+**触及**：`runtime/arkui-dom-runtime.js`（`GesturePriority`/`GestureMask`/`GestureMode` + 仲裁层 +
+`GestureGroup` 构建器 + `RotationGesture` 识别器 + `__arkui_dom_gestures` 内省）、
+`fixtures/pages/GestureGroupDemo.ts`、`harmony-proj/`（`GestureGroupDemo.ets` + main_pages.json）、
+`test/gesturegroupdemo.html`、`run.sh`、`electron/run.sh`
 
 ---
 

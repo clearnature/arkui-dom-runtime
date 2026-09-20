@@ -8,8 +8,8 @@
 cd /data/training/cli/arkui-dom-runtime
 npm run check                   # 全部验收：preflight + 生成物一致 + 浏览器 + Electron（退出码可信）
 npm run check:quick             # 跳过 Electron
-./run.sh all                    # 浏览器侧：30 个用例（Chrome headless）
-./electron/run.sh all           # Electron 侧：29 个用例 + 真实磁盘核验
+./run.sh all                    # 浏览器侧：31 个用例（Chrome headless）
+./electron/run.sh all           # Electron 侧：30 个用例 + 真实磁盘核验
 npm run stats                   # 覆盖范围统计（本文档的数字都来自它）
 npm run preflight               # 环境自检（缺工具链/宿主/可执行位会明确报错）
 node tools/gen-components.mjs   # 重新生成 149 个组件骨架
@@ -109,6 +109,10 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 | **动画参数降级要出声**：`iterations`/`playMode`/`tempo`/`expectedFrameRateRange`/`ICurve` 曲线（CSS transition 表达不了）一律写警告；`fn()` 无可动目标时也出声 | ✅ | animdemo（`iterations=3`、`playMode=2` 各被点名；无目标时记 `no-target` 并告警） |
 | **手势 Pan/Tap/LongPress/Swipe/Pinch**：两层栈（`Gesture.create/pop` + `XxxGesture.create/onAction*/pop`）挂到组件栈顶元素，识别器走真实 pointer 事件 | ✅ | gesturedemo（5 个元素各挂对；`distance`/`count`/`duration`/`speed`/`scale` 逐项断言 + 反向用例） |
 | **Pan 的 `offsetX/offsetY` = 合成位移**：横向拖 40 → `40,0`；竖向拖 40 → `0,40`（写死单轴的实现会被另一条抓住） | ✅ | gesturedemo（`end=40,0` / `end=0,40`） |
+| **`RotationGesture`**：起始线 = 第二指按下时的两指连线，`angle = arctan2(当前连线) − arctan2(起始连线)`（顺时针正、范围 `[−180,180]`，照 `.d.ts`）；`fingers` 与 `angle` 阈值都要真的起作用 | ✅ | `bash run.sh gesturegroupdemo`（转 90° → `+90`、反向 → `−90`、只转 0.29° 不触发、**单指不触发**） |
+| **`GestureGroup` 三态**：Exclusive 先认出者独占、其余作废；Sequence 用 `stage` 按序推进、**只有最后一个能收 `onActionEnd`**、半途抬指 → `onCancel`；Parallel 互不影响 | ✅ | `bash run.sh gesturegroupdemo`（`X;`/`UD;` 互斥；`S1;Sc;` vs `S1;S2;S2e;`；**阈值 1px 的 pan 在没轮到它时被门控挡住**） |
+| **手势优先级仲裁（元素级）**：`gesture`="子组件优先"、`priorityGesture`="父组件优先"、`parallelGesture`="准冒泡、父子都响应"、`GestureMask.IgnoreInternal`="禁用子组件手势"（均照 `.d.ts` 原文）；`pointerdown` 时一次性定下（内层先认领、外层可覆盖），**仲裁结论可内省** | ✅ | `bash run.sh gesturegroupdemo`（默认对只出子 `'e;'` vs priority 只出父 `'P;'`；parallel 出 `'d;L;'`；mask 出 `'M;'`；`arb='owner'/'suppressed'`） |
+| **`GesturePriority` 两套名字并存**：产物发的是 ets-loader 约定名 `Low/High/Parallel`（`pre_define.js`），`.d.ts` 声明的是 `NORMAL/PRIORITY` —— 两套必须同值对齐，否则三个属性在运行时区分不开 | ✅ | `bash run.sh gesturegroupdemo`（`Low===NORMAL===0`、`High===PRIORITY===1`、`Parallel===2`） |
 | **出现/消失过渡 `transition`**：`TransitionOptions`（自己没有时间字段 → 用外层 `animateTo` 窗口的参数）与 `TransitionEffect`（自带 `.animation()`，**不依赖** animateTo）；`TransitionType.Insert/Delete` 方向门控；`asymmetric` 两方向各用各的链与时长；`onFinish(transitionIn)`；**消失时节点留在 DOM 里把过渡走完再摘** | ✅ | `bash run.sh transitiondemo`（58 条断言；两档时长来源分别断言，`exit:d` 与 `enter:e` 必须**不存在**） |
 | **`onAreaChange`**：`newValue` = 真实宽高 + 相对父/页坐标；尺寸变化后再次触发，`oldValue` 为上一次真实值 | ✅ | measarea（`120x30` == 真实 rect；`0>100` → `100>140`） |
 | **自定义布局协议**（`onMeasureSize` + `onPlaceChildren`）：`Measurable.measure(c)` 回真实测量、返回值覆盖声明尺寸、`Layoutable.layout(pos)` 真摆放 | ✅ | measarea（`measure` 遵守 maxWidth=60、组件宽 = 返回的 60、三子项依次落位） |
@@ -150,7 +154,7 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 |---|---|---|
 | 同一份断言页在 Electron 里跑（不复制测试代码） | ✅ | electron 全矩阵 |
 | 真实渲染 + offscreen 截图（非白像素占比判定，非 `isEmpty()`） | ✅ | electron 各用例 |
-| 同一份断言的双端一致（29 个用例两个 runner 都过） | ✅ | run.sh / electron/run.sh |
+| 同一份断言的双端一致（30 个用例两个 runner 都过） | ✅ | run.sh / electron/run.sh |
 
 ---
 
@@ -171,7 +175,8 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
   `TabContent.tabBar` **只支持字符串标签**：`SubTabBarStyle`/`BottomTabBarStyle`/自定义 builder 会记警告并留空标签。
 - **`Swiper` 轮播已实现**（切换/指示点/loop/autoPlay），但有两条要紧的限制：
   1. **手势滑动完全没有**——只有"控制器 / 点指示点 / autoPlay"三条切换路径。真机上的左右滑动在本实现里不会翻页
-     （本项目整体未实现手势，见下）。`disableSwipe` 也会记 `layoutWarnings`。
+     （本项目的手势系统只覆盖显式绑定的 `Gesture`/`XxxGesture`，**组件的内置手势**——`List` 滚动、
+     `Swiper` 翻页、`Scroll` 拖动——都还没有）。`disableSwipe` 也会记 `layoutWarnings`。
   2. **无动画**：`duration`/`curve`/`effectMode`/`displayMode`/`displayCount`/`itemSpace`/`nextMargin`/`prevMargin`/
      `vertical`/`cachedCount`/`indicatorStyle`/`indicatorInteractive` 与全部动画/手势回调都记 `layoutWarnings`。
      `indicator` 只支持 boolean，传 `DotIndicator`/`DigitIndicator` 会**退化为默认圆点**并记警告。
@@ -240,7 +245,8 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 - v1 深度观测的已知边界：`@Observed` 只观测该类的**自身字段**，嵌套的非 `@Observed` 对象内部变更不触发
   （与真机一致，有负向断言守着）；`@Observed` 经 Proxy 实现，**未验证**对 `instanceof`、序列化、
   展开运算符、`for...in` 之外的反射行为有无边界差异
-- `chainMode`（相对布局的链式排列）、动画/过渡、手势（`gesture`/`panGesture`，**含 `Swiper` 的滑动翻页**）、`Refresh`
+- `chainMode`（相对布局的链式排列）、组件**内置手势**（`List` 滚动、`Swiper`/`Tabs` 滑动翻页、`Scroll` 拖动）、`Refresh`；另：`tabBar` 的自定义 builder、`onGestureJudgeBegin`/`shouldBuiltInRecognizerParallelWith` 这类**手势判定回调**未实现
+  （**显式绑定的手势**已完整：`Gesture`/`XxxGesture`/`GestureGroup`/`priorityGesture`/`parallelGesture`/`GestureMask`，见上表 R23 与 R23 收口）
 - **其余 85 个骨架组件的视觉语义**（R13 只把 `Progress`/`Gauge`/`DataPanel`/`Rating` 从骨架升级为手写绘制）
 - `If` 分支的 elmtId 复用优化
 - 父组件重渲染时**子视图内部 elmtId 迁移**未处理（深嵌套自定义组件可能出问题）

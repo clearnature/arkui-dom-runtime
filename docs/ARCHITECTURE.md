@@ -1147,7 +1147,7 @@ Electron         te=true （框宽变化的那几次过渡真的跑完并触发�
 **⚠️ 调用约定（实测产物）**：**两层栈**，全部是自由变量（不走 import）：
 
 ```js
-globalThis.Gesture.create(GesturePriority.LOW);   // ① 打开手势作用域
+globalThis.Gesture.create(GesturePriority.Low);   // ① 打开手势作用域（名字来自 ets-loader）
 PanGesture.create({ fingers: 1, direction: PanDirection.All, distance: 5 });
 PanGesture.onActionStart(cb); PanGesture.onActionUpdate(cb); PanGesture.onActionEnd(cb);
 PanGesture.pop();                                 // ② 收一个手势
@@ -1176,10 +1176,50 @@ globalThis.Gesture.pop();                         // ③ 关作用域 → 挂到
 **一个真踩到的 bug**：`PinchGesture` 的基准距离必须在**第二个指针按下时**取。写成"第一次 move 时取"，
 第一帧的移动就成了基准 → `scale` 永远是 1（识别器静默失效；破坏验证⑤复现出 3 条红）。
 
-**已知限制**：`RotationGesture`/`GestureGroup` 未实现（`RotationGesture` 只在类型表里登记，没有识别器）；
-`priorityGesture`/`parallelGesture` 未实现；**优先级与冲突仲裁**（`GesturePriority`/`GestureMode`/`GestureMask`）
-只记录不参与决策 —— 同一元素上多个手势**并列触发**；`onActionCancel` 只在 `pointercancel` 时派发；
-`fingerList` 恒为空数组。
+**已知限制**（前两条已由 4.17b 补上）：`RotationGesture`/`GestureGroup` 未实现
+（`RotationGesture` 只在类型表里登记，没有识别器）；`priorityGesture`/`parallelGesture` 未实现；
+**优先级与冲突仲裁**（`GesturePriority`/`GestureMode`/`GestureMask`）只记录不参与决策 ——
+同一元素上多个手势**并列触发**；`onActionCancel` 只在 `pointercancel` 时派发；`fingerList` 恒为空数组。
+
+### 4.17b 手势分组与优先级仲裁（R23 收口）
+
+**先看产物**（`fixtures/pages/GestureGroupDemo.ts`）。三条约定决定了实现形态：
+
+1. **三个属性只差一个实参**：`.gesture`→`Gesture.create(GesturePriority.Low)`、
+   `.priorityGesture`→`High`、`.parallelGesture`→`Parallel`；`Gesture.create` 是**两参**的
+   （第二参 `GestureMask`）。
+2. **这些枚举名来自 ets-loader，不是 `.d.ts`**：`ets-loader/lib/pre_define.js` 里
+   `GESTURE_ENUM_KEY="GesturePriority"` + `GESTURE_ENUM_VALUE_LOW/HIGH/PARALLEL="Low"/"High"/"Parallel"`，
+   经 `createPropertyAccessExpression(Identifier("GesturePriority"), Identifier(gestureMap.get(attr)))` 发射。
+   `.d.ts` 里的 `GesturePriority { NORMAL = 0, PRIORITY = 1 }` 是**另一套**（API 12 `addGesture` 用）。
+   运行时两套都要提供（`NORMAL=Low`、`PRIORITY=High`，`Parallel` 是产物独有的第三档）。
+   —— 这是 4.17 留下的 bug：只定义了 `{NORMAL, PRIORITY}`，于是 `GesturePriority.Low` 是 `undefined`，
+   **三个属性在运行时完全区分不开**。
+3. **`GestureGroup` 是容器式的 create/pop**：`GestureGroup.create(mode)` → `onCancel` →
+   组内各手势 `create/on*/pop`（`pushGestureRecord` 归入**最近的组**）→ `GestureGroup.pop()`（组进**作用域**）。
+   组的识别状态（`winner`/`stage`/`anyRecognized`）挂在组记录上，识别时由 `rec.__group` 反查。
+
+**仲裁分两层，互不干扰**：
+
+- **元素级（父子包含链）**：在 `pointerdown` 时**一次性定下**，识别循环只查结论（`gestureArbState`）。
+  依据是 `CommonMethod` 的文档原文：`gesture`="子组件优先"、`priorityGesture`="父组件优先"、
+  `parallelGesture`="准冒泡、父子都响应"、`GestureMask.IgnoreInternal`="禁用子组件手势"。
+  做法：pointer 事件**由内向外冒泡** → 内层先"认领"，外层后到可覆盖；档位 `block > high > parallel > low`，
+  同级按"内层优先"；`parallel` 不参与独占但**始终可触发**。指针捕获只交给**最内层**参战元素
+  （捕获只改 target，事件仍沿祖先链冒泡，所以链上每个元素都还收得到）。
+- **组级（`GestureGroup` 三态）**：Exclusive 先认出者独占、其余作废；Sequence 用 `stage` 按序推进
+  且"只有最后一个能收 `onActionEnd`"；Parallel 互不影响。会话收尾（全部抬手 / `pointercancel`）时
+  `settleGroups()` 判 `onCancel` 并把状态归零。
+
+**两个"静默失效"级的坑**（都由断言抓出，见 `docs/DEVELOPING.md` 坑 81/82）：
+`pointerup` 会**继续往外冒泡**，会话状态若被最内层先删掉，外层就查不到仲裁结论、被压制的祖先会**误触发**
+（改成只由**冒泡路径上最后参战的那个元素**删）；识别器在"回调被组门控挡下"时若照样把 `started` 置真，
+被挡的手势此后**永远发不出 `onActionStart`**（改成 `fireGesture` 返回"有没有被放行"，只在放行时推进状态）。
+
+**已知限制**：组/仲裁语义按 `.d.ts` 文档注释实现，**不是真机实测**（本机没有 ArkVM）；
+`RotationGesture` 起始线取第二指按下时的连线（`.d.ts` 写"detected 时"，差异上界即 `angle` 阈值）；
+`IgnoreInternal` 按文档正文实现为"压制所有后代（含并行）"；同一元素内的多个作用域按元素取最高档，
+不逐手势区分；多指分别落在不同元素时按"每个指针各自认领"处理（近似）；`fingerList` 仍恒为空。
 
 ---
 
@@ -1255,7 +1295,7 @@ globalThis.Gesture.pop();                         // ③ 关作用域 → 挂到
   属性元数据总数       1078（平均 7.2／组件，最多 TextInput=70）
 
 == 运行时 API ==
-  global 导出        146 个
+  global 导出        154 个
   状态类            ObservedPropertySimplePU ObservedPropertyObjectPU SynchedPropertySimpleOneWayPU SynchedPropertySimpleTwoWayPU SynchedPropertyNesedObjectPU
   内置组件          Text Button Column Row Stack List ListItem If ForEach LazyForEach RelativeContainer Tabs TabContent Swiper Navigation NavDestination Progress Gauge DataPanel Rating
   内部钩子 __arkui_dom_*  30 个
@@ -1272,102 +1312,104 @@ globalThis.Gesture.pop();                         // ③ 关作用域 → 挂到
   14 个：app.ability.AbilityConstant app.ability.ConfigurationConstant app.ability.UIAbility app.ability.Want data.preferences file.fs hilog measure multimedia.image net.http notificationManager promptAction router window
 
 == 用例矩阵 ==
-  浏览器 run.sh     30 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify measure lazy provide v2 observe async ability promptaction realfs animdemo gesturedemo transitiondemo router netfile persist
-  Electron          29 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs animdemo gesturedemo transitiondemo measure lazy provide async v2 observe
-  测试页            30 个
-  fixtures 转换产物  28 个：AnimDemo AsyncIO Callee Detail DrawDemo GestureDemo Home Index Layout Lazy LazyVar MeasArea MeasImage MeasNotify Measure NavDemo NetFile Observe PromptAct Provide RelDemo Rich SwiperDemo TabsGrid TextMeasure TransitionDemo V2 Widgets
+  浏览器 run.sh     31 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify measure lazy provide v2 observe async ability promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo router netfile persist
+  Electron          30 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo measure lazy provide async v2 observe
+  测试页            31 个
+  fixtures 转换产物  29 个：AnimDemo AsyncIO Callee Detail DrawDemo GestureDemo GestureGroupDemo Home Index Layout Lazy LazyVar MeasArea MeasImage MeasNotify Measure NavDemo NetFile Observe PromptAct Provide RelDemo Rich SwiperDemo TabsGrid TextMeasure TransitionDemo V2 Widgets
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          312.9 KB
-  test             224.8 KB
+  runtime          328.4 KB
+  test             239.3 KB
   tools            46.4 KB
-  electron(src)    18.9 KB
-  docs             318.1 KB
-  fixtures         216.4 KB
+  electron(src)    19.2 KB
+  docs             332.1 KB
+  fixtures         236.4 KB
 
 == 逐文件（文档"文件职责"表的来源）==
-  runtime/arkui-dom-runtime.js      204998 B  200.2 KB
-  runtime/generated-components.js    57617 B  56.3 KB
-  runtime/ohos-shims.js              57789 B  56.4 KB
-  tools/extract.mjs                   6563 B  6.4 KB
-  tools/gen-components.mjs            7775 B  7.6 KB
-  tools/serve.py                      3887 B  3.8 KB
-  tools/stats.mjs                    13442 B  13.1 KB
-  tools/assert-counts.mjs             7476 B  7.3 KB
-  tools/preflight.mjs                 5178 B  5.1 KB
-  tools/check-all.sh                  3171 B  3.1 KB
-  run.sh                             15889 B  15.5 KB
-  electron/run.sh                    10406 B  10.2 KB
-  electron/main.js                    6795 B  6.6 KB
-  electron/preload.js                 1961 B  1.9 KB
-  package.json                        1207 B  1.2 KB
-  .gitignore                           674 B  0.7 KB
-  README.md                          68426 B  66.8 KB
-  THIRD-PARTY-NOTICES.md              8256 B  8.1 KB
-  docs/ARCHITECTURE.md              106440 B  103.9 KB
-  docs/CAPABILITY.md                 32145 B  31.4 KB
-  docs/DEVELOPING.md                 49810 B  48.6 KB
-  docs/ROADMAP.md                    70217 B  68.6 KB
-  docs/surface-measurement.md         6496 B  6.3 KB
-  docs/SESSION-2026-09-20.md         12842 B  12.5 KB
-  fixtures/pages/AnimDemo.ts          6451 B  6.3 KB
-  fixtures/pages/AsyncIO.ts           6206 B  6.1 KB
-  fixtures/pages/Callee.ts            1726 B  1.7 KB
-  fixtures/pages/Detail.ts            3097 B  3.0 KB
-  fixtures/pages/DrawDemo.ts         10867 B  10.6 KB
-  fixtures/pages/GestureDemo.ts       6561 B  6.4 KB
-  fixtures/pages/Home.ts              3232 B  3.2 KB
-  fixtures/pages/Index.ts             2737 B  2.7 KB
-  fixtures/pages/Layout.ts            3434 B  3.4 KB
-  fixtures/pages/Lazy.ts              4485 B  4.4 KB
-  fixtures/pages/LazyVar.ts           7774 B  7.6 KB
-  fixtures/pages/MeasArea.ts          8522 B  8.3 KB
-  fixtures/pages/MeasImage.ts        12199 B  11.9 KB
-  fixtures/pages/MeasNotify.ts        5355 B  5.2 KB
-  fixtures/pages/Measure.ts           6262 B  6.1 KB
-  fixtures/pages/NavDemo.ts          14129 B  13.8 KB
-  fixtures/pages/NetFile.ts           5039 B  4.9 KB
-  fixtures/pages/Observe.ts          11906 B  11.6 KB
-  fixtures/pages/PromptAct.ts         6916 B  6.8 KB
-  fixtures/pages/Provide.ts           6731 B  6.6 KB
-  fixtures/pages/RelDemo.ts           9702 B  9.5 KB
-  fixtures/pages/Rich.ts              9256 B  9.0 KB
-  fixtures/pages/SwiperDemo.ts        7876 B  7.7 KB
-  fixtures/pages/TabsGrid.ts         10513 B  10.3 KB
-  fixtures/pages/TextMeasure.ts      11625 B  11.4 KB
-  fixtures/pages/TransitionDemo.ts   14311 B  14.0 KB
-  fixtures/pages/V2.ts               13447 B  13.1 KB
-  fixtures/pages/Widgets.ts           4600 B  4.5 KB
-  test/ability.html                   4695 B  4.6 KB
-  test/animdemo.html                 11498 B  11.2 KB
-  test/async.html                     5977 B  5.8 KB
-  test/components.html                5566 B  5.4 KB
-  test/drawdemo.html                 12765 B  12.5 KB
-  test/gesturedemo.html               9875 B  9.6 KB
-  test/index.html                     3560 B  3.5 KB
-  test/layout.html                    4135 B  4.0 KB
-  test/lazy.html                      4380 B  4.3 KB
-  test/lazyvar.html                  10093 B  9.9 KB
-  test/leak.html                      3921 B  3.8 KB
-  test/measarea.html                  9231 B  9.0 KB
-  test/measimage.html                 5110 B  5.0 KB
-  test/measnotify.html               10722 B  10.5 KB
-  test/measure.html                   6072 B  5.9 KB
-  test/navdemo.html                  13765 B  13.4 KB
-  test/netfile.html                   5302 B  5.2 KB
-  test/observe.html                   6232 B  6.1 KB
-  test/opfs-probe.html                1620 B  1.6 KB
-  test/promptaction.html             12719 B  12.4 KB
-  test/provide.html                   4238 B  4.1 KB
-  test/realfs.html                   10788 B  10.5 KB
-  test/reldemo.html                   7328 B  7.2 KB
-  test/rich.html                      3794 B  3.7 KB
-  test/router.html                    4288 B  4.2 KB
-  test/swiper.html                    9177 B  9.0 KB
-  test/tabgrid.html                  10096 B  9.9 KB
-  test/textmeasure.html               9021 B  8.8 KB
-  test/transitiondemo.html           17007 B  16.6 KB
-  test/v2.html                        7235 B  7.1 KB
+  runtime/arkui-dom-runtime.js        220899 B  215.7 KB
+  runtime/generated-components.js      57617 B  56.3 KB
+  runtime/ohos-shims.js                57789 B  56.4 KB
+  tools/extract.mjs                     6563 B  6.4 KB
+  tools/gen-components.mjs              7775 B  7.6 KB
+  tools/serve.py                        3887 B  3.8 KB
+  tools/stats.mjs                      13442 B  13.1 KB
+  tools/assert-counts.mjs               7476 B  7.3 KB
+  tools/preflight.mjs                   5178 B  5.1 KB
+  tools/check-all.sh                    3171 B  3.1 KB
+  run.sh                               16406 B  16.0 KB
+  electron/run.sh                      10652 B  10.4 KB
+  electron/main.js                      6795 B  6.6 KB
+  electron/preload.js                   1961 B  1.9 KB
+  package.json                          1207 B  1.2 KB
+  .gitignore                             674 B  0.7 KB
+  README.md                            75020 B  73.3 KB
+  THIRD-PARTY-NOTICES.md                8256 B  8.1 KB
+  docs/ARCHITECTURE.md                110397 B  107.8 KB
+  docs/CAPABILITY.md                   34188 B  33.4 KB
+  docs/DEVELOPING.md                   53076 B  51.8 KB
+  docs/ROADMAP.md                      75275 B  73.5 KB
+  docs/surface-measurement.md           6496 B  6.3 KB
+  docs/SESSION-2026-09-20.md           12842 B  12.5 KB
+  fixtures/pages/AnimDemo.ts            6451 B  6.3 KB
+  fixtures/pages/AsyncIO.ts             6206 B  6.1 KB
+  fixtures/pages/Callee.ts              1726 B  1.7 KB
+  fixtures/pages/Detail.ts              3097 B  3.0 KB
+  fixtures/pages/DrawDemo.ts           10867 B  10.6 KB
+  fixtures/pages/GestureDemo.ts         6561 B  6.4 KB
+  fixtures/pages/GestureGroupDemo.ts   20489 B  20.0 KB
+  fixtures/pages/Home.ts                3232 B  3.2 KB
+  fixtures/pages/Index.ts               2737 B  2.7 KB
+  fixtures/pages/Layout.ts              3434 B  3.4 KB
+  fixtures/pages/Lazy.ts                4485 B  4.4 KB
+  fixtures/pages/LazyVar.ts             7774 B  7.6 KB
+  fixtures/pages/MeasArea.ts            8522 B  8.3 KB
+  fixtures/pages/MeasImage.ts          12199 B  11.9 KB
+  fixtures/pages/MeasNotify.ts          5355 B  5.2 KB
+  fixtures/pages/Measure.ts             6262 B  6.1 KB
+  fixtures/pages/NavDemo.ts            14129 B  13.8 KB
+  fixtures/pages/NetFile.ts             5039 B  4.9 KB
+  fixtures/pages/Observe.ts            11906 B  11.6 KB
+  fixtures/pages/PromptAct.ts           6916 B  6.8 KB
+  fixtures/pages/Provide.ts             6731 B  6.6 KB
+  fixtures/pages/RelDemo.ts             9702 B  9.5 KB
+  fixtures/pages/Rich.ts                9256 B  9.0 KB
+  fixtures/pages/SwiperDemo.ts          7876 B  7.7 KB
+  fixtures/pages/TabsGrid.ts           10513 B  10.3 KB
+  fixtures/pages/TextMeasure.ts        11625 B  11.4 KB
+  fixtures/pages/TransitionDemo.ts     14311 B  14.0 KB
+  fixtures/pages/V2.ts                 13447 B  13.1 KB
+  fixtures/pages/Widgets.ts             4600 B  4.5 KB
+  test/ability.html                     4695 B  4.6 KB
+  test/animdemo.html                   11498 B  11.2 KB
+  test/async.html                       5977 B  5.8 KB
+  test/components.html                  5566 B  5.4 KB
+  test/drawdemo.html                   12765 B  12.5 KB
+  test/gesturedemo.html                 9875 B  9.6 KB
+  test/gesturegroupdemo.html           14791 B  14.4 KB
+  test/index.html                       3560 B  3.5 KB
+  test/layout.html                      4135 B  4.0 KB
+  test/lazy.html                        4380 B  4.3 KB
+  test/lazyvar.html                    10093 B  9.9 KB
+  test/leak.html                        3921 B  3.8 KB
+  test/measarea.html                    9231 B  9.0 KB
+  test/measimage.html                   5110 B  5.0 KB
+  test/measnotify.html                 10722 B  10.5 KB
+  test/measure.html                     6072 B  5.9 KB
+  test/navdemo.html                    13765 B  13.4 KB
+  test/netfile.html                     5302 B  5.2 KB
+  test/observe.html                     6232 B  6.1 KB
+  test/opfs-probe.html                  1620 B  1.6 KB
+  test/promptaction.html               12719 B  12.4 KB
+  test/provide.html                     4238 B  4.1 KB
+  test/realfs.html                     10788 B  10.5 KB
+  test/reldemo.html                     7328 B  7.2 KB
+  test/rich.html                        3794 B  3.7 KB
+  test/router.html                      4288 B  4.2 KB
+  test/swiper.html                      9177 B  9.0 KB
+  test/tabgrid.html                    10096 B  9.9 KB
+  test/textmeasure.html                 9021 B  8.8 KB
+  test/transitiondemo.html             17007 B  16.6 KB
+  test/v2.html                          7235 B  7.1 KB
 ```
 
 **"149 / 149" 的准确含义**：149 个组件**名字**都能建出 DOM 节点（不崩、有基础标签/样式）。其中 **64 个有真实 DOM 画像**（10 手写 + 54 骨架），**85 个只落 `data-*`**（能建出来但视觉上是个 `div`）。这不等于"实现了 149 个组件"。

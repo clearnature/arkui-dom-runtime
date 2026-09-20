@@ -6,6 +6,7 @@
     "pages/Callee",
     "pages/AnimDemo",
     "pages/GestureDemo",
-    "pages/TransitionDemo"
+    "pages/TransitionDemo",
+    "pages/GestureGroupDemo"
   ]
 }

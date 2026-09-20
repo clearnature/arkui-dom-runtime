@@ -86,11 +86,11 @@ tools/serve.py                 极简静态服务（端口由 OS 分配，避免
 tools/preflight.mjs            环境自检（工具链 / 宿主 / 可执行位）
 tools/check-all.sh             一条命令做完所有验收
 tools/stats.mjs                覆盖范围统计（文档里的数字都来自它）
-test/*.html                    断言页（30 个用例；断言数由 runner 守门，见 docs/DEVELOPING.md 坑 77）
-fixtures/                      冻结的 ets-loader 转换产物（28 个，测试的输入）
+test/*.html                    断言页（31 个用例；断言数由 runner 守门，见 docs/DEVELOPING.md 坑 77）
+fixtures/                      冻结的 ets-loader 转换产物（29 个，测试的输入）
 harmony-proj/                  HarmonyOS 工程（页面 .ets 源码，转换产物的来源；构建输出不入库）
-run.sh                         浏览器 30 用例驱动
-electron/run.sh                Electron 29 用例 + 真实磁盘验证
+run.sh                         浏览器 31 用例驱动
+electron/run.sh                Electron 30 用例 + 真实磁盘验证
 docs/                          ARCHITECTURE / DEVELOPING / ROADMAP / CAPABILITY
 ```
 
@@ -581,7 +581,7 @@ PASS scale = 距离比 120/40 = 3（实际 'scale=3.00'）
 **产物里没有 `.gesture()` 方法** —— 手势走的是**两层栈**（全部自由变量）：
 
 ```js
-globalThis.Gesture.create(GesturePriority.LOW);   // ① 打开作用域
+globalThis.Gesture.create(GesturePriority.Low);   // ① 打开作用域（名字来自 ets-loader，见「R23 收口」）
 PanGesture.create({ fingers: 1, direction: PanDirection.All, distance: 5 });
 PanGesture.onActionStart(cb); … ;
 PanGesture.pop();                                 // ② 收一个手势
@@ -601,8 +601,76 @@ globalThis.Gesture.pop();                         // ③ 关作用域 → 挂到
 （第二项**第一次注入失败**：改的是"未传 distance 时的默认值"分支，而 fixture 显式传了 `distance: 5` ——
 **变异没落在被测路径上**，断言照样通过。改成真的忽略阈值才红，记进了坑表 75。）
 
-**未实现（不算进本条验收）**：`RotationGesture`/`GestureGroup`/`priorityGesture`/`parallelGesture`；
-手势**优先级与冲突仲裁**只记录不参与决策（同一元素上多个手势并列触发）；`fingerList` 恒为空。
+**本条验收时未实现**（同日由下一节「R23 收口」全部补上）：`RotationGesture`/`GestureGroup`/
+`priorityGesture`/`parallelGesture`，以及手势**优先级与冲突仲裁** —— 当时同一元素上多个手势会**并列触发**。
+（**遗留至今**：`fingerList` 恒为空数组 —— 不合成手指轨迹。）
+
+## R23 收口：手势分组与优先级仲裁 ✅
+
+R23 明确留下的四项：`RotationGesture`、`GestureGroup`（三态）、`priorityGesture`/`parallelGesture`、
+以及**优先级仲裁**（原先 `GesturePriority`/`GestureMode`/`GestureMask` 只记录、不参与决策）。
+
+**先测量**（新增 `pages/GestureGroupDemo.ets` → 官方构建 → 读产物），量出三条关键约定：
+
+1. **三个属性发射的是同一套协议**，只差 `Gesture.create()` 的第一个实参：
+   `.gesture` → `GesturePriority.Low`、`.priorityGesture` → `High`、`.parallelGesture` → `Parallel`。
+2. **这些名字来自 ets-loader，不是 `.d.ts`**：`pre_define.js` 里 `GESTURE_ENUM_KEY="GesturePriority"` +
+   `GESTURE_ENUM_VALUE_LOW/HIGH/PARALLEL="Low"/"High"/"Parallel"`；而 `.d.ts` 声明的
+   `GesturePriority { NORMAL = 0, PRIORITY = 1 }` 是**另一套**（API 12 的 `addGesture` 用）。
+   **旧实现只定义了 `{NORMAL, PRIORITY}` → 产物的 `GesturePriority.Low` 是 `undefined`，
+   三个属性在运行时完全区分不开**（都退化成默认档）。这是本轮修掉的 bug，现在两套名字并存
+   （`NORMAL=Low`、`PRIORITY=High`，`Parallel` 是产物独有的第三档）。
+3. **`GestureGroup` 是"容器式"的 create/pop 协议**，`onCancel` 紧跟 create；`Gesture.create` 还是
+   **两参**的（第二参 `GestureMask`，旧实现只取第一个）：
+
+```js
+globalThis.Gesture.create(GesturePriority.Low);                       // 作用域
+GestureGroup.create(GestureMode.Exclusive);                           // 组（容器）
+GestureGroup.onCancel(cb);
+TapGesture.create({…}); TapGesture.onAction(cb); TapGesture.pop();    // 进的是【组】而不是作用域
+PanGesture.create({…}); PanGesture.onActionStart(cb); PanGesture.pop();
+GestureGroup.pop();                                                   // 组进【作用域】
+globalThis.Gesture.pop();                                             // 挂到组件栈顶元素
+```
+
+**仲裁按三条独立规则实现**，每条都引了 `.d.ts` 原文（见运行时注释）：
+**元素级（父子链）** `gesture`="子组件优先"、`priorityGesture`="父组件优先"、`parallelGesture`="准冒泡、
+父子都响应"、`GestureMask.IgnoreInternal`="禁用子组件手势"，在 `pointerdown` 时**一次性定下**
+（事件由内向外冒泡 → 内层先认领、外层可覆盖），识别循环只查结论；**组级** Exclusive 先认出者独占、
+Sequence 按序推进且"只有最后一个能收 `onActionEnd`"、Parallel 互不影响；**元素内多作用域**取最高档
+（`block > high > parallel > low`），不做逐手势区分（已知近似）。
+
+```
+$ bash run.sh gesturegroupdemo
+=== ALL PASS ===                    （39 条断言）
+PASS GesturePriority.Low 与声明名 NORMAL 同值（Low=0）／High 与 PRIORITY 同值／Parallel 是独立第三档
+PASS #gx 登记为 Exclusive[tap,pan]／#gs=Sequence[longPress,pan]／#gs2=Sequence[pan,pan]／#gp=Parallel[tap,longPress]
+PASS angle = +90°（顺时针为正）／反向旋转 → −90°／只转 0.29° < 阈值 1° 不触发
+PASS 单指移动不触发 rotation（fingers:2 要真的起作用）
+PASS 长按后直接抬指 → 第 2 段不认 + 组 onCancel（'S1;Sc;'）
+PASS 位移 2px：阈值 1px 的 pan 被序列门控挡住（''）
+PASS 只有最后一个手势能收 onActionEnd（非末位 pan 的 End 被挡，'U1;U2;U2e;'）
+PASS 默认：子优先、父不被触发（'e;'）／priorityGesture：只有父触发（'P;'）
+PASS parallelGesture：子与父都触发（'d;L;'）／IgnoreInternal：子组件手势被禁用（'M;'）
+PASS 仲裁决议可内省：父是 owner、子被 suppressed
+```
+
+**修掉的两个真 bug**（都是"静默失效"型，靠断言才现形）：
+① `pointerup` 会**继续往外冒泡**，而会话状态被最内层元素先删掉 → 外层查不到仲裁结论、被压制的祖先
+**误触发**（默认档的父子对当场红）→ 改成只由**冒泡路径上最后参战的那个元素**删会话；
+② 识别器在"回调被组门控挡下"时**照样把 `started` 置真** → 被挡的手势此后永远发不出 `onActionStart`
+（Sequence 里表现为"该认的不认、不该发的 End 乱发"）→ 改成 `fireGesture` 返回"有没有被放行"，
+识别器只在放行时推进内部状态。
+
+**破坏验证**（3 项，各被精确抓住）：① 关掉元素级仲裁门控 → 恰好 3 条红（默认对 / priority / mask）；
+② 旋转角度取绝对值 → 恰好 1 条红（反向旋转）；③ 拿掉 Sequence 门控 → 3 条红，且日志里 `U2;`
+抢在 `U1;` 前面（乱序可见）。
+
+**已知限制**：**组与仲裁的语义是按 `.d.ts` 文档注释实现的，不是真机实测** —— 本机没有 ArkVM（见
+`docs/ARKVM-RESEARCH.md`），这里是"按文档 + 断言固化"；`RotationGesture` 的起始线取**第二指按下时**的
+连线（`.d.ts` 说"detected 时"，差异上界即 `angle` 阈值本身）；`GestureMask.IgnoreInternal` 按文档正文
+实现为"压制所有后代（含并行）"；多指分别落在不同元素上时，元素级仲裁按"每个指针各自认领"处理（近似）；
+`fingerList` 仍恒为空。
 
 ## R22：显式动画 `animateTo` ✅
 
@@ -1042,19 +1110,20 @@ PASS starStyle 的图片 URI 不可用已记警告
 | 文档数字守门 | `npm run stats:check-doc` | `ARCHITECTURE.md` §6 的整块实测数字逐行比对，漂移即非 0 退出；`stats:write-doc` 就地重写 |
 | 覆盖统计 | `npm run stats` | 文档里的所有数字都由它产出（`--json` 机器可读） |
 
-`npm run check` 当前：**浏览器 30 用例 + Electron 29 用例全绿**。
+`npm run check` 当前：**浏览器 31 用例 + Electron 30 用例全绿**。
 
 ## 下一步
 
 **权威清单在 `docs/ROADMAP.md`**（每项带可复现的验收命令）。当前优先：
 
-1. `RotationGesture`/`GestureGroup` 与手势优先级仲裁（R23 明确留下的）
-2. `Navigation` 的标题栏/工具栏与分栏模式、其余 85 个骨架组件的视觉语义、`@ohos:media`/`UIContext`
+1. `Navigation` 的标题栏/工具栏与分栏模式、其余 85 个骨架组件的视觉语义、`@ohos:media`/`UIContext`
+2. **`runtime/` 的物理拆分**（见下方「已知待办」最后一条）
 
-> 已完成的两项：`transition`（见上文「R22 收口」）、**R24 ArkVM/`.abc` 路径调研**（`docs/ARKVM-RESEARCH.md`）。
+> 已完成：`transition`（见上文「R22 收口」）、**手势分组与优先级仲裁**（见上文「R23 收口」）、
+> **R24 ArkVM/`.abc` 路径调研**（`docs/ARKVM-RESEARCH.md`）。
 
-**仍未覆盖**：`RotationGesture`/`GestureGroup` 与手势优先级仲裁、
-`chainMode`、`Navigation` 的**标题栏/工具栏与分栏模式**、其余 85 个骨架组件的视觉语义、`@ohos:media`/`UIContext`。
+**仍未覆盖**：`chainMode`、`Navigation` 的**标题栏/工具栏与分栏模式**、其余 85 个骨架组件的视觉语义、
+`@ohos:media`/`UIContext`。
 **别把没验的当结论**——`docs/CAPABILITY.md` 里有逐项的能力矩阵，其中标了哪些语义是**推断**的。
 
 **已知待办（别当已完成）**：
@@ -1075,6 +1144,17 @@ PASS starStyle 的图片 URI 不可用已记警告
   `Navigation` 的标题栏与分栏 / `Grid` 无模板时的 `cellLength` 自适应 / `chainMode` /
   `Gauge.indicator`·`trackShadow` **未覆盖**（这些会记 `layoutWarnings`，不是静默忽略）
 - **布局仍不是约束求解器**：多层锚链靠不动点迭代（有上限），环状锚定只记警告
+- **`runtime/arkui-dom-runtime.js` 是 4615 行、约 216 KB 的单闭包**（`runtime/` 三个文件合计约 328 KB / 9243 行）。
+  它**不是没结构**（内部 30 个分节/子节横幅覆盖 99% 的字节：141 个函数 / 13 个类 / 147 个顶层 const），
+  但**没有物理拆分**。约束是真实的：产物是经典脚本（全文 0 个 `import`/`export`，由 30 个手写 HTML
+  按固定顺序 `<script src>` 加载，Electron 直接加载同一批页面），`tools/` 里**没有打包器**，
+  而 `elmtIdSeq`/`elmtRecords`/`propDeps`/`ViewStackProcessor`/`currentNodeElmtId`/`pageStack`
+  是被各节双向引用的闭包状态。
+  已实测**最容易下的一刀**：动画+手势两节（281–1373 行，1093 行 / 约 54 KB）向内只提到
+  `ViewStackProcessor` 1 次、`mountNode` 1 次（`elmtRecords` **0 次**），向外只被 4 个入口引用
+  （`registerTransition` ×2、`detachChildren` ×2、`transitionsDescribe`/`gestureTypes` 各 1）；
+  它自己 80 个顶层定义里 **54 个零外部引用**。
+  拆法待定（"源拆分 + 极简拼接、产物仍单文件"会把 `runtime/*.js` 从手写源变成生成物，属约定变更）。
 
 ---
 
