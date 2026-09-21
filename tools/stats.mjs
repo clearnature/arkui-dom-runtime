@@ -33,7 +33,9 @@ const HANDWRITTEN = ['Text', 'Button', 'Column', 'Row', 'Stack', 'List', 'ListIt
   // R28：信息展示类（Badge/Counter/Divider/Marquee；QRCode 需要 QR 编码器，单列）
   'Badge', 'Counter', 'Divider', 'Marquee',
   // R29：弹出类（Select/Menu/MenuItem）
-  'Select', 'Menu', 'MenuItem'];
+  'Select', 'Menu', 'MenuItem',
+  // R31：表层类（Canvas；XComponent 单列）
+  'Canvas'];
 const CONTROL_FLOW = ['If', 'ForEach', 'LazyForEach'];   // 不在 149 注册表内，单独实现
 
 const gen = read('runtime/generated-components.js');

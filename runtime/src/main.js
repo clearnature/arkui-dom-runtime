@@ -1478,6 +1478,8 @@
 
   // @include popup
 
+  // @include canvas
+
   // ── 由 tools/gen-components.mjs 生成的 149 个组件骨架 ──
   // 手写实现（上面那些，已被测试覆盖）优先；生成的只补缺口。
   // 骨架保证"能建出正确的 DOM 标签 + 基础样式"，精细化布局语义按需手补（见 docs）。
@@ -1674,6 +1676,8 @@
     Badge, Counter, Divider, Marquee, BadgePosition,
     // R29：弹出类
     Select, Menu, MenuItem,
+    // R31：表层类。ctx 的两个类在产物里是 `new CanvasRenderingContext2D(...)` 自由变量引用
+    Canvas, CanvasRenderingContext2D, RenderingContextSettings,
     __Common__: _CommonWrapper,
     FontWeight, VerticalAlign, HorizontalAlign, FlexAlign, TextAlign, ItemAlign, Color,
     TextOverflow, Alignment, Scroller, Axis,

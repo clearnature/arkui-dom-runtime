@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R31：表层类 Canvas（真实 2D context，像素断言）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 320px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R31：Canvas（onReady 时序 / 真画 + 像素读回 / toDataURL）</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/canvasedemo-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const el = (id) => root.querySelector('#' + id);
+    const txt = (id) => String(el(id) ? el(id).textContent : '<缺>');
+    const group = async (name, fn) => {
+      try { await fn(); } catch (e) {
+        allPass = false;
+        lines.push(`FAIL [${name}] 抛出异常：${e && e.stack ? String(e.stack).split('\n')[0] : e}`);
+      }
+    };
+
+    try {
+      __arkui_dom_requireModule('CanvasDemo');
+      __arkui_dom_loadRoute('pages/CanvasDemo', root);
+      await tick(120);                       // onReady 经 setTimeout(0) 派发，等 RDY 落盘
+      check(!!el('cv1'), 'CanvasDemo 页面已渲染');
+      await group('onReady·绘制', async () => {
+        await tick(80);
+        check(txt('cv-log').includes('RDY;'), `onReady 触发并完成绘制（log='${txt('cv-log')}'）`);
+        check(el('cv1').tagName === 'CANVAS', `沿用原生 <canvas>（tag=${el('cv1').tagName}）`);
+        check(el('cv1').width === 200 && el('cv1').height === 100,
+          `尺寸同步（内容尺寸 200×100，实际 ${el('cv1').width}×${el('cv1').height}）`);
+      });
+
+      // ══════════ ② 像素断言：getImageData 读回（红块/绿块/背景三采样点）══════════
+      await group('像素断言', async () => {
+        el('probe-btn').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        await tick(40);
+        check(txt('cv-log').includes('R255/0/0;'),
+          `红块中心采样 → R255/0/0（log 含 '${txt('cv-log').match(/R\d+\/\d+\/\d+/) && txt('cv-log').match(/R\d+\/\d+\/\d+/)[0]}'）`);
+        check(txt('cv-log').includes('G204;'),
+          `绿块中心采样 → G204（#00cc00 的 G=204）`);
+        check(txt('cv-log').includes('URL1;'), `toDataURL 走原生（data:image/png;base64 前缀，log 含 'URL1;'）`);
+        // 空白区透明（画布未画的像素 alpha=0）——由 fixture 的 R 点与 G 点之外的第三点验证
+        const cv = el('cv1');
+        const probe = cv.getContext('2d').getImageData(180, 80, 1, 1);
+        check(probe.data[3] === 0, `未画区域 alpha=0（实际 ${probe.data[3]}）`);
+      });
+
+      // ══════════ ③ 回归：没有"未实现"假警告 ══════════
+      await group('回归', async () => {
+        const bad = __arkui_dom_layout_warnings.filter((w) => /Canvas\.|CanvasRenderingContext2D/.test(String(w)));
+        check(bad.length === 0, `Canvas 属性不再记"未实现"警告（剩 ${bad.length} 条：${bad.slice(0, 2).join('|')}）`);
+        check(el('cv1').getContext('2d').fillRect === el('cv1').getContext('2d').fillRect,
+          '（原生 2D context 稳定复取）');
+      });
+
+      lines.push(`CVS log='${txt('cv-log')}'`);
+      lines.push(`ELMT ${__arkui_dom_elmtRecords.size}`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

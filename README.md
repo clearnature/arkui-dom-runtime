@@ -900,6 +900,46 @@ getRouter/getPromptAction/runScopedTask）；`getFrameNode`/`getMediaQuery`/`ope
 属性映射与 Tabs 之间）、`fixtures/pages/UiContextDemo.ts`、`harmony-proj/`（UiContextDemo.ets +
 main_pages.json）、`test/uictxdemo.html`、`run.sh`、`electron/run.sh`
 
+## R31：表层类 `Canvas`（真实 2D context）✅
+
+**测量**（新增 `pages/CanvasDemo.ets` → 官方构建）实测形态：`Canvas(this.context)` 的 create
+参数是 **ctx 对象**；`new CanvasRenderingContext2D(settings)`（settings 来自
+`RenderingContextSettings(antialias, alpha)`）；`onReady(cb)`——JSDoc 原文："perform any drawing
+after this event is triggered"；绘制面（fillRect/fillText/getImageData/toDataURL…）就是标准
+Canvas 2D（`CanvasRenderer`）。
+
+**实现**（新分片 `runtime/src/canvas.js`，第 14 个，手写优先）：手写 Canvas → **原生 `<canvas>`**；
+ctx 对象**转发**到原生 2D context——fillRect/像素/toDataURL 都是浏览器真画，
+**像素断言天然有牙齿**（`getImageData` 读回坐标采样）。三件事：① create 时"交接"原生 context
+（ctx 先于 Canvas 创建，用户字段初始化）；② onReady 的派发在 `.width/.height` 应用完之后
+（`setTimeout(0)`，坑 ⑧——同步派发时画布还没有尺寸），派发前把 CSS 尺寸同步到 canvas 内容
+尺寸（1:1）；③ `fillStyle/font/lineWidth` 等 getter/setter 与方法显式转发（不用 Proxy——
+方法清单是有限的、可断言的）。
+
+```
+$ bash run.sh canvasedemo
+=== ALL PASS ===                    （10 条断言，双端同数）
+PASS onReady 触发并完成绘制（RDY）／原生 <canvas>／内容尺寸 200×100（CSS 1:1 同步）
+PASS 像素采样：红块中心 R255/0/0／绿块 G204（#00cc00）／未画区 alpha=0
+PASS toDataURL 走原生（data:image/png;base64, 前缀——fixture 首版断言太弱，收紧后破坏才现形）
+```
+
+**破坏验证**（3 处，各被精确抓住）：① `fillRect` 转发摘除（noop）→ **2 条**红（像素读回全 0）；
+② onReady 尺寸同步摘除 → 恰好 **1 条**红（canvas 保持默认 300×150，内容尺寸断言直接现形）；
+③ `toDataURL` 假串 → 恰好 **1 条**红——⚠️ 首轮 **0 红**：fixture 的检查是
+`indexOf('data:image/png') === 0`，假串 `data:image/png,BROKEN` 恰好也命中——当场收紧为
+`data:image/png;base64,` 前缀（R13 坑 2 的又一现场：断言里的字符串边界必须钉死）。还原后
+md5 与基准一致。
+
+**已知限制**（写进 CAPABILITY）：`RenderingContextSettings` 的 antialias/alpha 在浏览器 2D 里
+无对应开关（记录）；Canvas 尺寸的**后续变更**不重新同步内容尺寸（onReady 后改 `.width()` 需
+重画）；`XComponent` 未实现（表层类另一半，记警告）。
+
+**触及**：`runtime/src/canvas.js`（新分片，第 14 个）、`runtime/src/area.js`（CANVAS 分支）、
+`runtime/src/main.js`（@include + 安装全局 3 个名字）、`tools/stats.mjs`（手写 35 → 36）、
+`fixtures/pages/CanvasDemo.ts`、`harmony-proj/`（CanvasDemo.ets + main_pages.json）、
+`test/canvasedemo.html`、`run.sh`、`electron/run.sh`
+
 ## R14：多层锚链 + `Guideline` + `bias` ✅
 
 ```
@@ -1492,15 +1532,15 @@ PASS starStyle 的图片 URI 不可用已记警告
 | 文档数字守门 | `npm run stats:check-doc` | `ARCHITECTURE.md` §6 的整块实测数字逐行比对，漂移即非 0 退出；`stats:write-doc` 就地重写 |
 | 覆盖统计 | `npm run stats` | 文档里的所有数字都由它产出（`--json` 机器可读） |
 
-`npm run check` 当前：**6 步全绿（preflight + 生成物一致 + 产物/源一致 + 文档数字 + 浏览器 38 用例 + Electron 37 用例）**。
+`npm run check` 当前：**6 步全绿（preflight + 生成物一致 + 产物/源一致 + 文档数字 + 浏览器 39 用例 + Electron 38 用例）**。
 
 ## 下一步
 
 **权威清单在 `docs/ROADMAP.md`**（每项带可复现的验收命令）。当前优先：
 
 1. 其余骨架组件的视觉语义——**按家族推进**：已收形状族 8（R26）、输入类 4（R27）、
-   信息展示类 4（R28）、弹出类 3（R29）；剩余候选：`Canvas`/`XComponent`（表层类）、
-   `QRCode`（需 QR 编码器，单列）。`UIContext` 已收（R30），`@ohos:media` 待办
+   信息展示类 4（R28）、弹出类 3（R29）、表层类 1（R31：Canvas）；剩余候选：
+   `XComponent`、`QRCode`（需 QR 编码器，单列）。`UIContext` 已收（R30），`@ohos:media` 待办
 2. ~~**继续把 `runtime/src/main.js` 拆细**~~ **已拆到位（2026-09-21，源拆分第三步）**：9 个分片，
    `main.js` 剩 **1869 行 / 86,452 B**（基础设施 / 状态 v1 / ViewPU / 属性映射 / Tabs / Swiper /
    组件注册表 / 具体组件 / LazyForEach / 枚举路由 / 安装全局），已拆出
@@ -1513,9 +1553,9 @@ PASS starStyle 的图片 URI 不可用已记警告
 > **`Navigation` 转场动画 + `onTitleModeChange` 滚动联动**（见上文「R25 收口」）、
 > **runtime 源码分片**（R5c）、**R24 ArkVM/`.abc` 路径调研**（`docs/ARKVM-RESEARCH.md`）、
 > **SVG 形状族**（见上文「R26」）、**输入类**（见上文「R27」）、**信息展示类**（见上文「R28」）、
-> **弹出类**（见上文「R29」）、**UIContext**（见上文「R30」）。
+> **弹出类**（见上文「R29」）、**UIContext**（见上文「R30」）、**Canvas**（见上文「R31」）。
 
-**仍未覆盖**：`chainMode`、其余 ~66 个骨架组件的视觉语义、`@ohos:media`。
+**仍未覆盖**：`chainMode`、其余 ~65 个骨架组件的视觉语义、`@ohos:media`。
 **别把没验的当结论**——`docs/CAPABILITY.md` 里有逐项的能力矩阵，其中标了哪些语义是**推断**的。
 
 **已知待办（别当已完成）**：

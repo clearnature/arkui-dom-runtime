@@ -594,6 +594,27 @@ selectedIndex 不派发 change——DOM 取舍已记录）；`value(str)` 显示
 `harmony-proj/`（UiContextDemo.ets + main_pages.json）、`test/uictxdemo.html`、
 `run.sh`、`electron/run.sh`
 
+### R31 — 表层类：`Canvas`（真实 2D context）✅（2026-09-21）
+
+**测量**（新增 `pages/CanvasDemo.ets`）：`Canvas(this.context)` 的 create 参数是 ctx 对象；
+`new CanvasRenderingContext2D(settings)`；`onReady(cb)`（JSDoc："perform any drawing after this
+event is triggered"）；绘制面就是标准 Canvas 2D。
+
+**实现**：新分片 `runtime/src/canvas.js`（第 14 个）。手写 Canvas → 原生 `<canvas>`，ctx 转发
+原生 2D context（像素断言天然有牙齿）；create 时"交接"原生 context；onReady 在尺寸应用后
+`setTimeout(0)` 派发并同步 CSS 尺寸 → canvas 内容尺寸（1:1）。
+
+**验收**：`bash run.sh canvasedemo`（**10 条断言**）双端通过——像素采样 R255/G204/alpha=0、
+toDataURL 原生前缀。**破坏验证（3 处）**：fillRect noop → **2 红**；尺寸同步摘除 → **1 红**
+（默认 300×150 现形）；toDataURL 假串 → **1 红**——⚠️ 首轮 0 红：fixture 断言的字符串边界
+太松（`data:image/png,` 前缀假串也命中），收紧为 `base64,` 前缀（R13 坑 2 又一现场）。还原后
+md5 一致。
+
+**触及**：`runtime/src/canvas.js`（新）、`runtime/src/area.js`（CANVAS 分支）、
+`runtime/src/main.js`（@include + 安装全局）、`tools/stats.mjs`（手写 35→36）、
+`fixtures/pages/CanvasDemo.ts`、`harmony-proj/`（CanvasDemo.ets + main_pages.json）、
+`test/canvasedemo.html`、`run.sh`、`electron/run.sh`
+
 ---
 
 ## P3 布局引擎

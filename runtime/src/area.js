@@ -238,6 +238,12 @@
         return;
       }
     }
+    // 表层类（R31）：Canvas 的 onReady 是函数值且原生 canvas 不会自发派发 ready——
+    // 必须拦在通用 on* 规则之前（坑 86 同族）
+    if (node.__arkuiCanvasFlag && CANVAS_ATTRS[prop]) {
+      CANVAS_ATTRS[prop](node, value);
+      return;
+    }
     // Tabs/Swiper 的 onChange 要由它们自己收集并在切换时派发，不能落成 DOM 事件 ——
     // 必须拦在通用事件分支【之前】，否则会变成永不触发的 'change' 监听器（静默失效）。
     if (prop === 'onChange' && (node.__tabsState || node.__swiperState)) {
