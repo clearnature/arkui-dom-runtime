@@ -722,6 +722,39 @@ LoadingProgress → CSS spinner（color → currentColor）；Blank → flex:1 +
 `harmony-proj/`（SmallDemo.ets + main_pages.json）、`test/smalldemo.html`、`run.sh`、
 `electron/run.sh`
 
+### R37 — 分步器：`Stepper` / `StepperItem` ✅（2026-09-21）
+
+**测量**（新增 `pages/StepDemo.ets`）：`Stepper.create({index})` 是 create 选项；五事件
+`onNext(index, pendingIndex)` / `onPrevious(index, pendingIndex)` / `onChange(prevIndex, index)`
+/ `onSkip()` / `onFinish()` 的双参语义照 `.d.ts` JSDoc；`StepperItem` 只有三个属性方法
+`prevLabel` / `nextLabel` / `status(ItemState)`。**注意**：本 SDK 里 Stepper 全文
+`@deprecated since 22 @useinstead Swiper`，但产物仍会真实引用，照实现。
+
+**实现**：`runtime/src/small.js` 追加。`StepperItem` → div（`data-stepper-item`，初始隐藏）；
+`Stepper` → 内置导航条（prev / pages / next 三段，`:scope > [data-stepper-item]` 在渲染后
+同步阶段移进 pages 段）；label 汇入导航条文案（goTo 时读 `dataset.prevLabel/nextLabel`，
+没有则回退 ‹/›）；导航条点击派发：**当前页 status=Skip → onSkip；最后一页 Normal →
+onFinish；其余 → onNext(index, index+1)**；切换后派发 `onChange(prev, index)`——只在索引
+真的变了才发（初始汇入也走 goTo，不算切换）。**`ItemState` 枚举值按 `.d.ts` 声明顺序**
+`{Normal:0, Disabled:1, Waiting:2, Skip:3}`——产物把 `ItemState.Skip` 原样留给运行时求值，
+值错了 onSkip 永远不触发（坑 83 的枚举两套来源又现形）。`area.js` 分发链加两级：
+`STEP_ATTRS`（五事件）+ `XC_ITEM_ATTRS`（label/status，含 closest 向 Stepper 回报重汇入）。
+
+**验收**：`bash run.sh stepdemo`（**16 条断言**：结构 6 + 注册面 5 + 派发链 4 + 回归 1）
+双端通过。**破坏验证（3 处）**：STEP 分派短路 → **9 红**（注册 5 + 派发 4）；
+XC 分派短路 → **1 红**（label 断言现形——通用 data-* 落点是 `JSON.stringify`，导航条出现
+`"back0"` 带引号）；Skip 语义短路 → **1 红**（Skip 页错走 onNext）。还原后 md5 一致。
+
+**过程教训**（坑 90/91）：本轮破坏验证一度被打断，`return; // BROKEN-1` 残留进源码，
+后续几轮测试全在破坏态下跑、派发断言被误诊"headless 不稳定"而删除——恢复后按"先证注册、
+再证派发"重写，16 条全绿。**中断后先清 BROKEN/DBG 残留、对 md5、重跑绿态，再继续**。
+
+**触及**：`runtime/src/small.js`（Stepper/StepperItem/ItemState/XC_ITEM_ATTRS/STEP_ATTRS）、
+`runtime/src/area.js`（STEP/XC 分派分支）、`runtime/src/main.js`（安装全局
+Stepper/StepperItem/ItemState）、`tools/stats.mjs`（手写 42→44）、`fixtures/pages/StepDemo.ts`、
+`harmony-proj/`（StepDemo.ets + main_pages.json）、`test/stepdemo.html`、`run.sh`、
+`electron/run.sh`
+
 ---
 
 ## P3 布局引擎

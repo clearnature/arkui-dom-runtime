@@ -20,6 +20,7 @@
     "pages/QrDemo",
     "pages/TextDemo",
     "pages/MediaDemo",
-    "pages/SmallDemo"
+    "pages/SmallDemo",
+    "pages/StepDemo"
   ]
 }

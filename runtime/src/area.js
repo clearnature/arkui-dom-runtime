@@ -238,6 +238,16 @@
         return;
       }
     }
+    // 分步器（R37）：Stepper 的五事件 + StepperItem 的 label/status（函数值与语义属性
+    // 都必须拦在通用 on* / data-* 落点之前，与 Counter 同理）
+    if (node.__arkuiStepper && STEP_ATTRS[prop]) {
+      STEP_ATTRS[prop](node, value);
+      return;
+    }
+    if (node.__arkuiStepperItem && XC_ITEM_ATTRS[prop]) {
+      XC_ITEM_ATTRS[prop](node, value);
+      return;
+    }
     // 信息展示类（R28）：Counter 的 onInc/onDec 是函数值（必须拦在通用 on* 规则之前，否则
     // 会变成 'inc'/'dec' DOM 监听）；Divider/Marquee 的语义属性抢在通用 data-* 落点之前
     if (node.__arkuiShow && SHOW_ATTRS[prop]) {

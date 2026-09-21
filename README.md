@@ -1112,11 +1112,6 @@ data URI 恒 -1（无真实解码）；`seek` 的 offset/`SubmitEvent` 类语义
 `harmony-proj/`（MediaDemo.ets + main_pages.json）、`test/mediademo.html`、
 `run.sh`、`electron/run.sh`
 
-**触及**：`runtime/ohos-shims.js`（multimedia.media 垫片，第 15 个平台模块）、
-`electron/main.js`（autoplay-policy 放行）、`fixtures/pages/MediaDemo.ts`、
-`harmony-proj/`（MediaDemo.ets + main_pages.json）、`test/mediademo.html`、
-`run.sh`、`electron/run.sh`
-
 ## R36：小件收官 `Flex` / `Span` / `LoadingProgress` / `Blank` ✅
 
 **测量**（新增 `pages/SmallDemo.ets` → 官方构建）实测形态：`Flex.create({direction,
@@ -1156,6 +1151,50 @@ decoration 红（fontColor/fontSize 走的是样式层也变红，但内联文�
 `runtime/src/main.js`（@include + 安装全局 4 组件 + 2 枚举 + applyCreateArgs Flex 分支）、
 `tools/stats.mjs`（手写 38 → 42）、`fixtures/pages/SmallDemo.ts`、`harmony-proj/`
 （SmallDemo.ets + main_pages.json）、`test/smalldemo.html`、`run.sh`、`electron/run.sh`
+
+## R37：分步器 `Stepper` / `StepperItem` ✅
+
+**测量**（新增 `pages/StepDemo.ets` → 官方构建）：`Stepper.create({index})` + 五事件
+（`onNext`/`onPrevious` 双参 `(index, pendingIndex)`、`onChange(prevIndex, index)`、
+`onSkip()`、`onFinish()`，全部照 `.d.ts` JSDoc）；`StepperItem` 只有 `prevLabel`/`nextLabel`/
+`status(ItemState)` 三个属性方法。本 SDK 里 Stepper 全文 `@deprecated since 22
+@useinstead Swiper`——产物仍真实引用，照实现。
+
+**实现**：`StepperItem` → 隐藏 div（`data-stepper-item`）；`Stepper` → 内置导航条
+（prev/pages/next），子项在渲染后同步阶段汇入 pages 段，label 汇入导航条文案（缺省回退
+‹/›）。派发语义照 `.d.ts`：**当前页 Skip → onSkip；最后一页 Normal → onFinish；其余 →
+onNext(index, index+1)**，切换后发 `onChange(prev, index)`（索引真变了才发，初始汇入不算）。
+**`ItemState` 枚举值按声明顺序 `{Normal:0, Disabled:1, Waiting:2, Skip:3}`**——产物把
+`ItemState.Skip` 原样留给运行时求值，照抄"想当然"的值（0/1/2）会让 onSkip 永不触发。
+
+```
+$ bash run.sh stepdemo
+=== ALL PASS ===                    （16 条断言，双端同数）
+PASS 结构：三页汇入 pages 段／首页可见／导航条存在／label 汇入（back0/next0）
+PASS 注册面：onChange/onNext/onPrevious/onSkip/onFinish 各一条
+PASS 派发链：点 next → NEXT0,1;CHG0>1; → Skip 页 → SKIP;CHG1>2; → 末页 → FIN;
+            → prev → PREV2,1;CHG2>1;
+PASS 回归：Stepper.* 不再记"未实现"警告
+```
+
+**破坏验证**（3 处）：① STEP 分派短路 → **9 红**（注册面 5 + 派发链 4）；② XC 分派短路 →
+**1 红**（通用 data-* 落点走 `JSON.stringify`，导航条文案带引号 `"back0"` 现形）；
+③ Skip 语义短路 → **1 红**（Skip 页错走 onNext）。还原后 md5 一致。
+
+**已知限制**（写进 CAPABILITY）：`ItemState.Waiting` 的视觉语义（隐藏 next 按钮、换进度条）
+未实现，按 Normal 放行；`ItemState.Disabled` 禁用语义未实现；create 的 `index` 只在创建时
+生效（后续改不跳页）；无 STEPPER_UNSUPPORTED 记警告通道（label/status 均已实现，未用到的
+通用样式属性走基座）。
+
+**过程教训**（坑 90/91，DEVELOPING）：破坏验证中断后 `BROKEN-1` 短路残留源码，后续测试全在
+破坏态下跑、派发断言被误删——恢复后按"先证注册、再证派发"重建。**中断恢复先清残留、对
+md5、重跑绿态**；分派分支必须与兄弟分支同级（嵌进兄弟组件的条件块是静默死分支）。
+
+**触及**：`runtime/src/small.js`（Stepper/StepperItem/ItemState/XC_ITEM_ATTRS/STEP_ATTRS）、
+`runtime/src/area.js`（STEP/XC 分派分支）、`runtime/src/main.js`（安装全局
+Stepper/StepperItem/ItemState）、`tools/stats.mjs`（手写 42 → 44）、`fixtures/pages/StepDemo.ts`、
+`harmony-proj/`（StepDemo.ets + main_pages.json）、`test/stepdemo.html`、`run.sh`、
+`electron/run.sh`
 
 ## R14：多层锚链 + `Guideline` + `bias` ✅
 
@@ -1755,9 +1794,10 @@ PASS starStyle 的图片 URI 不可用已记警告
 
 **权威清单在 `docs/ROADMAP.md`**（每项带可复现的验收命令）。当前优先：
 
-1. 骨架组件的视觉语义——**信息展示家族已收官**：形状族 8（R26）、输入类 4（R27）、
-   信息展示类 4（R28）、弹出类 3（R29）、表层类 2（R31/R32）、QRCode（R33）——累计 20 个；
-   剩余候选以骨架清单为准。`UIContext` 已收（R30），`@ohos:media` 待办
+1. 骨架组件的视觉语义——累计 30 个手写组件 + 分步器：形状族 8（R26）、输入类 4+3（R27/R34）、
+   信息展示类 4+1（R28/R33）、弹出类 3（R29）、表层类 2（R31/R32）、小件 4（R36）、
+   分步器 2（R37）；`UIContext` 已收（R30）、`@ohos.multimedia.media` 已收（R35）。
+   剩余候选以骨架清单（`node tools/stats.mjs` 的"骨架·仅 data-*"）为准
 2. ~~**继续把 `runtime/src/main.js` 拆细**~~ **已拆到位（2026-09-21，源拆分第三步）**：9 个分片，
    `main.js` 剩 **1869 行 / 86,452 B**（基础设施 / 状态 v1 / ViewPU / 属性映射 / Tabs / Swiper /
    组件注册表 / 具体组件 / LazyForEach / 枚举路由 / 安装全局），已拆出
@@ -1770,9 +1810,13 @@ PASS starStyle 的图片 URI 不可用已记警告
 > **`Navigation` 转场动画 + `onTitleModeChange` 滚动联动**（见上文「R25 收口」）、
 > **runtime 源码分片**（R5c）、**R24 ArkVM/`.abc` 路径调研**（`docs/ARKVM-RESEARCH.md`）、
 > **SVG 形状族**（见上文「R26」）、**输入类**（见上文「R27」）、**信息展示类**（见上文「R28」）、
-> **弹出类**（见上文「R29」）、**UIContext**（见上文「R30」）、**Canvas**（见上文「R31」）。
+> **弹出类**（见上文「R29」）、**UIContext**（见上文「R30」）、**Canvas**（见上文「R31」）、
+> **XComponent**（见上文「R32」）、**QRCode**（见上文「R33」）、**输入收官**（见上文「R34」）、
+> **`@ohos.multimedia.media`**（见上文「R35」）、**小件收官**（见上文「R36」）、
+> **分步器**（见上文「R37」）。
 
-**仍未覆盖**：`chainMode`、其余 ~65 个骨架组件的视觉语义、`@ohos:media`。
+**仍未覆盖**：`chainMode`、其余骨架组件的视觉语义（候选池见 `node tools/stats.mjs`）、
+`ItemState.Waiting/Disabled` 语义（R37 记限制）。
 **别把没验的当结论**——`docs/CAPABILITY.md` 里有逐项的能力矩阵，其中标了哪些语义是**推断**的。
 
 **已知待办（别当已完成）**：

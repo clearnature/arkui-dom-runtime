@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R37：分步器 Stepper / StepperItem（结构 + 注册面 + 页切换）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 320px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R37：Stepper（结构 / 导航条 / 五事件注册 / label 汇入 / 页切换）</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/stepdemo-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const el = (id) => root.querySelector('#' + id);
+    const txt = (id) => String(el(id) ? el(id).textContent : '<缺>');
+    const click = async (sel) => {
+      const n = root.querySelector(sel);
+      if (!n) { check(false, '要点击的节点不存在：' + sel); return; }
+      n.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      await tick(20);
+    };
+    const group = async (name, fn) => {
+      try { await fn(); } catch (e) {
+        allPass = false;
+        lines.push(`FAIL [${name}] 抛出异常：${e && e.stack ? String(e.stack).split('\n')[0] : e}`);
+      }
+    };
+
+    try {
+      __arkui_dom_requireModule('StepDemo');
+      __arkui_dom_loadRoute('pages/StepDemo', root);
+      await tick(120);                       // syncStepper 经 setTimeout(0) 汇入
+      check(!!el('sp1') && !!el('st0'), 'StepDemo 页面已渲染');
+
+      // ══════════ ① 结构：三页汇入 pages 段，首页可见 ══════════
+      await group('结构', async () => {
+        const pages = el('sp1').querySelector('[data-arkui-stepper-pages]');
+        check(pages && pages.children.length === 3, `三页挂进 pages 段（${pages.children.length} 页）`);
+        check(el('st0').offsetParent !== null, '第 0 页可见');
+        check(el('st1').offsetParent === null, '第 1 页隐藏');
+        check(!!el('sp1').querySelector('[data-arkui-stepper-next]')
+          && !!el('sp1').querySelector('[data-arkui-stepper-prev]'), '内置导航条存在');
+        check(el('sp1').querySelector('[data-arkui-stepper-prev]').textContent === 'back0'
+          && el('sp1').querySelector('[data-arkui-stepper-next]').textContent === 'next0',
+          `StepperItem.label 汇入导航条（'${el('sp1').querySelector('[data-arkui-stepper-prev]').textContent}'/'${el('sp1').querySelector('[data-arkui-stepper-next]').textContent}'）`);
+      });
+
+      // ══════════ ② 五事件注册面 ══════════
+      await group('事件注册面', async () => {
+        const sp = el('sp1');
+        const cbs = sp.__stepCbs || {};
+        check(typeof cbs.change === 'function', `onChange 已注册`);
+        check(typeof cbs.next === 'function', `onNext 已注册`);
+        check(typeof cbs.prev === 'function', `onPrevious 已注册`);
+        check(typeof cbs.skip === 'function', `onSkip 已注册`);
+        check(typeof cbs.finish === 'function', `onFinish 已注册`);
+      });
+
+      // ══════════ ②b 派发链路：点导航条 → 事件按 .d.ts 原文派发 ══════════
+      await group('onNext·onChange', async () => {
+        click('[data-arkui-stepper-next]');
+        await tick(40);
+        check(txt('st-log') === 'NEXT0,1;CHG0>1;', `点 next → onNext(0,1)+onChange(0,1)（log='${txt('st-log')}'）`);
+      });
+      await group('onSkip', async () => {
+        click('[data-arkui-stepper-next]');
+        await tick(40);
+        check(txt('st-log').includes('SKIP;') && txt('st-log').includes('CHG1>2;'),
+          `Skip 页点 next → onSkip+onChange(1,2)（log='${txt('st-log')}'）`);
+      });
+      await group('onFinish', async () => {
+        click('[data-arkui-stepper-next]');
+        await tick(40);
+        check(txt('st-log').includes('FIN;'), `最后一页 Normal 点 next → onFinish（log='${txt('st-log')}'）`);
+      });
+      await group('onPrevious', async () => {
+        click('[data-arkui-stepper-prev]');
+        await tick(40);
+        check(txt('st-log').includes('PREV2,1;') && txt('st-log').includes('CHG2>1;'),
+          `prev → onPrevious(2,1)+onChange(2,1)（log='${txt('st-log')}'）`);
+      });
+
+      // ══════════ ③ 回归：没有"未实现"假警告 ══════════
+      await group('回归', async () => {
+        const bad = __arkui_dom_layout_warnings.filter((w) => /Stepper\.|StepperItem\./.test(String(w)));
+        check(bad.length === 0, `Stepper 属性不再记"未实现"警告（剩 ${bad.length} 条：${bad.slice(0, 2).join('|')}）`);
+      });
+
+      lines.push(`STEP idx=${sp1.__arkuiStepperIndex}`);
+      lines.push(`ELMT ${__arkui_dom_elmtRecords.size}`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

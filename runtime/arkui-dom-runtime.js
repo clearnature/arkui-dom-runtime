@@ -3943,6 +3943,16 @@
         return;
       }
     }
+    // 分步器（R37）：Stepper 的五事件 + StepperItem 的 label/status（函数值与语义属性
+    // 都必须拦在通用 on* / data-* 落点之前，与 Counter 同理）
+    if (node.__arkuiStepper && STEP_ATTRS[prop]) {
+      STEP_ATTRS[prop](node, value);
+      return;
+    }
+    if (node.__arkuiStepperItem && XC_ITEM_ATTRS[prop]) {
+      XC_ITEM_ATTRS[prop](node, value);
+      return;
+    }
     // 信息展示类（R28）：Counter 的 onInc/onDec 是函数值（必须拦在通用 on* 规则之前，否则
     // 会变成 'inc'/'dec' DOM 监听）；Divider/Marquee 的语义属性抢在通用 data-* 落点之前
     if (node.__arkuiShow && SHOW_ATTRS[prop]) {
@@ -5509,7 +5519,7 @@
   // ────────────────── 小件收官（R36）：Flex / Span / LoadingProgress / Blank ──────────────────
   //
   // 产物形态（实测 fixtures/pages/SmallDemo.ts）：
-  //   Flex.create({direction, justifyContent, alignItems});   ← 与 CSS 同名对齐（style 透传）
+  //   Flex.create({direction, wrap, justifyContent, alignItems});   ← 与 CSS 同名对齐（style 透传）
   //   Span.create('…'); Span.fontColor/fontSize/decoration;   ← Text 的【内联子段】（Text 栈内挂）
   //   LoadingProgress.create(); LoadingProgress.color(...);   ← spinner
   //   Blank.create(); Blank.color(...);                       ← Row/Column 里的 flex 占位
@@ -5521,13 +5531,6 @@
   const Flex = ensureComponent('Flex', defaultDom('div', {
     display: 'flex', flexDirection: 'row', alignItems: 'center',
   }));
-  // Flex.create 的 create 参数：direction/wrap/justifyContent/alignItems → style（CSS 同名）
-  function applyFlexOptions(el, o) {
-    if (o.direction !== undefined) el.style.flexDirection = String(resolveResource(o.direction));
-    if (o.wrap !== undefined) el.style.flexWrap = String(resolveResource(o.wrap));
-    if (o.justifyContent !== undefined) el.style.justifyContent = String(resolveResource(o.justifyContent));
-    if (o.alignItems !== undefined) el.style.alignItems = String(resolveResource(o.alignItems));
-  }
   const Span = ensureComponent('Span', (args) => {
     const el = document.createElement('span');
     el.__arkuiSpan = true;
@@ -5566,12 +5569,140 @@
     el.style.animation = 'arkuiLoading 1s linear infinite';
     return el;
   });
-  const Blank = ensureComponent('Blank', (args) => {
+  const Blank = ensureComponent('Blank', () => {
     const el = document.createElement('div');
     el.__arkuiBlank = true;
     el.__arkuiBlankMin = 0;
     // Row/Column 内：flex:1 占满剩余空间；无父 flex 时按 min 呈现
     el.style.flex = '1 1 auto';
+    return el;
+  });
+
+  // ────────────────── 分步器（R37）：Stepper / StepperItem ──────────────────
+  //
+  // 产物形态（实测 fixtures/pages/StepDemo.ts）：
+  //   Stepper.create({index: 0}); Stepper.onChange((prevIndex, index) => …);
+  //     Stepper.onNext/onPrevious/onSkip/onFinish
+  //   StepperItem.create(); StepperItem.prevLabel/nextLabel; StepperItem.status(ItemState.Skip)
+  //
+  // 语义锚点（stepper.d.ts / stepper_item.d.ts 原文）：
+  //   onFinish —— 最后一页（ItemState=Normal）点 nextLabel 触发；
+  //   onSkip —— 当前页 status=ItemState.Skip 时点 nextLabel 触发；
+  //   onNext/onPrevious —— Normal 页点 nextLabel/prevLabel 触发（参数 (index, pendingIndex)）；
+  //   onChange —— 切换完成派发 (prevIndex, index)。ItemState = { Normal, Skip, Waiting }。
+  //
+  // DOM 映射：Stepper = 竖排容器（页区 + 内置导航条 prev/pages/next）；StepperItem 挂进 pages；
+  // 汇入 label/status 后接通导航条点击 → 按 .d.ts 原文派发事件（Skip 页点 next → onSkip；
+  // 最后一页 Normal 点 next → onFinish；其余 → onNext；prev → onPrevious），完成切换再派发
+  // onChange(prev, index)。StepperItem.status → data-status（Skip 语义）。
+  // ItemState 枚举值必须按 .d.ts 声明顺序（Normal/Disabled/Waiting/Skip），产物把
+  // ItemState.Skip 原样留给运行时求值，值错了 onSkip 永远不触发（同坑 83 的枚举两套来源）
+  const ItemState = { Normal: 0, Disabled: 1, Waiting: 2, Skip: 3 };
+  const StepperItem = ensureComponent('StepperItem', () => {
+    const el = document.createElement('div');
+    el.__arkuiStepperItem = true;
+    el.dataset.stepperItem = '';
+    el.style.display = 'none';          // 挂进 Stepper 的 pages 区（由导航逻辑控制显隐）
+    return el;
+  });
+  const XC_ITEM_ATTRS = {
+    prevLabel: (n, v) => {
+      n.dataset.prevLabel = String(resolveResource(v));
+      const sp = n.closest('[data-arkui-stepper]');
+      if (sp && sp.__arkuiStepperSync) sp.__arkuiStepperSync();
+    },
+    nextLabel: (n, v) => {
+      n.dataset.nextLabel = String(resolveResource(v));
+      const sp = n.closest('[data-arkui-stepper]');
+      if (sp && sp.__arkuiStepperSync) sp.__arkuiStepperSync();
+    },
+    status: (n, v) => { n.dataset.status = String(Number(resolveResource(v))); },   // ItemState
+  };
+  const STEP_ATTRS = {
+    onChange: (n, v) => { (n.__stepCbs = n.__stepCbs || {}).change = v; },
+    onNext: (n, v) => { (n.__stepCbs = n.__stepCbs || {}).next = v; },
+    onPrevious: (n, v) => { (n.__stepCbs = n.__stepCbs || {}).prev = v; },
+    onSkip: (n, v) => { (n.__stepCbs = n.__stepCbs || {}).skip = v; },
+    onFinish: (n, v) => { (n.__stepCbs = n.__stepCbs || {}).finish = v; },
+  };
+  const Stepper = ensureComponent('Stepper', () => {
+    const el = document.createElement('div');
+    el.__arkuiStepper = true;
+    el.dataset.stepper = '';
+    el.style.display = 'flex';
+    el.style.flexDirection = 'column';
+    el.__arkuiStepperIndex = 0;
+    // 内置导航条（prev/pages/next 三段）；StepperItem 挂进 pages 段，label 汇入导航条
+    const prev = document.createElement('div');
+    prev.setAttribute('data-arkui-stepper-prev', '');
+    prev.style.cursor = 'pointer';
+    prev.style.padding = '4px 8px';
+    prev.textContent = '‹';
+    const pages = document.createElement('div');
+    pages.setAttribute('data-arkui-stepper-pages', '');
+    pages.style.flex = '1';
+    const next = document.createElement('div');
+    next.setAttribute('data-arkui-stepper-next', '');
+    next.style.cursor = 'pointer';
+    next.style.padding = '4px 8px';
+    next.textContent = '›';
+    el.appendChild(prev);
+    el.appendChild(pages);
+    el.appendChild(next);
+    // 派发（.d.ts 原文语义）：走 wrapper 闭包引用 __stepCbs（覆盖语义，重渲染重挂安全）
+    const fireNext = () => {
+      const items = el.querySelectorAll('[data-stepper-item]');
+      const cur = items[el.__arkuiStepperIndex];
+      const curStatus = cur ? Number(cur.dataset.status || 0) : 0;
+      if (el.__stepCbs) {
+        if (curStatus === ItemState.Skip) {
+          if (typeof el.__stepCbs.skip === 'function') { try { el.__stepCbs.skip(); } catch (e) { layoutWarnings.push(`onSkip 抛错：${e && e.message}`); } }
+        } else if (el.__arkuiStepperIndex >= items.length - 1) {
+          if (typeof el.__stepCbs.finish === 'function') { try { el.__stepCbs.finish(); } catch (e) { layoutWarnings.push(`onFinish 抛错：${e && e.message}`); } }
+        } else if (typeof el.__stepCbs.next === 'function') {
+          try { el.__stepCbs.next(el.__arkuiStepperIndex, el.__arkuiStepperIndex + 1); }
+          catch (e) { layoutWarnings.push(`onNext 抛错：${e && e.message}`); }
+        }
+      }
+      goTo(el.__arkuiStepperIndex + 1);
+    };
+    const firePrev = () => {
+      if (el.__stepCbs && typeof el.__stepCbs.prev === 'function') {
+        try { el.__stepCbs.prev(el.__arkuiStepperIndex, el.__arkuiStepperIndex - 1); }
+        catch (e) { layoutWarnings.push(`onPrevious 抛错：${e && e.message}`); }
+      }
+      goTo(el.__arkuiStepperIndex - 1);
+    };
+    const goTo = (i) => {
+      const items = el.querySelectorAll('[data-stepper-item]');
+      if (i < 0 || i >= items.length) return;
+      const p = el.__arkuiStepperIndex;
+      items.forEach((m, k) => { m.style.display = k === i ? 'block' : 'none'; });
+      el.__arkuiStepperIndex = i;
+      // 导航条文案随子项 label 汇入
+      prev.textContent = (items[i] && items[i].dataset.prevLabel) || '‹';
+      next.textContent = (items[i] && items[i].dataset.nextLabel) || '›';
+      // onChange 只在索引真的切换时派发（初始汇入 syncStepper 也走 goTo，不算切换）
+      if (p !== i && el.__stepCbs && typeof el.__stepCbs.change === 'function') {
+        try { el.__stepCbs.change(p, i); }
+        catch (e) { layoutWarnings.push(`Stepper.onChange 抛错：${e && e.message}`); }
+      }
+    };
+    el.__arkuiStepperGo = goTo;
+    // 初始显隐 + label 汇入：StepperItem 挂在根上（与 prev/pages/next 并列）——汇入时
+    // 移进 pages 段（不变量 18：等渲染后同步阶段）
+    const syncStepper = () => {
+      const strays = el.querySelectorAll(':scope > [data-stepper-item]');
+      strays.forEach((m) => pages.appendChild(m));
+      const items = el.querySelectorAll('[data-stepper-item]');
+      items.forEach((m, k) => { m.style.display = k === el.__arkuiStepperIndex ? 'block' : 'none'; });
+      if (items.length) goTo(el.__arkuiStepperIndex);
+    };
+    setTimeout(syncStepper, 0);
+    // 导航条点击 → 派发语义（.d.ts 原文）
+    prev.addEventListener('click', () => firePrev());
+    next.addEventListener('click', () => fireNext());
+    el.__arkuiStepperSync = syncStepper;
     return el;
   });
 
@@ -6231,6 +6362,8 @@
     // None=0/Underline=1/Overline=2/LineThrough=3
     FlexDirection: { Row: 'row', Column: 'column', RowReverse: 'row-reverse', ColumnReverse: 'column-reverse' },
     TextDecorationType: { None: 'none', Underline: 'underline', Overline: 'overline', LineThrough: 'line-through' },
+    // R37：分步器。ItemState 同为产物里的自由变量枚举
+    Stepper, StepperItem, ItemState,
     __Common__: _CommonWrapper,
     FontWeight, VerticalAlign, HorizontalAlign, FlexAlign, TextAlign, ItemAlign, Color,
     TextOverflow, Alignment, Scroller, Axis,

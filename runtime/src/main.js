@@ -1701,6 +1701,8 @@
     // None=0/Underline=1/Overline=2/LineThrough=3
     FlexDirection: { Row: 'row', Column: 'column', RowReverse: 'row-reverse', ColumnReverse: 'column-reverse' },
     TextDecorationType: { None: 'none', Underline: 'underline', Overline: 'overline', LineThrough: 'line-through' },
+    // R37：分步器。ItemState 同为产物里的自由变量枚举
+    Stepper, StepperItem, ItemState,
     __Common__: _CommonWrapper,
     FontWeight, VerticalAlign, HorizontalAlign, FlexAlign, TextAlign, ItemAlign, Color,
     TextOverflow, Alignment, Scroller, Axis,

@@ -1507,6 +1507,34 @@ minContentWidth 360，`.d.ts` 原文；用组件宽度而不是窗口宽度，�
 协议）、`enableModeChangeAnimation`（单↔分栏切换动画，API 15）未实现（记警告）；`edgeEffect` 弹性
 不模拟（不足一屏滚不动 → 联动无从发生，JSDoc 主场景就是超一屏）。
 
+### 4.19 分步器 `Stepper` / `StepperItem`（R37）
+
+**先看产物**（`fixtures/pages/StepDemo.ts`）：`Stepper.create({index})` + 五事件
+`onNext(index, pendingIndex)` / `onPrevious(index, pendingIndex)` / `onChange(prevIndex, index)` /
+`onSkip()` / `onFinish()`（双参语义照 JSDoc，`onSkip`/`onFinish` 无参）；`StepperItem` 只有
+`prevLabel(str)` / `nextLabel(str)` / `status(ItemState)` 三个属性方法。本 SDK 里 Stepper 全文
+`@deprecated since 22 @useinstead Swiper`，产物仍真实引用，照实现。
+
+**结构**（`small.js`）：`StepperItem` → div（`data-stepper-item`，初始 `display:none`）；
+`Stepper` → 内置导航条 prev / pages / next 三段。子项在**渲染后同步阶段**汇入：`syncStepper`
+（`setTimeout(0)`，不变量 18）用 `:scope > [data-stepper-item]` 把挂在根上的"离散子项"移进
+pages 段——子组件挂载晚于容器，且重渲染会把子项重新挂回根上，所以每次汇入都重定位。
+label 汇入导航条：`goTo(i)` 时读 `items[i].dataset.prevLabel/nextLabel`，缺省回退 ‹/›。
+
+**派发语义**（`.d.ts` 原文）：导航条点击 → `fireNext`/`firePrev`。next：当前页
+`status === ItemState.Skip` → `onSkip()`；当前页是最后一页且 Normal → `onFinish()`；其余 →
+`onNext(index, index+1)`；随后 `goTo` 切页并发 `onChange(prev, index)`——**只在索引真变时发**
+（初始汇入也走 `goTo(0)`，不算切换）。回调经 `el.__stepCbs` 闭包间接引用（覆盖语义，坑 88 同族）。
+
+**两个坑**：① `ItemState` 的枚举值必须按 `.d.ts` 声明顺序 `{Normal:0, Disabled:1, Waiting:2,
+Skip:3}`——产物把 `ItemState.Skip` 原样留给运行时求值（与 `FlexDirection` 等"挂 global"模式同），
+值错了 `onSkip` 永不触发（坑 83 的枚举两套来源再现）；② 分派分支必须与兄弟分支**同级**：
+`STEP_ATTRS`/`XC_ITEM_ATTRS` 在 `area.js` 分发链上（函数值拦在通用 `on*` 规则前、语义属性拦在
+通用 data-* 落点前），嵌进 `__arkuiInput` 等条件块内是静默死分支（坑 91）。
+
+**已知限制**：`ItemState.Waiting` 的视觉语义（隐藏 next 按钮、换进度条）按 Normal 放行；
+`Disabled` 禁用未实现；create 的 `index` 只在创建时生效。
+
 ---
 
 ## 5. 架构不变量
@@ -1586,16 +1614,16 @@ minContentWidth 360，`.d.ts` 原文；用组件宽度而不是窗口宽度，�
 ```
 == 组件库 ==
   ets-loader 注册名    149
-  手写实现（真布局语义）42：Text Button Column Row Stack List ListItem RelativeContainer Tabs TabContent Swiper Navigation NavDestination Progress Gauge DataPanel Rating Circle Ellipse Rect Line Path Polygon Polyline Shape Checkbox Radio Toggle Slider Badge Counter Divider Marquee Select Menu MenuItem Canvas XComponent Flex Span LoadingProgress Blank
+  手写实现（真布局语义）44：Text Button Column Row Stack List ListItem RelativeContainer Tabs TabContent Swiper Navigation NavDestination Progress Gauge DataPanel Rating Circle Ellipse Rect Line Path Polygon Polyline Shape Checkbox Radio Toggle Slider Badge Counter Divider Marquee Select Menu MenuItem Canvas XComponent Flex Span LoadingProgress Blank Stepper StepperItem
   控制流宏（非组件）    3：If ForEach LazyForEach
-  骨架·有 DOM 画像     28（容器 18 / 叶子 10）
-  骨架·仅 data-*       79
+  骨架·有 DOM 画像     27（容器 17 / 叶子 10）
+  骨架·仅 data-*       78
   ⇒ 可建出的组件名      149 / 149
   原生输入类控件       2
-  属性元数据总数       915（平均 6.1／组件，最多 TextInput=70）
+  属性元数据总数       907（平均 6.1／组件，最多 TextInput=70）
 
 == 运行时 API ==
-  global 导出        230 个
+  global 导出        233 个
   状态类            ObservedPropertySimplePU ObservedPropertyObjectPU SynchedPropertySimpleOneWayPU SynchedPropertySimpleTwoWayPU SynchedPropertyNesedObjectPU
   内置组件          Text Button Column Row Stack List ListItem If ForEach LazyForEach RelativeContainer Tabs TabContent Swiper Navigation NavDestination Progress Gauge DataPanel Rating
   内部钩子 __arkui_dom_*  32 个
@@ -1612,60 +1640,60 @@ minContentWidth 360，`.d.ts` 原文；用组件宽度而不是窗口宽度，�
   15 个：app.ability.AbilityConstant app.ability.ConfigurationConstant app.ability.UIAbility app.ability.Want data.preferences file.fs hilog measure multimedia.image multimedia.media net.http notificationManager promptAction router window
 
 == 用例矩阵 ==
-  浏览器 run.sh     44 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify measure lazy provide v2 observe async ability promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo mediademo smalldemo router netfile persist
-  Electron          43 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo mediademo smalldemo measure lazy provide async v2 observe
-  测试页            44 个
-  fixtures 转换产物  42 个：AnimDemo AsyncIO Callee CanvasDemo Detail DrawDemo GestureDemo GestureGroupDemo Home Index InputDemo Layout Lazy LazyVar MeasArea MeasImage MeasNotify Measure MediaDemo NavBarDemo NavDemo NavTransDemo NetFile Observe PopDemo PromptAct Provide QrDemo RelDemo Rich ShapeDemo ShowDemo SmallDemo SwiperDemo TabsGrid TextDemo TextMeasure TransitionDemo UiContextDemo V2 Widgets XCompDemo
+  浏览器 run.sh     45 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify measure lazy provide v2 observe async ability promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo mediademo smalldemo stepdemo router netfile persist
+  Electron          44 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo mediademo smalldemo stepdemo measure lazy provide async v2 observe
+  测试页            45 个
+  fixtures 转换产物  43 个：AnimDemo AsyncIO Callee CanvasDemo Detail DrawDemo GestureDemo GestureGroupDemo Home Index InputDemo Layout Lazy LazyVar MeasArea MeasImage MeasNotify Measure MediaDemo NavBarDemo NavDemo NavTransDemo NetFile Observe PopDemo PromptAct Provide QrDemo RelDemo Rich ShapeDemo ShowDemo SmallDemo StepDemo SwiperDemo TabsGrid TextDemo TextMeasure TransitionDemo UiContextDemo V2 Widgets XCompDemo
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          494.9 KB
-  runtime(src)     314.4 KB
-  test             593.5 KB
-  tools            53.4 KB
-  electron(src)    21.9 KB
-  docs             408.0 KB
-  fixtures         334.0 KB
+  runtime          501.7 KB
+  runtime(src)     321.1 KB
+  test             599.1 KB
+  tools            53.5 KB
+  electron(src)    22.1 KB
+  docs             415.8 KB
+  fixtures         338.8 KB
 
 == 逐文件（文档"文件职责"表的来源）==
-  runtime/arkui-dom-runtime.js        321623 B  314.1 KB
+  runtime/arkui-dom-runtime.js        328551 B  320.9 KB
   runtime/generated-components.js      57617 B  56.3 KB
   runtime/ohos-shims.js                61848 B  60.4 KB
   tools/extract.mjs                     6563 B  6.4 KB
   tools/gen-components.mjs              7775 B  7.6 KB
   tools/serve.py                        3887 B  3.8 KB
-  tools/stats.mjs                      14722 B  14.4 KB
+  tools/stats.mjs                      14834 B  14.5 KB
   tools/assert-counts.mjs               7476 B  7.3 KB
   tools/preflight.mjs                   5422 B  5.3 KB
   tools/check-all.sh                    3673 B  3.6 KB
   tools/build-runtime.mjs               5138 B  5.0 KB
-  run.sh                               21627 B  21.1 KB
-  electron/run.sh                      13212 B  12.9 KB
+  run.sh                               21994 B  21.5 KB
+  electron/run.sh                      13402 B  13.1 KB
   electron/main.js                      7025 B  6.9 KB
   electron/preload.js                   1961 B  1.9 KB
   package.json                          1321 B  1.3 KB
   .gitignore                             757 B  0.7 KB
-  README.md                           125396 B  122.5 KB
+  README.md                           128637 B  125.6 KB
   THIRD-PARTY-NOTICES.md                9672 B  9.4 KB
-  docs/ARCHITECTURE.md                138958 B  135.7 KB
-  docs/CAPABILITY.md                   46282 B  45.2 KB
-  docs/DEVELOPING.md                   60602 B  59.2 KB
-  docs/ROADMAP.md                     104883 B  102.4 KB
+  docs/ARCHITECTURE.md                141433 B  138.1 KB
+  docs/CAPABILITY.md                   47456 B  46.3 KB
+  docs/DEVELOPING.md                   62184 B  60.7 KB
+  docs/ROADMAP.md                     107613 B  105.1 KB
   docs/surface-measurement.md           6496 B  6.3 KB
   docs/SESSION-2026-09-20.md           12842 B  12.5 KB
   runtime/src/ability.js                8802 B  8.6 KB
   runtime/src/animation.js             25906 B  25.3 KB
-  runtime/src/area.js                  21236 B  20.7 KB
+  runtime/src/area.js                  21648 B  21.1 KB
   runtime/src/canvas.js                 9472 B  9.3 KB
   runtime/src/draw.js                  18032 B  17.6 KB
   runtime/src/gesture.js               29527 B  28.8 KB
   runtime/src/input.js                 10095 B  9.9 KB
   runtime/src/layout.js                14213 B  13.9 KB
-  runtime/src/main.js                  90541 B  88.4 KB
+  runtime/src/main.js                  90650 B  88.5 KB
   runtime/src/nav.js                   50317 B  49.1 KB
   runtime/src/popup.js                  4884 B  4.8 KB
   runtime/src/shape.js                  7206 B  7.0 KB
   runtime/src/show.js                  15986 B  15.6 KB
-  runtime/src/small.js                  3849 B  3.8 KB
+  runtime/src/small.js                 10256 B  10.0 KB
   runtime/src/v2.js                    11839 B  11.6 KB
   fixtures/pages/AnimDemo.ts            6451 B  6.3 KB
   fixtures/pages/AsyncIO.ts             6206 B  6.1 KB
@@ -1700,6 +1728,7 @@ minContentWidth 360，`.d.ts` 原文；用组件宽度而不是窗口宽度，�
   fixtures/pages/ShapeDemo.ts           8081 B  7.9 KB
   fixtures/pages/ShowDemo.ts            7113 B  6.9 KB
   fixtures/pages/SmallDemo.ts           3688 B  3.6 KB
+  fixtures/pages/StepDemo.ts            4857 B  4.7 KB
   fixtures/pages/SwiperDemo.ts          7876 B  7.7 KB
   fixtures/pages/TabsGrid.ts           10513 B  10.3 KB
   fixtures/pages/TextDemo.ts            5686 B  5.6 KB
@@ -1745,6 +1774,7 @@ minContentWidth 360，`.d.ts` 原文；用组件宽度而不是窗口宽度，�
   test/shapedemo.html                   9951 B  9.7 KB
   test/showdemo.html                    8019 B  7.8 KB
   test/smalldemo.html                   5299 B  5.2 KB
+  test/stepdemo.html                    5732 B  5.6 KB
   test/swiper.html                      9177 B  9.0 KB
   test/tabgrid.html                    10096 B  9.9 KB
   test/textdemo.html                    6095 B  6.0 KB
