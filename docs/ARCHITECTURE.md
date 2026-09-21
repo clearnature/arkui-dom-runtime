@@ -1272,6 +1272,14 @@ globalThis.Gesture.pop();                         // ③ 关作用域 → 挂到
     （`syncAreas`）；`ViewPU.create` 里对子组件的 `onMeasureSize` 检测必须发生在
     `childView.initialRender()` **之后**（那时子节点才存在，`measure()` 才有东西可量）。
     协议里**返回的尺寸优先**于声明尺寸，施加在"带 `.id()` 的那一层"（可能是编译器合成的 `__Common__`）。
+20. **`runtime/arkui-dom-runtime.js` 是拼接产物，源在 `runtime/src/`**。手写语义一律加在源分片里
+    （目前 `main.js` = 除过渡一节外的全部，`transition.js` = 出现/消失过渡），改完跑
+    `npm run build:runtime` 重拼；产物入库，靠 `npm run check` 第 3 步（`build-runtime --check`）
+    守"产物 = 源"。**为什么必须"源拆、产物不拆"**：分片共享同一个闭包
+    （`elmtRecords`/`propDeps`/`ViewStackProcessor`/`animWindow`…），其中 `animWindow` 还是
+    **可变绑定**（动画分片里 `let` 重新赋值、批量重渲染段在块外读它并 push）——拆成多个 `<script>`
+    就得把 6 个导入名 + 3 个导出名显式穿线，并让 30 处 HTML 的加载顺序变成新的失败模式。
+    分片**不是**独立可运行的 JS（同一个 IIFE 体内的连续若干段），所以"改完必须拼出来跑测试"。
 
 ---
 
@@ -1319,10 +1327,11 @@ globalThis.Gesture.pop();                         // ③ 关作用域 → 挂到
 
 == 体积（源码，不含产物/Electron 运行时）==
   runtime          328.4 KB
+  runtime(src)     215.7 KB
   test             239.3 KB
-  tools            46.4 KB
+  tools            52.7 KB
   electron(src)    19.2 KB
-  docs             332.1 KB
+  docs             339.5 KB
   fixtures         236.4 KB
 
 == 逐文件（文档"文件职责"表的来源）==
@@ -1332,24 +1341,27 @@ globalThis.Gesture.pop();                         // ③ 关作用域 → 挂到
   tools/extract.mjs                     6563 B  6.4 KB
   tools/gen-components.mjs              7775 B  7.6 KB
   tools/serve.py                        3887 B  3.8 KB
-  tools/stats.mjs                      13442 B  13.1 KB
+  tools/stats.mjs                      14005 B  13.7 KB
   tools/assert-counts.mjs               7476 B  7.3 KB
-  tools/preflight.mjs                   5178 B  5.1 KB
-  tools/check-all.sh                    3171 B  3.1 KB
+  tools/preflight.mjs                   5397 B  5.3 KB
+  tools/check-all.sh                    3673 B  3.6 KB
+  tools/build-runtime.mjs               5138 B  5.0 KB
   run.sh                               16406 B  16.0 KB
   electron/run.sh                      10652 B  10.4 KB
   electron/main.js                      6795 B  6.6 KB
   electron/preload.js                   1961 B  1.9 KB
-  package.json                          1207 B  1.2 KB
+  package.json                          1321 B  1.3 KB
   .gitignore                             674 B  0.7 KB
-  README.md                            75020 B  73.3 KB
+  README.md                            76854 B  75.1 KB
   THIRD-PARTY-NOTICES.md                8256 B  8.1 KB
-  docs/ARCHITECTURE.md                110397 B  107.8 KB
-  docs/CAPABILITY.md                   34188 B  33.4 KB
-  docs/DEVELOPING.md                   53076 B  51.8 KB
-  docs/ROADMAP.md                      75275 B  73.5 KB
+  docs/ARCHITECTURE.md                112835 B  110.2 KB
+  docs/CAPABILITY.md                   34482 B  33.7 KB
+  docs/DEVELOPING.md                   55338 B  54.0 KB
+  docs/ROADMAP.md                      77928 B  76.1 KB
   docs/surface-measurement.md           6496 B  6.3 KB
   docs/SESSION-2026-09-20.md           12842 B  12.5 KB
+  runtime/src/main.js                 197167 B  192.5 KB
+  runtime/src/transition.js            23757 B  23.2 KB
   fixtures/pages/AnimDemo.ts            6451 B  6.3 KB
   fixtures/pages/AsyncIO.ts             6206 B  6.1 KB
   fixtures/pages/Callee.ts              1726 B  1.7 KB
@@ -1449,21 +1461,25 @@ globalThis.Gesture.pop();                         // ③ 关作用域 → 挂到
 
 | 文件 | 体积 | 职责 | 改它的时机 |
 |---|---|---|---|
-| `runtime/arkui-dom-runtime.js` | 182.1 KB | v1 状态类 + 深度观测（`@Observed`/`@ObjectLink`）、`ViewPU`/`ViewV2`、装饰器层、组件栈、布局（`alignRules` 多层锚链 + `Guideline` + `bias`、`Grid` 轨道）、`Tabs`/`TabContent`+`TabsController`、`Swiper`+`SwiperController`、`Navigation`/`NavDestination`+`NavPathStack`、**绘制类四件套**（SVG/CSS）、`LazyForEach`、路由、**ability 栈**（`startAbilityForResult`/`terminateSelf*`）、**显式动画**（`Context.animateTo` → CSS transition）、**手势**（两层栈 + pointer 识别器） | 实现新语义（**手写优先**） |
+| `runtime/arkui-dom-runtime.js` | 215.7 KB | **拼接产物**：`tools/build-runtime.mjs` 把 `runtime/src/` 的分片按 `// @include` 标记拼成（语义内容见下面两行源分片）。为什么不做成多个 `<script>`：分片共享同一个闭包（`elmtRecords`/`ViewStackProcessor`/`animWindow`…，其中 `animWindow` 还是可变绑定），且 30 个手写 HTML 与 Electron 都按固定顺序加载这一个文件 | **不手改**；改 `runtime/src/` 后 `npm run build:runtime`；`build-runtime --check` 守门（在 `npm run check` 第 3 步） |
+| `runtime/src/main.js` | 192.5 KB | **手写源**（除 `transition` 一节外的全部）：v1 状态类 + 深度观测（`@Observed`/`@ObjectLink`）、`ViewPU`/`ViewV2`、装饰器层、组件栈、布局（`alignRules` 多层锚链 + `Guideline` + `bias`、`Grid` 轨道）、`Tabs`/`TabContent`+`TabsController`、`Swiper`+`SwiperController`、`Navigation`/`NavDestination`+`NavPathStack`、**绘制类四件套**（SVG/CSS）、`LazyForEach`、路由、**ability 栈**（`startAbilityForResult`/`terminateSelf*`）、**显式动画**（`Context.animateTo` → CSS transition）、**手势**（两层栈 + pointer 识别器 + `GestureGroup` 三态 + 元素级优先级仲裁） | 实现新语义（**手写优先**） |
+| `runtime/src/transition.js` | 23.2 KB | **手写源**：出现/消失过渡一节（`TransitionOptions` / `TransitionEffect` / `TransitionType` 方向门控 / `detachChildren` 延迟摘除） | 改过渡语义 |
 | `runtime/generated-components.js` | 56.3 KB | 149 个组件骨架（**生成物**） | **不手改**；改 `tools/gen-components.mjs` 后重新生成，`--check` 会守门 |
 | `runtime/ohos-shims.js` | 56.4 KB | `@ohos:*` 模块（14 个，含 **`measure`**/**`multimedia.image`**/**`notificationManager`**/**`promptAction`**）+ 持久化后端（含 R21 的探测与自报）+ 文本/图像测量原语 | 新增平台模块 |
-| `tools/extract.mjs` | 6.3 KB | hvigor 缓存 `.ts` → 可执行 `.js`；**装饰器作用域内绑定前奏 + 未就绪守卫**（§3.4） | 产物形态/装饰器集合变化时 |
+| `tools/extract.mjs` | 6.4 KB | hvigor 缓存 `.ts` → 可执行 `.js`；**装饰器作用域内绑定前奏 + 未就绪守卫**（§3.4） | 产物形态/装饰器集合变化时 |
 | `tools/gen-components.mjs` | 7.6 KB | ets-loader 组件 JSON → 骨架注册表（`--check` 只校验不写） | 组件元数据/画像规则更新时 |
+| `tools/build-runtime.mjs` | 5.0 KB | `runtime/src/` 分片 → `runtime/arkui-dom-runtime.js`（`--check` 只校验不写；孤儿分片/成环/漏展开都报错） | 分片布局变化时 |
 | `tools/serve.py` | 3.8 KB | 静态服务（含显式图片 MIME + **禁用缓存头**，见坑表 76）+ `/echo` + `/slow`（测超时） | 需要新测试端点/资产类型时 |
-| `tools/stats.mjs` | 13.1 KB | 本文档所有数字的来源（`--json` 机器可读）；**`--check-doc`/`--write-doc` 守 §6 引用块** | 覆盖范围变化时 |
-| `tools/preflight.mjs` | 5.0 KB | 环境自检（工具链/宿主/可执行位） | 外部依赖变化时 |
-| `tools/check-all.sh` | 3.1 KB | 一条命令做完验收（5 步），退出码只看被调命令 | 新增验收步骤时 |
-| `run.sh` | 13.8 KB | 浏览器 29 用例驱动 | 新增用例 |
-| `electron/run.sh` | 9.0 KB | Electron 28 用例 + 磁盘验证 | 新增用例 |
+| `tools/stats.mjs` | 13.7 KB | 本文档所有数字的来源（`--json` 机器可读）；**`--check-doc`/`--write-doc` 守 §6 引用块** | 覆盖范围变化时 |
+| `tools/assert-counts.mjs` | 7.3 KB | 断言计数守门（运行期 emit 的 PASS 行 ↔ 文档声明的「N 条断言」，见坑表 77） | 声明写法/扫描范围变化时 |
+| `tools/preflight.mjs` | 5.3 KB | 环境自检（工具链/宿主/可执行位） | 外部依赖变化时 |
+| `tools/check-all.sh` | 3.6 KB | 一条命令做完验收（6 步），退出码只看被调命令 | 新增验收步骤时 |
+| `run.sh` | 16.0 KB | 浏览器 31 用例驱动 | 新增用例 |
+| `electron/run.sh` | 10.4 KB | Electron 30 用例 + 磁盘验证 | 新增用例 |
 | `electron/main.js` | 6.6 KB | 主进程：offscreen 截图、**像素级**空白检测 | 截图/验证策略变化时 |
 | `electron/preload.js` | 1.9 KB | `contextBridge` 暴露 Node fs | 宿主能力变化时 |
-| `fixtures/pages/*.ts` | 195.9 KB | **冻结的**官方转换产物（27 个，含 `V2.ts`/`Observe.ts`/`TabsGrid.ts`/`SwiperDemo.ts`/`NavDemo.ts`/`RelDemo.ts`/`DrawDemo.ts`/`TextMeasure.ts`/`LazyVar.ts`/`MeasArea.ts`/`MeasImage.ts`/`MeasNotify.ts`/`PromptAct.ts`/`Callee.ts`/`AnimDemo.ts`/`GestureDemo.ts`），另有 `fixtures/entryability/*.ts`（`EntryAbility.ts`/`PromptAbility.ts`） | 几乎不改（见不变量 5） |
-| `test/*.html` | 208.2 KB | 断言页（读 `#result` 节点文本） | 新增用例 |
+| `fixtures/pages/*.ts` | 229.9 KB | **冻结的**官方转换产物（29 个，含 `V2.ts`/`Observe.ts`/`TabsGrid.ts`/`SwiperDemo.ts`/`NavDemo.ts`/`RelDemo.ts`/`DrawDemo.ts`/`TextMeasure.ts`/`LazyVar.ts`/`MeasArea.ts`/`MeasImage.ts`/`MeasNotify.ts`/`PromptAct.ts`/`Callee.ts`/`AnimDemo.ts`/`GestureDemo.ts`/`TransitionDemo.ts`/`GestureGroupDemo.ts`），另有 `fixtures/entryability/*.ts`（`EntryAbility.ts`/`PromptAbility.ts`，6.5 KB） | 几乎不改（见不变量 5） |
+| `test/*.html` | 239.3 KB | 断言页（31 个；读 `#result` 节点文本） | 新增用例 |
 | `test-assets/*` | 1.1 KB | **已知尺寸的测试图片**（PNG/JPEG/伪装文件）。必须进仓库——放 `/tmp` 会在重启后失效（R5 的教训） | 需要新资产时 |
 
 ---

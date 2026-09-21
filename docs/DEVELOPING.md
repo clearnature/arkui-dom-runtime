@@ -22,8 +22,11 @@
 ## 2. 目录约定
 
 ```
-runtime/       运行时（三个文件，与宿主无关）
-  arkui-dom-runtime.js       ← 手写语义都加这里
+runtime/       运行时（与宿主无关）
+  arkui-dom-runtime.js       ← 【拼接产物】由 tools/build-runtime.mjs 生成，不要手改
+  src/                       ← 【手写源】手写语义都加这里
+    main.js                    除下面那节之外的全部（含手势/动画/布局/状态管理/组件）
+    transition.js              出现/消失过渡一节
   generated-components.js    ← 生成物，不要手改
   ohos-shims.js              ← 平台模块
 tools/         构建/统计脚本（都是 .mjs，可直接 node 跑）
@@ -33,6 +36,12 @@ electron/      Electron 宿主 + 第二套 runner
 build/         产物 + Chrome profile（不要提交）
 docs/          文档
 ```
+
+**改运行时的标准动作**：改 `runtime/src/<分片>.js` → `npm run build:runtime` → 跑测试。
+产物（`runtime/arkui-dom-runtime.js`）入库，`npm run check` 第 3 步守"产物 = 源"；
+分片之间用 `// @include <分片名>` 一行做拼接点，拼接顺序就是产物里的代码顺序。
+详见 `ARCHITECTURE.md` 不变量 20。
+
 
 ---
 
@@ -74,10 +83,10 @@ node tools/stats.mjs --json | python3 -m json.tool
 
 ### 步骤
 
-1. **先确认它是不是"手写"**。若组件名在 `runtime/arkui-dom-runtime.js` 的 `components` 里已存在（`Text`/`Button`/`Column`/`Row`/`Stack`/`List`/`ListItem`/`RelativeContainer`/`Tabs`/`TabContent`/`Swiper`/`Navigation`/`NavDestination`），生成骨架**会被跳过**，你必须改手写实现。
+1. **先确认它是不是"手写"**。若组件名在 `runtime/src/` 的 `components` 里已存在（`Text`/`Button`/`Column`/`Row`/`Stack`/`List`/`ListItem`/`RelativeContainer`/`Tabs`/`TabContent`/`Swiper`/`Navigation`/`NavDestination`），生成骨架**会被跳过**，你必须改手写实现。
 2. **判断该改哪一侧**：
    - 只需"标签或基础样式对" → 改 `tools/gen-components.mjs` 的 `CONTAINERS` / `LEAF_TAGS` / 输入类 `type` 映射，然后 `node tools/gen-components.mjs`
-   - 需要**交互/布局语义**（子项挂载方式、切换、测量）→ 改 `runtime/arkui-dom-runtime.js`，走 `ensureComponent(name, domFactory, contentUpdater)`；若该组件的 `create`/`pop` 形态特殊（如 `Tabs`/`TabContent`），在 `ensureComponent` 里按组件名加分支
+   - 需要**交互/布局语义**（子项挂载方式、切换、测量）→ 改 `runtime/src/main.js`（组件都在这个分片里），走 `ensureComponent(name, domFactory, contentUpdater)`；若该组件的 `create`/`pop` 形态特殊（如 `Tabs`/`TabContent`），在 `ensureComponent` 里按组件名加分支；改完 `npm run build:runtime` 重拼产物
 3. **用产物验证契约**。别猜属性的调用形式：
 
    ```bash
@@ -205,7 +214,7 @@ v1 的 `@Observed` **也不挂 global**，走同一张 `__arkui_dom_decorators` 
 
    曾经把 `IMonitor` 猜成 `{dirty: [{path,value,before,kind}]}`，被编译器当场判错。
 
-3. **在 `runtime/arkui-dom-runtime.js` 里实现**：
+3. **在 `runtime/src/main.js` 里实现**（装饰器层在这个分片里；改完 `npm run build:runtime`）：
    - v2 字段类装饰器 → 复用 `installV2Accessor(proto, key, kind)`
    - v1 类装饰器（`@Observed` 那类）→ 参考 `Observed`：返回一个**子类**，构造函数返回 Proxy
 
@@ -213,7 +222,7 @@ v1 的 `@Observed` **也不挂 global**，走同一张 `__arkui_dom_decorators` 
 
    | 改哪里 | 作用 |
    |---|---|
-   | `runtime/arkui-dom-runtime.js` 的 `const decorators = {...}` | 装饰器表（产物从前奏里解构它） |
+   | `runtime/src/main.js` 的 `const decorators = {...}` | 装饰器表（产物从前奏里解构它） |
    | `tools/extract.mjs` 的 `DECORATOR_NAMES` | 前奏里会绑哪些名字 |
 
    只改一处的话：漏在表里 → 解构得到 `undefined` → **TS 的 `__decorate` 对 falsy 装饰器是静默跳过的**，
@@ -233,16 +242,18 @@ v1 的 `@Observed` **也不挂 global**，走同一张 `__arkui_dom_decorators` 
 6. **证明断言有牙齿**（本项目的硬要求）。实现完再**临时破坏**它，确认关键断言真的会失败：
 
    ```bash
-   cp runtime/arkui-dom-runtime.js /tmp/runtime.bak.js
-   # 把 Observed 改成 `return Base;` 之类
-   bash run.sh observe        # 必须看到 FAIL，记下失败条数
-   cp /tmp/runtime.bak.js runtime/arkui-dom-runtime.js
-   md5sum /tmp/runtime.bak.js runtime/arkui-dom-runtime.js   # 确认逐字节还原
+   cp runtime/src/main.js /tmp/main.bak.js
+   # 把 Observed 改成 `return Base;` 之类，然后必须重拼产物（改的是源，跑的是产物）
+   npm run build:runtime && bash run.sh observe   # 必须看到 FAIL，记下失败条数
+   cp /tmp/main.bak.js runtime/src/main.js
+   npm run build:runtime && md5sum /tmp/main.bak.js runtime/src/main.js   # 确认逐字节还原
    ```
 
    实测：破坏 `Observed` 后有 **8 条**断言失败，其中包含
    `@ObjectLink('item') 绑定到非 @Observed 对象` 的 `layoutWarnings` 诊断。
    如果破坏后**全绿**，说明断言没测到东西。
+   **注意备份/还原要落在源分片上**：直接改产物（`runtime/arkui-dom-runtime.js`）也能红，
+   但那条路径已经把产物带偏了 —— 还原后 `build-runtime --check` 才会告诉你漏了重拼。
 
 7. **验收**：
 
@@ -417,6 +428,7 @@ node tools/extract.mjs fixtures/pages/NewPage.ts build/newpage.js --cjs --regist
 | 81 | **"事件处理完就清状态"在冒泡场景下是错的**：手势仲裁把每个指针会话记在 `gestureSessions`（按 `pointerId`），原本在 `pointerup` 里"谁先处理谁删"。但 `pointerup` 会**继续沿祖先链冒泡** —— 最内层元素先删掉会话，外层（父子对里的父）随后处理时**查不到仲裁结论** → `arb` 退化成 `'idle'`（不 suppressed）→ 被压制的祖先**照常触发**（默认档的父子对当场红，日志里 `'e;D;'` 而不是 `'e;'`）。这类 bug 只在"多个元素都监听同一事件"时才出现，单元素用例永远看不到 | 会话只能由**冒泡路径上最后一个参战元素**来删：`isSessionTail(st, ev)` 判 `s.chain[s.chain.length-1] === st.el`（所有参战者互为祖先，所以链尾就是最后收到事件的那个）。**判据：这份状态是"这次事件处理完"就没人要了，还是"整条冒泡链处理完"才没人要？凡是跨元素共享的事件态，都要问这一句** |
 | 82 | **识别器状态与"回调有没有真的发出去"脱钩 → 手势从此静默失效**：pan/pinch/rotation 的 `rs.started = true` 写在 `fireGesture(...)` **之前**。组仲裁（Sequence 的"还没轮到你"）会把回调挡掉，但状态已经推到"已开始" —— 于是一个**从没发出过 `onActionStart` 的手势变成已开始**：它的 `onActionUpdate`/`onActionEnd` 照发（Sequence 里表现为"该认的不认、不该发的 End 乱发"，日志 `U2;U1;U2e;`）。注意它与坑 79 同类：**没有任何报错** | 让 `fireGesture` **返回"有没有被仲裁放行"**，识别器只在放行时推进内部状态：`if (dist >= th && dirOk(...) && fireGesture(...)) rs.started = true;`（返回值与"回调是否存在"无关 —— 没注册回调也算放行，否则识别器行为会依赖用户写没写回调）。**判据：这个"状态推进"和那次"对外可见的副作用"必须同生共死吗？是的话，就让状态推进由副作用的返回值来背** |
 | 83 | **枚举名有两套来源，`.d.ts` 不一定是产物发的那套**：`.gesture`/`.priorityGesture`/`.parallelGesture` 编译成 `Gesture.create(GesturePriority.Low\|High\|Parallel)` —— 这三个名字来自 **ets-loader 的 `pre_define.js`**（`GESTURE_ENUM_KEY`/`GESTURE_ENUM_VALUE_*`），而 `.d.ts` 里 `declare enum GesturePriority { NORMAL = 0, PRIORITY = 1 }` 是**另一套**（API 12 `addGesture` 用）。旧实现照 `.d.ts` 只定义了 `{NORMAL, PRIORITY}` → `GesturePriority.Low` 求值为 `undefined`，**三个属性在运行时完全区分不开**（都退化成默认档），而"一切照常工作"（`create(undefined)` 走了默认分支），半年都不会有人发现 | 决定"运行时该提供什么名字"时，**以产物为准，不以 `.d.ts` 为准**（`.d.ts` 只说"源码能写什么"，产物说"运行时必须有什么"）；拿不准就去 `ets-loader/lib/pre_define.js` 里 grep 那个 `GESTURE_ENUM_KEY`/`gestureMap`；**两套名字都提供并让它们同值对齐**（`NORMAL=Low`、`PRIORITY=High`），再用断言把"同值"钉住。**判据：这个标识符是"源码里写的"还是"编译器生成的"？生成的那类，名字由生成器决定，`.d.ts` 无权作证** |
+| 84 | **机械切片重组：`split('\n')` + `join('\n')` 会吞掉末尾空行的"终止换行"**。把 runtime 的 transition 一节切成分片（447 行）时，切片末尾元素是 `''`（那一行是空行），`join('\n')` 把它还原成"前一行 + `\n`"——**少了一个 `\n`**，产物 220,898 B 而拆分前是 220,899 B。更阴的是**我第一次的"自证"是循环的**：自证脚本拿 `runtime/arkui-dom-runtime.js` 当原文，而这个文件已经被上一次失败构建覆盖成 220,898 B 了 → 自证"通过"，结论是假的（第三层：`md5sum -c` 才是唯一裁断，它当场报了 FAILED） | ① 机械切片一律**按文本整段替换**（`content.replace(标记行含换行, 分片原文)`），不要按行数组拼；分片文件必须**以换行结尾**，脚本对它做断言。② **拆分类重构的验收判据只有一条：与拆分前逐字节一致**（`md5sum -c` / `diff -q`），"自证脚本说通过"不算。③ 自证的**输入必须是未被污染的原文** —— 先 `cp` 一份到 `/tmp` 并以它为输入，再动手；否则你验证的是自己刚写坏的东西。**判据：我现在拿来做基准的这份文件，凭什么认为它是对的？** |
 
 ### 确定性与时序
 

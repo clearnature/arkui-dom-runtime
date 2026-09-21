@@ -4,7 +4,7 @@
 
 已完成的机制说明见 `docs/ARCHITECTURE.md`；怎么改见 `docs/DEVELOPING.md`。
 
-**当前状态**：`npm run check` 全绿（preflight + 生成物一致 + 文档数字守卫 + 断言计数守门 + 浏览器 31 用例 + Electron 30 用例）。
+**当前状态**：`npm run check` 全绿（preflight + 生成物一致 + **产物/源一致** + 文档数字守卫 + 断言计数守门 + 浏览器 31 用例 + Electron 30 用例）。
 v1/v2 状态管理（含 v1 深度观测）、`Grid` 真实轨道、`Tabs` 切换、`Swiper` 轮播、`Navigation` 栈导航、
 `alignRules` 多层锚链 + `Guideline` + `bias`、纯绘制四件套、文本真实测量（`@ohos:measure`）、变高列表项、`onAreaChange` 与自定义布局协议、
 R19–R24（平台模块 / 动画 / 手势 / `.abc` 路径调研）均已落地。
@@ -114,7 +114,10 @@ du -sh .git                                   # 648K
 
 ### ~~R3 — `tools/check-all.sh`：一条命令做完所有验收~~ ✅ 已完成
 
-5 步：preflight → 生成物一致 → 浏览器 → Electron → 统计（留档，不影响退出码）。
+6 步：preflight → 生成物一致 → **产物/源一致（`build-runtime --check`）** → 文档数字一致 → 浏览器 → Electron
+（另加统计，留档，不影响退出码）。
+（后两步由 R5a 之后的守门补上：`stats --check-doc` 于工程化阶段加、`build-runtime --check` 于 2026-09-21
+拆分 runtime 源码时加。）
 
 **设计约定**：成败**只看被调命令的退出码**，绝不用 `grep`/`wc` 数日志行。
 逐次失败会打印输出尾部并保留完整日志到 `build/check-logs/`。
@@ -179,6 +182,39 @@ Chrome、Electron、**入口脚本可执行位**、核心文件齐备、fixtures
 **验收（触发后）**：`LICENSE` 存在且与 `THIRD-PARTY-NOTICES.md` §5/§6 的结论一致。
 
 **触及**：`LICENSE`（新）、`README.md`、`docs/ARCHITECTURE.md` §9
+
+---
+
+### ~~R5c — runtime 源码拆分（"源拆、产物不拆"）~~ ✅ 已完成（2026-09-21）
+
+**背景**：`runtime/arkui-dom-runtime.js` 长到 4615 行 / 220,899 B 的单闭包。它**不是没结构**
+（内部 30 个分节/子节横幅覆盖 99% 的字节：141 个函数 / 13 个类 / 147 个顶层 const），但同一份代码
+无法按节独立阅读/审查。
+
+**测量（决定了拆法）**：分片之间共享同一个闭包 —— 动画+手势那一块**向内**只提到
+`ViewStackProcessor` 1 次、`mountNode` 1 次（`elmtRecords` **0 次**），**向外**只被 4 个入口引用
+（`registerTransition` ×2、`detachChildren` ×2、`transitionsDescribe`/`gestureTypes` 各 1），
+块内 80 个顶层定义里 54 个零外部引用；但 `animWindow` 是**可变绑定**（动画分片 `let` 重新赋值，
+批量重渲染段在块外读它并 `animWindow.els.push(...)`）。加上产物是经典脚本（30 个手写 HTML 与
+Electron 按固定顺序加载这一个文件），所以选【源拆、产物不拆】：
+
+- 新增 `tools/build-runtime.mjs`：把 `runtime/src/` 的分片按 `// @include <分片名>` 拼成
+  `runtime/arkui-dom-runtime.js`（产物入库；`--check` 只校验不落盘，孤儿分片/成环/漏展开都报错）
+- 先把 **`transition` 一节（447 行）** 拆到 `runtime/src/transition.js`（`main.js` 留占位标记）
+
+**验收（已执行）**：
+- **产物与拆分前逐字节一致**：`md5sum -c` → `e73be14f90600b0d490e8a7873c94bc7`（220,899 B），
+  `diff -q` 无输出 —— 拆分类重构的唯一硬判据
+- `node tools/build-runtime.mjs --check` 绿；破坏验证：改分片不重拼 → 红（报首个不同行 + 修法）、
+  删掉 `@include` 标记 → 红（孤儿分片）
+- `npm run check` → **6 步全绿**（新增第 3 步 `build-runtime --check`）
+
+**已知限制（下一步）**：`main.js` 仍是 192.5 KB / 4170 行的单体，动画+手势那一块（1093 行 / 54 KB）
+还没拆出去 —— 机制已就位，剩下的只是重复一次上面的动作。
+
+**触及**：`tools/build-runtime.mjs`（新）、`runtime/src/main.js`、`runtime/src/transition.js`（新）、
+`tools/check-all.sh`、`tools/preflight.mjs`、`tools/stats.mjs`、`package.json`、
+`README.md`、`docs/ARCHITECTURE.md`（§5 不变量 20 + §7 文件职责）、`docs/DEVELOPING.md`（§2 + 坑 84）
 
 ---
 

@@ -72,19 +72,25 @@ PASS 100 次切换中分支内容始终与状态一致（不一致 0 次）
 ## 目录
 
 ```
+runtime/src/                   运行时【手写源】—— 手写语义都加这里
+  main.js                        除下面那节之外的全部（状态管理/布局/组件/动画/手势/ability 栈…）
+  transition.js                  出现/消失过渡一节（R22 收口）
 runtime/arkui-dom-runtime.js   运行时核心（经典脚本，加载后安装全部 ArkUI 全局）
+                               ↑【拼接产物】由 tools/build-runtime.mjs 拼 runtime/src/，不要手改
   ├ v1 状态类（ObservedPropertySimplePU / SynchedProperty*PU）
   ├ ViewPU（组件栈、elmtId 依赖追踪、批量重渲染、If/ForEach、自定义组件挂载）
   ├ ViewV2 + 11 个 v2 装饰器（@ComponentV2 全套）
   ├ 布局（alignRules 六键 / 文本截断 / Stack 叠放 / Scroller）、LazyForEach 虚拟滚动
+  ├ 显式动画（Context.animateTo → CSS transition）、出现/消失过渡、手势（含分组与优先级仲裁）
   └ 页面栈与路由
 runtime/generated-components.js 149 个组件骨架（生成物，不要手改）
 runtime/ohos-shims.js          14 个 @ohos:* 平台模块 + 持久化三级后端
 tools/extract.mjs              从 hvigor cache 抽转换产物 + 去 TS 类型 + v2 装饰器绑定前奏
 tools/gen-components.mjs       由 ets-loader 的组件 JSON 生成骨架（--check 只校验不写）
+tools/build-runtime.mjs        runtime/src/ 分片 → runtime/arkui-dom-runtime.js（--check 只校验不写）
 tools/serve.py                 极简静态服务（端口由 OS 分配，避免冲突）
 tools/preflight.mjs            环境自检（工具链 / 宿主 / 可执行位）
-tools/check-all.sh             一条命令做完所有验收
+tools/check-all.sh             一条命令做完所有验收（6 步）
 tools/stats.mjs                覆盖范围统计（文档里的数字都来自它）
 test/*.html                    断言页（31 个用例；断言数由 runner 守门，见 docs/DEVELOPING.md 坑 77）
 fixtures/                      冻结的 ets-loader 转换产物（29 个，测试的输入）
@@ -93,6 +99,12 @@ run.sh                         浏览器 31 用例驱动
 electron/run.sh                Electron 30 用例 + 真实磁盘验证
 docs/                          ARCHITECTURE / DEVELOPING / ROADMAP / CAPABILITY
 ```
+
+**改运行时的标准动作**：改 `runtime/src/<分片>.js` → `npm run build:runtime` → 跑测试。
+产物入库，`npm run check` 第 3 步守"产物 = 源"。为什么不做成多个 `<script>`：分片共享同一个闭包
+（其中 `animWindow` 还是可变绑定），拆开就得把 6 个导入名与 3 个导出名显式穿线，
+并让 30 处 HTML 的加载顺序成为新的失败模式（详见 `docs/ARCHITECTURE.md` 不变量 20）。
+
 
 ## 用法
 
@@ -1107,17 +1119,20 @@ PASS starStyle 的图片 URI 不可用已记警告
 | 环境自检 | `npm run preflight` | 缺 CLT/Chrome/Electron **或脚本缺 `+x`** 都会明确报错 |
 | 统一验收 | `npm run check` | **退出码只看被调命令**，绝不用 `grep`/`wc` 数日志行 |
 | 生成物守门 | `npm run check:gen` | `--check` 只比对不落盘，漂移即非 0 退出 |
+| 产物/源一致守门 | `npm run check:runtime` | `runtime/arkui-dom-runtime.js` 是 `runtime/src/` 的拼接产物；`--check` 逐行比对（孤儿分片/成环/漏展开也报错），漂移即非 0 退出；`npm run build:runtime` 重拼 |
 | 文档数字守门 | `npm run stats:check-doc` | `ARCHITECTURE.md` §6 的整块实测数字逐行比对，漂移即非 0 退出；`stats:write-doc` 就地重写 |
 | 覆盖统计 | `npm run stats` | 文档里的所有数字都由它产出（`--json` 机器可读） |
 
-`npm run check` 当前：**浏览器 31 用例 + Electron 30 用例全绿**。
+`npm run check` 当前：**6 步全绿（preflight + 生成物一致 + 产物/源一致 + 文档数字 + 浏览器 31 用例 + Electron 30 用例）**。
 
 ## 下一步
 
 **权威清单在 `docs/ROADMAP.md`**（每项带可复现的验收命令）。当前优先：
 
 1. `Navigation` 的标题栏/工具栏与分栏模式、其余 85 个骨架组件的视觉语义、`@ohos:media`/`UIContext`
-2. **`runtime/` 的物理拆分**（见下方「已知待办」最后一条）
+2. **继续把 `runtime/src/main.js` 拆细**——拼接机制与门禁已经就位（`tools/build-runtime.mjs` +
+   `check:runtime`），`transition` 一节已拆出并验证无损；下一步是**动画 + 手势**那一块
+   （实测 1093 行 / 54 KB，对外只被 4 个入口引用、向内只提到 `ViewStackProcessor` 1 次）。
 
 > 已完成：`transition`（见上文「R22 收口」）、**手势分组与优先级仲裁**（见上文「R23 收口」）、
 > **R24 ArkVM/`.abc` 路径调研**（`docs/ARKVM-RESEARCH.md`）。
@@ -1144,17 +1159,18 @@ PASS starStyle 的图片 URI 不可用已记警告
   `Navigation` 的标题栏与分栏 / `Grid` 无模板时的 `cellLength` 自适应 / `chainMode` /
   `Gauge.indicator`·`trackShadow` **未覆盖**（这些会记 `layoutWarnings`，不是静默忽略）
 - **布局仍不是约束求解器**：多层锚链靠不动点迭代（有上限），环状锚定只记警告
-- **`runtime/arkui-dom-runtime.js` 是 4615 行、约 216 KB 的单闭包**（`runtime/` 三个文件合计约 328 KB / 9243 行）。
-  它**不是没结构**（内部 30 个分节/子节横幅覆盖 99% 的字节：141 个函数 / 13 个类 / 147 个顶层 const），
-  但**没有物理拆分**。约束是真实的：产物是经典脚本（全文 0 个 `import`/`export`，由 30 个手写 HTML
-  按固定顺序 `<script src>` 加载，Electron 直接加载同一批页面），`tools/` 里**没有打包器**，
-  而 `elmtIdSeq`/`elmtRecords`/`propDeps`/`ViewStackProcessor`/`currentNodeElmtId`/`pageStack`
-  是被各节双向引用的闭包状态。
-  已实测**最容易下的一刀**：动画+手势两节（281–1373 行，1093 行 / 约 54 KB）向内只提到
-  `ViewStackProcessor` 1 次、`mountNode` 1 次（`elmtRecords` **0 次**），向外只被 4 个入口引用
-  （`registerTransition` ×2、`detachChildren` ×2、`transitionsDescribe`/`gestureTypes` 各 1）；
-  它自己 80 个顶层定义里 **54 个零外部引用**。
-  拆法待定（"源拆分 + 极简拼接、产物仍单文件"会把 `runtime/*.js` 从手写源变成生成物，属约定变更）。
+- **`runtime/` 已完成"源拆、产物不拆"的第一步**（2026-09-21）：`runtime/arkui-dom-runtime.js` 现在是
+  `runtime/src/` 的**拼接产物**（`tools/build-runtime.mjs`，`// @include <分片名>` 做拼接点），
+  `transition` 一节（447 行）已拆到 `runtime/src/transition.js`，**产物与拆分前逐字节一致**
+  （220,899 B，`md5sum -c` 自证），门禁加了第 3 步 `build-runtime --check`。
+  **还没做完**：`main.js` 仍是 192.5 KB / 4170 行的单体（含动画+手势那一块 1093 行）。
+  为什么必须"源拆、产物不拆"：产物是经典脚本，30 个手写 HTML 与 Electron 按固定顺序加载它；
+  分片共享同一个闭包（`elmtRecords`/`propDeps`/`ViewStackProcessor`…），其中 `animWindow` 还是
+  **可变绑定**（动画分片里 `let` 重新赋值、批量重渲染段在块外读它并 push）——拆成多个 `<script>`
+  要把 6 个导入名 + 3 个导出名显式穿线，并让 30 处加载顺序成为新的失败模式。
+  已实测**下一刀**：动画+手势（281–1373 行，1093 行 / 约 54 KB）向外只被 4 个入口引用
+  （`registerTransition` ×2、`detachChildren` ×2、`transitionsDescribe`/`gestureTypes` 各 1），
+  向内只提到 `ViewStackProcessor` 1 次、`mountNode` 1 次（`elmtRecords` **0 次**）。
 
 ---
 

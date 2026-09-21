@@ -50,23 +50,30 @@ step "preflight" node tools/preflight.mjs
 # 放在测试前：如果生成物漂移，后面所有测试跑的都不是仓库里那份代码。
 step "gen-components --check" node tools/gen-components.mjs --check
 
-# ── 3. 文档里的实测数字与代码一致 ──
+# ── 3. runtime 产物与分片一致（防手改拼接产物 / 防改了分片没重拼）──
+# runtime/arkui-dom-runtime.js 现在是 runtime/src/ 的拼接产物（tools/build-runtime.mjs）。
+# 它与 gen-components 同构：产物入库、靠 --check 守"产物 = 源"。放在测试前 —— 否则后面
+# 所有测试跑的都不是仓库里那份源拼出来的代码。
+# 触发了怎么修： npm run build:runtime
+step "build-runtime --check" node tools/build-runtime.mjs --check
+
+# ── 4. 文档里的实测数字与代码一致 ──
 # ARCHITECTURE.md §6 整块嵌了 `stats.mjs` 的输出（94 行数字）。历史上靠人肉同步，
 # R5a 提交就漏了一行（THIRD-PARTY-NOTICES.md）—— 所以给它加守卫，与上一步同构。
 # 触发了怎么修： npm run stats:write-doc
 step "stats --check-doc" node tools/stats.mjs --check-doc
 
-# ── 4. 浏览器用例 ──
+# ── 5. 浏览器用例 ──
 step "browser (run.sh all)" bash run.sh all
 
-# ── 5. Electron 用例 + 磁盘落盘验证 ──
+# ── 6. Electron 用例 + 磁盘落盘验证 ──
 if [ "$QUICK" = "1" ]; then
   printf '════ electron ════\n  ⏭  跳过（--quick）\n'
 else
   step "electron (electron/run.sh all)" bash electron/run.sh all
 fi
 
-# ── 6. 统计（不是验收条件，只留档给文档引用）──
+# ── 7. 统计（不是验收条件，只留档给文档引用）──
 printf '════ 统计（留档，不影响退出码）════\n'
 node tools/stats.mjs | tee "$LOGDIR/stats.txt" | sed 's/^/  /'
 

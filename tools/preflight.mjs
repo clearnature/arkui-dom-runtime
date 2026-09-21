@@ -62,13 +62,15 @@ else bad('Electron 不存在或不可执行', `${elBin}\n     从 ~/.cache/elect
 
 console.log('\n== 项目自身 ==');
 // 可执行位：交付给用户/CI 的入口必须是可执行的
-const mustExec = ['run.sh', 'electron/run.sh', 'tools/extract.mjs', 'tools/serve.py', 'tools/gen-components.mjs', 'tools/stats.mjs'];
+const mustExec = ['run.sh', 'electron/run.sh', 'tools/extract.mjs', 'tools/serve.py', 'tools/gen-components.mjs', 'tools/stats.mjs', 'tools/build-runtime.mjs'];
 const notExec = mustExec.filter((f) => !isExec(path.join(ROOT, f)));
 if (notExec.length === 0) ok('入口脚本可执行位', mustExec.join(' '));
 else bad('以下脚本缺可执行位', `${notExec.join(' ')}\n     修复: chmod +x ${notExec.join(' ')}`);
 
 const mustExist = [
   'runtime/arkui-dom-runtime.js', 'runtime/generated-components.js', 'runtime/ohos-shims.js',
+  // runtime 产物现在是 runtime/src/ 的拼接物 —— 源没了就没法重建，同样算核心文件
+  'runtime/src/main.js', 'runtime/src/transition.js', 'tools/build-runtime.mjs',
   'fixtures/pages/Index.ts', 'test/index.html',
 ];
 const missing = mustExist.filter((f) => !fs.existsSync(path.join(ROOT, f)));

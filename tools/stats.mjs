@@ -116,7 +116,10 @@ const du = (p) => {
 
 const kb = (n) => `${(n / 1024).toFixed(1)} KB`;
 const sizes = {
-  runtime: du('runtime'),
+  // runtime 产物是 runtime/src/ 的拼接物，分开列：'runtime' 指"随产物一起发出去的那几个文件"，
+  // 'runtime(src)' 指手写的分片源。合在一起会把同一份代码数两遍（拼接产物 ≈ 源之和）。
+  runtime: du('runtime') - du('runtime/src'),
+  'runtime(src)': du('runtime/src'),
   test: du('test'),
   tools: du('tools'),
   'electron(src)': du('electron') - du('electron/runtime') - du('electron/data'),
@@ -128,12 +131,16 @@ const sizes = {
 const TRACKED_FILES = [
   'runtime/arkui-dom-runtime.js', 'runtime/generated-components.js', 'runtime/ohos-shims.js',
   'tools/extract.mjs', 'tools/gen-components.mjs', 'tools/serve.py', 'tools/stats.mjs',
-  'tools/assert-counts.mjs', 'tools/preflight.mjs', 'tools/check-all.sh',
+  'tools/assert-counts.mjs', 'tools/preflight.mjs', 'tools/check-all.sh', 'tools/build-runtime.mjs',
   'run.sh', 'electron/run.sh', 'electron/main.js', 'electron/preload.js',
   'package.json', '.gitignore', 'README.md', 'THIRD-PARTY-NOTICES.md',
   'docs/ARCHITECTURE.md', 'docs/CAPABILITY.md', 'docs/DEVELOPING.md',
   'docs/ROADMAP.md', 'docs/surface-measurement.md', 'docs/SESSION-2026-09-20.md',
 ];
+// runtime 的分片源：列出来才能让"文件职责"表看得见它们（以后拆更多分片不用改这里）
+TRACKED_FILES.push(
+  ...fs.readdirSync(path.join(ROOT, 'runtime/src')).sort().map((f) => `runtime/src/${f}`),
+);
 // 每个 fixture 与测试页都列出来：它们是"能力有测试"的证据
 TRACKED_FILES.push(
   ...fs.readdirSync(path.join(ROOT, 'fixtures/pages')).sort().map((f) => `fixtures/pages/${f}`),

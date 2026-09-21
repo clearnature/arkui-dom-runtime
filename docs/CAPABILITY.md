@@ -155,6 +155,7 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 | 同一份断言页在 Electron 里跑（不复制测试代码） | ✅ | electron 全矩阵 |
 | 真实渲染 + offscreen 截图（非白像素占比判定，非 `isEmpty()`） | ✅ | electron 各用例 |
 | 同一份断言的双端一致（30 个用例两个 runner 都过） | ✅ | run.sh / electron/run.sh |
+| runtime 源码分片与拼接产物一致（`runtime/src/` → `runtime/arkui-dom-runtime.js`，`--check` 只校验不落盘；孤儿分片/成环/漏展开报错） | ✅ | `npm run check:runtime`（`npm run check` 第 3 步）；拆分时用 `md5sum -c` 自证与拆分前逐字节一致 |
 
 ---
 
