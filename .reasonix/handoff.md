@@ -8,13 +8,13 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R25 收口**（Navigation push/pop 转场 + `onTitleModeChange` 滚动联动）— **PASS**
-  （navtransdemo 48 条断言双端通过；破坏验证 13/6/5 红；全套门禁见下方 gate 表）
+- 上次切片：**源码拆分第三步**（refactor）——`main.js` 4248 → 1869 行，3 → **9 个分片**（新增
+  `nav`/`layout`/`draw`/`area`/`v2`/`ability`），**重建产物 md5 与拆分前一致**（`e861eb81…`）——
+  字节同一性即行为同一性；全套门禁 PASS
 - 下一步（README「下一步」原文）：
   1. 其余 85 个骨架组件的视觉语义、`@ohos:media`/`UIContext`
-  2. **继续拆 `runtime/src/main.js`**（4251 行 / 202,950 B；最大实测切口 = Nav 节
-     1141–2175 行 **1035 行 / 50.4 KB**，边界干净；`组件注册表` 与 `安装全局` 不建议动）
-     —— 机制已在 R5c 验证（`tools/build-runtime.mjs` + `check:runtime`）
+  2. ~~继续拆 `main.js`~~ **已拆到位**：剩组件注册表/安装全局（**不建议动**）与更小子节，
+     性价比有限；机制随时可用（`tools/build-runtime.mjs` + `check:runtime`）
 
 ## 项目目标
 
@@ -39,20 +39,21 @@ bash electron/run.sh <用例>   # 单用例·Electron
 
 ## 当前切片
 
-- Spec：`docs/ROADMAP.md`「R25 收口」+ `README.md`「R25 收口」章节（实测与验收记录）
+- 当前切片：**无未收口切片**（拆分第三步完成）；规格入口：`docs/ROADMAP.md`「R5c」第三步记录 +
+  `README.md`「下一步」+ `runtime/src/` 文件树
 - Lanes：单人顺序开发，无 lane 分片
-- Gates（全套 `npm run check` 于 R25 收口提交前执行，HEAD = R25 commit）：
+- Gates（全套 `npm run check` 于每轮收口提交前执行；最近一次 = 拆分第三步）：
 
 | Gate | 命令 | 阈值 | 原始结果 | 裁决 |
 |------|------|------|---------|------|
 | 环境 preflight | `node tools/preflight.mjs` | exit 0 | build/check-logs/ | PASS |
 | 生成物一致 | `gen-components --check` | exit 0 | build/check-logs/ | PASS |
-| 运行时拼接一致 | `build-runtime --check` | exit 0 | build/check-logs/ | PASS |
+| 运行时拼接一致 | `build-runtime --check` | exit 0 | 9 个分片 | PASS |
 | 文档断言数守门 | `stats --check-doc` | exit 0 | build/check-logs/ | PASS |
 | 浏览器全量 | `bash run.sh all` | exit 0 | 33 用例 | PASS |
 | Electron 全量 | `bash electron/run.sh all` | exit 0 | 32 用例 | PASS |
 
-R25 收口的过程性证据（破坏验证 13/6/5 红、md5 复原一致）在 README「R25 收口」章节，本表不复制。
+拆分第三步的硬判据单独记录：**重建产物 md5 = `e861eb81d1af46dac33d97fdfe1ab5df`（与拆分前一致）**。
 
 ## 开放分歧
 
@@ -79,4 +80,5 @@ R25 收口的过程性证据（破坏验证 13/6/5 红、md5 复原一致）在 
 | 日期 | 切片 | Commits | Gates | 备注 |
 |------|------|---------|-------|------|
 | 2026-09-21 | R12 收口 | 4571f8f | 6/6 PASS（复跑核验） | 新增坑 85（builder 产物不保证直接子节点）；navdemo 旧契约升级为正向断言 |
-| 2026-09-21 | R25 收口 | （本次提交） | 6/6 PASS | navtransdemo 48 条双端；破坏 13/6/5 红；navdemo 旧契约升级（转场默认开 → 断言前等 settle，74 条恢复）；新增坑 86（on* 分发陷阱）/87（@State 渲染滞后）；ROADMAP R13 重复标题已修；`.mimosa/` 进 .gitignore |
+| 2026-09-21 | R25 收口 | 290119c | 6/6 PASS | navtransdemo 48 条双端；破坏 13/6/5 红；navdemo 旧契约升级（转场默认开 → 断言前等 settle，74 条恢复）；新增坑 86（on* 分发陷阱）/87（@State 渲染滞后）；ROADMAP R13 重复标题已修；`.mimosa/` 进 .gitignore |
+| 2026-09-21 | 拆分第三步 | （本次提交） | 产物 md5 同拆分前 + 双端全量 PASS | main.js 4248→1869 行，3→9 分片（nav/layout/draw/area/v2/ability）；分节间空行留在 main（坑 84）；LazyForEach 在具体组件内部，切了劈半，不拆 |

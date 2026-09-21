@@ -73,9 +73,16 @@ PASS 100 次切换中分支内容始终与状态一致（不一致 0 次）
 
 ```
 runtime/src/                   运行时【手写源】—— 手写语义都加这里（一个分片 = 一组相关小节）
-  main.js                        其余全部（状态管理 / 布局 / 组件 / 路由 / ability 栈 …）
+  main.js                        其余全部（基础设施 / 状态管理 v1 / ViewPU / 属性映射 / Tabs / Swiper /
+                                 组件注册表 / 具体组件 / LazyForEach / 枚举路由 / 安装全局）
   animation.js                   显式动画（animateTo → CSS transition）+ 出现/消失过渡（R22/R22 收口）
   gesture.js                     手势（pointer 识别器 + GestureGroup 三态 + 优先级仲裁，R23/R23 收口）
+  nav.js                         Navigation / NavDestination 栈导航 + 标题栏/工具栏/分栏 + 转场/滚动联动
+  layout.js                      布局（alignRules / Guideline / bias / 文本截断 / 叠放 / Scroller）
+  draw.js                        绘制类四件套（Progress / Gauge / DataPanel / Rating）
+  area.js                        onAreaChange（真实面积）+ 自定义布局协议
+  v2.js                          状态管理 v2（@ComponentV2 全套装饰器）
+  ability.js                     ability 栈（startAbilityForResult / terminateSelf*）
 runtime/arkui-dom-runtime.js   运行时核心（经典脚本，加载后安装全部 ArkUI 全局）
                                ↑【拼接产物】由 tools/build-runtime.mjs 拼 runtime/src/，不要手改
   ├ v1 状态类（ObservedPropertySimplePU / SynchedProperty*PU）
@@ -1250,14 +1257,12 @@ PASS starStyle 的图片 URI 不可用已记警告
 **权威清单在 `docs/ROADMAP.md`**（每项带可复现的验收命令）。当前优先：
 
 1. 其余 85 个骨架组件的视觉语义、`@ohos:media`/`UIContext`
-2. **继续把 `runtime/src/main.js` 拆细**——拼接机制、门禁与"逐字节无损"的做法都已验证
-   （`tools/build-runtime.mjs` + `check:runtime`，已拆出 `animation.js` 与 `gesture.js`）。
-   `main.js` 现在 **4251 行 / 202,950 B**（35 个横幅行，含子节）；按横幅切的实测候选切口：
-   `Navigation`/`NavDestination` 栈导航（含 R12 收口标题栏 + R25 转场/联动）**1035 行 / 50.4 KB**
-   （最大头，且边界干净：`1141` 行到纯绘制节之前）、布局（`alignRules`/`Guideline`/`bias`/
-   截断/叠放/`Scroller`）**263 行**、状态管理 v2 **252 行**、`onAreaChange`+自定义布局协议
-   **231 行**、`ability` 栈 **197 行**、`LazyForEach` **195 行**（`组件注册表` 与 `安装全局`
-   不建议动 —— 前者被各节引用、后者是 IIFE 的出口）
+2. ~~**继续把 `runtime/src/main.js` 拆细**~~ **已拆到位（2026-09-21，源拆分第三步）**：9 个分片，
+   `main.js` 剩 **1869 行 / 86,452 B**（基础设施 / 状态 v1 / ViewPU / 属性映射 / Tabs / Swiper /
+   组件注册表 / 具体组件 / LazyForEach / 枚举路由 / 安装全局），已拆出
+   `animation` / `gesture` / `nav`(1031 行) / `layout`(262) / `draw`(408) / `area`(237) / `v2`(251) /
+   `ability`(196)。剩下的是组件注册表与安装全局（**不建议动** —— 前者被各节引用、后者是 IIFE 的出口）
+   和若干更小的子节，性价比有限；机制随时可用（`tools/build-runtime.mjs` + `check:runtime`）。
 
 > 已完成：`transition`（见上文「R22 收口」）、**手势分组与优先级仲裁**（见上文「R23 收口」）、
 > **`Navigation` 标题栏/工具栏/分栏**（见上文「R12 收口」）、

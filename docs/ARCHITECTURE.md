@@ -1344,8 +1344,13 @@ minContentWidth 360，`.d.ts` 原文；用组件宽度而不是窗口宽度，�
     `childView.initialRender()` **之后**（那时子节点才存在，`measure()` 才有东西可量）。
     协议里**返回的尺寸优先**于声明尺寸，施加在"带 `.id()` 的那一层"（可能是编译器合成的 `__Common__`）。
 20. **`runtime/arkui-dom-runtime.js` 是拼接产物，源在 `runtime/src/`**。手写语义一律加在源分片里
-    （**一个分片 = 一组相关小节**：`main.js` = 其余全部，`animation.js` = 显式动画 + 出现/消失过渡，
-    `gesture.js` = 手势含分组与仲裁），改完跑 `npm run build:runtime` 重拼；产物入库，
+    （**一个分片 = 一组相关小节**：`main.js` = 其余全部（基础设施 / 状态 v1 / ViewPU / 属性映射 /
+    Tabs / Swiper / 组件注册表 / 具体组件 / LazyForEach / 枚举路由 / 安装全局），
+    `animation.js` = 显式动画 + 出现/消失过渡，`gesture.js` = 手势含分组与仲裁，
+    `nav.js` = Navigation/NavDestination 全家（栈 + 标题栏/工具栏/分栏 + 转场/滚动联动），
+    `layout.js` = alignRules/Guideline/bias/截断/叠放/Scroller，`draw.js` = 绘制类四件套，
+    `area.js` = onAreaChange + 自定义布局协议，`v2.js` = 状态管理 v2，`ability.js` = ability 栈），
+    改完跑 `npm run build:runtime` 重拼；产物入库，
     靠 `npm run check` 第 3 步（`build-runtime --check`）守"产物 = 源"。
     **为什么必须"源拆、产物不拆"**：分片共享同一个闭包
     （`elmtRecords`/`propDeps`/`ViewStackProcessor`/`animWindow`…），其中 `animWindow` 还是
@@ -1399,11 +1404,11 @@ minContentWidth 360，`.d.ts` 原文；用组件宽度而不是窗口宽度，�
 
 == 体积（源码，不含产物/Electron 运行时）==
   runtime          365.2 KB
-  runtime(src)     252.6 KB
+  runtime(src)     252.7 KB
   test             267.1 KB
   tools            52.7 KB
   electron(src)    19.6 KB
-  docs             359.4 KB
+  docs             362.3 KB
   fixtures         279.2 KB
 
 == 逐文件（文档"文件职责"表的来源）==
@@ -1424,17 +1429,23 @@ minContentWidth 360，`.d.ts` 原文；用组件宽度而不是窗口宽度，�
   electron/preload.js                   1961 B  1.9 KB
   package.json                          1321 B  1.3 KB
   .gitignore                             757 B  0.7 KB
-  README.md                            87196 B  85.2 KB
+  README.md                            87736 B  85.7 KB
   THIRD-PARTY-NOTICES.md                8256 B  8.1 KB
-  docs/ARCHITECTURE.md                119803 B  117.0 KB
+  docs/ARCHITECTURE.md                121838 B  119.0 KB
   docs/CAPABILITY.md                   37317 B  36.4 KB
   docs/DEVELOPING.md                   58521 B  57.1 KB
-  docs/ROADMAP.md                      85272 B  83.3 KB
+  docs/ROADMAP.md                      86195 B  84.2 KB
   docs/surface-measurement.md           6496 B  6.3 KB
   docs/SESSION-2026-09-20.md           12842 B  12.5 KB
+  runtime/src/ability.js                8802 B  8.6 KB
   runtime/src/animation.js             25906 B  25.3 KB
+  runtime/src/area.js                  13745 B  13.4 KB
+  runtime/src/draw.js                  17932 B  17.5 KB
   runtime/src/gesture.js               29527 B  28.8 KB
-  runtime/src/main.js                 203184 B  198.4 KB
+  runtime/src/layout.js                14213 B  13.9 KB
+  runtime/src/main.js                  86452 B  84.4 KB
+  runtime/src/nav.js                   50317 B  49.1 KB
+  runtime/src/v2.js                    11839 B  11.6 KB
   fixtures/pages/AnimDemo.ts            6451 B  6.3 KB
   fixtures/pages/AsyncIO.ts             6206 B  6.1 KB
   fixtures/pages/Callee.ts              1726 B  1.7 KB
@@ -1540,9 +1551,15 @@ minContentWidth 360，`.d.ts` 原文；用组件宽度而不是窗口宽度，�
 | 文件 | 体积 | 职责 | 改它的时机 |
 |---|---|---|---|
 | `runtime/arkui-dom-runtime.js` | 215.7 KB | **拼接产物**：`tools/build-runtime.mjs` 把 `runtime/src/` 的分片按 `// @include` 标记拼成（语义内容见下面两行源分片）。为什么不做成多个 `<script>`：分片共享同一个闭包（`elmtRecords`/`ViewStackProcessor`/`animWindow`…，其中 `animWindow` 还是可变绑定），且 30 个手写 HTML 与 Electron 都按固定顺序加载这一个文件 | **不手改**；改 `runtime/src/` 后 `npm run build:runtime`；`build-runtime --check` 守门（在 `npm run check` 第 3 步） |
-| `runtime/src/main.js` | 161.6 KB | **手写源**（其余全部，3524 行）：v1 状态类 + 深度观测（`@Observed`/`@ObjectLink`）、`ViewPU`/`ViewV2`、装饰器层、组件栈、布局（`alignRules` 多层锚链 + `Guideline` + `bias`、`Grid` 轨道）、`Tabs`/`TabContent`+`TabsController`、`Swiper`+`SwiperController`、`Navigation`/`NavDestination`+`NavPathStack`、**绘制类四件套**（SVG/CSS）、`LazyForEach`、路由、**ability 栈**（`startAbilityForResult`/`terminateSelf*`） | 实现新语义（**手写优先**） |
+| `runtime/src/main.js` | 86.5 KB | **手写源**（其余全部，1869 行）：基础设施、v1 状态类 + 深度观测（`@Observed`/`@ObjectLink`）、脏标记/批量重渲染、`ViewPU`、属性映射（通用 `on*` 分发、`id`/`tabBar`）、`Tabs`/`TabContent`+`TabsController`、`Swiper`+`SwiperController`、组件注册表、具体组件、`LazyForEach` 虚拟滚动、`@ohos:*` 别名层、枚举/订阅/路由、安装全局（IIFE 出口） | 实现新语义（**手写优先**） |
 | `runtime/src/animation.js` | 25.3 KB | **手写源**（476 行）：显式动画（`Context.animateTo`/`animateToImmediately` → 被重渲染节点上的 CSS transition）+ 出现/消失过渡（`TransitionOptions`/`TransitionEffect`/`TransitionType` 方向门控/`detachChildren` 延迟摘除） | 改动画/过渡语义 |
 | `runtime/src/gesture.js` | 28.8 KB | **手写源**（617 行）：手势（pointer 识别器 + 两层栈 + `GestureGroup` 三态 + 元素级优先级仲裁；`GesturePriority`/`GestureMask`/`GestureMode`） | 改手势语义 |
+| `runtime/src/nav.js` | 50.3 KB | **手写源**（1031 行）：`Navigation`/`NavDestination`/`NavPathStack` 全家 —— 栈语义与生命周期、标题栏/工具栏/分栏（R12 收口）、push/pop 转场 + `onTitleModeChange` 滚动联动（R25 收口） | 改 Navigation 语义 |
+| `runtime/src/layout.js` | 14.2 KB | **手写源**（262 行）：布局 —— `alignRules`（多层锚链迭代到不动点）/`Guideline`/`bias`/文本截断/Stack 叠放/`Scroller` | 改布局同步语义 |
+| `runtime/src/draw.js` | 17.9 KB | **手写源**（408 行）：绘制类四件套 —— `Progress`/`Gauge`/`DataPanel`/`Rating`（`pathLength` 归一化、`conic-gradient`、半星裁切） | 改绘制类视觉 |
+| `runtime/src/area.js` | 13.7 KB | **手写源**（237 行）：`onAreaChange`（真实面积）+ 自定义布局协议（`onMeasureSize`/`onPlaceChild`，返回尺寸优先） | 改面积/自定义布局 |
+| `runtime/src/v2.js` | 11.8 KB | **手写源**（251 行）：状态管理 v2 —— `ViewV2` + 11 个装饰器（`@ComponentV2` 全套） | 改 v2 装饰器语义 |
+| `runtime/src/ability.js` | 8.8 KB | **手写源**（196 行）：ability 栈（`startAbilityForResult`/`terminateSelf*`、新窗口渲染被启动方） | 改 ability 链路 |
 | `runtime/generated-components.js` | 56.3 KB | 149 个组件骨架（**生成物**） | **不手改**；改 `tools/gen-components.mjs` 后重新生成，`--check` 会守门 |
 | `runtime/ohos-shims.js` | 56.4 KB | `@ohos:*` 模块（14 个，含 **`measure`**/**`multimedia.image`**/**`notificationManager`**/**`promptAction`**）+ 持久化后端（含 R21 的探测与自报）+ 文本/图像测量原语 | 新增平台模块 |
 | `tools/extract.mjs` | 6.4 KB | hvigor 缓存 `.ts` → 可执行 `.js`；**装饰器作用域内绑定前奏 + 未就绪守卫**（§3.4） | 产物形态/装饰器集合变化时 |

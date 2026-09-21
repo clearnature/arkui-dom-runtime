@@ -212,13 +212,22 @@ Electron 按固定顺序加载这一个文件），所以选【源拆、产物�
   删掉 `@include` 标记 → 红（孤儿分片）
 - `npm run check` → **6 步全绿**（新增第 3 步 `build-runtime --check`）
 
-**下一步（机制已就位，只是重复同一动作）**：`main.js` 剩 3524 行 / 165,512 B / 26 个分节横幅。
+**下一步（机制已就位，只是重复同一动作）**：~~`main.js` 剩 3524 行 / 165,512 B / 26 个分节横幅。
 按横幅切的实测候选切口（`README.md` 的「下一步」列了完整清单）：`Navigation` 栈导航 370 行、
-布局 263 行、状态管理 v2 252 行、`onAreaChange`+自定义布局协议 231 行、`ability` 栈 197 行。
+布局 263 行、状态管理 v2 252 行、`onAreaChange`+自定义布局协议 231 行、`ability` 栈 197 行。~~
+
+**第三步（2026-09-21，R25 收口后执行）**：上列候选切口（尺寸已因 R25 增长）一次拆完，**3 → 9 个分片**：
+`nav`(1031 行 / 50,317 B)、`draw`(408)、`area`(237)、`layout`(262)、`v2`(251)、`ability`(196)，
+`main.js` 剩 **1869 行 / 86,452 B**。六段全部按"横幅行 → 下一横幅前一行"切（分节间空行留在 `main.js`，
+按坑 84 的教训不进分片、不以行数组拼而是整段切片 + 强制末换行）；一次性切完再重拼，
+**产物 md5 与拆分前一致**（`e861eb81d1af46dac33d97fdfe1ab5df`）—— 字节同一性即行为同一性。
+`LazyForEach`（234 行）与更小的子节留在 `main.js`：它们在 `具体组件` 等大节的**内部**，切了会把
+同节劈成两半，性价比有限；`组件注册表`/`安装全局` 按原判据不动。
 
 **触及**：`tools/build-runtime.mjs`（新）、`runtime/src/main.js`、`runtime/src/animation.js`（新）、
 `runtime/src/gesture.js`（新）、`tools/check-all.sh`、`tools/preflight.mjs`、`tools/stats.mjs`、`package.json`、
-`README.md`、`docs/ARCHITECTURE.md`（§5 不变量 20 + §7 文件职责）、`docs/DEVELOPING.md`（§2 + 坑 84）
+`README.md`、`docs/ARCHITECTURE.md`（§5 不变量 20 + §7 文件职责）、`docs/DEVELOPING.md`（§2 + 坑 84）；
+第三步另触及 `runtime/src/{nav,layout,draw,area,v2,ability}.js`（新）
 
 ---
 
