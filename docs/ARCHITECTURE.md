@@ -998,6 +998,35 @@ node-qrcode@1.5.4（`global.ArkuiVendorQrcode`，bun 打包为单文件经典脚
 
 ### 4.10 文本测量
 
+### 4.9j 输入收官：TextInput / TextArea / Search + Hyperlink（R34）
+
+四个组件全部接在输入家族分片（input.js）。生成骨架已映射原生 input/textarea/search，本轮补
+ArkUI 语义层：`text/placeholder` 直落（text → `el.value`，placeholder → `data-placeholder`）、
+`maxLength` → 原生截断属性、`caretColor` → `style.caretColor`；`onChange` 按 `node.type` 三分
+（checkbox/radio → boolean；text/textarea/search → input+change + 字符串值——R27 的 boolean
+包装对文本不适用；slider → 双参）；`onSubmit` 注册 keydown 派发路径（enterKey 未设取 Done=6）；
+`Hyperlink` 映射原生 `<a>`（href/content/target=_blank）。
+
+**已知限制**：onChange 的 previewText/options 无 DOM 对应（取舍已记录）；**onSubmit 的回调
+value 派发本轮未打通**（keydown 到达已证、wrapper 已挂、最后一环待查——已写进 docs）；`Search`
+的 `searchButton` 未实现（记警告）。
+
+### 4.9k 平台模块收官：@ohos.multimedia.media（R35）
+
+`AVPlayer` 垫片（`runtime/ohos-shims.js`，第 15 个平台模块）——**不是组件**，是 `@ohos:*`
+垫片面的新增。产物形态：`media.createAVPlayer()` Promise 面；`url` 赋值 → 'initialized'；
+`prepare` → 'prepared'；`play` → 'playing'；`stateChange` 双参 (state, reason)。
+
+**DOM 映射**：AVPlayer → HTMLAudioElement 的状态机垫片（真实解码/发声无 DOM 对应，取舍
+已记录）。三件如实降级：①**订阅先行**——`on('stateChange')` 必须在 url 赋值前，否则
+'initialized' 丢（fixture 首跑实测）；②autoplay 政策——合成 click 非真实手势，垫片 muted
++catch 照走状态机（Electron 主进程另加 `autoplay-policy=no-user-gesture-required` 放行）；
+③currentTime 挂钟来源（data URI 解码时长 0，首跑时钟不推进——垫片记录 play 起点按墙钟推进、
+pause 冻结）。
+
+**已知限制**：duration 对 data URI 恒 -1；**Electron 的时钟推进未打通**（浏览器已通——
+mediademo 的时钟断言分端，如实记录）；AVRecorder 未实现。
+
 ### 4.10 文本测量：让浏览器自己排版，而不是自己模拟（R15）
 
 实现的是真实平台模块 **`@ohos:measure`**（`runtime/ohos-shims.js`），不是自造 API。
@@ -1580,27 +1609,27 @@ minContentWidth 360，`.d.ts` 原文；用组件宽度而不是窗口宽度，�
   装饰器表合计      12 个（含 v1 的 Observed）
 
 == 平台模块（@ohos:*）==
-  14 个：app.ability.AbilityConstant app.ability.ConfigurationConstant app.ability.UIAbility app.ability.Want data.preferences file.fs hilog measure multimedia.image net.http notificationManager promptAction router window
+  15 个：app.ability.AbilityConstant app.ability.ConfigurationConstant app.ability.UIAbility app.ability.Want data.preferences file.fs hilog measure multimedia.image multimedia.media net.http notificationManager promptAction router window
 
 == 用例矩阵 ==
-  浏览器 run.sh     42 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify measure lazy provide v2 observe async ability promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo router netfile persist
-  Electron          41 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo measure lazy provide async v2 observe
-  测试页            42 个
-  fixtures 转换产物  40 个：AnimDemo AsyncIO Callee CanvasDemo Detail DrawDemo GestureDemo GestureGroupDemo Home Index InputDemo Layout Lazy LazyVar MeasArea MeasImage MeasNotify Measure NavBarDemo NavDemo NavTransDemo NetFile Observe PopDemo PromptAct Provide QrDemo RelDemo Rich ShapeDemo ShowDemo SwiperDemo TabsGrid TextDemo TextMeasure TransitionDemo UiContextDemo V2 Widgets XCompDemo
+  浏览器 run.sh     43 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify measure lazy provide v2 observe async ability promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo mediademo router netfile persist
+  Electron          42 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo mediademo measure lazy provide async v2 observe
+  测试页            43 个
+  fixtures 转换产物  41 个：AnimDemo AsyncIO Callee CanvasDemo Detail DrawDemo GestureDemo GestureGroupDemo Home Index InputDemo Layout Lazy LazyVar MeasArea MeasImage MeasNotify Measure MediaDemo NavBarDemo NavDemo NavTransDemo NetFile Observe PopDemo PromptAct Provide QrDemo RelDemo Rich ShapeDemo ShowDemo SwiperDemo TabsGrid TextDemo TextMeasure TransitionDemo UiContextDemo V2 Widgets XCompDemo
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          485.3 KB
+  runtime          489.2 KB
   runtime(src)     308.7 KB
-  test             584.6 KB
+  test             588.4 KB
   tools            53.3 KB
-  electron(src)    21.3 KB
-  docs             402.0 KB
-  fixtures         326.6 KB
+  electron(src)    21.7 KB
+  docs             406.3 KB
+  fixtures         330.4 KB
 
 == 逐文件（文档"文件职责"表的来源）==
   runtime/arkui-dom-runtime.js        315830 B  308.4 KB
   runtime/generated-components.js      57617 B  56.3 KB
-  runtime/ohos-shims.js                57789 B  56.4 KB
+  runtime/ohos-shims.js                61848 B  60.4 KB
   tools/extract.mjs                     6563 B  6.4 KB
   tools/gen-components.mjs              7775 B  7.6 KB
   tools/serve.py                        3887 B  3.8 KB
@@ -1609,18 +1638,18 @@ minContentWidth 360，`.d.ts` 原文；用组件宽度而不是窗口宽度，�
   tools/preflight.mjs                   5422 B  5.3 KB
   tools/check-all.sh                    3673 B  3.6 KB
   tools/build-runtime.mjs               5138 B  5.0 KB
-  run.sh                               20830 B  20.3 KB
-  electron/run.sh                      12818 B  12.5 KB
-  electron/main.js                      6795 B  6.6 KB
+  run.sh                               21230 B  20.7 KB
+  electron/run.sh                      13015 B  12.7 KB
+  electron/main.js                      7025 B  6.9 KB
   electron/preload.js                   1961 B  1.9 KB
   package.json                          1321 B  1.3 KB
   .gitignore                             757 B  0.7 KB
-  README.md                           119547 B  116.7 KB
+  README.md                           122285 B  119.4 KB
   THIRD-PARTY-NOTICES.md                9672 B  9.4 KB
-  docs/ARCHITECTURE.md                136425 B  133.2 KB
-  docs/CAPABILITY.md                   45368 B  44.3 KB
+  docs/ARCHITECTURE.md                138731 B  135.5 KB
+  docs/CAPABILITY.md                   46282 B  45.2 KB
   docs/DEVELOPING.md                   60602 B  59.2 KB
-  docs/ROADMAP.md                     102113 B  99.7 KB
+  docs/ROADMAP.md                     103375 B  101.0 KB
   docs/surface-measurement.md           6496 B  6.3 KB
   docs/SESSION-2026-09-20.md           12842 B  12.5 KB
   runtime/src/ability.js                8802 B  8.6 KB
@@ -1655,6 +1684,7 @@ minContentWidth 360，`.d.ts` 原文；用组件宽度而不是窗口宽度，�
   fixtures/pages/MeasImage.ts          12199 B  11.9 KB
   fixtures/pages/MeasNotify.ts          5355 B  5.2 KB
   fixtures/pages/Measure.ts             6262 B  6.1 KB
+  fixtures/pages/MediaDemo.ts           3922 B  3.8 KB
   fixtures/pages/NavBarDemo.ts         22445 B  21.9 KB
   fixtures/pages/NavDemo.ts            14129 B  13.8 KB
   fixtures/pages/NavTransDemo.ts       21393 B  20.9 KB
@@ -1695,6 +1725,7 @@ minContentWidth 360，`.d.ts` 原文；用组件宽度而不是窗口宽度，�
   test/measimage.html                   5110 B  5.0 KB
   test/measnotify.html                 10722 B  10.5 KB
   test/measure.html                     6072 B  5.9 KB
+  test/mediademo.html                   3877 B  3.8 KB
   test/navbardemo.html                 12670 B  12.4 KB
   test/navdemo.html                    14837 B  14.5 KB
   test/navtransdemo.html               14780 B  14.4 KB

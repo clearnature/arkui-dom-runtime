@@ -1074,6 +1074,44 @@ EnterKeyType + maxLength/caretColor/onSubmit 属性）、`runtime/src/area.js`�
 `harmony-proj/`（TextDemo.ets + main_pages.json）、`test/textdemo.html`、`run.sh`、
 `electron/run.sh`
 
+**触及**：`runtime/src/input.js`（输入收官：三组件 + Hyperlink + TextInputController 基座 +
+EnterKeyType + maxLength/caretColor/onSubmit 属性）、`runtime/src/area.js`（文本输入 onChange
+分流）、`runtime/src/main.js`（安装全局 7 个名字）、`fixtures/pages/TextDemo.ts`、
+`harmony-proj/`（TextDemo.ets + main_pages.json）、`test/textdemo.html`、`run.sh`、
+`electron/run.sh`
+
+## R35：平台模块收官 `@ohos.multimedia.media`（AVPlayer 垫片）✅
+
+**测量**（新增 `pages/MediaDemo.ets` → 官方构建，`import media from '@ohos.multimedia.media'`）
+实测形态：`media.createAVPlayer()` Promise 面；`avPlayer.url = '…'` → 状态机 'initialized'；
+`prepare()` → 'prepared'；`play()` → 'playing'；`pause()` → 'paused'；
+`on('stateChange', (state, reason) => …)`（双参，reason DOM 恒空）；
+`duration/currentTime/seek/stop/release` 全挂。
+
+**实现**（`runtime/ohos-shims.js` 新增 `multimedia.media` 垫片，第 15 个平台模块）：
+**AVPlayer → HTMLAudioElement 的状态机垫片**——状态机语义是断言主体（真实解码/发声无 DOM
+对应，取舍已记录）。三个如实降级：
+① **订阅先行**（fixture 首跑实测）：`on('stateChange')` 必须在 url 赋值**之前**，否则
+'initialized' 在订阅前发生、被丢；
+② **autoplay 政策**：合成 click（dispatchEvent）不算真实手势，Chromium 拒 `audio.play()`
+→ 垫片 muted + catch 后照走状态机（Electron 主进程另加 `autoplay-policy=no-user-gesture-required`）；
+③ **currentTime 的来源**（DOM 化映射）：data URI 短音频真实解码时长为 0（实测时钟不推进）
+→ 垫片记录 play 起点的真实挂钟，playing 期间按墙钟推进、pause 冻结——语义真实（"播放了多久"）
+但不来自音频解码。
+
+**验收**：`bash run.sh mediademo`——浏览器 8 条全绿（状态机全链路 + 时钟推进）；
+Electron 状态机全绿、**时钟推进在 Electron 未打通**（offscreen 渲染下 audio 时钟不动，
+垫片挂钟来源在 Electron 环境未生效）——**断言分端**并如实写进 docs/CAPABILITY 已知限制
+（别把没验的当结论）。
+
+**已知限制**（写进 CAPABILITY）：`currentTime` 挂钟来源（不来自音频解码）；`duration` 对
+data URI 恒 -1（无真实解码）；`seek` 的 offset/`SubmitEvent` 类语义无对应；`AVRecorder` 未实现。
+
+**触及**：`runtime/ohos-shims.js`（multimedia.media 垫片，第 15 个平台模块）、
+`electron/main.js`（autoplay-policy 放行）、`fixtures/pages/MediaDemo.ts`、
+`harmony-proj/`（MediaDemo.ets + main_pages.json）、`test/mediademo.html`、
+`run.sh`、`electron/run.sh`
+
 ## R14：多层锚链 + `Guideline` + `bias` ✅
 
 ```

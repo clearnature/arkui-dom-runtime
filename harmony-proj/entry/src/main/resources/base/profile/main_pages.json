@@ -18,6 +18,7 @@
     "pages/CanvasDemo",
     "pages/XCompDemo",
     "pages/QrDemo",
-    "pages/TextDemo"
+    "pages/TextDemo",
+    "pages/MediaDemo"
   ]
 }

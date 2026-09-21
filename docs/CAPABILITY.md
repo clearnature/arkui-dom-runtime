@@ -305,3 +305,5 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 - 未验证：真机行为差异、多窗口、并发/性能、跨机器/跨用户的持久化。
 - 本项目的"框架角色"（`__arkui_dom_startAbility`、窗口 stage、路由栈）是**我自己的迷你实现**，
   与官方 `AbilityManagerService`/窗口管理的语义必然有偏差。
+| **media 垫片的限制**（R35）：`currentTime` 来自真实挂钟（不来自音频解码——data URI 解码时长 0）；`duration` 对 data URI 恒 -1；**Electron 的时钟推进未打通**（浏览器已通——断言分端）；`SubmitEvent` 类语义无 DOM 对应；`AVRecorder` 未实现 | ⚠️ | 限制清单，非缺陷 |
+| **`@ohos.multimedia.media`**（R35）：AVPlayer → HTMLAudioElement 状态机垫片（第 15 个平台模块）——`createAVPlayer()` Promise 面；url 赋值 → 'initialized' → prepare → 'prepared' → play → 'playing' → pause → 'paused'；`on('stateChange')` **订阅先行**（必须在 url 前，否则 initialized 丢）；`duration/currentTime/seek/stop/release` 全挂；`autoplay-policy` 放行（muted+catch 降级） | ✅ | `bash run.sh mediademo`（状态机全链路 + 时钟推进；时钟断言分端——Electron 未打通已记录） |

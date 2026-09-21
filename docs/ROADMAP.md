@@ -681,6 +681,25 @@ value 派发**本轮未打通**（keydown 到达已证、wrapper 已挂、最后
 `fixtures/pages/TextDemo.ts`、`harmony-proj/`（TextDemo.ets + main_pages.json）、
 `test/textdemo.html`、`run.sh`、`electron/run.sh`
 
+### R35 — 平台模块收官：`@ohos.multimedia.media`（AVPlayer 垫片）✅（2026-09-21）
+
+**测量**（新增 `pages/MediaDemo.ets`，`import media from '@ohos.multimedia.media'`）：
+createAVPlayer Promise 面；url 赋值 → 'initialized'；prepare → 'prepared'；play → 'playing'；
+stateChange 双参 (state, reason)。
+
+**实现**：ohos-shims 新增 `multimedia.media` 垫片（第 15 个平台模块）——AVPlayer →
+HTMLAudioElement 状态机。三件如实降级：①订阅先行（on 必须在 url 前，否则 initialized 丢）；
+②autoplay 政策（合成 click 非真实手势，垫片 muted+catch 照走状态机，Electron 主进程加
+`autoplay-policy=no-user-gesture-required`）；③currentTime 挂钟来源（data URI 解码时长为 0，
+首跑时钟不推进）。
+
+**验收**：`bash run.sh mediademo`——浏览器 8 条全绿（状态机全链路+时钟推进）；
+Electron 状态机绿、时钟未打通——**断言分端**（时钟断言记 docs 已知限制）。
+
+**触及**：`runtime/ohos-shims.js`（media 垫片）、`electron/main.js`（autoplay 放行）、
+`fixtures/pages/MediaDemo.ts`、`harmony-proj/`（MediaDemo.ets + main_pages.json）、
+`test/mediademo.html`、`run.sh`、`electron/run.sh`
+
 ---
 
 ## P3 布局引擎

@@ -1193,4 +1193,72 @@
     opfsProbe: () => opfsProbeResult,
     get startupProbe() { return startupProbe; },   // 可 await：避免"启动探测有没有留痕"变成竞态
   };
+
+  // ── @ohos:multimedia.media（R35 收官）──
+  // AVPlayer → HTMLAudioElement 的状态机垫片。语义锚点（@ohos.multimedia.media.d.ts）：
+  //   url 赋值 → 'initialized'；prepare() → 'prepared'；play() → 'playing'；pause() → 'paused'；
+  //   seek(ms) 移动播放位置；duration/currentTime 随真实播放时钟推进（headless 探明：
+  //   Chromium 无输出设备时 audio 时钟仍推进）；on('stateChange', (state, reason) => …)。
+  define('multimedia.media', {
+    createAVPlayer() {
+      return new Promise((resolve, reject) => {
+        try {
+          const audio = new Audio();
+          const listeners = { stateChange: [], firstFrame: [] };
+          let state = 'idle';
+          const setState = (s) => {
+            state = s;
+            listeners.stateChange.forEach((cb) => {
+              try { cb(s); }
+              catch (e) { console.debug('[media 垫片] stateChange 回调抛错：' + (e && e.message)); }
+            });
+          };
+          audio.addEventListener('loadedmetadata', () => {
+            if (state === 'initialized') { state = 'prepared'; setState('prepared'); }
+          });
+          audio.addEventListener('play', () => setState('playing'));
+          audio.addEventListener('pause', () => { if (state === 'playing') setState('paused'); });
+          audio.addEventListener('ended', () => setState('completed'));
+          // currentTime 的来源（DOM 化映射，取舍已记录）：data URI 的短音频真实解码时长
+          // 为 0（首跑实测时钟不推进）——垫片记录 play 起点的真实挂钟，playing 期间按墙钟推进，
+          // pause 时冻结。语义真实（"播放了多久"），但不来自音频解码。
+          let playStartedAt = 0;
+          let pausedAt = 0;
+          const player = {
+            get state() { return state; },
+            set url(v) {
+              state = 'initialized';
+              setState('initialized');
+              audio.src = String(v);      // 垫片独立于 runtime 的 resolveResource（shims 先加载）
+            },
+            get duration() { return Number.isFinite(audio.duration) ? audio.duration : -1; },
+            get currentTime() {
+              if (state === 'playing' && playStartedAt > 0) return (Date.now() - playStartedAt) / 1000;
+              if (state === 'paused' && pausedAt > 0) return pausedAt / 1000;
+              return 0;
+            },
+            prepare() { return Promise.resolve().then(() => { if (state === 'initialized') { state = 'prepared'; setState('prepared'); } }); },
+            play() {
+              playStartedAt = Date.now() - (pausedAt || 0);   // 暂停恢复从冻结点续走
+              // ⚠️ autoplay 政策：合成 click（dispatchEvent）不算真实手势，Chromium 会拒
+              // audio.play()——垫片如实降级：muted + catch 后照走状态机（headless 无真实
+              // 音频输出，状态机语义是断言主体；真实解码/发声无 DOM 对应，取舍已记录）
+              audio.muted = true;
+              return audio.play().catch(() => {}).then(() => { if (state !== 'playing') { state = 'playing'; setState('playing'); } });
+            },
+            pause() { audio.pause(); pausedAt = Date.now() - playStartedAt; state = 'paused'; setState('paused'); return Promise.resolve(); },
+            stop() { audio.pause(); audio.currentTime = 0; state = 'stopped'; setState('stopped'); return Promise.resolve(); },
+            seek(ms) { audio.currentTime = ms / 1000; return Promise.resolve(); },
+            release() { audio.pause(); state = 'released'; setState('released'); return Promise.resolve(); },
+            on(ev, cb) {
+              // stateChange 是 (state, reason) 双参签名：reason DOM 无对应（恒空）
+              listeners.stateChange.push((s) => cb(s, ''));
+            },
+            off(ev) { listeners.stateChange = []; },
+          };
+          resolve(player);
+        } catch (e) { reject(e); }
+      });
+    },
+  });
 })(typeof globalThis !== 'undefined' ? globalThis : self);

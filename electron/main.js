@@ -19,6 +19,9 @@ const WAIT_MS = Number(process.env.ARKUI_WAIT_MS || 20000);
 // 本机 Mesa 被 ROCm 改过（见 memory: rocm-mesa-sigtrap），Electron GPU 进程易崩 → 强制软件渲染
 app.commandLine.appendSwitch('disable-gpu');
 app.commandLine.appendSwitch('disable-software-rasterizer-fallback');
+// R35：媒体垫片的 audio.play() 走 muted 降级，Electron 仍可能因 autoplay 政策拒——
+// 测试页面（无真实手势）显式放行
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 app.disableHardwareAcceleration();
 
 app.whenReady().then(async () => {
