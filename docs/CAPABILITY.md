@@ -8,8 +8,8 @@
 cd /data/training/cli/arkui-dom-runtime
 npm run check                   # 全部验收：preflight + 生成物一致 + 浏览器 + Electron（退出码可信）
 npm run check:quick             # 跳过 Electron
-./run.sh all                    # 浏览器侧：31 个用例（Chrome headless）
-./electron/run.sh all           # Electron 侧：30 个用例 + 真实磁盘核验
+./run.sh all                    # 浏览器侧：32 个用例（Chrome headless）
+./electron/run.sh all           # Electron 侧：31 个用例 + 真实磁盘核验
 npm run stats                   # 覆盖范围统计（本文档的数字都来自它）
 npm run preflight               # 环境自检（缺工具链/宿主/可执行位会明确报错）
 node tools/gen-components.mjs   # 重新生成 149 个组件骨架
@@ -78,6 +78,9 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 | **`Tabs` / `TabContent` 切换**：`barPosition(Start/End)`、初始 `index`、`TabsController.changeIndex`、`onChange` 派发、点击 tab bar 切换、**切走的面板不销毁**（`display:none` 而非移除） | ✅ | tabgrid |
 | **`Swiper` 轮播**：`index`、`loop`（默认 true → 越界回卷；false → 边界停住/越界拒绝）、`indicator(true)` → N 个可点圆点、`autoPlay`+`interval`、`onChange` 派发、`SwiperController.showNext`/`showPrevious`/`changeIndex`/`finishAnimation`/`preloadItems`、切走的页不销毁、autoPlay 在页面卸载后自行停表 | ✅ | swiper |
 | **`Navigation` 栈导航**：`NavPathStack` 的 `pushPath`/`pushPathByName`/`pushDestination*`、`pop`/`popToName`/`popToIndex`、`replacePath`/`replacePathByName`、`removeByName`/`removeByIndexes`、`moveToTop`/`moveIndexToTop`、`clear`/`setPathStack`，以及查询族 `size`/`getAllPathName`/`getParamByIndex`/`getParamByName`/`getIndexByName`/`getPathStack` | ✅ | navdemo |
+| **`Navigation` 标题栏（四形态 + titleMode 高度）**：string / `{main,sub}` / CustomBuilder / `{builder,height}`；Full=112vp·主+副 138vp、Mini=56vp、Free 非滚动态等同 Full；`NavigationCustomTitle.height` **优先于 titleMode**（`.d.ts` 原文）；`hideTitleBar` 生效 | ✅ | `bash run.sh navbardemo`（四种形态逐一断言 + 三个高度数字） |
+| **`Navigation` 返回键 / 菜单 / 工具栏**：栈非空才渲染返回键、点了真 `pop()`；`hideBackButton` 不渲染节点；`backButtonIcon` 记录；`menus`/`toolbarConfiguration` 的 `ToolbarItem.action` 真的被调用 | ✅ | `bash run.sh navbardemo`（`hasBack` 两种形态、点返回键栈空、点菜单/工具栏项写进 `log`） |
+| **`Navigation` 分栏**：`mode(Split)` + `navBarWidth`（默认 240vp）+ `navBarPosition(Start/End)` + 1px 分割线；`mode(Auto)` 按**组件自身宽度 ≥600vp** 判（600 = 240+360，`.d.ts` 原文） | ✅ | `bash run.sh navbardemo`（split/200/Start、split/180/End、Auto 700→split、Auto 400→stack） |
 | **`onPop` 回调**（`pushPathByName(name, param, onPop)` → 弹出时收到 `{info:{name,param}, result}`） | ✅ | navdemo |
 | **`NavDestination` 生命周期**：首次挂载 `onWillAppear→onWillShow→onShown→onReady`；再显示只 `onWillShow→onShown`；隐藏 `onWillHide→onHidden`；销毁前 `onWillDisappear`（顺序**推断**自 `.d.ts` JSDoc，未在真机核对） | ✅ | navdemo |
 | **只有栈顶可见**：push 覆盖上一层，pop 露回下面那个且**实例复用**（`moveToTop` 也是复用不重建） | ✅ | navdemo |
@@ -154,7 +157,7 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 |---|---|---|
 | 同一份断言页在 Electron 里跑（不复制测试代码） | ✅ | electron 全矩阵 |
 | 真实渲染 + offscreen 截图（非白像素占比判定，非 `isEmpty()`） | ✅ | electron 各用例 |
-| 同一份断言的双端一致（30 个用例两个 runner 都过） | ✅ | run.sh / electron/run.sh |
+| 同一份断言的双端一致（31 个用例两个 runner 都过） | ✅ | run.sh / electron/run.sh |
 | runtime 源码分片与拼接产物一致（`runtime/src/` → `runtime/arkui-dom-runtime.js`，`--check` 只校验不落盘；孤儿分片/成环/漏展开报错） | ✅ | `npm run check:runtime`（`npm run check` 第 3 步）；拆分时用 `md5sum -c` 自证与拆分前逐字节一致 |
 
 ---
@@ -203,11 +206,17 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
   `textAlign`/`baselineOffset`/`textCase` 对测量结果无影响，未接入。
   测量用的是 `sans-serif`（未指定 `fontFamily` 时），**与真机的系统默认字体不同**，绝对像素值会差
   （但"换行行为"这一层是一致的）。
-- **`Navigation` 只有 Stack 栈语义**，以下项**未实现并会记 `layoutWarnings`**：
-  **标题栏与工具栏**（`title`/`subTitle`/`hideTitleBar`/`hideBackButton`/`titleMode`/`menus`/`menuCount`/
-  `toolBar`/`hideToolBar`/`backButtonIcon`/`toolbarConfiguration`——所以**页面看起来没有标题栏和返回按钮**）、
-  分栏模式（`mode(Split)`/`mode(Auto)`、`navBarWidth`/`navBarPosition`/`hideNavBar`/`minContentWidth`）、
+- **`Navigation` 的标题栏 / 工具栏 / 分栏已实现**（R12 收口）：`title` 四形态（string /
+  `{main,sub}` / CustomBuilder / `{builder, height}`）、`titleMode`（Full 112vp·主+副 138vp / Mini 56vp /
+  Free 非滚动态等同 Full）、`NavigationCustomTitle.height` **优先于 titleMode**（`.d.ts` 原文）、
+  `hideTitleBar` / `hideBackButton` / `backButtonIcon` / `menus` / `toolbarConfiguration`（含
+  `ToolbarItem.action`）、`mode(Split/Auto)` + `navBarWidth`（默认 240vp）+ `navBarPosition` +
+  分割线。返回键可点（真 `pop()`），菜单/工具栏项的 `action` 真的会被调用。
+  **仍记警告的**：`menus`/`toolbarConfiguration` 的自定义 builder 形态、`onTitleModeChange`（标题栏随
+  内容滚动收缩）、`navBarWidthRange`/`hideNavBar`/`enableDragBar`/`minNavBarWidth`、
   转场动画（`customNavContentTransition`）与系统栏样式（`systemBarStyle`/`ignoreLayoutSafeArea`）。
+  两条**推断**（`.d.ts` 没写数字）：`NavDestination` 标题栏恒为紧凑 56vp；`TitleHeight` 枚举取
+  Full 的那两个文档数字（112/138）。`Auto` 用**组件自身宽度**判（`≥600vp` 走 Split），不是窗口宽度。
   `NavPathStack` 侧未实现：`setInterception`（路由拦截）、`getParent`（嵌套 Navigation 的父栈）、
   `removeByNavDestinationId`（没有 id 概念），三者都记警告并返回安全值。
 - **`onBackPressed` 登记即警告**：本运行时没有系统返回键（浏览器/Electron 不产生），

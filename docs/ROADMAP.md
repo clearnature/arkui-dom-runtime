@@ -4,7 +4,7 @@
 
 已完成的机制说明见 `docs/ARCHITECTURE.md`；怎么改见 `docs/DEVELOPING.md`。
 
-**当前状态**：`npm run check` 全绿（preflight + 生成物一致 + **产物/源一致** + 文档数字守卫 + 断言计数守门 + 浏览器 31 用例 + Electron 30 用例）。
+**当前状态**：`npm run check` 全绿（preflight + 生成物一致 + **产物/源一致** + 文档数字守卫 + 断言计数守门 + 浏览器 32 用例 + Electron 31 用例）。
 v1/v2 状态管理（含 v1 深度观测）、`Grid` 真实轨道、`Tabs` 切换、`Swiper` 轮播、`Navigation` 栈导航、
 `alignRules` 多层锚链 + `Guideline` + `bias`、纯绘制四件套、文本真实测量（`@ohos:measure`）、变高列表项、`onAreaChange` 与自定义布局协议、
 R19–R24（平台模块 / 动画 / 手势 / `.abc` 路径调研）均已落地。
@@ -31,7 +31,7 @@ R5b（出向 `LICENSE`）已降级——本地开发不需要，只在对外分�
 | ③ | **状态管理 v2**（`ViewV2` + 11 个装饰器） | `bash run.sh v2`（25 条断言，浏览器 + Electron 双通过） |
 | ③ | **`Grid`/`GridItem` 真实轨道** + `Tabs`/`TabContent` 切换 | `bash run.sh tabgrid`（51 条断言，含几何与机制自省；双端通过） |
 | ③ | **`Swiper` 轮播**（loop / autoPlay / 指示点 / 控制器） | `bash run.sh swiper`（38 条断言，双端通过，连跑 3 次稳定） |
-| ③ | **`Navigation` 栈导航**（NavPathStack / 生命周期 / 状态保留 / 零泄漏） | `bash run.sh navdemo`（72 条断言，双端通过） |
+| ③ | **`Navigation` 栈导航**（NavPathStack / 生命周期 / 状态保留 / 零泄漏） | `bash run.sh navdemo`（74 条断言，双端通过） |
 | ③ | **`alignRules` 多层锚链 + `Guideline` + `bias`** | `bash run.sh reldemo`（24 条断言，双端通过） |
 | ③ | **纯绘制四件套**（`Progress`/`Gauge`/`DataPanel`/`Rating`） | `bash run.sh drawdemo`（47 条断言，双端通过） |
 | ③ | **文本真实测量**（`@ohos:measure` + `__arkui_dom_countLines`） | `bash run.sh textmeasure`（25 条断言，双端通过） |
@@ -387,7 +387,7 @@ bash run.sh observe && bash electron/run.sh observe   # 19 条断言双通过
 - `moveToTop` **复用原实例**（只调 DOM 顺序）；`replacePath` 销毁旧的建新的且**不派发 `onPop`**
 - `onBackPressed` **登记即警告**（本运行时无系统返回键 → 永不触发，不静默）
 
-**验收（已执行）**：`bash run.sh navdemo` —— **72 条断言**，双端通过：
+**验收（已执行）**：`bash run.sh navdemo` —— **74 条断言**，双端通过：
 初始态/builder 登记/根状态保留（push 前改到 2，pop 后仍是 2）/三层栈/`popToName`/`popToIndex`/
 `replacePath`/`removeByName`/`moveToTop`/`clear`/`onPop` 的 `{info,result}`/生命周期顺序（4 条相对顺序断言）/
 **elmtId 零泄漏（25 → 25）**/两条负向（缺 builder 的 push、越界 `popToIndex`）。
@@ -395,12 +395,59 @@ bash run.sh observe && bash electron/run.sh observe   # 19 条断言双通过
 **破坏验证**：去掉"非栈顶隐藏" → 3 条可见性断言失败；交换 `willShow`/`shown` → 1 条失败；
 不派发 `onPop` → 1 条失败。
 
-**已知限制（写进 CAPABILITY）**：**无标题栏/工具栏/返回按钮**（`title` 等记警告，是可见差异）；
-只有 Stack 语义（`Split`/`Auto` 记警告）；无转场动画；`setInterception`/`getParent`/`removeByNavDestinationId`
-未实现；**生命周期顺序与两处语义是推断的**（`.d.ts` JSDoc 未写全序，未在真机核对）。
+**已知限制（写进 CAPABILITY）**：~~**无标题栏/工具栏/返回按钮**~~、~~只有 Stack 语义~~ —— 两者已由
+**R12 收口**（见下）实现；无转场动画；`setInterception`/`getParent`/`removeByNavDestinationId` 未实现；
+**生命周期顺序与两处语义是推断的**（`.d.ts` JSDoc 未写全序，未在真机核对）。
 
 **触及**：`runtime/arkui-dom-runtime.js`、`fixtures/pages/NavDemo.ts`、`test/navdemo.html`、
 `run.sh`、`electron/run.sh`
+
+---
+
+### R12 收口 — `Navigation` 的标题栏 / 工具栏 / 分栏 ✅（2026-09-21）
+
+**背景**：R12 留下的是**可见差异**——页面没有标题栏、没有返回按钮、`Split`/`Auto` 只记警告。
+
+**先测量**（新增 `pages/NavBarDemo.ets` → 官方构建 → 读产物）三条关键约定：
+① `title` 的四种形态（string / `{main,sub}` / CustomBuilder / `{builder,height}`）都走同一个属性调用，
+**CustomBuilder 也被 loader 归一化成 `{ builder }` 对象** → "是不是自定义标题"看的是有没有 `builder` 字段；
+② `NavigationTitleMode` / `NavBarPosition` / `TitleHeight` 在产物里是**自由变量**（必须挂 global）；
+③ 标题栏高度全部能从 `.d.ts` 的 JSDoc 抄到：`Full`=112vp（只有主标题）/138vp（主+副）、`Mini`=56vp、
+`Free`（默认）非滚动态等同 Full；`NavigationCustomTitle.height` **优先于 titleMode**（原文）；
+`navBarWidth` 默认 240vp；`Auto` = **宽度 ≥600vp 走 Split**（600 = minNavBarWidth 240 + minContentWidth 360）。
+
+**实现**：`Navigation` 增加 `[data-arkui-nav-bar]`（内含 `[data-arkui-nav-titlebar]`）作为第一个子节点，
+根内容仍是直接子节点（靠容器 padding 让位，**不需要重定向组件栈**）；目的地增加
+`[data-arkui-dest-titlebar]` 与 `[data-arkui-dest-toolbar]`。布局统一放在**渲染后同步阶段**
+（`syncOneNav` / `syncOneDest` / `syncNavChrome`，与 `syncAlignRules` 同一时机）——分栏宽度与
+`Auto` 判定都要真实尺寸（不变量 18）；另外 `navSyncVisibility` 里也同步一次
+（push/pop 不一定伴随重渲染，首版漏了这条，断言当场抓住）。
+
+**验收（已执行）**：`bash run.sh navbardemo`（51 条断言）/ `bash electron/run.sh navbardemo` 双端通过；
+`bash run.sh navdemo` **74 条**（原「`Navigation.title` 未实现记警告」的负向断言改为正向：
+标题栏存在、文字来自产物、高度 112）。断言覆盖：三组枚举取值、四种 title 形态、三个高度数字、
+`NavigationCustomTitle.height` 压过 `titleMode`、`hideTitleBar`、Split/End/分割线/内容列、
+`Auto` 的 700/400 两侧、目的地标题栏/返回键（点了真 `pop()`）/菜单与工具栏的 `action`、
+`hideBackButton` 不渲染节点、`backButtonIcon` 记录。
+
+**破坏验证**（3 项，各被精确抓住）：① 关掉标题栏绘制 → **14 条**红（分栏与 Auto 断言不受影响）；
+② 分栏恒返回 stack → 恰好 **9 条**红；③ 忽略 `NavDestination.hideBackButton` → 恰好 **1 条**红。
+
+**顺带修掉运行时一个既有脆弱点**：`navBuildDest` 原来用 `area.lastElementChild` 认领刚建的目的地，
+但 builder 里的 `if/else` 会生成 `If` 包装层（`display:contents`）——目的地是"孙子辈"，于是被判成
+"没建出来"、**把栈项回滚掉**（栈空了、页面看着却有一个目的地）。旧的 NavDemo 恰好没有 `if` 分支，
+一直没暴露；本轮的 `PageMap` 有 3 个分支，断言当场抓住。改成按"本次新建的节点"认领
+（`__arkuiNavNew` 标记），"在目标区内"也从"直接父节点"改成**向上找祖先**（记坑 85）。
+
+**已知限制**：`NavDestination` 标题栏恒为紧凑 56vp（`.d.ts` 没写，**推断**）；`TitleHeight` 枚举的数值
+`.d.ts` 没给，按其 JSDoc 措辞对应 Full 的 112/138（**推断**）；`menus`/`toolbarConfiguration` 只支持
+数组形态（builder 形态记警告）；`onTitleModeChange`/`navBarWidthRange`/`hideNavBar`/`enableDragBar`/
+`minNavBarWidth`/转场动画/系统栏样式未实现（记警告）；`Auto` 用**组件自身宽度**判而不是窗口宽度。
+
+**触及**：`runtime/src/main.js`（`NavigationTitleMode`/`NavBarPosition`/`TitleHeight` + nav-bar DOM +
+`syncOneNav`/`syncOneDest`/`syncNavChrome` + `NAV_ATTRS`/`NAVDEST_ATTRS` + `__arkui_dom_navChrome`）、
+`fixtures/pages/NavBarDemo.ts`、`harmony-proj/`（`NavBarDemo.ets` + main_pages.json）、
+`test/navbardemo.html`、`test/navdemo.html`、`run.sh`、`electron/run.sh`
 
 ### R13 — 数据可视化类：`Progress` / `Gauge` / `DataPanel` / `Rating`
 

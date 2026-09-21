@@ -63,10 +63,15 @@
       check(!!st0, '自省钩子 __arkui_dom_navState 可用');
       check(st0 && st0.hasBuilder === true, `navDestination builder 已登记 = ${st0 && st0.hasBuilder}`);
       check(st0 && st0.names.length === 0, `自省 names = [${st0 && st0.names.join(',')}]`);
-      // Navigation.title 未实现（标题栏不绘制）→ 必须在警告里出现，不能静默
-      check(__arkui_dom_layout_warnings.some((w) => String(w).includes('Navigation.title')),
-        `Navigation.title 未实现已记警告（共 ${__arkui_dom_layout_warnings.length} 条）：`
-        + `'${__arkui_dom_layout_warnings.find((w) => String(w).includes('Navigation.title'))}'`);
+      // R12 收口后：Navigation.title 已实现（标题栏真的画出来了），不再是"记警告"那套。
+      // 这里改成正向断言：标题栏存在、文字是产物里传的 'Home'、高度按 titleMode 默认（Free→Full 112vp）。
+      const chrome = __arkui_dom_navChrome(navA);
+      check(!!chrome && chrome.titleText === 'Home',
+        `标题栏已绘制且文字来自产物（title='${chrome && chrome.titleText}'）`);
+      check(!!chrome && chrome.barHeight === 112,
+        `默认 titleMode=Free 的标题栏高度 = 112vp（实际 ${chrome && chrome.barHeight}）`);
+      check(!__arkui_dom_layout_warnings.some((w) => String(w).includes('Navigation.title')),
+        `Navigation.title 不再记警告（共 ${__arkui_dom_layout_warnings.length} 条警告）`);
 
       // ══════════ 根内容状态：push 前先改，push/pop 后必须还在 ══════════
       await click('rootInc');

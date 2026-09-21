@@ -93,11 +93,11 @@ tools/serve.py                 极简静态服务（端口由 OS 分配，避免
 tools/preflight.mjs            环境自检（工具链 / 宿主 / 可执行位）
 tools/check-all.sh             一条命令做完所有验收（6 步）
 tools/stats.mjs                覆盖范围统计（文档里的数字都来自它）
-test/*.html                    断言页（31 个用例；断言数由 runner 守门，见 docs/DEVELOPING.md 坑 77）
-fixtures/                      冻结的 ets-loader 转换产物（29 个，测试的输入）
+test/*.html                    断言页（32 个用例；断言数由 runner 守门，见 docs/DEVELOPING.md 坑 77）
+fixtures/                      冻结的 ets-loader 转换产物（30 个，测试的输入）
 harmony-proj/                  HarmonyOS 工程（页面 .ets 源码，转换产物的来源；构建输出不入库）
-run.sh                         浏览器 31 用例驱动
-electron/run.sh                Electron 30 用例 + 真实磁盘验证
+run.sh                         浏览器 32 用例驱动
+electron/run.sh                Electron 31 用例 + 真实磁盘验证
 docs/                          ARCHITECTURE / DEVELOPING / ROADMAP / CAPABILITY
 ```
 
@@ -490,7 +490,7 @@ and 'index' does not exist in type 'SwiperController'
 
 ```
 $ bash run.sh navdemo
-=== ALL PASS ===                    （72 条断言）
+=== ALL PASS ===                    （74 条断言）
 PASS 初始没有 NavDestination（0 个）
 PASS navDestination builder 已登记 = true
 PASS Navigation.title 未实现已记警告        ← 标题栏不绘制，但出声，不静默
@@ -531,6 +531,57 @@ builder 真产出了 `NavDestination`（`if/else` 可能没覆盖该 name）—�
 
 **破坏验证**：去掉"非栈顶隐藏" → 3 条可见性断言失败；交换 `willShow`/`shown` 顺序 → 1 条失败；
 不派发 `onPop` → 1 条失败。
+
+## R12 收口：`Navigation` 的标题栏 / 工具栏 / 分栏 ✅
+
+R12 留下的是**可见差异**：无标题栏/工具栏/返回按钮，`Split`/`Auto` 只记警告。
+
+**先测量**（新增 `pages/NavBarDemo.ets` → 官方构建 → 读产物），量出三条关键约定：
+① `title` 的四种形态在产物里都走同一个属性调用，**CustomBuilder 也被归一化成 `{ builder }` 对象**
+（所以"是不是自定义标题"看的是有没有 `builder` 字段，不是实参类型）；
+② `NavigationTitleMode`/`NavBarPosition`/`TitleHeight` 在产物里是**自由变量**（必须挂 global）；
+③ 所有标题栏高度都能从 `.d.ts` 的 JSDoc 抄到确切数字。
+
+**高度全部照 `.d.ts` 原文**：`Full` = 112vp（只有主标题）/ 138vp（主+副）、`Mini` = 56vp、
+`Free`（默认）不滚动时等同 `Full`；`NavigationCustomTitle.height` **优先于 titleMode**
+（原文："When the NavigationCustomTitle type is used to set the height, titleMode does not take effect"）。
+`TitleHeight` 的数值 `.d.ts` 没给 → 按它自己的 JSDoc 措辞对应到 112/138（**推断**）。
+`navBarWidth` 默认 240vp、`Auto` 的判据是**宽度 ≥ 600vp 走 Split**（600 = minNavBarWidth 240 + minContentWidth 360），
+两条都是原文。
+
+```
+$ bash run.sh navbardemo
+=== ALL PASS ===                    （51 条断言）
+PASS NavigationTitleMode/NavBarPosition/TitleHeight 三组枚举可用
+PASS string 形态：'T1'／Full 且只有主标题 → 112vp
+PASS NavigationCommonTitle：main='M2' sub='S2'／有主副标题 → 138vp
+PASS builder 的内容真的建进了标题栏／NavigationTitleOptions.backgroundColor 生效／Mini → 56vp
+PASS NavigationCustomTitle.height=MainWithSub → 138vp，且 titleMode(Mini) 不生效
+PASS hideTitleBar(true) → 标题栏不显示／隐藏后高度按 0 计
+PASS mode(Split) → split／navBarWidth(200)／导航栏宽度 = 200 + 1px 分割线／内容列从 201px 开始
+PASS Auto + 宽 700 ≥ 600 → split／Auto + 宽 400 < 600 → stack
+PASS 目的地标题栏文字 = 'DT1'／栈非空 → 目的地有返回键／menus 渲染／toolbarConfiguration 渲染
+PASS 点菜单触发 action／点工具栏项触发 action／点返回键 → 栈空
+PASS NavDestination.hideBackButton(true) → 不渲染返回键／backButtonIcon 被记下
+```
+
+**破坏验证**（3 项，各被精确抓住）：① 关掉标题栏绘制 → **14 条**红（标题文本/builder/背景色/
+目的地标题/返回键/菜单/工具栏及其 action），而分栏与 Auto 的断言不受影响；
+② 关掉分栏（恒返回 stack）→ 恰好 **9 条**红（模式/宽度/分割线/内容列/Auto 判据）；
+③ 忽略 `NavDestination.hideBackButton` → 恰好 **1 条**红。
+
+**顺带修掉运行时一个既有脆弱点**：`navBuildDest` 原来用 `area.lastElementChild` 认领刚建的目的地，
+但 builder 里的 `if/else` 会生成 `If` 包装层（`display:contents`）—— 目的地是"孙子辈"，
+于是被判成"没建出来"、**把栈项回滚掉**（栈空了、页面看着却有一个目的地）。
+旧的 NavDemo 恰好没有 `if` 分支，一直没暴露；本轮的 `PageMap` 有 3 个分支，断言当场抓住。
+现在改成按"本次新建的节点"认领（`__arkuiNavNew` 标记），并把"在目标区内"从"直接父节点"
+改成**向上找祖先**。
+
+**已知限制**（都写进 CAPABILITY）：`NavDestination` 的标题栏高度恒取紧凑 56vp（`.d.ts` 没写它的
+高度，**推断**）；`menus`/`toolbarConfiguration` 只支持数组形态（自定义 builder 形态记警告）；
+`onTitleModeChange`（标题栏随内容滚动收缩）/`navBarWidthRange`/`hideNavBar`/`enableDragBar`/
+`customNavContentTransition` 等仍未实现（记警告，不静默）；`Auto` 用**组件自身宽度**判而
+不是窗口宽度（同一页可以有多个 `Navigation`，窗口宽度无法区分）。
 
 ## R14：多层锚链 + `Guideline` + `bias` ✅
 
@@ -1124,13 +1175,14 @@ PASS starStyle 的图片 URI 不可用已记警告
 | 文档数字守门 | `npm run stats:check-doc` | `ARCHITECTURE.md` §6 的整块实测数字逐行比对，漂移即非 0 退出；`stats:write-doc` 就地重写 |
 | 覆盖统计 | `npm run stats` | 文档里的所有数字都由它产出（`--json` 机器可读） |
 
-`npm run check` 当前：**6 步全绿（preflight + 生成物一致 + 产物/源一致 + 文档数字 + 浏览器 31 用例 + Electron 30 用例）**。
+`npm run check` 当前：**6 步全绿（preflight + 生成物一致 + 产物/源一致 + 文档数字 + 浏览器 32 用例 + Electron 31 用例）**。
 
 ## 下一步
 
 **权威清单在 `docs/ROADMAP.md`**（每项带可复现的验收命令）。当前优先：
 
-1. `Navigation` 的标题栏/工具栏与分栏模式、其余 85 个骨架组件的视觉语义、`@ohos:media`/`UIContext`
+1. 其余 85 个骨架组件的视觉语义、`@ohos:media`/`UIContext`、`Navigation` 的**转场动画**与
+   `onTitleModeChange`（标题栏随内容滚动收缩）
 2. **继续把 `runtime/src/main.js` 拆细**——拼接机制、门禁与"逐字节无损"的做法都已验证
    （`tools/build-runtime.mjs` + `check:runtime`，已拆出 `animation.js` 与 `gesture.js`）。
    `main.js` 现在 **3524 行 / 165,512 B，内含 26 个分节/子节横幅**；按横幅切的实测候选切口：
@@ -1141,10 +1193,11 @@ PASS starStyle 的图片 URI 不可用已记警告
    后者是 IIFE 的出口）
 
 > 已完成：`transition`（见上文「R22 收口」）、**手势分组与优先级仲裁**（见上文「R23 收口」）、
+> **`Navigation` 标题栏/工具栏/分栏**（见上文「R12 收口」）、**runtime 源码分片**（R5c）、
 > **R24 ArkVM/`.abc` 路径调研**（`docs/ARKVM-RESEARCH.md`）。
 
-**仍未覆盖**：`chainMode`、`Navigation` 的**标题栏/工具栏与分栏模式**、其余 85 个骨架组件的视觉语义、
-`@ohos:media`/`UIContext`。
+**仍未覆盖**：`chainMode`、`Navigation` 的**转场动画**与标题栏滚动联动（`onTitleModeChange`）、
+其余 85 个骨架组件的视觉语义、`@ohos:media`/`UIContext`。
 **别把没验的当结论**——`docs/CAPABILITY.md` 里有逐项的能力矩阵，其中标了哪些语义是**推断**的。
 
 **已知待办（别当已完成）**：

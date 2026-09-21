@@ -1221,6 +1221,40 @@ globalThis.Gesture.pop();                         // ③ 关作用域 → 挂到
 `IgnoreInternal` 按文档正文实现为"压制所有后代（含并行）"；同一元素内的多个作用域按元素取最高档，
 不逐手势区分；多指分别落在不同元素时按"每个指针各自认领"处理（近似）；`fingerList` 仍恒为空。
 
+### 4.18 `Navigation` 的标题栏 / 工具栏 / 分栏（R12 收口）
+
+**先看产物**（`fixtures/pages/NavBarDemo.ts`）。三条约定：
+① `title` 四形态（string / `{main,sub}` / CustomBuilder / `{builder,height}`）都走同一个属性调用，
+**CustomBuilder 也被 loader 归一化成 `{ builder }` 对象** —— "是不是自定义标题"看的是有没有 `builder`
+字段，不是实参类型；② `NavigationTitleMode` / `NavBarPosition` / `TitleHeight` 是**自由变量**（挂 global）；
+③ 标题栏高度在 `.d.ts` 的 JSDoc 里有确切数字：`Full`=112vp（主）/138vp（主+副）、`Mini`=56vp、
+`Free`（默认）非滚动态等同 Full；`NavigationCustomTitle.height` **优先于 titleMode**（原文）。
+
+**DOM 形态**（`createNavState` 建，`syncOneNav` 摆）：
+
+```
+<div data-arkui-comp="Navigation" data-arkui-nav-mode="stack|split" data-arkui-nav-mode-declared="…">
+  <div data-arkui-nav-bar>                ← Split: 固定宽度的栏（宽 = navBarWidth + 1px 分割线）；Stack: 铺满顶部
+    <div data-arkui-nav-titlebar>         ← 标题栏本体（hideTitleBar → display:none；高度按 titleMode）
+  <…根内容…>                              ← 仍是直接子节点（靠容器 padding 让位，不重定向组件栈）
+  <div data-arkui-nav-destinations>       ← Stack: inset:0 铺满；Split: 只占内容列
+```
+
+目的地侧：`[data-arkui-dest-titlebar]`（恒为紧凑 56vp，**推断**）+ `[data-arkui-dest-toolbar]`
+（`ToolbarItem[]`，`hideToolBar` 或空数组时不显示）。返回键在**栈非空**且未被 `hideBackButton` 时才渲染，
+点击走真 `NavPathStack.pop()`；`menus` / 工具栏项的 `action` 是真实回调。
+
+**同步时机**（不变量 18）：布局统一在渲染后同步阶段（`syncNavChrome`，与 `syncAlignRules` 同一时机），
+因为分栏宽度与 `Auto` 判定都要**真实尺寸**——`Auto` 按组件自身宽度 ≥600vp 判（600 = minNavBarWidth 240 +
+minContentWidth 360，`.d.ts` 原文；用组件宽度而不是窗口宽度，因为同一页可以有多个 `Navigation`）。
+另外 `navSyncVisibility` 里也同步一次：**push/pop 不一定伴随重渲染**，首版漏了这条，目的地的标题栏
+画不出来，断言当场抓住。
+
+**已知限制**：`NavDestination` 标题栏高度（56vp）与 `TitleHeight` 的数值（112/138）都是**推断**
+（`.d.ts` 没写数字，后者按其 JSDoc 措辞对应 Full 的那两个数字）；`menus`/`toolbarConfiguration` 只支持
+数组形态；`onTitleModeChange`（随内容滚动收缩）/`navBarWidthRange`/`hideNavBar`/`enableDragBar`/
+转场动画/系统栏样式未实现（记警告）。
+
 ---
 
 ## 5. 架构不变量
@@ -1304,10 +1338,10 @@ globalThis.Gesture.pop();                         // ③ 关作用域 → 挂到
   属性元数据总数       1078（平均 7.2／组件，最多 TextInput=70）
 
 == 运行时 API ==
-  global 导出        154 个
+  global 导出        181 个
   状态类            ObservedPropertySimplePU ObservedPropertyObjectPU SynchedPropertySimpleOneWayPU SynchedPropertySimpleTwoWayPU SynchedPropertyNesedObjectPU
   内置组件          Text Button Column Row Stack List ListItem If ForEach LazyForEach RelativeContainer Tabs TabContent Swiper Navigation NavDestination Progress Gauge DataPanel Rating
-  内部钩子 __arkui_dom_*  30 个
+  内部钩子 __arkui_dom_*  31 个
 
 == 状态管理 ==
   v1  状态类        5 个（包装对象模型）
@@ -1321,22 +1355,22 @@ globalThis.Gesture.pop();                         // ③ 关作用域 → 挂到
   14 个：app.ability.AbilityConstant app.ability.ConfigurationConstant app.ability.UIAbility app.ability.Want data.preferences file.fs hilog measure multimedia.image net.http notificationManager promptAction router window
 
 == 用例矩阵 ==
-  浏览器 run.sh     31 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify measure lazy provide v2 observe async ability promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo router netfile persist
-  Electron          30 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo measure lazy provide async v2 observe
-  测试页            31 个
-  fixtures 转换产物  29 个：AnimDemo AsyncIO Callee Detail DrawDemo GestureDemo GestureGroupDemo Home Index Layout Lazy LazyVar MeasArea MeasImage MeasNotify Measure NavDemo NetFile Observe PromptAct Provide RelDemo Rich SwiperDemo TabsGrid TextMeasure TransitionDemo V2 Widgets
+  浏览器 run.sh     32 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify measure lazy provide v2 observe async ability promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo router netfile persist
+  Electron          31 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo measure lazy provide async v2 observe
+  测试页            32 个
+  fixtures 转换产物  30 个：AnimDemo AsyncIO Callee Detail DrawDemo GestureDemo GestureGroupDemo Home Index Layout Lazy LazyVar MeasArea MeasImage MeasNotify Measure NavBarDemo NavDemo NetFile Observe PromptAct Provide RelDemo Rich SwiperDemo TabsGrid TextMeasure TransitionDemo V2 Widgets
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          328.4 KB
-  runtime(src)     215.8 KB
-  test             239.3 KB
+  runtime          353.3 KB
+  runtime(src)     240.7 KB
+  test             252.0 KB
   tools            52.7 KB
-  electron(src)    19.2 KB
-  docs             340.6 KB
-  fixtures         236.4 KB
+  electron(src)    19.4 KB
+  docs             350.6 KB
+  fixtures         258.3 KB
 
 == 逐文件（文档"文件职责"表的来源）==
-  runtime/arkui-dom-runtime.js        220899 B  215.7 KB
+  runtime/arkui-dom-runtime.js        246380 B  240.6 KB
   runtime/generated-components.js      57617 B  56.3 KB
   runtime/ohos-shims.js                57789 B  56.4 KB
   tools/extract.mjs                     6563 B  6.4 KB
@@ -1347,23 +1381,23 @@ globalThis.Gesture.pop();                         // ③ 关作用域 → 挂到
   tools/preflight.mjs                   5422 B  5.3 KB
   tools/check-all.sh                    3673 B  3.6 KB
   tools/build-runtime.mjs               5138 B  5.0 KB
-  run.sh                               16406 B  16.0 KB
-  electron/run.sh                      10652 B  10.4 KB
+  run.sh                               16855 B  16.5 KB
+  electron/run.sh                      10856 B  10.6 KB
   electron/main.js                      6795 B  6.6 KB
   electron/preload.js                   1961 B  1.9 KB
   package.json                          1321 B  1.3 KB
   .gitignore                             674 B  0.7 KB
-  README.md                            77233 B  75.4 KB
+  README.md                            81349 B  79.4 KB
   THIRD-PARTY-NOTICES.md                8256 B  8.1 KB
-  docs/ARCHITECTURE.md                113139 B  110.5 KB
-  docs/CAPABILITY.md                   34482 B  33.7 KB
-  docs/DEVELOPING.md                   55534 B  54.2 KB
-  docs/ROADMAP.md                      78490 B  76.7 KB
+  docs/ARCHITECTURE.md                116383 B  113.7 KB
+  docs/CAPABILITY.md                   36183 B  35.3 KB
+  docs/DEVELOPING.md                   56745 B  55.4 KB
+  docs/ROADMAP.md                      82577 B  80.6 KB
   docs/surface-measurement.md           6496 B  6.3 KB
   docs/SESSION-2026-09-20.md           12842 B  12.5 KB
   runtime/src/animation.js             25906 B  25.3 KB
   runtime/src/gesture.js               29527 B  28.8 KB
-  runtime/src/main.js                 165512 B  161.6 KB
+  runtime/src/main.js                 190993 B  186.5 KB
   fixtures/pages/AnimDemo.ts            6451 B  6.3 KB
   fixtures/pages/AsyncIO.ts             6206 B  6.1 KB
   fixtures/pages/Callee.ts              1726 B  1.7 KB
@@ -1380,6 +1414,7 @@ globalThis.Gesture.pop();                         // ③ 关作用域 → 挂到
   fixtures/pages/MeasImage.ts          12199 B  11.9 KB
   fixtures/pages/MeasNotify.ts          5355 B  5.2 KB
   fixtures/pages/Measure.ts             6262 B  6.1 KB
+  fixtures/pages/NavBarDemo.ts         22445 B  21.9 KB
   fixtures/pages/NavDemo.ts            14129 B  13.8 KB
   fixtures/pages/NetFile.ts             5039 B  4.9 KB
   fixtures/pages/Observe.ts            11906 B  11.6 KB
@@ -1409,7 +1444,8 @@ globalThis.Gesture.pop();                         // ③ 关作用域 → 挂到
   test/measimage.html                   5110 B  5.0 KB
   test/measnotify.html                 10722 B  10.5 KB
   test/measure.html                     6072 B  5.9 KB
-  test/navdemo.html                    13765 B  13.4 KB
+  test/navbardemo.html                 12670 B  12.4 KB
+  test/navdemo.html                    14172 B  13.8 KB
   test/netfile.html                     5302 B  5.2 KB
   test/observe.html                     6232 B  6.1 KB
   test/opfs-probe.html                  1620 B  1.6 KB
@@ -1454,7 +1490,8 @@ globalThis.Gesture.pop();                         // ③ 关作用域 → 挂到
 | 持久化 | ✅ Electron 真磁盘（shell 级验证）；浏览器 `localStorage` |
 | 动画 / 手势 | ❌ 未实现（`Swiper` 也无手势滑动，只有控制器/指示点/autoPlay 三条切换路径） |
 | **绘制类四件套** `Progress`/`Gauge`/`DataPanel`/`Rating` | ✅ 有测试（`run.sh drawdemo`，47 条断言）：`--progress` 百分比 + 无障碍属性、进度环、`Gauge` 任意起止角/整圆/分段色/min-max、`DataPanel` 环（`conic-gradient` 累计色标）与线（几何宽度）、`Rating` 满星/半星/`onChange`/`starStyle` 告警 |
-| `Navigation` 栈导航 | ✅ 有测试（`run.sh navdemo`，72 条断言）：`NavPathStack` 的 push/pop/popToName/popToIndex/replacePath/removeByName/moveToTop/clear/查询族 + `onPop` 回调、`NavDestination` 生命周期、根内容状态保留、目标销毁后 elmtId 零泄漏 |
+| `Navigation` 栈导航 | ✅ 有测试（`run.sh navdemo`，74 条断言）：`NavPathStack` 的 push/pop/popToName/popToIndex/replacePath/removeByName/moveToTop/clear/查询族 + `onPop` 回调、`NavDestination` 生命周期、根内容状态保留、目标销毁后 elmtId 零泄漏 |
+| `Navigation` 标题栏/工具栏/分栏 | ✅ 有测试（`run.sh navbardemo`，51 条断言）：`title` 四形态、`titleMode` 高度（112/138/56）、`NavigationCustomTitle.height` 压过 `titleMode`、`hideTitleBar`、返回键真 `pop()`、`menus`/`ToolbarItem` 的 `action`、`mode(Split)`+`navBarWidth`+`navBarPosition`+分割线、`Auto` ≥600vp 判 Split（§4.18） |
 | 85 个骨架组件的视觉语义 | ❌ 仅 `data-*` |
 
 ---
@@ -1477,8 +1514,8 @@ globalThis.Gesture.pop();                         // ③ 关作用域 → 挂到
 | `tools/assert-counts.mjs` | 7.3 KB | 断言计数守门（运行期 emit 的 PASS 行 ↔ 文档声明的「N 条断言」，见坑表 77） | 声明写法/扫描范围变化时 |
 | `tools/preflight.mjs` | 5.3 KB | 环境自检（工具链/宿主/可执行位） | 外部依赖变化时 |
 | `tools/check-all.sh` | 3.6 KB | 一条命令做完验收（6 步），退出码只看被调命令 | 新增验收步骤时 |
-| `run.sh` | 16.0 KB | 浏览器 31 用例驱动 | 新增用例 |
-| `electron/run.sh` | 10.4 KB | Electron 30 用例 + 磁盘验证 | 新增用例 |
+| `run.sh` | 16.0 KB | 浏览器 32 用例驱动 | 新增用例 |
+| `electron/run.sh` | 10.4 KB | Electron 31 用例 + 磁盘验证 | 新增用例 |
 | `electron/main.js` | 6.6 KB | 主进程：offscreen 截图、**像素级**空白检测 | 截图/验证策略变化时 |
 | `electron/preload.js` | 1.9 KB | `contextBridge` 暴露 Node fs | 宿主能力变化时 |
 | `fixtures/pages/*.ts` | 229.9 KB | **冻结的**官方转换产物（29 个，含 `V2.ts`/`Observe.ts`/`TabsGrid.ts`/`SwiperDemo.ts`/`NavDemo.ts`/`RelDemo.ts`/`DrawDemo.ts`/`TextMeasure.ts`/`LazyVar.ts`/`MeasArea.ts`/`MeasImage.ts`/`MeasNotify.ts`/`PromptAct.ts`/`Callee.ts`/`AnimDemo.ts`/`GestureDemo.ts`/`TransitionDemo.ts`/`GestureGroupDemo.ts`），另有 `fixtures/entryability/*.ts`（`EntryAbility.ts`/`PromptAbility.ts`，6.5 KB） | 几乎不改（见不变量 5） |

@@ -265,6 +265,7 @@
     syncAlignRules(rootNode);          // 重渲染后几何可能变，重新同步
     syncDrawings(rootNode);            // 弧形要用真实尺寸重画
     syncAreas(rootNode);               // onAreaChange 要按真实几何派发
+    syncNavChrome(rootNode);           // 标题栏高度/分栏宽度/Auto 模式判定都要真实尺寸
   }
 
   // 分支切换/列表重建后，把已脱离 DOM 树的记录清掉，避免 elmtId 泄漏与重复节点
@@ -1160,6 +1161,26 @@
   //     <div data-arkui-nav-destinations>        绝对定位覆盖层，空栈时 display:none
   //       <div data-arkui-comp="NavDestination"> 只有栈顶那个可见
   const NavigationMode = { Stack: 'stack', Split: 'split', Auto: 'auto' };
+  // 标题栏相关枚举：产物里都是【自由变量】引用（`NavigationTitleMode.Full` 这样），必须挂 global
+  // NavigationTitleMode 的取值照 .d.ts 声明顺序：Free = 0, Full, Mini
+  const NavigationTitleMode = { Free: 0, Full: 1, Mini: 2 };
+  const NavBarPosition = { Start: 0, End: 1 };
+  const TitleHeight = { MainOnly: 0, MainWithSub: 1 };
+
+  // 标题栏高度（vp→px 1:1，本项目一贯近似）。数字直接来自 navigation.d.ts 里 NavigationTitleMode
+  // 的 JSDoc 原文：
+  //   Full：「If there is only a main title, the title bar height is 112 vp; if there is both a main
+  //          title and a subtitle, the title bar height is 138 vp」
+  //   Mini：「Since API version 12, the title bar height is 56 vp」
+  //   Free（默认 = 0）：「In the non-scrolling state, the height of the title bar is the same as in
+  //          Full mode」—— 本实现不做滚动收缩，所以 Free 恒等于 Full。
+  // TitleHeight 的数值 .d.ts 没给；按它自己的 JSDoc 措辞（"only main title" / "main title and
+  // subtitle are both available"）对应到 Full 那两个已文档化的数字（112 / 138）。**这是推断**，
+  // 已写进 docs 的已知限制。
+  const NAV_TITLE_H = { main: 112, mainSub: 138, mini: 56 };
+  const TITLE_HEIGHT_VALUE = { 0: NAV_TITLE_H.main, 1: NAV_TITLE_H.mainSub };
+  const NAV_DIVIDER_PX = 1;               // 分栏时的分割线宽度
+  const NAV_DEFAULT_BAR_W = 240;          // navBarWidth 默认 240vp（.d.ts JSDoc 原文）
 
   // NavDestination 的生命周期回调：属性名 → state 键
   const NAVDEST_LIFECYCLE = {
@@ -1167,12 +1188,15 @@
     onWillHide: 'willHide', onHidden: 'hidden', onWillDisappear: 'willDisappear',
     onBackPressed: 'backPressed',
   };
-  // Navigation/NavDestination 上本实现未覆盖的语义项。标题栏/工具栏是【可见差异】，不能静默。
+  // Navigation/NavDestination 上【仍未】覆盖的语义项（只列 .d.ts 里真实存在、而本实现没做的）。
+  // 标题栏/工具栏/分栏已于 R12 收口实现（见下面的 navSyncChrome）—— 未实现的仍然不能静默。
   const NAV_UNSUPPORTED = new Set([
-    'title', 'subTitle', 'hideTitleBar', 'hideBackButton', 'titleMode', 'menus', 'menuCount',
-    'toolBar', 'hideToolBar', 'onTitleModeChange', 'onNavBarStateChange', 'navBarWidth', 'navBarPosition',
-    'backButtonIcon', 'hideNavBar', 'minContentWidth', 'ignoreLayoutSafeArea', 'navBarWidthRange',
-    'systemBarStyle', 'toolbarConfiguration', 'onNavigationModeChange', 'customNavContentTransition',
+    'onTitleModeChange',        // 标题栏随内容滚动而收缩/展开 —— 本实现不做滚动联动
+    'onNavBarStateChange',      // 长按隐藏导航栏
+    'navBarWidthRange', 'minNavBarWidth', 'hideNavBar', 'enableDragBar',
+    'ignoreLayoutSafeArea', 'systemBarStyle', 'onNavigationModeChange',
+    'customNavContentTransition', 'recoverable', 'enableModeChangeAnimation',
+    'enableToolBarAdaptation', 'splitPlaceholder',
   ]);
 
   const animOf = (v) => (typeof v === 'boolean' ? v : !!(v && typeof v === 'object' && v.animated));
@@ -1282,14 +1306,359 @@
     disableAnimation(value) { this._noAnim = !!value; }
   }
 
+  // ── 标题栏 / 工具栏 / 分栏（R12 收口）──
+  //
+  // 产物形态（实测 fixtures/pages/NavBarDemo.ts）：
+  //   Navigation.title('T1');                                              ← string
+  //   Navigation.title({ main: 'M2', sub: 'S2' });                        ← NavigationCommonTitle
+  //   Navigation.title({ builder: this.TB.bind(this) }, { backgroundColor: '#eeeeee' });
+  //   Navigation.title({ builder: this.TB.bind(this), height: TitleHeight.MainWithSub });
+  //   Navigation.titleMode(NavigationTitleMode.Full);                     ← 自由变量枚举
+  //   Navigation.hideTitleBar(true); Navigation.hideBackButton(true);
+  //   Navigation.mode(NavigationMode.Split); Navigation.navBarWidth(200);
+  //   Navigation.navBarPosition(NavBarPosition.Start);
+  //   NavDestination.title('DT1'); NavDestination.menus([{ value, action }]);
+  //   NavDestination.toolbarConfiguration([{ value, action }]); NavDestination.hideBackButton(true);
+  // ⚠️ CustomBuilder 也是以 **{ builder } 对象** 传进来的（loader 会把 CustomBuilder 归一化成对象），
+  //    所以"是不是自定义标题"看的是【有没有 builder 字段】，不是实参类型。
+
+  function navParseTitle(v) {
+    if (v === undefined || v === null) return null;
+    if (typeof v === 'object' && typeof v.builder === 'function') {
+      return { kind: 'builder', builder: v.builder, height: v.height };
+    }
+    if (typeof v === 'object' && (v.main !== undefined || v.sub !== undefined)) {
+      return { kind: 'common', main: resolveResource(v.main), sub: resolveResource(v.sub) };
+    }
+    return { kind: 'text', text: String(resolveResource(v)) };
+  }
+
+  // 标题栏高度（px）。NavigationCustomTitle.height 优先 —— .d.ts 原文：
+  // "When the NavigationCustomTitle type is used to set the height, titleMode does not take effect."
+  function navTitleBarH(spec, titleMode) {
+    if (spec && spec.height !== undefined && spec.height !== null) {
+      if (typeof spec.height === 'number' && TITLE_HEIGHT_VALUE[spec.height] !== undefined) {
+        return TITLE_HEIGHT_VALUE[spec.height];        // TitleHeight 枚举（数值推断，见常量注释）
+      }
+      const n = dimOf(spec.height, 0);
+      if (n > 0) return n;                             // 显式 Length
+    }
+    if (titleMode === NavigationTitleMode.Mini) return NAV_TITLE_H.mini;
+    const hasSub = !!(spec && spec.kind === 'common' && spec.sub !== undefined && spec.sub !== null
+      && String(spec.sub) !== '');
+    return hasSub ? NAV_TITLE_H.mainSub : NAV_TITLE_H.main;   // Full；Free 非滚动态等同 Full
+  }
+
+  // 把 builder 建出来的节点收进 host（复用 NavDestination 深渲染那套：压栈 + 保存/还原 elmtId）
+  function runBuilderInto(host, builder, what) {
+    const saved = ViewStackProcessor.snapshot();
+    const savedElmt = currentNodeElmtId;
+    ViewStackProcessor.push(host);
+    try { builder(); } catch (e) {
+      layoutWarnings.push(`${what} 的 builder 抛错：${e && e.message}`);
+    }
+    ViewStackProcessor.restore(saved);
+    currentNodeElmtId = savedElmt;
+  }
+
+  function navMenuBar(items) {
+    const wrap = document.createElement('div');
+    wrap.setAttribute('data-arkui-nav-menus', '');
+    wrap.style.display = 'flex';
+    wrap.style.alignItems = 'center';
+    wrap.style.gap = '8px';
+    (items || []).forEach((m, i) => {
+      const el = document.createElement('div');
+      el.setAttribute('data-arkui-nav-menu', String(i));
+      el.style.cursor = 'pointer';
+      el.style.padding = '0 4px';
+      el.textContent = String(resolveResource(m.value === undefined ? m.icon : m.value));
+      el.addEventListener('click', () => {
+        if (typeof m.action === 'function') {
+          try { m.action(); } catch (e) { layoutWarnings.push(`菜单 action 抛错：${e && e.message}`); }
+        }
+      });
+      wrap.appendChild(el);
+    });
+    return wrap;
+  }
+
+  function navBackButton(onBack, icon) {
+    const btn = document.createElement('div');
+    btn.setAttribute('data-arkui-nav-back', '');
+    btn.style.cursor = 'pointer';
+    btn.style.padding = '0 8px 0 0';
+    btn.style.flexShrink = '0';
+    if (icon) { btn.setAttribute('data-arkui-nav-back-icon', String(icon)); }
+    btn.textContent = icon ? '‹' : '←';
+    btn.addEventListener('click', onBack);
+    return btn;
+  }
+
+  // 往 host 里画一条标题栏（Navigation 的导航栏 / NavDestination 的标题栏共用）
+  function drawTitleBar(host, spec, opts) {
+    const o = opts || {};
+    host.textContent = '';
+    host.style.display = 'flex';
+    host.style.alignItems = 'center';
+    host.style.boxSizing = 'border-box';
+    if (o.backgroundColor !== undefined && o.backgroundColor !== null) {
+      host.style.backgroundColor = String(colorOf(o.backgroundColor));
+    }
+    if (o.showBack) host.appendChild(navBackButton(o.onBack, o.backIcon));
+    if (!spec) return;
+    if (spec.kind === 'builder') {
+      const holder = document.createElement('div');
+      holder.setAttribute('data-arkui-nav-title-slot', '');
+      holder.style.flex = '1';
+      holder.style.minWidth = '0';
+      host.appendChild(holder);
+      runBuilderInto(holder, spec.builder, 'Navigation.title');
+    } else if (spec.kind === 'common') {
+      const box = document.createElement('div');
+      box.setAttribute('data-arkui-nav-title-slot', '');
+      box.style.flex = '1';
+      box.style.minWidth = '0';
+      const main = document.createElement('div');
+      main.setAttribute('data-arkui-nav-title-main', '');
+      main.style.fontSize = '16px';
+      main.textContent = String(spec.main === undefined || spec.main === null ? '' : spec.main);
+      box.appendChild(main);
+      const sub = document.createElement('div');
+      sub.setAttribute('data-arkui-nav-title-sub', '');
+      sub.style.fontSize = '12px';
+      sub.style.opacity = '0.7';
+      sub.textContent = String(spec.sub === undefined || spec.sub === null ? '' : spec.sub);
+      box.appendChild(sub);
+      host.appendChild(box);
+    } else {
+      const t = document.createElement('div');
+      t.setAttribute('data-arkui-nav-title-text', '');
+      t.style.flex = '1';
+      t.style.minWidth = '0';
+      t.style.overflow = 'hidden';
+      t.textContent = spec.text;
+      host.appendChild(t);
+    }
+    if (o.menus && o.menus.length) host.appendChild(navMenuBar(o.menus));
+  }
+
+  // 工具栏（NavDestination 底部）：ToolbarItem[] → 一行可点项
+  function drawToolbar(host, items) {
+    host.textContent = '';
+    host.style.display = 'flex';
+    host.style.alignItems = 'center';
+    host.style.justifyContent = 'center';
+    host.style.boxSizing = 'border-box';
+    host.style.gap = '16px';
+    (items || []).forEach((it, i) => {
+      const el = document.createElement('div');
+      el.setAttribute('data-arkui-nav-toolbar-item', String(i));
+      el.setAttribute('data-arkui-nav-toolbar-status', String(it.status === undefined ? 0 : it.status));
+      el.style.cursor = 'pointer';
+      el.textContent = String(resolveResource(it.value));
+      el.addEventListener('click', () => {
+        if (typeof it.action === 'function') {
+          try { it.action(); } catch (e) { layoutWarnings.push(`工具栏 action 抛错：${e && e.message}`); }
+        }
+      });
+      host.appendChild(el);
+    });
+  }
+
   function createNavState(node, stack) {
-    const st = { node, stack: null, builder: null, areaEl: null, mode: 'stack', visible: null, paths: null };
+    const st = {
+      node, stack: null, builder: null, areaEl: null, mode: 'stack', visible: null, paths: null,
+      // 标题栏 / 工具栏 / 分栏（R12 收口）
+      titleSpec: null, titleOptions: null, titleMode: NavigationTitleMode.Free,
+      hideTitleBar: false, hideBackButton: false, menus: null,
+      navBarWidth: null, navBarPosition: NavBarPosition.Start, minContentWidth: null,
+      barEl: null, titleEl: null, dividerEl: null, titleDrawn: null, effectiveMode: 'stack',
+    };
     node.__navState = st;
     node.style.position = 'relative';
     node.style.overflow = 'hidden';
+    // 导航栏（含标题栏）必须是【第一个子节点】：根内容是直接子节点、在其后挂载，
+    // 目标区最后创建。三者的定位关系由 syncOneNav 按模式统一摆（绝对定位，不参与文档流）。
+    const bar = document.createElement('div');
+    bar.setAttribute('data-arkui-nav-bar', '');
+    bar.style.position = 'absolute';
+    bar.style.zIndex = '2';
+    bar.style.boxSizing = 'border-box';
+    const title = document.createElement('div');
+    title.setAttribute('data-arkui-nav-titlebar', '');
+    title.style.position = 'absolute';
+    title.style.left = '0';
+    title.style.right = '0';
+    title.style.top = '0';
+    title.style.padding = '0 8px';
+    title.style.fontSize = '16px';
+    bar.appendChild(title);
+    st.barEl = bar;
+    st.titleEl = title;
+    node.insertBefore(bar, node.firstChild);
+    const divider = document.createElement('div');
+    divider.setAttribute('data-arkui-nav-divider', '');
+    divider.style.position = 'absolute';
+    divider.style.display = 'none';
+    divider.style.background = '#e5e5e5';
+    st.dividerEl = divider;
+    node.insertBefore(divider, bar.nextSibling);
     bindNavStack(st, stack);
     return st;
   }
+
+  // 本轮该按哪种模式布局：Auto 用【真实宽度】判（.d.ts：宽度 ≥ 600vp 走 Split，
+  // 600 = minNavBarWidth 240 + minContentWidth 360）。用元素自身宽度而不是 window：
+  // 同一页可以有多个 Navigation（本项目的测量页正是这样），窗口宽度无法区分它们。
+  function navEffectiveMode(st) {
+    const m = String(st.mode || 'stack');
+    if (m === 'split') return 'split';
+    if (m === 'stack') return 'stack';
+    const w = st.node ? st.node.offsetWidth : 0;             // auto
+    return w >= 600 ? 'split' : 'stack';
+  }
+
+  // 标题栏 / 工具栏 / 分栏的布局同步：与 syncAlignRules 同一时机（首渲染后 + 每次重渲染后）。
+  // 为什么必须晚一步（不变量 18）：分栏宽度与 Auto 的模式判定都要用【真实尺寸】。
+  // builder 的场景用【身份】比内容比靠谱：JSON.stringify 会把函数丢掉，两个不同的 builder
+  // 会退化成同一个签名（于是标题栏再也不重建）。
+  const builderIds = new WeakMap();
+  let builderIdSeq = 0;
+  const builderIdOf = (fn) => {
+    if (!builderIds.has(fn)) builderIds.set(fn, ++builderIdSeq);
+    return builderIds.get(fn);
+  };
+
+  function syncOneNav(node) {
+    const st = node.__navState;
+    if (!st || !st.barEl || !st.barEl.isConnected) return;
+    const sel = !!st.stack && st.paths && st.paths.length > 0;
+    st.navStackNonEmpty = sel;
+    // ① 标题栏内容（只在规格变了才重建：builder 重建会遗留旧的 elmtId 记录）
+    const specSig = !st.titleSpec ? 'none'
+      : (st.titleSpec.kind === 'builder'
+        ? `b#${builderIdOf(st.titleSpec.builder)}#${st.titleSpec.height}`
+        : JSON.stringify(st.titleSpec));
+    const sig = `${specSig}|${JSON.stringify(st.titleOptions)}|${st.hideBackButton}|${st.hideTitleBar}|${sel}`;
+    if (st.titleDrawn !== sig) {
+      st.titleDrawn = sig;
+      drawTitleBar(st.titleEl, st.titleSpec, {
+        // 没有可回退的栈（或显式 hideBackButton）就不渲染返回键 —— 与"无处可回就没有返回键"一致
+        showBack: !st.hideBackButton && sel,
+        onBack: () => { if (st.stack) st.stack.pop(); },
+        backIcon: st.backButtonIcon,
+        menus: st.menus,
+        backgroundColor: st.titleOptions && st.titleOptions.backgroundColor,
+      });
+    }
+    st.titleEl.style.display = st.hideTitleBar ? 'none' : 'flex';
+    // ② 高度与分栏几何
+    const H = st.hideTitleBar ? 0 : navTitleBarH(st.titleSpec, st.titleMode);
+    st.barHeight = H;
+    st.effectiveMode = navEffectiveMode(st);
+    const split = st.effectiveMode === 'split';
+    node.setAttribute('data-arkui-nav-mode', st.effectiveMode);
+    node.setAttribute('data-arkui-nav-mode-declared', String(st.mode));
+    const W = st.navBarWidth === null ? NAV_DEFAULT_BAR_W : dimOf(st.navBarWidth, node.offsetWidth);
+    const end = st.navBarPosition === NavBarPosition.End;
+    st.navBarWidthPx = W;
+    // 用 paddingTop/Left/Right 单边赋值，不写 padding 简写 —— 免得把用户自己设的 padding 抹掉
+    if (split) {
+      st.barEl.style.top = '0';
+      st.barEl.style.bottom = '0';
+      st.barEl.style.height = '';
+      st.barEl.style.width = `${W + NAV_DIVIDER_PX}px`;
+      st.barEl.style.left = end ? '' : '0';
+      st.barEl.style.right = end ? '0' : '';
+      st.titleEl.style.height = `${H}px`;
+      node.style.paddingTop = `${H}px`;
+      node.style.paddingLeft = end ? '0' : `${W + NAV_DIVIDER_PX}px`;
+      node.style.paddingRight = end ? `${W + NAV_DIVIDER_PX}px` : '0';
+      st.dividerEl.style.display = 'block';
+      st.dividerEl.style.top = '0';
+      st.dividerEl.style.bottom = '0';
+      st.dividerEl.style.width = `${NAV_DIVIDER_PX}px`;
+      st.dividerEl.style.left = `${W}px`;
+    } else {
+      st.barEl.style.top = '0';
+      st.barEl.style.bottom = '';
+      st.barEl.style.height = `${H}px`;
+      st.barEl.style.width = '';
+      st.barEl.style.left = '0';
+      st.barEl.style.right = '0';
+      st.titleEl.style.height = `${H}px`;
+      node.style.paddingTop = `${H}px`;
+      node.style.paddingLeft = '0';
+      node.style.paddingRight = '0';
+      st.dividerEl.style.display = 'none';
+    }
+    // ③ 目标区：Split 时只占内容列（右侧/左侧），Stack 时铺满整个 Navigation
+    if (st.areaEl) {
+      if (split) {
+        st.areaEl.style.top = '0';
+        st.areaEl.style.bottom = '0';
+        st.areaEl.style.left = end ? '0' : `${W + NAV_DIVIDER_PX}px`;
+        st.areaEl.style.right = end ? `${W + NAV_DIVIDER_PX}px` : '0';
+      } else {
+        st.areaEl.style.inset = '0';
+      }
+    }
+  }
+
+  // NavDestination 的标题栏 / 工具栏（同一时机同步）。它没有 titleMode，高度恒为紧凑 56vp（推断）。
+  function syncOneDest(node) {
+    const d = node.__navDest;
+    if (!d || !d.barEl || !d.barEl.isConnected) return;
+    const own = navStateOfDest(node);    // 目的地自己没有 navState：返回键要走【所属 Navigation 的栈】
+    const hasBack = !!own && own.paths && own.paths.length > 0;
+    const sig = `${d.titleSpec ? (d.titleSpec.kind === 'builder'
+      ? `b#${builderIdOf(d.titleSpec.builder)}#${d.titleSpec.height}` : JSON.stringify(d.titleSpec)) : 'none'}`
+      + `|${JSON.stringify(d.menus)}|${d.hideBackButton}|${d.hideTitleBar}|${hasBack}`;
+    if (d.titleDrawn !== sig) {
+      d.titleDrawn = sig;
+      d.barEl.style.display = d.hideTitleBar ? 'none' : 'flex';
+      drawTitleBar(d.barEl, d.titleSpec, {
+        showBack: hasBack && !d.hideBackButton,
+        onBack: () => { if (own) own.stack.pop(); },
+        backIcon: d.backButtonIcon,
+        menus: d.menus,
+      });
+    }
+    node.style.paddingTop = d.hideTitleBar ? '0' : `${NAV_TITLE_H.mini}px`;
+    // 工具栏：hideToolBar 或没有条目时不显示
+    const items = Array.isArray(d.toolbar) ? d.toolbar : [];
+    const showTb = !d.hideToolBar && items.length > 0;
+    d.toolbarEl.style.display = showTb ? 'flex' : 'none';
+    node.style.paddingBottom = showTb ? '56px' : '0';
+    const tbSig = `${items.length}|${items.map((i) => String(i.value)).join(',')}|${d.hideToolBar}`;
+    if (d.toolbarDrawn !== tbSig) {
+      d.toolbarDrawn = tbSig;
+      drawToolbar(d.toolbarEl, items);
+    }
+    node.setAttribute('data-arkui-dest-title', d.titleSpec && d.titleSpec.text ? d.titleSpec.text : '');
+  }
+
+  // 目的地所属的 Navigation 状态（目标区 → Navigation 元素）
+  function navStateOfDest(node) {
+    let p = node.parentElement;
+    while (p) {
+      if (p.__navState) return p.__navState;
+      p = p.parentElement;
+    }
+    return null;
+  }
+
+  function syncNavChrome(rootEl) {
+    const scope = rootEl || document;
+    if (scope.__navState) syncOneNav(scope);
+    if (scope.__navDest) syncOneDest(scope);
+    if (scope.querySelectorAll) {
+      scope.querySelectorAll('[data-arkui-comp="Navigation"]').forEach(syncOneNav);
+      scope.querySelectorAll('[data-arkui-comp="NavDestination"]').forEach(syncOneDest);
+    }
+  }
+
 
   function bindNavStack(st, stack) {
     if (!stack || typeof stack.pushPathByName !== 'function') {
@@ -1347,6 +1716,12 @@
     const area = ensureNavArea(st);
     const savedStack = ViewStackProcessor.snapshot();
     const savedElmt = currentNodeElmtId;
+    // 目的地未必是目标区的【直接子节点】：builder 里的 if/else 会生成 `If` 包装层
+    // （display:contents），目的地是"孙子辈"。所以不能只看 lastElementChild ——
+    // 旧实现就这么写的，遇到带 if 分支的 PageMap 会误判成"没建出来"并把栈项弹掉
+    // （R12 收口的新页面正是这种 builder，断言当场抓住）。改成按"本次新建的节点"认领。
+    area.querySelectorAll('[data-arkui-comp="NavDestination"]')
+      .forEach((n) => { n.__arkuiNavNew = false; });
     ViewStackProcessor.push(area);          // 让 NavDestination 挂进目标区
     try {
       st.builder(rec.name, rec.param, undefined);
@@ -1355,8 +1730,9 @@
     }
     ViewStackProcessor.restore(savedStack);
     currentNodeElmtId = savedElmt;
-    const el = area.lastElementChild;
-    if (!el || el.__arkuiComp !== 'NavDestination') {
+    const el = Array.from(area.querySelectorAll('[data-arkui-comp="NavDestination"]'))
+      .find((n) => n.__arkuiNavNew);
+    if (!el) {
       layoutWarnings.push(`Navigation 的 builder 没有为 name='${rec.name}' 创建 NavDestination：`
         + '检查 builder 里的 if/else 是否覆盖了该 name');
       return false;
@@ -1404,6 +1780,9 @@
     if (top && top !== st.visible) navShowDest(top);
     st.visible = top;
     if (st.areaEl) st.areaEl.style.display = st.paths.length ? 'block' : 'none';
+    // push/pop 不一定伴随重渲染（纯栈操作时没有状态变更），所以这里必须主动同步一次
+    // 标题栏/工具栏 —— 否则目的地画出来却没有标题栏（首版就是这样，断言当场抓住）。
+    if (typeof syncNavChrome === 'function') syncNavChrome(st.node);
   }
 
   // 弹出 [from, from+count)：从【栈顶向下】处理，保证生命周期顺序
@@ -1463,12 +1842,54 @@
       node.__arkuiComp = 'NavDestination';
       node.setAttribute('data-arkui-comp', 'NavDestination');   // mountNode 会打，这里绕过了它
       node.__navDestCbs = {};
+      node.__arkuiNavNew = true;      // navBuildDest 靠这个标记认领"本次新建的目的地"
+      // NavDestination 自己的标题栏 / 工具栏（R12 收口）。它没有 titleMode（.d.ts 里不存在），
+      // 标题栏恒为紧凑高度 56vp（= Mini 高度）。**这一条是推断** —— .d.ts 没写 NavDestination
+      // 标题栏的高度，取 Mini 的依据是"目标页用紧凑标题栏"这一可见事实，已写进 docs 已知限制。
+      node.__navDest = {
+        titleSpec: null, menus: null, toolbar: null,
+        hideBackButton: false, hideTitleBar: false, hideToolBar: false,
+        backButtonIcon: null, titleDrawn: null, barEl: null, toolbarEl: null,
+      };
       node.style.width = '100%';
       node.style.height = '100%';
       node.style.overflow = 'auto';
       node.style.display = 'none';
+      node.style.position = 'relative';
+      const dbar = document.createElement('div');
+      dbar.setAttribute('data-arkui-dest-titlebar', '');
+      dbar.style.position = 'absolute';
+      dbar.style.left = '0';
+      dbar.style.right = '0';
+      dbar.style.top = '0';
+      dbar.style.height = `${NAV_TITLE_H.mini}px`;
+      dbar.style.zIndex = '2';
+      dbar.style.padding = '0 8px';
+      dbar.style.boxSizing = 'border-box';
+      dbar.style.fontSize = '16px';
+      dbar.style.background = '#fff';
+      node.appendChild(dbar);
+      const dtb = document.createElement('div');
+      dtb.setAttribute('data-arkui-dest-toolbar', '');
+      dtb.style.position = 'absolute';
+      dtb.style.left = '0';
+      dtb.style.right = '0';
+      dtb.style.bottom = '0';
+      dtb.style.height = '56px';
+      dtb.style.zIndex = '2';
+      dtb.style.display = 'none';
+      dtb.style.background = '#fff';
+      node.appendChild(dtb);
+      node.__navDest.barEl = dbar;
+      node.__navDest.toolbarEl = dtb;
       const parent = parentOfTop();
-      if (!parent || !parent.hasAttribute || !parent.hasAttribute('data-arkui-nav-destinations')) {
+      // "在目标区内"要向上找祖先，不能只看直接父节点 —— builder 的 if/else 会插一层 `If` 包装，
+      // 目的地的直接父节点就是那个包装层，不是目标区本身。
+      let inArea = false;
+      for (let p = parent; p; p = p.parentElement) {
+        if (p.hasAttribute && p.hasAttribute('data-arkui-nav-destinations')) { inArea = true; break; }
+      }
+      if (!inArea) {
         layoutWarnings.push('NavDestination 不在 Navigation 的目标区内'
           + '（本组件只能由 Navigation 的 navDestination builder 创建）');
       }
@@ -1499,12 +1920,53 @@
       }
       st.builder = b;
     },
-    mode: (st, v) => {
-      st.mode = String(v);
-      if (st.mode !== 'stack') {
-        layoutWarnings.push(`Navigation.mode('${st.mode}') 未实现：本实现只有 Stack 语义（Split/Auto 的分栏布局不做）`);
-      }
+    // mode：Stack / Split / Auto 都实现了；Auto 的判定在 navEffectiveMode（要用真实宽度）
+    mode: (st, v) => { st.mode = String(v); },
+    title: (st, v, opts) => {
+      st.titleSpec = navParseTitle(v);
+      st.titleOptions = opts && typeof opts === 'object' ? opts : null;
     },
+    titleMode: (st, v) => { st.titleMode = Number(v); },
+    hideTitleBar: (st, v) => { st.hideTitleBar = !!v; },
+    hideBackButton: (st, v) => { st.hideBackButton = !!v; },
+    backButtonIcon: (st, v) => { st.backButtonIcon = resolveResource(v); },
+    menus: (st, v) => {
+      if (typeof v === 'function') {
+        layoutWarnings.push('Navigation.menus 的自定义 builder 形态未实现（数组形态已支持）');
+        return;
+      }
+      st.menus = Array.isArray(v) ? v : null;
+    },
+    navBarWidth: (st, v) => { st.navBarWidth = v; },
+    navBarPosition: (st, v) => { st.navBarPosition = Number(v); },
+    minContentWidth: (st, v) => { st.minContentWidth = v; },
+  };
+
+  // NavDestination 的标题栏 / 工具栏属性
+  const NAVDEST_ATTRS = {
+    title: (node, v, opts) => {
+      node.__navDest.titleSpec = navParseTitle(v);
+      node.__navDest.titleOptions = opts && typeof opts === 'object' ? opts : null;
+    },
+    hideTitleBar: (node, v) => { node.__navDest.hideTitleBar = !!v; },
+    hideBackButton: (node, v) => { node.__navDest.hideBackButton = !!v; },
+    backButtonIcon: (node, v) => { node.__navDest.backButtonIcon = resolveResource(v); },
+    menus: (node, v) => {
+      if (typeof v === 'function') {
+        layoutWarnings.push('NavDestination.menus 的自定义 builder 形态未实现（数组形态已支持）');
+        return;
+      }
+      node.__navDest.menus = Array.isArray(v) ? v : null;
+    },
+    toolbarConfiguration: (node, v) => {
+      if (typeof v === 'function') {
+        layoutWarnings.push('NavDestination.toolbarConfiguration 的自定义 builder 形态未实现'
+          + '（Array<ToolbarItem> 形态已支持）');
+        return;
+      }
+      node.__navDest.toolbar = Array.isArray(v) ? v : null;
+    },
+    hideToolBar: (node, v) => { node.__navDest.hideToolBar = !!v; },
   };
 
   // ────────────────── 纯绘制类：Progress / Gauge / DataPanel / Rating（R13）──────────────────
@@ -2096,7 +2558,8 @@
     if (prop === 'id') { node.id = String(resolveResource(value)); return; }
     if (prop === 'tabBar') { applyTabBar(node, value); return; }
     if (node.__swiperState && SWIPER_ATTRS[prop]) { SWIPER_ATTRS[prop](node.__swiperState, value); return; }
-    if (node.__navState && NAV_ATTRS[prop]) { NAV_ATTRS[prop](node.__navState, value); return; }
+    if (node.__navState && NAV_ATTRS[prop]) { NAV_ATTRS[prop](node.__navState, value, extra); return; }
+    if (node.__navDest && NAVDEST_ATTRS[prop]) { NAVDEST_ATTRS[prop](node, value, extra); return; }
     // Grid 轨道模板要过单位归一化，所以不能走 cssPropEnum 的原样透传
     if (GRID_TRACK_PROPS[prop]) {
       node.style[GRID_TRACK_PROPS[prop]] = normalizeTrackList(resolveResource(value));
@@ -3300,6 +3763,7 @@
     syncAlignRules(rootNode);          // 兄弟锚点需要几何信息 → 首渲染后统一同步一遍
     syncDrawings(rootNode);            // 同理由：弧要等 .width/.height 生效才能按真实尺寸画
     syncAreas(rootNode);               // onAreaChange 同上：首渲染后派发一次
+    syncNavChrome(rootNode);           // 标题栏/工具栏/分栏同理：首渲染后摆一次
     return view;
   }
 
@@ -3339,6 +3803,8 @@
     Tabs, TabContent, TabsController, BarPosition, BarMode,
     Swiper, SwiperController,
     Navigation, NavDestination, NavPathStack, NavigationMode,
+    // R12 收口：标题栏/工具栏/分栏用到的枚举在产物里都是自由变量，必须挂 global
+    NavigationTitleMode, NavBarPosition, TitleHeight,
     Progress, Gauge, DataPanel, Rating, ProgressStyle, ProgressType, DataPanelType,
     __Common__: _CommonWrapper,
     FontWeight, VerticalAlign, HorizontalAlign, FlexAlign, TextAlign, ItemAlign, Color,
@@ -3489,6 +3955,55 @@
         mode: st.mode,
         stack: st.stack,
       };
+    },
+    // R12 收口自省：标题栏 / 工具栏 / 分栏的【实际形态】（断言读这个，而不是读 style 字符串猜）
+    __arkui_dom_navChrome: (el) => {
+      if (!el) return null;
+      const nav = el.__navState;
+      if (nav) {
+        const t = nav.titleEl;
+        const txt = t ? t.querySelector('[data-arkui-nav-title-text]') : null;
+        return {
+          kind: 'Navigation',
+          declaredMode: nav.mode,
+          effectiveMode: nav.effectiveMode,
+          titleKind: nav.titleSpec ? nav.titleSpec.kind : null,
+          titleText: txt ? txt.textContent : null,
+          main: t && t.querySelector('[data-arkui-nav-title-main]')
+            ? t.querySelector('[data-arkui-nav-title-main]').textContent : null,
+          sub: t && t.querySelector('[data-arkui-nav-title-sub]')
+            ? t.querySelector('[data-arkui-nav-title-sub]').textContent : null,
+          barHeight: nav.barHeight,
+          barWidth: nav.effectiveMode === 'split' ? nav.barEl.offsetWidth : nav.barEl.offsetWidth,
+          navBarWidth: nav.navBarWidthPx,
+          navBarPosition: nav.navBarPosition === NavBarPosition.End ? 'End' : 'Start',
+          titleBarDisplay: t ? t.style.display : null,
+          hasBack: !!(t && t.querySelector('[data-arkui-nav-back]')),
+          divider: nav.dividerEl ? nav.dividerEl.style.display !== 'none' : false,
+          menus: t ? Array.from(t.querySelectorAll('[data-arkui-nav-menu]')).map((m) => m.textContent) : [],
+        };
+      }
+      const d = el.__navDest;
+      if (d) {
+        const t = d.barEl;
+        const tb = d.toolbarEl;
+        return {
+          kind: 'NavDestination',
+          titleKind: d.titleSpec ? d.titleSpec.kind : null,
+          titleText: t && t.querySelector('[data-arkui-nav-title-text]')
+            ? t.querySelector('[data-arkui-nav-title-text]').textContent : null,
+          barHeight: t ? t.offsetHeight : 0,
+          titleBarDisplay: t ? t.style.display : null,
+          hasBack: !!(t && t.querySelector('[data-arkui-nav-back]')),
+          backIcon: t && t.querySelector('[data-arkui-nav-back]')
+            ? t.querySelector('[data-arkui-nav-back]').getAttribute('data-arkui-nav-back-icon') : null,
+          menus: t ? Array.from(t.querySelectorAll('[data-arkui-nav-menu]')).map((m) => m.textContent) : [],
+          toolbar: tb ? Array.from(tb.querySelectorAll('[data-arkui-nav-toolbar-item]'))
+            .map((m) => m.textContent) : [],
+          toolbarDisplay: tb ? tb.style.display : null,
+        };
+      }
+      return null;
     },
     // Guideline 自省：证明"参考线真的按 start/end 与轴向算出了位置"，而不只看子项恰好落在那儿。
     __arkui_dom_guideLines: (el) => {

@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R12 收口：Navigation 标题栏 / 工具栏 / 分栏</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 760px; border: 1px solid #ccc; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R12 收口：title 四形态 / titleMode 高度 / hideTitleBar / 返回键 / 菜单 / 工具栏 / Split 与 Auto</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/navbardemo-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const el = (id) => root.querySelector('#' + id);
+    const txt = (id) => String(el(id) ? el(id).textContent : '<缺>');
+    const chrome = (id) => __arkui_dom_navChrome(el(id));
+    // 目标区里的目的地：数带 data-arkui-comp="NavDestination" 的节点。
+    // ⚠️ 不能数 area 的直接子节点 —— builder 里的 if/else 会生成 `If` 包装层（display:contents），
+    // 一个 if 分支就是一个包装层，数量与"有几个目的地"无关。
+    const dests = (id) => Array.from(el(id).querySelectorAll('[data-arkui-comp="NavDestination"]'));
+    const navState = (id) => __arkui_dom_navState(el(id));
+    const clickEl = async (node) => {
+      if (!node) { check(false, '要点击的节点不存在'); return; }
+      node.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      await tick(20);
+    };
+    const click = (id) => clickEl(el(id));
+    const group = async (name, fn) => {
+      try { await fn(); } catch (e) {
+        allPass = false;
+        lines.push(`FAIL [${name}] 抛出异常：${e && e.stack ? String(e.stack).split('\n')[0] : e}`);
+      }
+    };
+
+    try {
+      __arkui_dom_requireModule('NavBarDemo');
+      __arkui_dom_loadRoute('pages/NavBarDemo', root);
+      await tick(80);
+      check(!!el('nb-t1') && !!el('nblog'), 'NavBarDemo 页面已渲染');
+
+      // ══════════ ① 契约：产物里用到的枚举必须都是真值 ══════════
+      // 产物发的是自由变量：NavigationTitleMode.Full / NavBarPosition.Start / TitleHeight.MainWithSub
+      await group('契约', async () => {
+        check(NavigationTitleMode.Free === 0 && NavigationTitleMode.Full === 1 && NavigationTitleMode.Mini === 2,
+          `NavigationTitleMode 三态可用（${NavigationTitleMode.Free}/${NavigationTitleMode.Full}/${NavigationTitleMode.Mini}）`);
+        check(NavBarPosition.Start === 0 && NavBarPosition.End === 1,
+          `NavBarPosition 可用（${NavBarPosition.Start}/${NavBarPosition.End}）`);
+        check(TitleHeight.MainOnly === 0 && TitleHeight.MainWithSub === 1,
+          `TitleHeight 可用（${TitleHeight.MainOnly}/${TitleHeight.MainWithSub}）`);
+        check(typeof __arkui_dom_navChrome === 'function', '自省钩子 __arkui_dom_navChrome 可用');
+      });
+
+      // ══════════ ② title 的四种形态 + 高度（数字全部照 .d.ts 的 JSDoc）══════════
+      await group('title 形态', async () => {
+        const c1 = chrome('nb-t1');
+        check(c1.titleKind === 'text' && c1.titleText === 'T1', `string 形态：'${c1.titleText}'（kind=${c1.titleKind}）`);
+        check(c1.barHeight === 112, `Full 且只有主标题 → 112vp（实际 ${c1.barHeight}）`);
+        check(c1.titleBarDisplay === 'flex', `标题栏可见（display='${c1.titleBarDisplay}'）`);
+        check(c1.hasBack === false, '空栈时导航栏不渲染返回键（无处可回）');
+
+        const c2 = chrome('nb-t2');
+        check(c2.titleKind === 'common' && c2.main === 'M2' && c2.sub === 'S2',
+          `NavigationCommonTitle：main='${c2.main}' sub='${c2.sub}'`);
+        check(c2.barHeight === 138, `有主副标题 → 138vp（实际 ${c2.barHeight}）`);
+        check(c2.declaredMode === 'stack', `未设 mode 时按 stack（declared='${c2.declaredMode}'）`);
+
+        const c3 = chrome('nb-t3');
+        check(c3.titleKind === 'builder', `CustomBuilder 形态被识别（kind=${c3.titleKind}）`);
+        check(!!el('synth-title-text') && txt('synth-title-text') === 'BUILT',
+          `builder 的内容真的建进了标题栏（#synth-title-text='${el('synth-title-text') ? txt('synth-title-text') : '<缺>'}'）`);
+        const bar3 = el('nb-t3').querySelector('[data-arkui-nav-titlebar]');
+        check(!!bar3 && bar3.style.backgroundColor === 'rgb(238, 238, 238)',
+          `NavigationTitleOptions.backgroundColor 生效（实际 '${bar3 && bar3.style.backgroundColor}'）`);
+        check(c3.barHeight === 56, `Mini → 56vp（实际 ${c3.barHeight}）`);
+
+        // NavigationCustomTitle.height 优先：文档原文 "titleMode does not take effect"
+        const c4 = chrome('nb-t4');
+        check(c4.titleKind === 'builder' && c4.barHeight === 138,
+          `NavigationCustomTitle.height=MainWithSub → 138vp，且 titleMode(Mini) 不生效（实际 ${c4.barHeight}）`);
+
+        const c5 = chrome('nb-t5');
+        check(c5.titleBarDisplay === 'none', `hideTitleBar(true) → 标题栏不显示（display='${c5.titleBarDisplay}'）`);
+        check(c5.barHeight === 0, `隐藏后高度按 0 计（实际 ${c5.barHeight}）`);
+      });
+
+      // ══════════ ③ 分栏（Split / Auto / navBarWidth / navBarPosition）══════════
+      await group('分栏', async () => {
+        const c6 = chrome('nb-t6');
+        check(c6.effectiveMode === 'split', `mode(Split) → split（实际 ${c6.effectiveMode}）`);
+        check(c6.navBarWidth === 200, `navBarWidth(200)（实际 ${c6.navBarWidth}）`);
+        check(c6.navBarPosition === 'Start', `navBarPosition=Start（实际 ${c6.navBarPosition}）`);
+        const bar6 = el('nb-t6').querySelector('[data-arkui-nav-bar]');
+        check(bar6.offsetWidth === 201, `导航栏宽度 = 200 + 1px 分割线（实际 ${bar6.offsetWidth}）`);
+        check(bar6.offsetHeight === el('nb-t6').offsetHeight,
+          `Split 时导航栏贯穿整高（${bar6.offsetHeight} vs ${el('nb-t6').offsetHeight}）`);
+        check(c6.divider === true, 'Split 时分割线可见');
+        const area6 = el('nb-t6').querySelector('[data-arkui-nav-destinations]');
+        check(area6.style.left === '201px', `内容列从 201px 开始（实际 '${area6.style.left}'）`);
+
+        const c7 = chrome('nb-t7');
+        check(c7.effectiveMode === 'split' && c7.navBarWidth === 180 && c7.navBarPosition === 'End',
+          `End 模式：split/180/End（实际 ${c7.effectiveMode}/${c7.navBarWidth}/${c7.navBarPosition}）`);
+        const area7 = el('nb-t7').querySelector('[data-arkui-nav-destinations]');
+        check(area7.style.right === '181px', `End 模式内容列从右侧让出 181px（实际 '${area7.style.right}'）`);
+
+        // Auto：文档口径「宽度 ≥ 600vp 走 Split，600 = 240 + 360」
+        const c8 = chrome('nb-t8');
+        check(c8.declaredMode === 'auto' && c8.effectiveMode === 'split',
+          `Auto + 宽 700 ≥ 600 → split（declared=${c8.declaredMode}, effective=${c8.effectiveMode}）`);
+        const c9 = chrome('nb-t9');
+        check(c9.declaredMode === 'auto' && c9.effectiveMode === 'stack',
+          `Auto + 宽 400 < 600 → stack（declared=${c9.declaredMode}, effective=${c9.effectiveMode}）`);
+
+        const c6b = chrome('nb-t6');
+        check(c6b.divider === true && chrome('nb-t2').divider === false,
+          'stack 模式不画分割线（Split 才有）');
+      });
+
+      // ══════════ ④ 目的地：标题栏 / 返回键 / 菜单 / 工具栏 ══════════
+      await group('目的地', async () => {
+        await click('push1');
+        check(dests('nb-t1').length === 1, `push d1 后目的地数量 = ${dests('nb-t1').length}`);
+        const d1 = dests('nb-t1')[0];
+        const dc = __arkui_dom_navChrome(d1);
+        check(dc.kind === 'NavDestination' && dc.titleText === 'DT1',
+          `目的地标题栏文字 = '${dc.titleText}'`);
+        check(dc.barHeight === 56, `目的地标题栏恒为紧凑高度 56vp（实际 ${dc.barHeight}）`);
+        check(dc.hasBack === true, '栈非空 → 目的地有返回键');
+        check(dc.menus.join(',') === 'M1', `menus 渲染（'${dc.menus.join(',')}'）`);
+        check(dc.toolbar.join(',') === 'T1,T2', `toolbarConfiguration 渲染（'${dc.toolbar.join(',')}'）`);
+        check(dc.toolbarDisplay === 'flex', `工具栏可见（display='${dc.toolbarDisplay}'）`);
+
+        // 菜单 / 工具栏的 action 真的会被调用
+        let logBefore = txt('nblog');
+        await clickEl(d1.querySelector('[data-arkui-nav-menu]'));
+        check(txt('nblog').slice(logBefore.length) === 'M1;',
+          `点菜单触发 action（'${txt('nblog').slice(logBefore.length)}'）`);
+        logBefore = txt('nblog');
+        await clickEl(d1.querySelector('[data-arkui-nav-toolbar-item]'));
+        check(txt('nblog').slice(logBefore.length) === 'T1;',
+          `点工具栏项触发 action（'${txt('nblog').slice(logBefore.length)}'）`);
+
+        // 返回键 = 真 pop
+        check(navState('nb-t1').names.join(',') === 'd1', `pop 前栈 = [${navState('nb-t1').names.join(',')}]`);
+        await clickEl(d1.querySelector('[data-arkui-nav-back]'));
+        check(navState('nb-t1').names.length === 0, `点返回键 → 栈空（size=${navState('nb-t1').names.length}）`);
+        check(el('nb-t1').querySelector('[data-arkui-nav-bar]').offsetHeight === 112,
+          '回到根页面后导航栏还在（高度仍是 112）');
+      });
+
+      await group('返回键开关', async () => {
+        await click('push10d2');
+        const d2 = dests('nb-t10')[0];
+        const c = __arkui_dom_navChrome(d2);
+        check(c.titleText === 'DT2', `d2 标题 = '${c.titleText}'`);
+        check(c.hasBack === false, 'NavDestination.hideBackButton(true) → 不渲染返回键');
+        await clickEl(d2.querySelector('[data-arkui-dest-toolbar]'));
+        check(true, '（工具栏为空时点击标题栏区域不抛错）');
+        await click('push10');
+        const d3 = dests('nb-t10')[1];
+        const c3 = __arkui_dom_navChrome(d3);
+        check(c3.backIcon === '/img/back.png', `backButtonIcon 被记下（'${c3.backIcon}'）`);
+      });
+
+      // ══════════ ⑤ 回归：Stack 时目标区仍铺满、根内容仍在、没有假警告 ══════════
+      await group('回归', async () => {
+        const area = el('nb-t3').querySelector('[data-arkui-nav-destinations]');
+        check(area.style.left === '0px' && area.style.right === '0px',
+          `stack 模式目标区仍铺满（left='${area.style.left}' right='${area.style.right}'）`);
+        check(!!el('root1') && !!el('root10'), '根内容仍在（未被标题栏挤掉）');
+        const bad = __arkui_dom_layout_warnings.filter((w) => /Navigation\.(title|titleMode|toolbarConfiguration|navBarWidth|navBarPosition|menus|hideTitleBar|hideBackButton)|NavDestination\.(title|toolbarConfiguration|menus|hideBackButton|backButtonIcon)/.test(String(w)));
+        check(bad.length === 0, `标题栏/工具栏/分栏不再记"未实现"警告（剩 ${bad.length} 条：${bad.slice(0, 2).join('|')}）`);
+        check(navState('nb-t1').size === 0 && navState('nb-t10').names.join(',') === 'd2,d3',
+          `栈状态正确（t1 空、t10=[${navState('nb-t10').names.join(',')}]）`);
+      });
+
+      lines.push(`NAV t1=${chrome('nb-t1').effectiveMode} t6=${chrome('nb-t6').effectiveMode}/${chrome('nb-t6').navBarWidth} t8=${chrome('nb-t8').effectiveMode} t9=${chrome('nb-t9').effectiveMode}`);
+      lines.push(`ELMT ${__arkui_dom_elmtRecords.size}`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>
