@@ -106,6 +106,7 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 | **输入类 `Checkbox`/`Radio`/`Toggle`/`Slider`**（R27）：原生控件基座上的 ArkUI 语义层 —— `select`/`checked` → 选中态（**幂等 diff**：按上次应用的值，重渲染同值无操作）；`selectedColor` → `accent-color`；`Radio({value, group})` 的 `name = group`（原生互斥基座），组内互斥**两边都发** onChange（新选 true / 被取消 false，.d.ts JSDoc 语义）；`Toggle` 初始选中在 create 的 `isOn`（无 `.select()`，编译期实测）；`Slider` 的 `value/min/max/step` 直落控件，`onChange(value, mode)` 双参：`input`→Moving(1)、`change`→End(2)；`ToggleType`/`SliderChangeMode` 挂 global | ✅ | `bash run.sh inputdemo`（27 条断言：选中态/互斥/双参/幂等/颜色逐一） |
 | **信息展示类 `Badge`/`Counter`/`Divider`/`Marquee`**（R28）：`Badge` 容器 + 绝对定位角标（数字重载 `count` / 字符串重载 `value`，style 必填在 create 参数里——编译期实测；默认值全照 JSDoc 原文 Color.Red/White/10vp/16vp/1vp；`maxCount` 超出折叠 `N+`；位置 RightTop/Right/Left）；`Counter` 内置可点 +/− 真触发 `onInc`/`onDec`（flex order 摆位）；`Divider` div 画线（默认 `#33182431`/1px/横向，JSDoc 原文，`vertical` 纵向转宽）；`Marquee` CSS 动画跑马灯（时长按 step 推算为**推断**；`onStart`/`onFinish` 定时器兜底收口，headless 动画事件被节流不可靠） | ✅ | `bash run.sh showdemo`（26 条断言：角标/步进/分割线/跑马灯逐一） |
 | **弹出类 `Select`/`Menu`/`MenuItem`**（R29）：`Select` 原生 `<select>` 基座 —— options → `<option>`、`selected(i) → selectedIndex` 直落、`onSelect(index, value)` 双参（change 派发，通用 on* 规则前拦截；编程改 selectedIndex 不派发，取舍已记录）；`value(str)` 显示文本覆盖记 `data-value-text`（原生 select 不可覆盖，取舍已记录）；`Menu`/`MenuItem` 行式面板：`{content}` 渲染、点击切换自身选中（✓ 标记）并派发 `onChange(新状态)`（多选语义） | ✅ | `bash run.sh popdemo`（16 条断言：选项/选中/双参/点击切换逐一） |
+| **`UIContext` 对象面**（R30）：`ViewPU.prototype.getUIContext`（ViewV2 继承）——只实现实测面：`animateTo/animateToImmediately`（委派 `runExplicitAnimation`，与 `Context.animateTo` 同管道，用 `__arkui_dom_animations.history` 的 `api='animateTo'` 钉住“真动画”）；`getRouter()` → `@ohos:router` 垫片（经典 `Router.pushUrl` 形态，编译期实测）；`getPromptAction()` → 垫片；`runScopedTask(cb)` 立即执行（真机 UI 作用域无 DOM 对应，取舍已记录）；其余方法（`getFrameNode`/`getMediaQuery` 等）未实现，调用得 undefined | ✅ | `bash run.sh uictxdemo`（8 条断言：四面按序 / 同步回调 / 真动画记录 / 继承面） |
 | **图像信息 `@ohos.multimedia.image`**：`createImageSource(uri)` + `getImageInfo()`（Promise/回调）/`getImageInfoSync()` + `release`；`ImageInfo.size` 来自**真实解码**（`createImageBitmap`） | ✅ | measimage（已知尺寸 PNG 7×3 / 13×5） |
 | **`mimeType` = 解码后的真实格式**（嗅探字节魔数，不是响应头）：PNG 字节 + `.jpg` 扩展名的伪装文件也报 `image/png` | ✅ | measimage（真 JPEG → `image/jpeg`；伪装 → `image/png`） |
 | **通知 `@ohos.notificationManager`**：`publish`（Promise 与**回调**两种重载）/`cancel`/`cancelAll`/`isNotificationEnabled`；`content` 按 `normal`→`longText`→`multiLine` 取文本；空 `content` 响亮失败 | ✅ | measnotify（四条 Promise 链路 + 回调重载成功/失败） |
@@ -211,7 +212,7 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 - **文本测量（`@ohos:measure`）的限制**：`textContent`/尺寸传 `Resource` 引用 → 没有资源管线，
   按默认值/空串处理并记警告；百分比约束在离屏测量里没有父容器，按像素处理并记警告。
   `measureTextSize` 在当前 SDK 里**已标 `@deprecated since 18`**（官方建议 `UIContext.getMeasureUtils()`），
-  本实现只做了前者；页面若改走 `this.getUIContext()` 会得到响亮的 `TypeError`（不是静默错值）。
+  本实现只做了前者；~~页面若改走 `this.getUIContext()` 会得到响亮的 `TypeError`~~（R30 已实现 `UIContext` 对象面，见能力表）。
   `textAlign`/`baselineOffset`/`textCase` 对测量结果无影响，未接入。
   测量用的是 `sans-serif`（未指定 `fontFamily` 时），**与真机的系统默认字体不同**，绝对像素值会差
   （但"换行行为"这一层是一致的）。

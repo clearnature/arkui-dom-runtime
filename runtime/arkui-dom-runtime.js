@@ -1879,6 +1879,30 @@
     return node;
   }
 
+  // ────────────────── UIContext（R30）──────────────────
+  //
+  // 产物形态（实测 fixtures/pages/UiContextDemo.ts）：`this.getUIContext()` 是组件实例上的
+  // 普通方法调用（编译器不改写），返回 UIContext 对象面。本轮只实现【实测用到】的面：
+  //   animateTo(param, fn) / animateToImmediately —— 与 Context.animateTo 同一显式动画管道
+  //   getRouter() → @ohos:router 垫片对象（Router.pushUrl 形态，@ohos.arkui.UIContext.d.ts 原文）
+  //   getPromptAction() → @ohos:promptAction 垫片
+  //   runScopedTask(cb) → 立即执行（真机是"UI 作用域内执行"，DOM 里无作用域差异，取舍已记录）
+  // ViewV2 extends ViewPU，@ComponentV2 组件同样继承 getUIContext。
+  function makeUIContext() {
+    return {
+      animateTo: (param, fn) => runExplicitAnimation(param, fn, 'animateTo'),
+      // 与 Context.animateToImmediately 同理：DOM 里两者等价（CSS transition 本来就"下一帧开始"）
+      animateToImmediately: (param, fn) => runExplicitAnimation(param, fn, 'animateToImmediately'),
+      getRouter: () => ohosRequire('@ohos:router'),
+      getPromptAction: () => ohosRequire('@ohos:promptAction'),
+      runScopedTask: (cb) => {
+        try { cb(); }
+        catch (e) { layoutWarnings.push(`runScopedTask 回调抛错：${e && e.message}`); }
+      },
+    };
+  }
+  ViewPU.prototype.getUIContext = function () { return makeUIContext(); };
+
   // ────────────────── Tabs / TabContent（多面板切换）──────────────────
   //
   // 产物形式（实测 fixtures/pages/TabsGrid.ts）：

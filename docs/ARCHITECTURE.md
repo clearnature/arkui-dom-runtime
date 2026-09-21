@@ -898,6 +898,20 @@ selectedIndex 不派发 change——DOM 取舍已记录）；`value(str)` 显示
 （原生 select 不可覆盖，取舍已记录）；MenuItem 行式面板：点击切换自身选中（✓ 标记）并派发
 `onChange(新状态)`。
 
+### 4.9e 弹出类（R29）
+
+`Select` / `Menu` / `MenuItem`（新分片 `runtime/src/popup.js`，第 13 个）。
+
+**产物形态**（实测 `fixtures/pages/PopDemo.ts`）：`Select.create([{value}])` **create 单参数**
+（`selected` 是属性方法 `selected(value: number | Resource)`；`SelectOption = {value, icon?}`）；
+`onSelect` 双参 `(index, value)`；`MenuItem.onChange` 是**多选语义**（每项独立 selected，非互斥）。
+
+**DOM 映射**：Select 沿用原生 `<select>`（options → `<option>`，`selected(i) → selectedIndex`）；
+`onSelect` 拦在通用 on* 规则前，change 事件带双参派发（编程改 selectedIndex 不派发——DOM 取舍，
+测试用 `dispatchEvent('change')` 驱动）；`value(str)` 记 `data-value-text`（原生 select 显示文本
+不可覆盖，取舍已记录）。Menu/MenuItem 行式面板：MenuItem 点击切换自身选中（✓ 标记）并派发
+`onChange(新状态)`（多选语义，每项独立）。
+
 **验收**：`bash run.sh popdemo`（**16 条断言**）双端通过。**破坏验证（3 处）**：分派短路 →
 **7 红**；点击切换摘除 → **3 红**；options 构建摘除 → **5 红**（selectedIndex 变 -1、
 双参全空——证明 `<option>` 构建是 selectedIndex 与回调的基座）。还原后 md5 一致。
@@ -906,6 +920,24 @@ selectedIndex 不派发 change——DOM 取舍已记录）；`value(str)` 显示
 `runtime/src/main.js`（@include + 安装全局）、`tools/stats.mjs`（手写 33→35）、
 `fixtures/pages/PopDemo.ts`、`harmony-proj/`（PopDemo.ets + main_pages.json）、
 `test/popdemo.html`、`run.sh`、`electron/run.sh`
+
+### 4.9f UIContext（R30）
+
+**不是组件**——是 `ViewPU.prototype.getUIContext`（main.js，无新分片，本体只有 8 行对象面）。
+关掉"页面改走 `this.getUIContext()` 会 TypeError"的限制（CAPABILITY 原记录）。
+
+**产物形态**（实测 `fixtures/pages/UiContextDemo.ts`）：`this.getUIContext()` 是组件实例上的
+普通方法调用（编译器不改写）；`getRouter()` 返回**经典 Router 面**（`Router.pushUrl(options)`，
+不是 NavPathStack——编译期实测）。
+
+**实现**：只实现**实测面**——`animateTo/animateToImmediately`（委派 `runExplicitAnimation`，
+与 `Context.animateTo` 同管道；测试用 `__arkui_dom_animations.history` 的 `api='animateTo'` 钉住
+"真动画"，裸赋值过不了）、`getRouter`/`getPromptAction`（@ohos 垫片委派）、`runScopedTask`
+（立即执行——真机"UI 作用域内执行"无 DOM 对应，取舍已记录）。`ViewV2 extends ViewPU`，
+@ComponentV2 组件同样继承。
+
+**已知限制**：`getFrameNode`/`getMediaQuery` 等其余方法未实现（调用得 undefined——对象面上
+无法统一拦，按需补充）。
 
 ### 4.10 文本测量：让浏览器自己排版，而不是自己模拟（R15）
 
@@ -1492,22 +1524,22 @@ minContentWidth 360，`.d.ts` 原文；用组件宽度而不是窗口宽度，�
   14 个：app.ability.AbilityConstant app.ability.ConfigurationConstant app.ability.UIAbility app.ability.Want data.preferences file.fs hilog measure multimedia.image net.http notificationManager promptAction router window
 
 == 用例矩阵 ==
-  浏览器 run.sh     37 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify measure lazy provide v2 observe async ability promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo router netfile persist
-  Electron          36 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo measure lazy provide async v2 observe
-  测试页            37 个
-  fixtures 转换产物  35 个：AnimDemo AsyncIO Callee Detail DrawDemo GestureDemo GestureGroupDemo Home Index InputDemo Layout Lazy LazyVar MeasArea MeasImage MeasNotify Measure NavBarDemo NavDemo NavTransDemo NetFile Observe PopDemo PromptAct Provide RelDemo Rich ShapeDemo ShowDemo SwiperDemo TabsGrid TextMeasure TransitionDemo V2 Widgets
+  浏览器 run.sh     38 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify measure lazy provide v2 observe async ability promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo router netfile persist
+  Electron          37 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo measure lazy provide async v2 observe
+  测试页            38 个
+  fixtures 转换产物  36 个：AnimDemo AsyncIO Callee Detail DrawDemo GestureDemo GestureGroupDemo Home Index InputDemo Layout Lazy LazyVar MeasArea MeasImage MeasNotify Measure NavBarDemo NavDemo NavTransDemo NetFile Observe PopDemo PromptAct Provide RelDemo Rich ShapeDemo ShowDemo SwiperDemo TabsGrid TextMeasure TransitionDemo UiContextDemo V2 Widgets
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          399.8 KB
-  runtime(src)     287.3 KB
-  test             298.5 KB
+  runtime          401.3 KB
+  runtime(src)     288.8 KB
+  test             302.9 KB
   tools            53.1 KB
-  electron(src)    20.3 KB
-  docs             384.6 KB
-  fixtures         306.3 KB
+  electron(src)    20.5 KB
+  docs             389.1 KB
+  fixtures         310.0 KB
 
 == 逐文件（文档"文件职责"表的来源）==
-  runtime/arkui-dom-runtime.js        293948 B  287.1 KB
+  runtime/arkui-dom-runtime.js        295487 B  288.6 KB
   runtime/generated-components.js      57617 B  56.3 KB
   runtime/ohos-shims.js                57789 B  56.4 KB
   tools/extract.mjs                     6563 B  6.4 KB
@@ -1518,18 +1550,18 @@ minContentWidth 360，`.d.ts` 原文；用组件宽度而不是窗口宽度，�
   tools/preflight.mjs                   5422 B  5.3 KB
   tools/check-all.sh                    3673 B  3.6 KB
   tools/build-runtime.mjs               5138 B  5.0 KB
-  run.sh                               18917 B  18.5 KB
-  electron/run.sh                      11841 B  11.6 KB
+  run.sh                               19292 B  18.8 KB
+  electron/run.sh                      12046 B  11.8 KB
   electron/main.js                      6795 B  6.6 KB
   electron/preload.js                   1961 B  1.9 KB
   package.json                          1321 B  1.3 KB
   .gitignore                             757 B  0.7 KB
-  README.md                           104184 B  101.7 KB
+  README.md                           106961 B  104.5 KB
   THIRD-PARTY-NOTICES.md                8256 B  8.1 KB
-  docs/ARCHITECTURE.md                129882 B  126.8 KB
-  docs/CAPABILITY.md                   41997 B  41.0 KB
+  docs/ARCHITECTURE.md                132157 B  129.1 KB
+  docs/CAPABILITY.md                   42754 B  41.8 KB
   docs/DEVELOPING.md                   60602 B  59.2 KB
-  docs/ROADMAP.md                      94239 B  92.0 KB
+  docs/ROADMAP.md                      95832 B  93.6 KB
   docs/surface-measurement.md           6496 B  6.3 KB
   docs/SESSION-2026-09-20.md           12842 B  12.5 KB
   runtime/src/ability.js                8802 B  8.6 KB
@@ -1539,7 +1571,7 @@ minContentWidth 360，`.d.ts` 原文；用组件宽度而不是窗口宽度，�
   runtime/src/gesture.js               29527 B  28.8 KB
   runtime/src/input.js                  5672 B  5.5 KB
   runtime/src/layout.js                14213 B  13.9 KB
-  runtime/src/main.js                  87056 B  85.0 KB
+  runtime/src/main.js                  88595 B  86.5 KB
   runtime/src/nav.js                   50317 B  49.1 KB
   runtime/src/popup.js                  4884 B  4.8 KB
   runtime/src/shape.js                  7206 B  7.0 KB
@@ -1578,6 +1610,7 @@ minContentWidth 360，`.d.ts` 原文；用组件宽度而不是窗口宽度，�
   fixtures/pages/TabsGrid.ts           10513 B  10.3 KB
   fixtures/pages/TextMeasure.ts        11625 B  11.4 KB
   fixtures/pages/TransitionDemo.ts     14311 B  14.0 KB
+  fixtures/pages/UiContextDemo.ts       3791 B  3.7 KB
   fixtures/pages/V2.ts                 13447 B  13.1 KB
   fixtures/pages/Widgets.ts             4600 B  4.5 KB
   test/ability.html                     4695 B  4.6 KB
@@ -1616,6 +1649,7 @@ minContentWidth 360，`.d.ts` 原文；用组件宽度而不是窗口宽度，�
   test/tabgrid.html                    10096 B  9.9 KB
   test/textmeasure.html                 9021 B  8.8 KB
   test/transitiondemo.html             17007 B  16.6 KB
+  test/uictxdemo.html                   4532 B  4.4 KB
   test/v2.html                          7235 B  7.1 KB
 ```
 

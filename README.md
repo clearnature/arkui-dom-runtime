@@ -861,6 +861,45 @@ PASS Menu/MenuItem：内容渲染／selected(true) → ✓ 标记／点 item1 �
 `fixtures/pages/PopDemo.ts`、`harmony-proj/`（PopDemo.ets + main_pages.json）、
 `test/popdemo.html`、`run.sh`、`electron/run.sh`
 
+## R30：`UIContext`（`getUIContext()` 的现代 API 面）✅
+
+关掉 CAPABILITY 里记录已久的限制："页面若改走 `this.getUIContext()` 会得到响亮的 TypeError"。
+现代 ArkTS 代码（去 deprecated 化）大量走这条面。
+
+**测量**（新增 `pages/UiContextDemo.ets` → 官方构建）实测形态：`this.getUIContext()` 是**组件实例
+上的普通方法调用**（编译器不改写）；`uiContext.animateTo(param, fn)` 与 `Context.animateTo` 同源
+显式动画；`uiContext.getRouter()` 返回的是**经典 Router 面**（`Router.pushUrl(options)`，不是
+NavPathStack 的 pushPathByName——编译期实测）；`uiContext.runScopedTask(cb)` 立即执行。
+
+**实现**（`ViewPU.prototype.getUIContext`，放 main.js——无新分片，因为本体只有 8 行对象面）：
+**只实现实测用到的面**：`animateTo/animateToImmediately` → 委派 `runExplicitAnimation`（与
+`Context.animateTo` 同管道）；`getRouter()` → `@ohos:router` 垫片（pushUrl 形态）；`getPromptAction()`
+→ `@ohos:promptAction` 垫片；`runScopedTask(cb)` → 立即执行（真机是"UI 作用域内执行"，DOM 里无
+作用域差异，取舍已记录）。`ViewV2 extends ViewPU`——`@ComponentV2` 组件同样继承。
+
+```
+$ bash run.sh uictxdemo
+=== ALL PASS ===                    （8 条断言，双端同数）
+PASS 点击 go → 四个面按序生效（UI1;RT1;SC;）
+PASS animateTo 的回调同步执行（msg A→B）／显式动画运行记录 +1（api='animateTo'——
+     用 __arkui_dom_animations 的 history 钉住"真动画"，裸赋值过不了这条）
+PASS ViewPU 原型挂上 getUIContext／多次调用各自拿到对象
+```
+
+**破坏验证**（2 处，各被精确抓住）：① `getUIContext` 摘除 → **4 条**红（页面 onClick 里直接
+`TypeError: ViewPU.prototype.getUIContext is not a function`——正是原限制的症状）；
+② `animateTo` 委派断掉（裸赋值不进动画管道）→ 恰好 **1 条**红（msg 照样到 B，动画记录缺位）。
+还原后 md5 与基准一致，v2 回归绿。
+
+**已知限制**（写进 CAPABILITY）：`UIContext` 只实现实测面（animateTo/animateToImmediately/
+getRouter/getPromptAction/runScopedTask）；`getFrameNode`/`getMediaQuery`/`openMenu` 等其余
+方法未实现（调用得到 undefined——对象面上无法统一拦，按需补充）；`runScopedTask` 的"作用域"
+语义无 DOM 对应。
+
+**触及**：`runtime/src/main.js`（`makeUIContext` + `ViewPU.prototype.getUIContext`，放 ViewPU/
+属性映射与 Tabs 之间）、`fixtures/pages/UiContextDemo.ts`、`harmony-proj/`（UiContextDemo.ets +
+main_pages.json）、`test/uictxdemo.html`、`run.sh`、`electron/run.sh`
+
 ## R14：多层锚链 + `Guideline` + `bias` ✅
 
 ```
@@ -1453,7 +1492,7 @@ PASS starStyle 的图片 URI 不可用已记警告
 | 文档数字守门 | `npm run stats:check-doc` | `ARCHITECTURE.md` §6 的整块实测数字逐行比对，漂移即非 0 退出；`stats:write-doc` 就地重写 |
 | 覆盖统计 | `npm run stats` | 文档里的所有数字都由它产出（`--json` 机器可读） |
 
-`npm run check` 当前：**6 步全绿（preflight + 生成物一致 + 产物/源一致 + 文档数字 + 浏览器 37 用例 + Electron 36 用例）**。
+`npm run check` 当前：**6 步全绿（preflight + 生成物一致 + 产物/源一致 + 文档数字 + 浏览器 38 用例 + Electron 37 用例）**。
 
 ## 下一步
 
@@ -1461,7 +1500,7 @@ PASS starStyle 的图片 URI 不可用已记警告
 
 1. 其余骨架组件的视觉语义——**按家族推进**：已收形状族 8（R26）、输入类 4（R27）、
    信息展示类 4（R28）、弹出类 3（R29）；剩余候选：`Canvas`/`XComponent`（表层类）、
-   `QRCode`（需 QR 编码器，单列）。另有 `@ohos:media`/`UIContext`
+   `QRCode`（需 QR 编码器，单列）。`UIContext` 已收（R30），`@ohos:media` 待办
 2. ~~**继续把 `runtime/src/main.js` 拆细**~~ **已拆到位（2026-09-21，源拆分第三步）**：9 个分片，
    `main.js` 剩 **1869 行 / 86,452 B**（基础设施 / 状态 v1 / ViewPU / 属性映射 / Tabs / Swiper /
    组件注册表 / 具体组件 / LazyForEach / 枚举路由 / 安装全局），已拆出
@@ -1474,9 +1513,9 @@ PASS starStyle 的图片 URI 不可用已记警告
 > **`Navigation` 转场动画 + `onTitleModeChange` 滚动联动**（见上文「R25 收口」）、
 > **runtime 源码分片**（R5c）、**R24 ArkVM/`.abc` 路径调研**（`docs/ARKVM-RESEARCH.md`）、
 > **SVG 形状族**（见上文「R26」）、**输入类**（见上文「R27」）、**信息展示类**（见上文「R28」）、
-> **弹出类**（见上文「R29」）。
+> **弹出类**（见上文「R29」）、**UIContext**（见上文「R30」）。
 
-**仍未覆盖**：`chainMode`、其余 ~66 个骨架组件的视觉语义、`@ohos:media`/`UIContext`。
+**仍未覆盖**：`chainMode`、其余 ~66 个骨架组件的视觉语义、`@ohos:media`。
 **别把没验的当结论**——`docs/CAPABILITY.md` 里有逐项的能力矩阵，其中标了哪些语义是**推断**的。
 
 **已知待办（别当已完成）**：

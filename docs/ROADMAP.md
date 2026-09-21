@@ -571,6 +571,29 @@ selectedIndex 不派发 change——DOM 取舍已记录）；`value(str)` 显示
 `fixtures/pages/PopDemo.ts`、`harmony-proj/`（PopDemo.ets + main_pages.json）、
 `test/popdemo.html`、`run.sh`、`electron/run.sh`
 
+### R30 — `UIContext`（`getUIContext()` 的现代 API 面）✅（2026-09-21）
+
+**内容**：关掉 CAPABILITY 里记录已久的限制——`this.getUIContext()` 原本直接 TypeError。
+现代 ArkTS 代码大量走这条面。
+
+**测量**（新增 `pages/UiContextDemo.ets`）：`this.getUIContext()` 是组件实例上的普通方法调用；
+`getRouter()` 返回**经典 Router 面**（`Router.pushUrl(options)`，不是 NavPathStack——编译期实测）；
+`animateTo(param, fn)` 与 `Context.animateTo` 同源。
+
+**实现**：`ViewPU.prototype.getUIContext`（main.js，无新分片——本体只有 8 行对象面）。只实现
+**实测面**：animateTo/animateToImmediately（委派 runExplicitAnimation，与 Context.animateTo 同
+管道）、getRouter（@ohos:router 垫片）、getPromptAction（垫片）、runScopedTask（立即执行，取舍
+已记录）。ViewV2 extends ViewPU —— @ComponentV2 组件同样继承。
+
+**验收**：`bash run.sh uictxdemo`（**8 条断言**）双端通过。**破坏验证（2 处）**：getUIContext 摘除
+→ **4 红**（页面 onClick 直接 TypeError——原限制症状）；animateTo 改裸赋值 → **1 红**
+（msg 照样到 B、动画记录缺位——`__arkui_dom_animations.history` 的 `api='animateTo'` 断言把
+"真动画"与"裸赋值"区分开）。还原后 md5 一致，v2 回归绿。
+
+**触及**：`runtime/src/main.js`（makeUIContext + 原型挂载）、`fixtures/pages/UiContextDemo.ts`、
+`harmony-proj/`（UiContextDemo.ets + main_pages.json）、`test/uictxdemo.html`、
+`run.sh`、`electron/run.sh`
+
 ---
 
 ## P3 布局引擎

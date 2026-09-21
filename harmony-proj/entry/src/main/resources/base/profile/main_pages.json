@@ -13,6 +13,7 @@
     "pages/ShapeDemo",
     "pages/InputDemo",
     "pages/ShowDemo",
-    "pages/PopDemo"
+    "pages/PopDemo",
+    "pages/UiContextDemo"
   ]
 }

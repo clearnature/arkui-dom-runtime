@@ -8,12 +8,12 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R29**（弹出类 Select/Menu/MenuItem）— **PASS**
-  （popdemo 16 条双端；破坏 7/3/5 红；手写实现 33→35）
+- 上次切片：**R30**（UIContext：getUIContext 不再 TypeError）— **PASS**
+  （uictxdemo 8 条双端；破坏 4/1 红；ViewPU.prototype.getUIContext 只实现实测面，ViewV2 继承）
 - 下一步（README「下一步」原文）：
   1. 其余骨架组件的视觉语义——**按家族推进**（形状族 8 + 输入类 4 + 信息展示类 4 已收）；
-     已收：形状族 8 + 输入类 4 + 信息展示类 4 + 弹出类 3；剩余候选：`Canvas`/`XComponent`（表层类）、
-     `QRCode`（需 QR 编码器，单列）。另有 `@ohos:media`/`UIContext`
+     已收：形状族 8 + 输入类 4 + 信息展示类 4 + 弹出类 3 + UIContext；剩余候选：
+     `Canvas`/`XComponent`（表层类）、`QRCode`（需 QR 编码器，单列）。另有 `@ohos:media` 待办
   2. ~~继续拆 `main.js`~~ **已拆到位**（12 分片）；机制随时可用
 
 ## 项目目标
@@ -85,4 +85,5 @@ bash electron/run.sh <用例>   # 单用例·Electron
 | 2026-09-21 | R26 形状族 | 1eb9b53 | 双端 36 条 PASS + 破坏 19/1/4 红 | fixture 空转自纠（正方形 Circle min=max，改 80×60）；Line 起终点是属性方法不是 create 参数（编译期抓到）；新分片 shape.js（第 10 个） |
 | 2026-09-21 | R27 输入类 | 98f2d2f | 双端 27 条 PASS + 破坏 3/2/2 红 | RadioOptions 无 name / Toggle 用 isOn（编译期抓到）；坑 88（事件重复注册改覆盖语义）+ target 校验防错投 + Radio 组内补发 onChange(false)；新分片 input.js（第 11 个） |
 | 2026-09-21 | R28 信息展示类 | ecec6f3 | 双端 26 条 PASS + 破坏 8/1/1 红 | Badge count/value 双重载 + style 必填在 create（编译期抓到）；Marquee 定时器收口（headless 动画事件被节流）；坑 89（轮询上限吃虚拟时间预算）；新分片 show.js（第 12 个） |
-| 2026-09-21 | R29 弹出类 | （本次提交） | 双端 16 条 PASS + 破坏 7/3/5 红 | Select.create 单参数（selected 是属性方法）；onSelect 双参 (index, value)；MenuItem 多选语义；value() 记 data-value-text（原生 select 不可覆盖，取舍记录）；新分片 popup.js（第 13 个） |
+| 2026-09-21 | R29 弹出类 | f22a161 | 双端 16 条 PASS + 破坏 7/3/5 红 | Select.create 单参数（selected 是属性方法）；onSelect 双参 (index, value)；MenuItem 多选语义；value() 记 data-value-text（原生 select 不可覆盖，取舍记录）；新分片 popup.js（第 13 个） |
+| 2026-09-21 | R30 UIContext | （本次提交） | 双端 8 条 PASS + 破坏 4/1 红 | getRouter 返回经典 Router 面（pushUrl，编译期实测）；animateTo 委派显式动画管道（history.api 断言把"真动画"与"裸赋值"区分开）；无新分片（本体 8 行） |
