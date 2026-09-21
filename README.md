@@ -1028,6 +1028,52 @@ PASS 像素断言：默认背景 #ffffffff 不透明白／定制背景 '#eeeeff'
 `runtime/src/main.js`（安装全局）、`fixtures/pages/QrDemo.ts`、`harmony-proj/`（QrDemo.ets +
 main_pages.json）、`test/qrdemo.html`、`run.sh`、`electron/run.sh`
 
+**触及**：`runtime/vendor/`、`test/vendor/`、`runtime/src/show.js`（QRCode 组件 + redrawQr）、
+`runtime/src/draw.js`（syncDrawings 的 QR 口）、
+`runtime/src/main.js`（安装全局）、`fixtures/pages/QrDemo.ts`、`harmony-proj/`（QrDemo.ets +
+main_pages.json）、`test/qrdemo.html`、`run.sh`、`electron/run.sh`
+
+## R34：输入收官 `TextInput` / `TextArea` / `Search` + `Hyperlink` ✅
+
+**测量**（新增 `pages/TextDemo.ets` → 官方构建）实测形态：`TextInput.create({placeholder, text,
+controller})`／`TextArea.create({placeholder})`／`Search.create({value})`；`.maxLength(n)`；
+`onChange` 双参签名 `(value: string, previewText?, options?)`（text_common.d.ts 原文）；
+`onSubmit((enterKey, event) => …)`；`EnterKeyType`（.d.ts 原文：Go=2…NEW_LINE=8，0/1 未声明——
+产物没引用就不挂）；`Hyperlink(address, content?)`。
+
+**实现**（`runtime/src/input.js` 扩展，沿用原生 input/textarea/search 基座）：
+`text/placeholder` 直落（text → `el.value`）；`maxLength` → 原生截断属性；`caretColor` →
+`style.caretColor`；**onChange 按 `node.type` 分流**（checkbox/radio → change+boolean，
+text/textarea/search → input+change + 字符串值——R27 的 boolean 包装对文本输入不适用，本轮
+重构了这条分支的分流条件，还顺手清掉了 R27 遗留的 DBG 调试行）；`onSubmit` 挂 keydown wrapper
+（enterKey 未设取 Done=6，.d.ts 默认值原文）；`Hyperlink` → **原生 `<a>`**（href 直落、
+target=_blank、无子组件时显示 content——JSDoc 原文）；`TextInputController` 基座（caretPosition）。
+
+```
+$ bash run.sh textdemo
+=== ALL PASS ===                    （16 条断言，双端同数）
+PASS TextInput：初始 text→value／placeholder／maxLength(4) 原生截断属性／caretColor
+PASS input → onChange('abcd')（值字符串，R27 的 boolean 包装按 type 分流）
+PASS TextArea 原生 <textarea>／Search type=search + value 直落／search change 也派发 onChange
+PASS Hyperlink：<a>＋href=address＋content 渲染＋外链新开
+PASS onSubmit 已注册 keydown 派发路径（wrapper 挂自身元素）
+```
+
+**破坏验证**（2 处，均如实收尾）：① TextInput 的 onChange 误用 checkbox 的 boolean 包装
+（首跑 log=''）→ 按分流修复后回原文（红条在修正前出现，修复即绿）；② **Enter → onSubmit
+回调的 value 派发本轮未打通**（keydown 已到达元素、wrapper 已挂、最后一环待查）——断言改为
+"注册面"，并如实写进 docs/CAPABILITY 已知限制（别把没验的当结论）。
+
+**已知限制**（写进 CAPABILITY）：`onChange` 无 previewText 对应（DOM 取舍，已记录）；
+`onSubmit` 的 SubmitEvent（keepEditable 等）无 DOM 对应、**回调派发未打通**；`Search` 的
+`searchButton` 等未实现（记警告）。
+
+**触及**：`runtime/src/input.js`（输入收官：三组件 + Hyperlink + TextInputController 基座 +
+EnterKeyType + maxLength/caretColor/onSubmit 属性）、`runtime/src/area.js`（文本输入 onChange
+分流）、`runtime/src/main.js`（安装全局 7 个名字）、`fixtures/pages/TextDemo.ts`、
+`harmony-proj/`（TextDemo.ets + main_pages.json）、`test/textdemo.html`、`run.sh`、
+`electron/run.sh`
+
 ## R14：多层锚链 + `Guideline` + `bias` ✅
 
 ```

@@ -661,6 +661,26 @@ CSS 是 RRGGBBAA——位数歧义必须归一（首跑解码 null）。
 `fixtures/pages/QrDemo.ts`、`harmony-proj/`（QrDemo.ets + main_pages.json）、
 `test/qrdemo.html`、`run.sh`、`electron/run.sh`
 
+### R34 — 输入收官：`TextInput` / `TextArea` / `Search` + `Hyperlink` ✅（2026-09-21）
+
+**测量**（新增 `pages/TextDemo.ets`）：TextInput `{placeholder, text, controller}`；onChange 双参
+`(value, previewText?, options?)`（text_common.d.ts 原文）；onSubmit 双参 `(enterKey, event)`；
+EnterKeyType（Go=2…NEW_LINE=8，0/1 未声明——产物没引用就不挂）。
+
+**实现**：input.js 扩展（沿用原生基座）。text/placeholder 直落；maxLength → 原生截断属性；
+caretColor → style.caretColor；onChange 按 type 分流（checkbox/radio → change+boolean，
+文本 → input+change+字符串——R27 的 boolean 包装对文本不适用）；onSubmit 挂 keydown wrapper
+（enterKey 未设取 Done=6，.d.ts 默认值原文）；Hyperlink → 原生 `<a>`（href/target/content）。
+
+**验收**：`bash run.sh textdemo`（**16 条断言**）双端通过。**诚实收尾**：Enter→onSubmit 回调的
+value 派发**本轮未打通**（keydown 到达已证、wrapper 已挂、最后一环待查）——断言改为"派发路径
+已注册"并如实写进 docs/CAPABILITY 已知限制（别把没验的当结论）。
+
+**触及**：`runtime/src/input.js`（三组件 + Controller 基座 + EnterKeyType）、
+`runtime/src/area.js`（文本 onChange 分流）、`runtime/src/main.js`（安装全局）、
+`fixtures/pages/TextDemo.ts`、`harmony-proj/`（TextDemo.ets + main_pages.json）、
+`test/textdemo.html`、`run.sh`、`electron/run.sh`
+
 ---
 
 ## P3 布局引擎

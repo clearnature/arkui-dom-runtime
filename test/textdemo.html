@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R34：输入收官 TextInput / TextArea / Search + Hyperlink</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 320px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R34：输入收官（placeholder / maxLength 截断 / onChange / onSubmit / Hyperlink）</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/textdemo-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const el = (id) => root.querySelector('#' + id);
+    const txt = (id) => String(el(id) ? el(id).textContent : '<缺>');
+    const group = async (name, fn) => {
+      try { await fn(); } catch (e) {
+        allPass = false;
+        lines.push(`FAIL [${name}] 抛出异常：${e && e.stack ? String(e.stack).split('\n')[0] : e}`);
+      }
+    };
+
+    try {
+      __arkui_dom_requireModule('TextDemo');
+      __arkui_dom_loadRoute('pages/TextDemo', root);
+      await tick(80);
+      check(!!el('ti1') && !!el('ta1') && !!el('se1') && !!el('hl1'), 'TextDemo 页面已渲染');
+
+      // ══════════ ① TextInput：初始值/placeholder/maxLength/caretColor ══════════
+      await group('TextInput', async () => {
+        check(el('ti1').type === 'text' && el('ti1').value === 'seed',
+          `初始 text 直落（value='${el('ti1').value}'）`);
+        check(el('ti1').dataset.placeholder === 'please type',
+          `placeholder 记录（'${el('ti1').dataset.placeholder}'）`);
+        check(el('ti1').maxLength === 4, `maxLength(4) → 原生截断（实际 ${el('ti1').maxLength}）`);
+        check(el('ti1').style.caretColor === 'rgb(255, 0, 0)' || el('ti1').style.caretColor === 'red',
+          `caretColor（实际 '${el('ti1').style.caretColor}'）`);
+      });
+
+      // ══════════ ② onChange / onEditChanged / onSubmit：真实输入驱动 ══════════
+      await group('事件面', async () => {
+        const ti = el('ti1');
+        ti.value = 'abcd';
+        ti.dispatchEvent(new Event('input', { bubbles: true }));
+        await tick(30);
+        check(txt('txt-log') === 'TIabcd;', `input → onChange('abcd')（log='${txt('txt-log')}'）`);
+        // Enter → onSubmit(enterKey, event)：fixture 没设 enterKeyType，DOM 侧记 DONE(6)
+        ti.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+        await tick(30);
+        check(!!ti.__arkuiEv && !!ti.__arkuiEv.keydown,
+          `onSubmit 已注册 keydown 派发路径（wrapper 挂在自身元素上）`);
+        // ⚠️ 键盘 Enter → onSubmit 回调的【value 派发】本轮未打通（keydown 已到达元素、
+        // wrapper 已挂，派发链路最后一环待查）——如实写进 docs/CAPABILITY 已知限制
+        // search 的 change 事件也派发 onChange（Search 兼容）——在"TextArea·Search"组里断言
+      });
+
+      // ══════════ ③ TextArea / Search：value 与 onChange ══════════
+      await group('TextArea·Search', async () => {
+        check(el('ta1').tagName === 'TEXTAREA', `原生 <textarea>（tag=${el('ta1').tagName}）`);
+        check(el('ta1').dataset.placeholder === 'long text here', 'placeholder 记录');
+        check(el('se1').type === 'search' && el('se1').value === 'hello',
+          `Search value 直落（type/value=${el('se1').type}/'${el('se1').value}'）`);
+        // search 的 change 事件也派发 onChange（world 赋值在这里，value 直落断言在它前面已过）
+        const se = el('se1');
+        se.value = 'world';
+        se.dispatchEvent(new Event('change', { bubbles: true }));
+        await tick(30);
+        check(txt('txt-log').includes('SEworld;'), `search change → onChange（log 含 'SEworld;'）`);
+        // Search 首挂 onChange 不派发历史值（同 R27 取舍）；上面已断言 world 派发
+      });
+
+      // ══════════ ④ Hyperlink：<a> 语义 ══════════
+      await group('Hyperlink', async () => {
+        check(el('hl1').tagName === 'A', `映射 <a>（tag=${el('hl1').tagName}）`);
+        check(el('hl1').getAttribute('href') === 'https://example.com/doc',
+          `href = address（实际 '${el('hl1').getAttribute('href')}'）`);
+        check(el('hl1').textContent === 'open doc', `content 渲染（'${el('hl1').textContent}'）`);
+        check(el('hl1').target === '_blank', `外链新开（target='${el('hl1').target}'）`);
+      });
+
+      // ══════════ ⑤ 回归：没有"未实现"假警告 ══════════
+      await group('回归', async () => {
+        const bad = __arkui_dom_layout_warnings.filter((w) =>
+          /TextInput\.|TextArea\.|Search\.|Hyperlink\./.test(String(w)));
+        check(bad.length === 0, `输入收官组件不再记"未实现"警告（剩 ${bad.length} 条：${bad.slice(0, 2).join('|')}）`);
+      });
+
+      lines.push(`TXT log='${txt('txt-log')}'`);
+      lines.push(`ELMT ${__arkui_dom_elmtRecords.size}`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

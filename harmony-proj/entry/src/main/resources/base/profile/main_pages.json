@@ -17,6 +17,7 @@
     "pages/UiContextDemo",
     "pages/CanvasDemo",
     "pages/XCompDemo",
-    "pages/QrDemo"
+    "pages/QrDemo",
+    "pages/TextDemo"
   ]
 }

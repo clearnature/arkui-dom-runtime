@@ -168,7 +168,9 @@
       }
       // ArkUI 的 onChange(isOn/isChecked: boolean)：包掉 DOM Event —— 通用规则会原样透传
       // Event 对象（inputdemo 首跑实测 log='CK[object Event];'）。覆盖语义同上（__arkuiEv）。
-      if (node.__arkuiInput === 'input' && prop === 'onChange') {
+      // ⚠️ 只对 checkbox/radio（选中语义）；文本输入的 onChange(value: string) 见下。
+      if (node.__arkuiInput === 'input' && prop === 'onChange'
+        && (node.type === 'checkbox' || node.type === 'radio')) {
         // ⚠️ 包装器带【target 校验】：实测（inputdemo 排查）rd 的包装器会被错误地挂到
         // 其他 input 节点上（tg1/sl1 的 change 也会带起 rd 回调）—— 根因在组件栈复用，
         // 先用"事件目标必须是自己"兜住错投：change 目标不是这个节点就不算它的选中态变化。
@@ -195,7 +197,23 @@
         if (node.__arkuiEv.change) node.removeEventListener('change', node.__arkuiEv.change);
         node.__arkuiEv.change = wrapper;
         node.addEventListener('change', wrapper);
-        layoutWarnings.push('DBG-REG onChange id=' + node.id); // TODO 调试后删
+        return;
+      }
+      // 文本输入（R34）：TextInput/TextArea/Search 的 onChange 签名是 (value: string)——
+      // 监听 input 事件（每次键入）并传字符串值（text_common.d.ts：value 双参首参）。
+      if (node.__arkuiInput === 'input' && prop === 'onChange'
+        && (node.type === 'text' || node.type === 'search' || node.tagName === 'TEXTAREA')) {
+        const textWrapper = () => {
+          try { value(node.value); }
+          catch (e) { layoutWarnings.push(`文本输入 onChange 派发抛错：${e && e.message}`); }
+        };
+        if (!node.__arkuiEv) node.__arkuiEv = {};
+        if (node.__arkuiEv.input) node.removeEventListener('input', node.__arkuiEv.input);
+        if (node.__arkuiEv.change) node.removeEventListener('change', node.__arkuiEv.change);
+        node.__arkuiEv.input = textWrapper;
+        node.__arkuiEv.change = textWrapper;      // change 与 input 同参（值字符串）
+        node.addEventListener('input', textWrapper);
+        node.addEventListener('change', textWrapper);
         return;
       }
       if (node.__arkuiInput === 'slider' && prop === 'onChange') {

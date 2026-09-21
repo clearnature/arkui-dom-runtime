@@ -1682,6 +1682,8 @@
     XComponent, XComponentController, XComponentType,
     // R33：信息展示收官（QRCode 组件；其编码器由 runtime/vendor/qrcode-1.5.4.js 提供）
     QRCode,
+    // R34：输入收官。EnterKeyType 是产物里的自由变量枚举
+    TextInput, TextArea, Search, Hyperlink, TextInputController, TextInputControllerBase, EnterKeyType,
     __Common__: _CommonWrapper,
     FontWeight, VerticalAlign, HorizontalAlign, FlexAlign, TextAlign, ItemAlign, Color,
     TextOverflow, Alignment, Scroller, Axis,

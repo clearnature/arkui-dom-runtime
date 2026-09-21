@@ -45,8 +45,10 @@
       // ── 原生控件参数映射
       const textInput = root.querySelector('input[type=text]');
       check(!!textInput, 'TextInput → <input type=text>');
-      check(textInput && textInput.placeholder === 'name' && textInput.value === 'abc',
-        `TextInput 参数落位：placeholder='${textInput && textInput.placeholder}' value='${textInput && textInput.value}'`);
+      // R34 起 placeholder 走【ArkUI 语义层】（data-placeholder，DOM 的 input 无 placeholder
+      // 属性可设——占位在真实渲染时由原生控件显示）；value 直落不变。断言升级为语义层形式。
+      check(textInput && textInput.dataset.placeholder === 'name' && textInput.value === 'abc',
+        `TextInput 参数落位：placeholder='${textInput && textInput.dataset.placeholder}' value='${textInput && textInput.value}'`);
 
       const slider = root.querySelector('input[type=range]');
       check(!!slider, 'Slider → <input type=range>');

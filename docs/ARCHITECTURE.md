@@ -1566,7 +1566,7 @@ minContentWidth 360，`.d.ts` 原文；用组件宽度而不是窗口宽度，�
   属性元数据总数       932（平均 6.3／组件，最多 TextInput=70）
 
 == 运行时 API ==
-  global 导出        211 个
+  global 导出        218 个
   状态类            ObservedPropertySimplePU ObservedPropertyObjectPU SynchedPropertySimpleOneWayPU SynchedPropertySimpleTwoWayPU SynchedPropertyNesedObjectPU
   内置组件          Text Button Column Row Stack List ListItem If ForEach LazyForEach RelativeContainer Tabs TabContent Swiper Navigation NavDestination Progress Gauge DataPanel Rating
   内部钩子 __arkui_dom_*  32 个
@@ -1583,22 +1583,22 @@ minContentWidth 360，`.d.ts` 原文；用组件宽度而不是窗口宽度，�
   14 个：app.ability.AbilityConstant app.ability.ConfigurationConstant app.ability.UIAbility app.ability.Want data.preferences file.fs hilog measure multimedia.image net.http notificationManager promptAction router window
 
 == 用例矩阵 ==
-  浏览器 run.sh     41 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify measure lazy provide v2 observe async ability promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo router netfile persist
-  Electron          40 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo measure lazy provide async v2 observe
-  测试页            41 个
-  fixtures 转换产物  39 个：AnimDemo AsyncIO Callee CanvasDemo Detail DrawDemo GestureDemo GestureGroupDemo Home Index InputDemo Layout Lazy LazyVar MeasArea MeasImage MeasNotify Measure NavBarDemo NavDemo NavTransDemo NetFile Observe PopDemo PromptAct Provide QrDemo RelDemo Rich ShapeDemo ShowDemo SwiperDemo TabsGrid TextMeasure TransitionDemo UiContextDemo V2 Widgets XCompDemo
+  浏览器 run.sh     42 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify measure lazy provide v2 observe async ability promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo router netfile persist
+  Electron          41 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo measure lazy provide async v2 observe
+  测试页            42 个
+  fixtures 转换产物  40 个：AnimDemo AsyncIO Callee CanvasDemo Detail DrawDemo GestureDemo GestureGroupDemo Home Index InputDemo Layout Lazy LazyVar MeasArea MeasImage MeasNotify Measure NavBarDemo NavDemo NavTransDemo NetFile Observe PopDemo PromptAct Provide QrDemo RelDemo Rich ShapeDemo ShowDemo SwiperDemo TabsGrid TextDemo TextMeasure TransitionDemo UiContextDemo V2 Widgets XCompDemo
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          479.7 KB
-  runtime(src)     303.1 KB
-  test             578.4 KB
+  runtime          485.3 KB
+  runtime(src)     308.7 KB
+  test             584.6 KB
   tools            53.3 KB
-  electron(src)    21.1 KB
-  docs             400.4 KB
-  fixtures         321.0 KB
+  electron(src)    21.3 KB
+  docs             402.0 KB
+  fixtures         326.6 KB
 
 == 逐文件（文档"文件职责"表的来源）==
-  runtime/arkui-dom-runtime.js        310077 B  302.8 KB
+  runtime/arkui-dom-runtime.js        315830 B  308.4 KB
   runtime/generated-components.js      57617 B  56.3 KB
   runtime/ohos-shims.js                57789 B  56.4 KB
   tools/extract.mjs                     6563 B  6.4 KB
@@ -1609,29 +1609,29 @@ minContentWidth 360，`.d.ts` 原文；用组件宽度而不是窗口宽度，�
   tools/preflight.mjs                   5422 B  5.3 KB
   tools/check-all.sh                    3673 B  3.6 KB
   tools/build-runtime.mjs               5138 B  5.0 KB
-  run.sh                               20439 B  20.0 KB
-  electron/run.sh                      12628 B  12.3 KB
+  run.sh                               20830 B  20.3 KB
+  electron/run.sh                      12818 B  12.5 KB
   electron/main.js                      6795 B  6.6 KB
   electron/preload.js                   1961 B  1.9 KB
   package.json                          1321 B  1.3 KB
   .gitignore                             757 B  0.7 KB
-  README.md                           116231 B  113.5 KB
+  README.md                           119547 B  116.7 KB
   THIRD-PARTY-NOTICES.md                9672 B  9.4 KB
-  docs/ARCHITECTURE.md                136288 B  133.1 KB
+  docs/ARCHITECTURE.md                136425 B  133.2 KB
   docs/CAPABILITY.md                   45368 B  44.3 KB
   docs/DEVELOPING.md                   60602 B  59.2 KB
-  docs/ROADMAP.md                     100617 B  98.3 KB
+  docs/ROADMAP.md                     102113 B  99.7 KB
   docs/surface-measurement.md           6496 B  6.3 KB
   docs/SESSION-2026-09-20.md           12842 B  12.5 KB
   runtime/src/ability.js                8802 B  8.6 KB
   runtime/src/animation.js             25906 B  25.3 KB
-  runtime/src/area.js                  19431 B  19.0 KB
+  runtime/src/area.js                  20582 B  20.1 KB
   runtime/src/canvas.js                 9472 B  9.3 KB
   runtime/src/draw.js                  18032 B  17.6 KB
   runtime/src/gesture.js               29527 B  28.8 KB
-  runtime/src/input.js                  5672 B  5.5 KB
+  runtime/src/input.js                 10095 B  9.9 KB
   runtime/src/layout.js                14213 B  13.9 KB
-  runtime/src/main.js                  89052 B  87.0 KB
+  runtime/src/main.js                  89231 B  87.1 KB
   runtime/src/nav.js                   50317 B  49.1 KB
   runtime/src/popup.js                  4884 B  4.8 KB
   runtime/src/shape.js                  7206 B  7.0 KB
@@ -1670,6 +1670,7 @@ minContentWidth 360，`.d.ts` 原文；用组件宽度而不是窗口宽度，�
   fixtures/pages/ShowDemo.ts            7113 B  6.9 KB
   fixtures/pages/SwiperDemo.ts          7876 B  7.7 KB
   fixtures/pages/TabsGrid.ts           10513 B  10.3 KB
+  fixtures/pages/TextDemo.ts            5686 B  5.6 KB
   fixtures/pages/TextMeasure.ts        11625 B  11.4 KB
   fixtures/pages/TransitionDemo.ts     14311 B  14.0 KB
   fixtures/pages/UiContextDemo.ts       3791 B  3.7 KB
@@ -1680,7 +1681,7 @@ minContentWidth 360，`.d.ts` 原文；用组件宽度而不是窗口宽度，�
   test/animdemo.html                   11498 B  11.2 KB
   test/async.html                       5977 B  5.8 KB
   test/canvasedemo.html                 4301 B  4.2 KB
-  test/components.html                  6275 B  6.1 KB
+  test/components.html                  6529 B  6.4 KB
   test/drawdemo.html                   12765 B  12.5 KB
   test/gesturedemo.html                 9875 B  9.6 KB
   test/gesturegroupdemo.html           14791 B  14.4 KB
@@ -1712,6 +1713,7 @@ minContentWidth 360，`.d.ts` 原文；用组件宽度而不是窗口宽度，�
   test/showdemo.html                    8019 B  7.8 KB
   test/swiper.html                      9177 B  9.0 KB
   test/tabgrid.html                    10096 B  9.9 KB
+  test/textdemo.html                    6095 B  6.0 KB
   test/textmeasure.html                 9021 B  8.8 KB
   test/transitiondemo.html             17007 B  16.6 KB
   test/uictxdemo.html                   4532 B  4.4 KB

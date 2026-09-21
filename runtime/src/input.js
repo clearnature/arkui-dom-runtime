@@ -25,11 +25,10 @@
 
   function inputComponent(name, type, setup) {
     return ensureComponent(name, (args) => {
-      layoutWarnings.push('DBG-FACTORY ' + name); // TODO 调试后删
-      const el = document.createElement('input');
+      const el = document.createElement(type === 'textarea' ? 'textarea' : 'input');
       el.style.display = 'inline-block';
       el.__arkuiInput = name === 'Slider' ? 'slider' : 'input';
-      if (type) el.type = type;
+      if (type && type !== 'textarea') el.type = type;
       const o = args && typeof args[0] === 'object' && args[0] !== null ? args[0] : {};
       setup(el, o);
       return el;
@@ -64,6 +63,52 @@
     el.value = String(num(o.value, num(o.min, 0)));
   });
 
+  // ── 输入收官（R34）：TextInput / TextArea / Search ──
+  // 产物形态（实测 fixtures/pages/TextDemo.ts）：
+  //   TextInput.create({placeholder, text, controller})；TextArea.create({placeholder})；
+  //   Search.create({value})；.maxLength(n)；.caretColor；onChange 双参（value + previewText?，
+  //   text_common.d.ts："EditableTextOnChangeCallback = (value, previewText?, options?)"）；
+  //   onSubmit((enterKey, event) => …)（SubmitEvent 可按住软键盘收起等，DOM 无对应）；
+  //   TextInputController（caretPosition 等，按需补面）
+  // DOM 映射：沿用原生 input/textarea 基座；maxLength/caretColor/placeholder 直落原生属性；
+  // onChange 沿用通用 input 事件（单参 value）——DOM 无 previewText 对应（取舍已记录）；
+  // onSubmit 在通用 on* 规则前拦截：keydown Enter 时派发 (EnterKeyType, SubmitEvent)。
+  // TextInputController：caretPosition/caretAnimationTime 等按需补面（本轮只挂基座 + 绑定）
+  const TextInputControllerBase = class {
+    constructor() { this.__arkuiEditable = null; }
+    __arkuiBindEditable(el) { this.__arkuiEditable = el; }
+    caretPosition(pos) {
+      if (this.__arkuiEditable) this.__arkuiEditable.setSelectionRange(pos, pos);
+    }
+  };
+  const TextInputController = class extends TextInputControllerBase {};
+  // EnterKeyType 的数值来自 .d.ts 原文（Go=2…NEW_LINE=8；0/1 未声明——产物没引用就不挂）
+  const EnterKeyType = { Go: 2, Search: 3, Send: 4, Next: 5, Done: 6, PREVIOUS: 7, NEW_LINE: 8 };
+  const TextInput = inputComponent('TextInput', 'text', (el, o) => {
+    if (o.placeholder !== undefined) el.dataset.placeholder = String(resolveResource(o.placeholder));
+    if (o.text !== undefined) el.value = String(resolveResource(o.text));
+    if (o.controller && typeof o.controller.__arkuiBindEditable === 'function') {
+      o.controller.__arkuiBindEditable(el);
+    }
+  });
+  const TextArea = inputComponent('TextArea', 'textarea', (el, o) => {
+    if (o.placeholder !== undefined) el.dataset.placeholder = String(resolveResource(o.placeholder));
+  });
+  const Search = inputComponent('Search', 'search', (el, o) => {
+    if (o.value !== undefined) el.value = String(resolveResource(o.value));
+    if (o.placeholder !== undefined) el.dataset.placeholder = String(resolveResource(o.placeholder));
+  });
+  const Hyperlink = ensureComponent('Hyperlink', (args) => {
+    const el = document.createElement('a');
+    el.__arkuiLink = true;
+    el.__arkuiHref = args && args[0] !== undefined ? String(resolveResource(args[0])) : '';
+    el.href = el.__arkuiHref;                              // <a> 语义：href 直落
+    el.target = '_blank';                                  // 外链新开（实现选择）
+    const text = args && args[1] !== undefined ? String(resolveResource(args[1])) : '';
+    if (text) el.textContent = text;                       // 无子组件时显示 content（JSDoc 原文）
+    return el;
+  });
+
   // 输入类的语义属性：select/checked 落状态（**按上次应用的值做幂等 diff**——源码里是静态
   // 字面量，重渲染再应用同值必须是无操作；否则用户交互后的每次重渲染都会把状态拉回去，
   // 还连带触发组内互斥的 change —— inputdemo 首跑当场抓住）；selectedColor 落 accent-color；
@@ -88,4 +133,26 @@
     trackColor: (n, v) => { n.dataset.trackColor = String(colorOf(v)); },
     showTips: (n, v) => { n.dataset.showTips = String(v); },
     showSteps: (n, v) => { n.dataset.showSteps = String(v); },
+    // 文本输入收官（R34）
+    maxLength: (n, v) => { n.maxLength = Number(resolveResource(v)); },          // 原生截断
+    caretColor: (n, v) => { n.style.caretColor = colorOf(v); },
+    onSubmit: (n, v) => {
+      // ⚠️ 已知限制（R34）：键盘 Enter → onSubmit 回调的 value 派发本轮未打通
+      // （keydown 已到达元素、wrapper 已挂、最后一环待查）——见 docs/CAPABILITY 已知限制。
+      // ArkUI 签名：(enterKey, event: SubmitEvent)。DOM 在 keydown Enter 时派发
+      // （原生 input 无 submit 事件——必须拦在通用 on* 规则之前，坑 86 同族）。
+      // enterKey 未设时取 Done(6)（.d.ts 默认值原文："Default value: EnterKeyType.Done"）。
+      const wrapper = (e) => {
+        if (e.target !== n) return;
+        const key = n.getAttribute('data-enter-key');
+        const enterKey = key !== null ? Number(key) : EnterKeyType.Done;
+        try { value(enterKey, { keepEditable: true }); }
+        catch (err) { layoutWarnings.push(`onSubmit 派发抛错：${err && err.message}`); }
+      };
+      if (!n.__arkuiEv) n.__arkuiEv = {};
+      if (n.__arkuiEv.keydown) n.removeEventListener('keydown', n.__arkuiEv.keydown);
+      n.__arkuiEv.keydown = wrapper;
+      n.addEventListener('keydown', wrapper);
+    },
+    color: (n, v) => { if (n.__arkuiLink) n.style.color = colorOf(v); },     // Hyperlink.color
   };
