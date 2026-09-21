@@ -220,6 +220,12 @@
         return;
       }
     }
+    // 信息展示类（R28）：Counter 的 onInc/onDec 是函数值（必须拦在通用 on* 规则之前，否则
+    // 会变成 'inc'/'dec' DOM 监听）；Divider/Marquee 的语义属性抢在通用 data-* 落点之前
+    if (node.__arkuiShow && SHOW_ATTRS[prop]) {
+      SHOW_ATTRS[prop](node, value);
+      return;
+    }
     // Tabs/Swiper 的 onChange 要由它们自己收集并在切换时派发，不能落成 DOM 事件 ——
     // 必须拦在通用事件分支【之前】，否则会变成永不触发的 'change' 监听器（静默失效）。
     if (prop === 'onChange' && (node.__tabsState || node.__swiperState)) {

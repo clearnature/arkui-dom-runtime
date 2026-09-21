@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R28：信息展示类 Badge / Counter / Divider / Marquee</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 320px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R28：信息展示类（角标 / 步进器 / 分割线 / 跑马灯）</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/showdemo-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const el = (id) => root.querySelector('#' + id);
+    const txt = (id) => String(el(id) ? el(id).textContent : '<缺>');
+    const markOf = (id) => el(id).querySelector('[data-arkui-badge-mark]');
+    // 轮询到 log 里出现期望片段（Marquee 的 CSS 动画事件是异步的，坑 ⑧：轮询不等固定 tick）。
+    // ⚠️ 上限 3500ms：run_one 的虚拟时间预算是 8000ms —— 破坏态两个轮询都走满也要 ≤ 7s，
+    // 保证红条数完整落盘（6s×2 会把用例拖过预算，"running…" 里一条断言都看不见）
+    const waitLog = async (probe, cap = 3500) => {
+      const t0 = Date.now();
+      while (!txt('show-log').includes(probe) && Date.now() - t0 < cap) await tick(50);
+      await tick(30);
+    };
+    const group = async (name, fn) => {
+      try { await fn(); } catch (e) {
+        allPass = false;
+        lines.push(`FAIL [${name}] 抛出异常：${e && e.stack ? String(e.stack).split('\n')[0] : e}`);
+      }
+    };
+
+    try {
+      __arkui_dom_requireModule('ShowDemo');
+      __arkui_dom_loadRoute('pages/ShowDemo', root);
+      await tick(100);
+      check(!!el('bd1') && !!el('mq1') && !!el('ct1'), 'ShowDemo 页面已渲染');
+
+      // ══════════ ① 契约 ══════════
+      await group('契约', async () => {
+        check(BadgePosition.RightTop === 0 && BadgePosition.Right === 1 && BadgePosition.Left === 2,
+          `BadgePosition 三态可用（${BadgePosition.RightTop}/${BadgePosition.Right}/${BadgePosition.Left}）`);
+      });
+
+      // ══════════ ② Badge：角标值/颜色/位置（数字重载 count 与字符串重载 value）══════════
+      await group('Badge', async () => {
+        check(markOf('bd1').textContent === '9', `count: 9 → 角标 '9'（实际 '${markOf('bd1').textContent}'）`);
+        check(markOf('bd1').style.background === 'red', `badgeColor 默认（Color.Red）→ 'red'（实际 '${markOf('bd1').style.background}'）`);
+        check(markOf('bd1').style.color === 'white' || markOf('bd1').style.color === 'rgb(255, 255, 255)',
+          `color(Color.White) → 白字（实际 '${markOf('bd1').style.color}'）`);
+        check(markOf('bd1').style.fontSize === '10px', `fontSize 10 → 10px（实际 ${markOf('bd1').style.fontSize}）`);
+        check(bd1.dataset ? el('bd1').dataset.badgePosition === 'RightTop' : false,
+          `position=RightTop（实际 '${el('bd1').dataset.badgePosition}'）`);
+        check(!!el('bd1').querySelector('#badge1-body'), 'Badge 是容器：子内容真的挂进来了');
+        check(markOf('bd2').textContent === '99', `value: '99' → 角标 '99'（实际 '${markOf('bd2').textContent}'）`);
+        check(el('bd2').dataset.badgePosition === 'Right', `position Right（实际 '${el('bd2').dataset.badgePosition}'）`);
+        check(markOf('bd2').style.background === 'rgb(18, 52, 255)', `badgeColor '#1234ff'（实际 ${markOf('bd2').style.background}）`);
+        check(markOf('bd2').style.fontSize === '12px', `style.fontSize 12 → 12px（实际 ${markOf('bd2').style.fontSize}）`);
+      });
+
+      // ══════════ ③ Counter：内置 +/- 真的会触发 onInc/onDec ══════════
+      await group('Counter', async () => {
+        check(!!el('ct1').querySelector('[data-arkui-counter-inc]')
+          && !!el('ct1').querySelector('[data-arkui-counter-dec]'), '内置 +/- 元素存在');
+        el('ct1').querySelector('[data-arkui-counter-inc]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await tick(40);
+        // MS（animationstart）在页面加载后就触发，先于 Counter 点击
+        check(txt('show-log') === 'MS;INC;', `点 + → onInc（log='${txt('show-log')}'）`);
+        el('ct1').querySelector('[data-arkui-counter-dec]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await tick(40);
+        check(txt('show-log') === 'MS;INC;DEC;', `点 − → onDec（log='${txt('show-log')}'）`);
+      });
+
+      // ══════════ ④ Divider：横向默认 / 纵向 + 颜色粗细 ══════════
+      await group('Divider', async () => {
+        check(el('dv1').style.height === '3px', `横向：strokeWidth(3) → 高 3px（实际 ${el('dv1').style.height}）`);
+        check(el('dv1').style.background === 'rgb(136, 136, 136)', `color '#888888'（实际 ${el('dv1').style.background}）`);
+        check(el('dv2').dataset.vertical === 'true', `vertical(true) 记录（实际 '${el('dv2').dataset.vertical}'）`);
+        check(el('dv2').style.width === '5px', `纵向：strokeWidth(5) → 宽 5px（实际 ${el('dv2').style.width}）`);
+      });
+
+      // ══════════ ⑤ Marquee：内容/字体/动画/事件 ══════════
+      await group('Marquee', async () => {
+        const inner = el('mq1').querySelector('[data-arkui-marquee-text]');
+        check(inner.textContent === 'Hello marquee', `src 进内层文本（'${inner.textContent}'）`);
+        check(inner.style.color === 'rgb(0, 102, 204)' && inner.style.fontSize === '16px',
+          `fontColor/fontSize 落内层（'${inner.style.color}'/${inner.style.fontSize}）`);
+        check(el('mq1').dataset.loop === '2' && el('mq1').dataset.start === 'true',
+          `create 参数记录（loop='${el('mq1').dataset.loop}' start='${el('mq1').dataset.start}'）`);
+        check((el('mq1').style.animation || '').includes('arkuiMarquee'), `CSS 动画已启动（animation='${el('mq1').style.animation}'）`);
+        await waitLog('MS;');
+        check(txt('show-log').includes('MS;'), `动画开跑 → onStart（log='${txt('show-log')}'）`);
+      });
+
+      // ══════════ ⑥ 全程 log：MS 先于 Counter 点击；MF 在两圈动画结束后 ══════════
+      await group('log 全程', async () => {
+        await waitLog('MF;');
+        check(txt('show-log') === 'MS;INC;DEC;MF;',
+          `Marquee 前后 + Counter 中间（log='${txt('show-log')}'）`);
+        const bad = __arkui_dom_layout_warnings.filter((w) =>
+          /Badge\.|Counter\.|Divider\.|Marquee\./.test(String(w)));
+        check(bad.length === 0, `信息展示类属性不再记"未实现"警告（剩 ${bad.length} 条：${bad.slice(0, 2).join('|')}）`);
+      });
+
+      lines.push(`SHOW badge=${markOf('bd1').textContent}/${markOf('bd2').textContent} log='${txt('show-log')}'`);
+      lines.push(`ELMT ${__arkui_dom_elmtRecords.size}`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

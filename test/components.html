@@ -60,8 +60,11 @@
       check(!!prog && prog.getAttribute('role') === 'progressbar' && prog.getAttribute('aria-valuenow') === '40',
         `Progress 无障碍属性 role/aria-valuenow = ${prog && prog.getAttribute('role')}/${prog && prog.getAttribute('aria-valuenow')}`);
 
-      const hr = root.querySelector('hr');
-      check(!!hr, 'Divider → <hr>');
+      // R28 起 Divider 手写实现为 div 画线（hr 的样式可控性差）：旧契约 <hr> 升级为
+      // 更强的"div 线条 + 默认色/粗细"断言（对应 docs/CAPABILITY 的 R28 能力行）
+      const dvr = root.querySelector('[data-divider]');
+      check(!!dvr && dvr.tagName === 'DIV' && (dvr.style.background || '') !== '',
+        `Divider → div 画线（data-divider，background='${dvr && dvr.style.background}'）`);
 
       const img = root.querySelector('img');
       check(!!img && (img.getAttribute('src') || '').endsWith('img.png'),

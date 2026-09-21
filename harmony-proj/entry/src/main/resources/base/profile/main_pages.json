@@ -11,6 +11,7 @@
     "pages/NavBarDemo",
     "pages/NavTransDemo",
     "pages/ShapeDemo",
-    "pages/InputDemo"
+    "pages/InputDemo",
+    "pages/ShowDemo"
   ]
 }

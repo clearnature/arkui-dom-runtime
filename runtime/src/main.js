@@ -1450,6 +1450,8 @@
 
   // @include input
 
+  // @include show
+
   // ── 由 tools/gen-components.mjs 生成的 149 个组件骨架 ──
   // 手写实现（上面那些，已被测试覆盖）优先；生成的只补缺口。
   // 骨架保证"能建出正确的 DOM 标签 + 基础样式"，精细化布局语义按需手补（见 docs）。
@@ -1642,6 +1644,8 @@
     Circle, Ellipse, Rect, Line, Path, Polygon, Polyline, Shape,
     // R27：输入类。ToggleType/SliderChangeMode 也是产物里的自由变量枚举
     Checkbox, Radio, Toggle, Slider, ToggleType, SliderChangeMode,
+    // R28：信息展示类。BadgePosition 同为产物里的自由变量枚举
+    Badge, Counter, Divider, Marquee, BadgePosition,
     __Common__: _CommonWrapper,
     FontWeight, VerticalAlign, HorizontalAlign, FlexAlign, TextAlign, ItemAlign, Color,
     TextOverflow, Alignment, Scroller, Axis,

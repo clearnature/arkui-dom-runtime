@@ -765,6 +765,59 @@ change 是用户交互事件，`.d.ts` 没写死编程改态是否触发，取"�
 （@include + 安装全局 6 个名字）、`tools/stats.mjs`（手写 25 → 29）、`fixtures/pages/InputDemo.ts`、
 `harmony-proj/`（InputDemo.ets + main_pages.json）、`test/inputdemo.html`、`run.sh`、`electron/run.sh`
 
+## R28：信息展示类 `Badge` / `Counter` / `Divider` / `Marquee` ✅
+
+骨架组件视觉语义第三批（按家族推进）。**本轮不收 `QRCode`**：真画需要完整的 QR 编码器
+（Reed-Solomon 纠错编码），体量与断言方式都单列，后续单独切片。
+
+**先测量**（新增 `pages/ShowDemo.ets` → 官方构建），编译期当场抓到三条 API 形状：
+① `Badge` 数字重载用 **`count`**、字符串重载用 **`value: ResourceStr`**（`value: 9` 编译就红）；
+② **`BadgeParam.style` 必填且在 create 参数里**——`BadgeAttribute` 没有 `.style()` 方法，
+且字段名是 `color`/`badgeColor`/`badgeSize`（不是 textColor，实测）；
+③ **`MarqueeOptions.start` 必填**。`BadgePosition = { RightTop, Right, Left }`（JSDoc 有名无数字，
+枚举化数值是本实现的）。
+
+**实现**（新分片 `runtime/src/show.js`，第 12 个，手写优先）：
+**Badge** = 容器（子内容照常挂进来）+ 绝对定位角标；badgeColor/color/fontSize/badgeSize/borderWidth
+全照 JSDoc 默认值（Color.Red/Color.White/10vp/16vp/1vp）；位置 RightTop/Right/Left 的 DOM 摆法是
+实现选择。**Counter** = inline-flex 容器 + 内置可点元素（flex order 摆成 [−, 内容, +]，create 时
+内容还没挂进来），点击派发 `onInc`/`onDec`（函数值属性，拦在通用 `on*` 规则之前——否则变成
+`'inc'/'dec'` DOM 监听，坑 86 的又一变体）。**Divider** = div + 背景色画线（hr 样式可控性差），
+默认色 `#33182431`、粗细 1px（JSDoc 原文），纵向把 strokeWidth 转成宽。**Marquee** = overflow 容器
++ 内层文本跑 CSS 动画；时长 = 文本长度 × 16px / step(默认 6) × 16ms（"逐帧步进"→CSS 动画的
+DOM 化映射，推断）；`animationstart/end → onStart/onFinish`，但收口与 animation.js 同约定
+（坑 ⑧）：headless 里不可见页面的 CSS 动画事件会被节流（animationend 实测会丢），**定时器兜底**、
+动画事件只当见证、once 守卫只发一次。
+
+```
+$ bash run.sh showdemo
+=== ALL PASS ===                    （26 条断言，双端同数）
+PASS Badge：count→'9'／badgeColor 默认 Color.Red→'red'／color 白字／fontSize 10→10px／
+     position RightTop、Right／子内容真的挂进容器／style 定制（#1234ff→rgb(18,52,255)）
+PASS Counter：内置 +/− 元素存在／点 + → onInc、点 − → onDec（事件归属真实）
+PASS Divider：横向 strokeWidth(3)→高 3px／color '#888888'／纵向 vertical(true)→宽 5px
+PASS Marquee：src 进内层文本／fontColor/fontSize 落内层／loop/start 记录／CSS 动画启动／
+     onStart 触发／onFinish 在两圈后触发
+```
+
+**破坏验证**（3 处，各被精确抓住）：① `SHOW_ATTRS` 分派短路 → **8 条**红（Counter 2 + Divider 3 +
+Marquee 2 + log 全程 1；**Badge 全绿**——它的语义全在 create 参数，与属性分派无关，恰好证明各
+断言管各的面）；② Badge 位置映射忽略参数恒 RightTop → 恰好 **1 条**红；③ strokeWidth 的方向
+分支摘除（纵向不再转宽）→ 恰好 **1 条**红。还原后 md5 与基准一致，tabgrid 回归绿。
+
+**破坏验证的虚拟时间教训（新）**：破坏①首轮"0 红、用例直接挂"——不是断言没牙齿，而是
+`run_one` 的 `--virtual-time-budget=8000` 被测试里两个 6 秒轮询拖穿，dump 发生在中途，
+**红条数根本没机会落盘**。轮询上限必须小于"预算 − 前置耗时"（收口到 3500ms×2 后 8 条红完整现形）。
+
+**已知限制**（写进 CAPABILITY）：`Badge` 的 `Position` 对象形态（精确 x/y）未实现（记警告）；
+`Counter` 的 `onStateChange`、`Marquee` 的 `onBounce`（无 bounce 动画）、`marqueeUpdateStrategy`
+只记录；`fromStart: false`（从尾部开始）不改变动画方向；时长公式是推断。
+
+**触及**：`runtime/src/show.js`（新分片，第 12 个）、`runtime/src/area.js`（SHOW 分支）、
+`runtime/src/main.js`（@include + 安装全局 5 个名字）、`tools/stats.mjs`（手写 29 → 33）、
+`fixtures/pages/ShowDemo.ts`、`harmony-proj/`（ShowDemo.ets + main_pages.json）、
+`test/showdemo.html`、`run.sh`、`electron/run.sh`
+
 ## R14：多层锚链 + `Guideline` + `bias` ✅
 
 ```
@@ -1357,15 +1410,15 @@ PASS starStyle 的图片 URI 不可用已记警告
 | 文档数字守门 | `npm run stats:check-doc` | `ARCHITECTURE.md` §6 的整块实测数字逐行比对，漂移即非 0 退出；`stats:write-doc` 就地重写 |
 | 覆盖统计 | `npm run stats` | 文档里的所有数字都由它产出（`--json` 机器可读） |
 
-`npm run check` 当前：**6 步全绿（preflight + 生成物一致 + 产物/源一致 + 文档数字 + 浏览器 35 用例 + Electron 34 用例）**。
+`npm run check` 当前：**6 步全绿（preflight + 生成物一致 + 产物/源一致 + 文档数字 + 浏览器 36 用例 + Electron 35 用例）**。
 
 ## 下一步
 
 **权威清单在 `docs/ROADMAP.md`**（每项带可复现的验收命令）。当前优先：
 
-1. 其余骨架组件的视觉语义——**按家族推进**：已收形状族 8 个（R26）、输入类 4 个（R27）；
-   下一批候选：`Select`/`Menu`（弹出类）、`Canvas`/`XComponent`（表层类）、`Badge`/`Counter`/
-   `Divider`/`Marquee`/`QRCode`（信息展示类）。另有 `@ohos:media`/`UIContext`
+1. 其余骨架组件的视觉语义——**按家族推进**：已收形状族 8（R26）、输入类 4（R27）、
+   信息展示类 4（R28）；下一批候选：`Select`/`Menu`（弹出类）、`Canvas`/`XComponent`（表层类）、
+   `QRCode`（需 QR 编码器，单列）。另有 `@ohos:media`/`UIContext`
 2. ~~**继续把 `runtime/src/main.js` 拆细**~~ **已拆到位（2026-09-21，源拆分第三步）**：9 个分片，
    `main.js` 剩 **1869 行 / 86,452 B**（基础设施 / 状态 v1 / ViewPU / 属性映射 / Tabs / Swiper /
    组件注册表 / 具体组件 / LazyForEach / 枚举路由 / 安装全局），已拆出
@@ -1377,9 +1430,9 @@ PASS starStyle 的图片 URI 不可用已记警告
 > **`Navigation` 标题栏/工具栏/分栏**（见上文「R12 收口」）、
 > **`Navigation` 转场动画 + `onTitleModeChange` 滚动联动**（见上文「R25 收口」）、
 > **runtime 源码分片**（R5c）、**R24 ArkVM/`.abc` 路径调研**（`docs/ARKVM-RESEARCH.md`）、
-> **SVG 形状族**（见上文「R26」）、**输入类**（见上文「R27」）。
+> **SVG 形状族**（见上文「R26」）、**输入类**（见上文「R27」）、**信息展示类**（见上文「R28」）。
 
-**仍未覆盖**：`chainMode`、其余 ~73 个骨架组件的视觉语义、`@ohos:media`/`UIContext`。
+**仍未覆盖**：`chainMode`、其余 ~69 个骨架组件的视觉语义、`@ohos:media`/`UIContext`。
 **别把没验的当结论**——`docs/CAPABILITY.md` 里有逐项的能力矩阵，其中标了哪些语义是**推断**的。
 
 **已知待办（别当已完成）**：

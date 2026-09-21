@@ -521,6 +521,33 @@ RD 对）。还原后 md5 一致，navdemo/tabgrid 回归绿。
 `fixtures/pages/InputDemo.ts`、`harmony-proj/`（InputDemo.ets + main_pages.json）、
 `test/inputdemo.html`、`run.sh`、`electron/run.sh`
 
+### R28 — 信息展示类：`Badge` / `Counter` / `Divider` / `Marquee` ✅（2026-09-21）
+
+**内容**：骨架语义第三批。`QRCode` 本轮**不收**（真画需要完整 QR 编码器，单列）。
+
+**测量**（新增 `pages/ShowDemo.ets`，编译期抓到）：Badge 数字重载用 **`count`**、字符串重载用
+`value: ResourceStr`；**`BadgeParam.style` 必填且在 create 参数里**（没有 `.style()` 方法，字段名
+是 `color/badgeColor/badgeSize`）；`MarqueeOptions.start` 必填。BadgeStyle 默认值全有 JSDoc 原文
+（badgeColor Color.Red / color Color.White / fontSize 10vp / badgeSize 16vp / borderWidth 1vp）。
+
+**实现**：新分片 `runtime/src/show.js`（第 12 个）。Badge = 容器 + 绝对定位角标；Counter =
+inline-flex + 内置可点元素（flex order 摆位，create 时内容未挂）+ onInc/onDec 拦在通用 on* 规则前；
+Divider = div 背景色画线（默认 `#33182431`/1px，JSDoc 原文，纵向转宽）；Marquee = CSS 动画
+（时长 = 文本长度×16px/step(6)×16ms，**推断**），事件收口**定时器兜底**（坑 ⑧：headless 对
+不可见页面的动画事件会节流，animationend 实测会丢）。
+
+**验收**：`bash run.sh showdemo`（**26 条断言**）双端通过。**破坏验证（3 处）**：分派短路 →
+**8 红**（Badge 全绿——语义全在 create 参数，各断言管各的面）；位置映射恒 RightTop → **1 红**；
+strokeWidth 方向分支摘除 → **1 红**。还原后 md5 一致。
+
+**新教训（坑 89）**：破坏①首轮"0 红、用例挂"——测试里两个 6s 轮询把 `run_one` 的
+`--virtual-time-budget=8000` 拖穿，红条数落不了盘。**轮询上限必须小于"预算 − 前置耗时"**。
+
+**触及**：`runtime/src/show.js`（新）、`runtime/src/area.js`（SHOW 分支）、
+`runtime/src/main.js`（@include + 安装全局）、`tools/stats.mjs`（手写 29→33）、
+`fixtures/pages/ShowDemo.ts`、`harmony-proj/`（ShowDemo.ets + main_pages.json）、
+`test/showdemo.html`、`run.sh`、`electron/run.sh`
+
 ---
 
 ## P3 布局引擎
