@@ -583,6 +583,74 @@ PASS NavDestination.hideBackButton(true) → 不渲染返回键／backButtonIcon
 `customNavContentTransition` 等仍未实现（记警告，不静默）；`Auto` 用**组件自身宽度**判而
 不是窗口宽度（同一页可以有多个 `Navigation`，窗口宽度无法区分）。
 
+## R25 收口：`Navigation` 的转场动画 + `onTitleModeChange` 滚动联动 ✅
+
+R12 收口后 `Navigation` 还剩两块**可见差异**：push/pop 是瞬时切换（无转场）、标题栏不随内容滚动收缩。
+
+**先测量**（新增 `pages/NavTransDemo.ets` → 官方构建 → 读产物），量出三件事：
+① `.onTitleModeChange(cb)` 是**函数值属性**（`Navigation.onTitleModeChange((m) => …)`）—— 而运行时的
+属性分发里**通用 `on*` 规则排在组件属性表之前**，函数值会被当成 `addEventListener('titlemodechange')`
+挂上去、永远没人派发（**坑 86**），必须在通用规则前拦下；
+② `pushPathByName` 有**两套重载**：`(name, param, animated?)` 与 `(name, param, onPop, animated?)`，
+`animated` 的 JSDoc 原文 **"Default value: true"**（`pop` 同）；四参传 `(name, param, undefined, false)`
+时 a3 不是函数，解析必须看 a4（首版就栽在这，断言当场抓住）；
+③ `disableAnimation(true)` 进产物后，后续 push/pop 都不再带动画。
+
+**转场动画**（DOM 化选择，**推断**——`.d.ts` 只说"有系统默认转场"没给数字）：目的地 **300ms
+ease-out 族曲线从右滑入/滑出**（`cubic-bezier(0.2,0,0,1)`）；push 时上一个栈顶**垫底可见**、滑完才藏；
+pop 时**状态层回调照旧立刻发**（`willHide → hidden → willDisappear`，顺序与立即版一致），DOM 摘除
+推迟到滑出结束；弹到空栈时目标区在滑出期间撑住、结束后按当下栈显隐。收口与 `animation.js` 同一
+约定：先提交起始值（强制重排，坑 ⑧）、`transitionend` 只当见证、定时器兜底。范围弹栈
+（`popToName`/`popToIndex`/`clear`）仍立即销毁——真机也只动画栈顶。
+
+**`onTitleModeChange` 滚动联动**（三条条件都是 `.d.ts` 原文）：只在 `titleMode = Free` 生效
+（JSDoc："Triggered when titleMode is set to **NavigationTitleMode.Free**…"）；
+`NavigationCustomTitle.height` 显式给过不生效（"titleMode does not take effect"）；
+`hideTitleBar` 自然也没有。收缩进度随内容滚动**线性**插值（滚满 `Full−Mini` px 收到底，阈值换算是
+实现选择）：主标题**缩小**、副标题**淡出但尺寸不变**——只对 string/`{main,sub}` 形态生效
+（JSDoc："effective only when title is set to ResourceStr or NavigationCommonTitle"），builder 等其他
+形态只收高度（"changes in mere location"）。**模式切换只在两个端点通知**：收到底 → `Mini(2)`、
+滚回顶 → `Full(1)`，中途往返不抖动。
+
+```
+$ bash run.sh navtransdemo
+=== ALL PASS ===                    （48 条断言，双端同数）
+PASS Free 滚 28px（半程）→ 84vp／触底 → Mini 56vp 且回调收到 Mini(2)／回顶 → 112vp 且收到 Full(1)
+PASS 中途回滚不抖动（模式停在端点）／titleMode(Full) 对照组滚 200px 高度不变、回调不触发
+PASS {main,sub}：副标题淡出（opacity 0.7→0）、主标题缩小（scale=高度比，实现选择）；回顶复位
+PASS builder 标题：高度照收（84vp），内容 transform/opacity 不动
+PASS push：栈状态立即生效（不等动画）／新栈顶带 data-arkui-nav-trans='push'／运行记录 +1
+PASS 滑入期间上一个栈顶垫底可见，滑完才藏；转场样式清干净
+PASS pop：滑出中目的地还在（zIndex 反超）／栈状态立即生效／滑出结束才摘目的地
+PASS 弹到空栈：滑出期间目标区撑住，结束后隐藏、根内容露出
+PASS 四参 animated=false：无转场样式、无运行记录；pop 未给 animated 默认滑出
+PASS disableAnimation(true)：push 无转场、pop 立即销毁
+```
+
+**破坏验证**（3 项，各被精确抓住）：① 联动入口直接 return → **13 条**红（各形态的插值高度、
+副标题淡出、主标题缩小、回调日志）；② `navWantAnim` 恒 false（动画全关）→ 恰好 **6 条**红
+（滑入标记、运行记录、垫底可见、滑出标记、弹到空栈的目标区撑住、pop 默认滑出），而
+"animated=false 无转场"的断言仍绿（它们本来就该绿，说明对照组在工作）；
+③ 端点判定 `p>=1` 改 `p>1`（永不触发）→ 恰好 **5 条**红
+（全部是回调日志，插值高度一条不红——证明"几何"与"通知"两条链互相独立）。还原后 `md5` 与
+破坏前一致，双端复跑 48 条全绿。
+
+**旧契约升级（navdemo）**：转场默认开启后，navdemo 的"pop 后目的地立即消失 / push 后瞬间只有栈顶可见"
+两条**瞬时假设**不再成立（真机转场期间旧页本来就在底下可见）——门禁的断言数守门当场抓住
+（文档 74、实测 62：12 条红被扣掉）。修法不是放宽断言，而是让测试**等转场收口再断言**
+（轮询 `__arkui_dom_navTrans().pending`，与 transitiondemo 的 settle 同思想），断言本体一条没动，
+74 条恢复全绿。
+
+**已知限制**（都写进 CAPABILITY）：转场的时长/曲线与收缩阈值、缩放比是**推断**（`.d.ts` 没给数字）；
+`customNavContentTransition`（自定义转场协议）/`enableModeChangeAnimation`（单栏↔分栏切换动画，
+API 15）/`onNavBarStateChange` 仍未实现（记警告）；`edgeEffect` 弹性不模拟——内容不足一屏的 List
+滚不动，联动也就无从发生（`.d.ts` 的主场景是"超过一屏"）。
+
+**顺带记下**：测量页第一版用 `.title({ builder: this.SynthTitle.bind(this) })` 直接编译失败——
+ArkTS 检查器拒 `Function.bind`（arkts-no-func-bind），且 `{builder}` 单独作实参不满足
+`NavigationCustomTitle` 类型（缺 `height`）；`{ builder: this.SynthTitle.bind(this) }` 是 **loader 生成
+的形态**，源码里就该写 `.title(this.SynthTitle)`。又一次"产物形态 ≠ 源码写法"的现场证据。
+
 ## R14：多层锚链 + `Guideline` + `bias` ✅
 
 ```
@@ -1175,29 +1243,28 @@ PASS starStyle 的图片 URI 不可用已记警告
 | 文档数字守门 | `npm run stats:check-doc` | `ARCHITECTURE.md` §6 的整块实测数字逐行比对，漂移即非 0 退出；`stats:write-doc` 就地重写 |
 | 覆盖统计 | `npm run stats` | 文档里的所有数字都由它产出（`--json` 机器可读） |
 
-`npm run check` 当前：**6 步全绿（preflight + 生成物一致 + 产物/源一致 + 文档数字 + 浏览器 32 用例 + Electron 31 用例）**。
+`npm run check` 当前：**6 步全绿（preflight + 生成物一致 + 产物/源一致 + 文档数字 + 浏览器 33 用例 + Electron 32 用例）**。
 
 ## 下一步
 
 **权威清单在 `docs/ROADMAP.md`**（每项带可复现的验收命令）。当前优先：
 
-1. 其余 85 个骨架组件的视觉语义、`@ohos:media`/`UIContext`、`Navigation` 的**转场动画**与
-   `onTitleModeChange`（标题栏随内容滚动收缩）
+1. 其余 85 个骨架组件的视觉语义、`@ohos:media`/`UIContext`
 2. **继续把 `runtime/src/main.js` 拆细**——拼接机制、门禁与"逐字节无损"的做法都已验证
    （`tools/build-runtime.mjs` + `check:runtime`，已拆出 `animation.js` 与 `gesture.js`）。
-   `main.js` 现在 **3524 行 / 165,512 B，内含 26 个分节/子节横幅**；按横幅切的实测候选切口：
-   `Navigation`/`NavDestination` 栈导航 **370 行 / 16.2 KB**、布局（`alignRules`/`Guideline`/`bias`/
-   截断/叠放/`Scroller`）**263 行 / 14.2 KB**、状态管理 v2 **252 行 / 11.8 KB**、
-   `onAreaChange`+自定义布局协议 **231 行 / 13.3 KB**、`ability` 栈 **197 行 / 8.8 KB**、
-   `LazyForEach` **195 行 / 9.8 KB**（`组件注册表` 308 行与 `安装全局` 197 行不建议动 —— 前者被各节引用、
-   后者是 IIFE 的出口）
+   `main.js` 现在 **4251 行 / 202,950 B**（35 个横幅行，含子节）；按横幅切的实测候选切口：
+   `Navigation`/`NavDestination` 栈导航（含 R12 收口标题栏 + R25 转场/联动）**1035 行 / 50.4 KB**
+   （最大头，且边界干净：`1141` 行到纯绘制节之前）、布局（`alignRules`/`Guideline`/`bias`/
+   截断/叠放/`Scroller`）**263 行**、状态管理 v2 **252 行**、`onAreaChange`+自定义布局协议
+   **231 行**、`ability` 栈 **197 行**、`LazyForEach` **195 行**（`组件注册表` 与 `安装全局`
+   不建议动 —— 前者被各节引用、后者是 IIFE 的出口）
 
 > 已完成：`transition`（见上文「R22 收口」）、**手势分组与优先级仲裁**（见上文「R23 收口」）、
-> **`Navigation` 标题栏/工具栏/分栏**（见上文「R12 收口」）、**runtime 源码分片**（R5c）、
-> **R24 ArkVM/`.abc` 路径调研**（`docs/ARKVM-RESEARCH.md`）。
+> **`Navigation` 标题栏/工具栏/分栏**（见上文「R12 收口」）、
+> **`Navigation` 转场动画 + `onTitleModeChange` 滚动联动**（见上文「R25 收口」）、
+> **runtime 源码分片**（R5c）、**R24 ArkVM/`.abc` 路径调研**（`docs/ARKVM-RESEARCH.md`）。
 
-**仍未覆盖**：`chainMode`、`Navigation` 的**转场动画**与标题栏滚动联动（`onTitleModeChange`）、
-其余 85 个骨架组件的视觉语义、`@ohos:media`/`UIContext`。
+**仍未覆盖**：`chainMode`、其余 85 个骨架组件的视觉语义、`@ohos:media`/`UIContext`。
 **别把没验的当结论**——`docs/CAPABILITY.md` 里有逐项的能力矩阵，其中标了哪些语义是**推断**的。
 
 **已知待办（别当已完成）**：

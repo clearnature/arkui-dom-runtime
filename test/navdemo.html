@@ -43,7 +43,16 @@
       };
       const textOf = (id) => { const e = root.querySelector('#' + id); return e ? e.textContent : '<缺>'; };
       const btn = (label) => [...navA.querySelectorAll('button')].find((b) => b.textContent === label);
-      const click = async (label) => { btn(label).click(); await tick(40); };
+      // R25 起 push/pop 默认带转场（.d.ts：animated 默认 true）：旧页面的瞬时契约改为
+      // "点完等转场收口再断言"（轮询运行记录的 pending，与 transitiondemo 的 settle 同思想）。
+      // 断言本体不变 —— 收口后"只有栈顶可见 / pop 即摘除"仍然成立。
+      const navTrans = () => (typeof __arkui_dom_navTrans === 'function' ? __arkui_dom_navTrans() : { runs: [], pending: 0 });
+      const settleNav = async (cap = 2500) => {
+        const t0 = Date.now();
+        while (navTrans().pending > 0 && Date.now() - t0 < cap) await tick(20);
+        await tick(30);
+      };
+      const click = async (label) => { btn(label).click(); await tick(40); await settleNav(); };
       const life = () => textOf('lifeline').replace(/^life=/, '');
       const before = (a, b) => {
         const i = life().indexOf(a), j = life().indexOf(b);

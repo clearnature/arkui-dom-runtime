@@ -8,6 +8,7 @@
     "pages/GestureDemo",
     "pages/TransitionDemo",
     "pages/GestureGroupDemo",
-    "pages/NavBarDemo"
+    "pages/NavBarDemo",
+    "pages/NavTransDemo"
   ]
 }

@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R25 收口：Navigation push/pop 转场动画 + onTitleModeChange 滚动联动</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 760px; border: 1px solid #ccc; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R25 收口：push/pop 转场（默认 animated / animated:false / disableAnimation）/ Free 标题滚动联动</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/navtransdemo-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const el = (id) => root.querySelector('#' + id);
+    const txt = (id) => String(el(id) ? el(id).textContent : '<缺>');
+    const chrome = (id) => __arkui_dom_navChrome(el(id));
+    const dests = (id) => Array.from(el(id).querySelectorAll('[data-arkui-comp="NavDestination"]'));
+    const navState = (id) => __arkui_dom_navState(el(id));
+    const navTrans = () => (typeof __arkui_dom_navTrans === 'function' ? __arkui_dom_navTrans() : { runs: [], pending: 0 });
+    const runCount = () => navTrans().runs.length;
+    // 轮询到"没有挂着的 Nav 转场"（与 transitiondemo 的 settle 同思想：不等固定 tick）
+    const settleNav = async (cap = 2500) => {
+      const t0 = Date.now();
+      while (navTrans().pending > 0 && Date.now() - t0 < cap) await tick(20);
+      await tick(30);
+    };
+    const scroll = (node, top) => { node.scrollTop = top; node.dispatchEvent(new Event('scroll')); };
+    const titlebarOf = (id) => el(id).querySelector('[data-arkui-nav-titlebar]');
+    const clickEl = async (node) => {
+      if (!node) { check(false, '要点击的节点不存在'); return; }
+      node.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      await tick(20);
+    };
+    const click = (id) => clickEl(el(id));
+    const group = async (name, fn) => {
+      try { await fn(); } catch (e) {
+        allPass = false;
+        lines.push(`FAIL [${name}] 抛出异常：${e && e.stack ? String(e.stack).split('\n')[0] : e}`);
+      }
+    };
+
+    try {
+      __arkui_dom_requireModule('NavTransDemo');
+      __arkui_dom_loadRoute('pages/NavTransDemo', root);
+      await tick(80);
+      check(!!el('nt-n1') && !!el('nt-n4') && !!el('tmc-log'), 'NavTransDemo 页面已渲染（n1–n4 + log）');
+
+      // ══════════ ① 契约 ══════════
+      await group('契约', async () => {
+        check(NavigationTitleMode.Free === 0 && NavigationTitleMode.Full === 1 && NavigationTitleMode.Mini === 2,
+          `NavigationTitleMode 三态可用（${NavigationTitleMode.Free}/${NavigationTitleMode.Full}/${NavigationTitleMode.Mini}）`);
+        check(typeof __arkui_dom_navTrans === 'function', '自省钩子 __arkui_dom_navTrans 可用');
+        check(chrome('nt-n1').barHeight === 112, `Free 非滚动态 = Full 高 112vp（实际 ${chrome('nt-n1').barHeight}）`);
+      });
+
+      // ══════════ ② Free 滚动联动（n1：string 标题）══════════
+      // fullH=112、mini=56 → 滚满 56px 收到底。滚 28px 应在中点 84vp；.d.ts 没给阈值，
+      // 线性换算是实现选择（已写进 docs）。onTitleModeChange 只在端点（56/0）触发。
+      await group('Free 联动·string', async () => {
+        const list1 = el('list1');
+        // ⚠️ 高度是 syncOneNav 同步算的（滚完立刻可断言）；log 是 @State → DOM 渲染有一步，
+        // 断言 log 前必须 tick（首版就栽在这：回调其实发了，Text 还没重渲染）
+        scroll(list1, 28);
+        await tick(20);
+        check(chrome('nt-n1').barHeight === 84, `滚 28px（半程）→ 84vp（实际 ${chrome('nt-n1').barHeight}）`);
+        check(txt('tmc-log') === '', `半程不触发 onTitleModeChange（log='${txt('tmc-log')}'）`);
+        scroll(list1, 56);
+        await tick(20);
+        check(chrome('nt-n1').barHeight === 56, `滚满 56px → Mini 56vp（实际 ${chrome('nt-n1').barHeight}）`);
+        check(txt('tmc-log') === 'TMC2;', `触底 → 回调收到 Mini(2)（log='${txt('tmc-log')}'）`);
+        scroll(list1, 0);
+        await tick(20);
+        check(chrome('nt-n1').barHeight === 112, `滚回顶部 → 恢复 112vp（实际 ${chrome('nt-n1').barHeight}）`);
+        check(txt('tmc-log') === 'TMC2;TMC1;', `回顶 → 回调收到 Full(1)（log='${txt('tmc-log')}'）`);
+        scroll(list1, 30);
+        await tick(20);
+        check(chrome('nt-n1').barHeight === 82 && txt('tmc-log') === 'TMC2;TMC1;',
+          `中途回滚到 30px → 82vp，模式停在 Full 端不抖动（实际 ${chrome('nt-n1').barHeight}/'${txt('tmc-log')}'）`);
+        scroll(list1, 0);
+      });
+
+      // ══════════ ③ Full 对照（n2）：联动必须不触发 ══════════
+      await group('Full 对照', async () => {
+        scroll(el('list2'), 200);
+        check(chrome('nt-n2').barHeight === 112, `titleMode(Full) 滚动后高度不变（实际 ${chrome('nt-n2').barHeight}）`);
+        check(txt('tmc-log') === 'TMC2;TMC1;', `Full 模式的 onTitleModeChange 不触发（log='${txt('tmc-log')}'）`);
+      });
+
+      // ══════════ ④ CommonTitle 内部视觉（n3）：主标题缩小 / 副标题淡出 ══════════
+      // Free JSDoc：主标题随滚动缩小、副标题淡出但尺寸不变。缩放比取高度比（实现选择）。
+      await group('Free 联动·common', async () => {
+        const bar3 = titlebarOf('nt-n3');
+        const main3 = () => bar3.querySelector('[data-arkui-nav-title-main]');
+        const sub3 = () => bar3.querySelector('[data-arkui-nav-title-sub]');
+        scroll(el('list3'), 20);                       // p=20/82，H=138-82*20/82=118
+        const op = parseFloat(sub3().style.opacity);
+        check(chrome('nt-n3').barHeight === 118, `滚 20px → 118vp（实际 ${chrome('nt-n3').barHeight}）`);
+        check(op > 0.4 && op < 0.6, `副标题淡出中（opacity=${sub3().style.opacity}）`);
+        const sc = parseFloat((main3().style.transform.match(/scale\(([\d.]+)/) || [])[1]);
+        check(sc > 0.84 && sc < 0.86, `主标题缩小中（scale=${main3().style.transform}）`);
+        scroll(el('list3'), 82);
+        check(chrome('nt-n3').barHeight === 56, `滚满 82px → Mini 56vp（实际 ${chrome('nt-n3').barHeight}）`);
+        check(sub3().style.opacity === '0', `副标题完全淡出（opacity='${sub3().style.opacity}'）`);
+        scroll(el('list3'), 0);
+        check(sub3().style.opacity === '' && main3().style.transform === '',
+          `滚回顶部内部视觉复位（opacity='${sub3().style.opacity}' transform='${main3().style.transform}'）`);
+      });
+
+      // ══════════ ⑤ builder 标题（n4）：内容不缩、只有高度收 ══════════
+      // Free JSDoc："If title is set to any other value type, the main title changes in mere
+      // location when pulled down" —— builder 形态内部不做缩放/淡出。
+      await group('Free 联动·builder', async () => {
+        scroll(el('list4'), 28);
+        check(chrome('nt-n4').barHeight === 84, `builder 标题同样随滚动收（28px → 84vp，实际 ${chrome('nt-n4').barHeight}）`);
+        check(!!el('synth4') && el('synth4').style.transform === '' && el('synth4').style.opacity === '',
+          `builder 内容不动（transform='${el('synth4') ? el('synth4').style.transform : '<缺>'}'）`);
+        scroll(el('list4'), 0);
+      });
+
+      // ══════════ ⑥ push 转场：从右滑入、上一个栈顶垫底 ══════════
+      await group('push 转场', async () => {
+        const runsBefore = runCount();
+        await click('push1');
+        const d1 = dests('nt-n1')[0];
+        check(navState('nt-n1').names.join(',') === 'd1', `push 后栈立即 = [${navState('nt-n1').names.join(',')}]（状态不等动画）`);
+        check(d1.style.display === 'block', '新栈顶立即可见');
+        check(d1.dataset.arkuiNavTrans === 'push' && d1.style.transitionProperty === 'transform',
+          `滑入中（data-arkui-nav-trans='${d1.dataset.arkuiNavTrans}' transition=${d1.style.transitionProperty}）`);
+        check(runCount() === runsBefore + 1 && navTrans().runs[navTrans().runs.length - 1].kind === 'push',
+          `转场运行记录 +1（kind=push，共 ${runCount()} 条）`);
+        await settleNav();
+        check(navTrans().pending === 0, '滑入收口（pending=0）');
+        check(!d1.dataset.arkuiNavTrans && d1.style.transitionProperty === '', '滑入后转场样式清干净');
+
+        // 第二次 push：上一个栈顶在滑入期间垫底可见，结束才藏
+        await click('push1');
+        const below = dests('nt-n1')[0];
+        check(below.style.display === 'block', '滑入期间上一个栈顶垫底可见');
+        await settleNav();
+        check(below.style.display === 'none' && navState('nt-n1').names.join(',') === 'd1,d1',
+          `滑入完成后前任藏掉（display='${below.style.display}'，栈=[${navState('nt-n1').names.join(',')}]）`);
+      });
+
+      // ══════════ ⑦ pop 转场：向右滑出、露出新栈顶/根内容；DOM 摘除推迟到滑出结束 ══════════
+      await group('pop 转场', async () => {
+        const top = dests('nt-n1')[1];
+        await clickEl(top.querySelector('[data-arkui-nav-back]'));
+        check(navState('nt-n1').names.join(',') === 'd1', `pop 后栈立即 = [${navState('nt-n1').names.join(',')}]`);
+        check(dests('nt-n1').length === 2 && top.dataset.arkuiNavTrans === 'pop' && top.style.zIndex === '3',
+          `滑出中目的地还在（${dests('nt-n1').length} 个，trans='${top.dataset.arkuiNavTrans}'，zIndex=${top.style.zIndex}）`);
+        check(chrome('nt-n1').barHeight === 112, `滑出期间回到根内容，标题栏恢复 112（实际 ${chrome('nt-n1').barHeight}）`);
+        await settleNav();
+        check(dests('nt-n1').length === 1, `滑出结束后目的地才摘掉（剩 ${dests('nt-n1').length} 个）`);
+
+        // 弹到空栈：目标区在滑出期间撑住，结束按当下栈隐藏
+        const area = el('nt-n1').querySelector('[data-arkui-nav-destinations]');
+        await clickEl(dests('nt-n1')[0].querySelector('[data-arkui-nav-back]'));
+        check(area.style.display === 'block' && dests('nt-n1').length === 1,
+          `弹到空栈：滑出期间目标区撑住（display='${area.style.display}'）`);
+        await settleNav();
+        check(area.style.display === 'none' && dests('nt-n1').length === 0,
+          `滑出结束后目标区隐藏（display='${area.style.display}'，剩 ${dests('nt-n1').length} 个）`);
+        check(!!el('push1'), '根内容露出（按钮回到可点状态）');
+      });
+
+      // ══════════ ⑧ animated=false（n2 四参 push）：不滑、无运行记录 ══════════
+      await group('animated=false', async () => {
+        const runsBefore = runCount();
+        await click('push2');
+        const d2 = dests('nt-n2')[0];
+        check(navState('nt-n2').names.join(',') === 'd2', `push 后栈立即 = [${navState('nt-n2').names.join(',')}]`);
+        check(!d2.dataset.arkuiNavTrans && d2.style.transitionProperty === '',
+          'animated=false → 无转场样式');
+        check(runCount() === runsBefore, `无运行记录（${runCount()}/${runsBefore}）`);
+        // pop 未给 animated → 默认 true（.d.ts JSDoc），照常滑出
+        await clickEl(d2.querySelector('[data-arkui-nav-back]'));
+        check(dests('nt-n2').length === 1 && dests('nt-n2')[0].dataset.arkuiNavTrans === 'pop',
+          `pop 默认 animated=true → 滑出（trans='${dests('nt-n2')[0] && dests('nt-n2')[0].dataset.arkuiNavTrans}'）`);
+        await settleNav();
+        check(dests('nt-n2').length === 0, `滑出后摘掉（剩 ${dests('nt-n2').length} 个）`);
+      });
+
+      // ══════════ ⑨ disableAnimation（n3）：全局关掉，push/pop 都立即 ══════════
+      await group('disableAnimation', async () => {
+        const runsBefore = runCount();
+        await click('dis-btn');           // disableAnimation(true) + push 'd1'
+        const d3 = dests('nt-n3')[0];
+        check(navState('nt-n3').names.join(',') === 'd1', `disable 后 push 仍入栈（[${navState('nt-n3').names.join(',')}]）`);
+        check(!d3.dataset.arkuiNavTrans && d3.style.transitionProperty === '', 'disableAnimation → push 无转场');
+        check(runCount() === runsBefore, `无运行记录（${runCount()}/${runsBefore}）`);
+        await clickEl(d3.querySelector('[data-arkui-nav-back]'));
+        check(dests('nt-n3').length === 0, `disableAnimation → pop 立即销毁（剩 ${dests('nt-n3').length} 个）`);
+      });
+
+      // ══════════ ⑩ 回归 ══════════
+      await group('回归', async () => {
+        const bad = __arkui_dom_layout_warnings.filter((w) => /Navigation\.(onTitleModeChange|titleMode|title)\b/.test(String(w)));
+        check(bad.length === 0, `onTitleModeChange 不再记"未实现"警告（剩 ${bad.length} 条：${bad.slice(0, 2).join('|')}）`);
+        check(txt('tmc-log') === 'TMC2;TMC1;', `全程回调日志符合预期（log='${txt('tmc-log')}'）`);
+        check(chrome('nt-n1').barHeight === 112 && chrome('nt-n3').barHeight === 138,
+          `滚回顶部后各 Navigation 恢复原高（${chrome('nt-n1').barHeight}/${chrome('nt-n3').barHeight}）`);
+      });
+
+      lines.push(`NAVTRANS runs=${runCount()} pending=${navTrans().pending}`);
+      lines.push(`ELMT ${__arkui_dom_elmtRecords.size}`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

@@ -81,6 +81,7 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 | **`Navigation` 标题栏（四形态 + titleMode 高度）**：string / `{main,sub}` / CustomBuilder / `{builder,height}`；Full=112vp·主+副 138vp、Mini=56vp、Free 非滚动态等同 Full；`NavigationCustomTitle.height` **优先于 titleMode**（`.d.ts` 原文）；`hideTitleBar` 生效 | ✅ | `bash run.sh navbardemo`（四种形态逐一断言 + 三个高度数字） |
 | **`Navigation` 返回键 / 菜单 / 工具栏**：栈非空才渲染返回键、点了真 `pop()`；`hideBackButton` 不渲染节点；`backButtonIcon` 记录；`menus`/`toolbarConfiguration` 的 `ToolbarItem.action` 真的被调用 | ✅ | `bash run.sh navbardemo`（`hasBack` 两种形态、点返回键栈空、点菜单/工具栏项写进 `log`） |
 | **`Navigation` 分栏**：`mode(Split)` + `navBarWidth`（默认 240vp）+ `navBarPosition(Start/End)` + 1px 分割线；`mode(Auto)` 按**组件自身宽度 ≥600vp** 判（600 = 240+360，`.d.ts` 原文） | ✅ | `bash run.sh navbardemo`（split/200/Start、split/180/End、Auto 700→split、Auto 400→stack） |
+| **`Navigation` push/pop 转场 + `onTitleModeChange` 滚动联动**：目的地 300ms ease-out 右滑入/出（时长曲线为**推断**）；`animated` 默认 true（JSDoc 原文），四参 `animated=false` 与 `disableAnimation` 不滑；pop 的生命周期回调立即发、DOM 摘除推迟到滑出结束。联动只在 `Free` 生效（`NavigationCustomTitle.height` 显式给过不生效，均 JSDoc 原文）：高度随滚动线性插值 Full↔Mini、主标题缩小、副标题淡出（仅 string/common 形态，builder 只收高度）；模式通知只在端点（触底 Mini / 回顶 Full） | ✅ | `bash run.sh navtransdemo`（48 条断言：三个插值点、端点通知、Full 对照、builder 对照、转场标记/记录、两个"不滑"对照组） |
 | **`onPop` 回调**（`pushPathByName(name, param, onPop)` → 弹出时收到 `{info:{name,param}, result}`） | ✅ | navdemo |
 | **`NavDestination` 生命周期**：首次挂载 `onWillAppear→onWillShow→onShown→onReady`；再显示只 `onWillShow→onShown`；隐藏 `onWillHide→onHidden`；销毁前 `onWillDisappear`（顺序**推断**自 `.d.ts` JSDoc，未在真机核对） | ✅ | navdemo |
 | **只有栈顶可见**：push 覆盖上一层，pop 露回下面那个且**实例复用**（`moveToTop` 也是复用不重建） | ✅ | navdemo |
@@ -212,9 +213,9 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
   `hideTitleBar` / `hideBackButton` / `backButtonIcon` / `menus` / `toolbarConfiguration`（含
   `ToolbarItem.action`）、`mode(Split/Auto)` + `navBarWidth`（默认 240vp）+ `navBarPosition` +
   分割线。返回键可点（真 `pop()`），菜单/工具栏项的 `action` 真的会被调用。
-  **仍记警告的**：`menus`/`toolbarConfiguration` 的自定义 builder 形态、`onTitleModeChange`（标题栏随
-  内容滚动收缩）、`navBarWidthRange`/`hideNavBar`/`enableDragBar`/`minNavBarWidth`、
-  转场动画（`customNavContentTransition`）与系统栏样式（`systemBarStyle`/`ignoreLayoutSafeArea`）。
+  **仍记警告的**：`menus`/`toolbarConfiguration` 的自定义 builder 形态、`navBarWidthRange`/`hideNavBar`/
+  `enableDragBar`/`minNavBarWidth`、`customNavContentTransition`（自定义转场协议）与系统栏样式
+  （`systemBarStyle`/`ignoreLayoutSafeArea`）。
   两条**推断**（`.d.ts` 没写数字）：`NavDestination` 标题栏恒为紧凑 56vp；`TitleHeight` 枚举取
   Full 的那两个文档数字（112/138）。`Auto` 用**组件自身宽度**判（`≥600vp` 走 Split），不是窗口宽度。
   `NavPathStack` 侧未实现：`setInterception`（路由拦截）、`getParent`（嵌套 Navigation 的父栈）、
@@ -224,7 +225,10 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 - **生命周期顺序与两处语义是推断的**：调用顺序按 `.d.ts` 的 JSDoc 语义排出（"即将挂载/显示"早于"已显示"），
   **未在真机核对**；`replacePath` 不派发 `onPop`、`moveToTop` 复用实例不重建——这两条 `.d.ts` 未写明，
   是按语义推断的实现取舍。`onWillAppear` 的绝对时机也不同（真机在挂载前，本实现在子树挂载后）。
-- **`Navigation` 没有转场动画**：push/pop 是瞬时切换 `display`，没有滑动/淡入淡出。
+- **`Navigation` 转场与滚动的数字全是推断**（R25 收口，语义照 JSDoc、数字 DOM 化）：转场 300ms、
+  `cubic-bezier(0.2,0,0,1)`（`.d.ts` 只说"有系统默认转场"）；联动收缩阈值 = 滚满 `Full−Mini` px、
+  主标题 scale = 高度比。范围弹栈（`popToName`/`popToIndex`/`clear`）**立即销毁不动画**（真机也只动画
+  栈顶）；`edgeEffect` 弹性不模拟（内容不足一屏滚不动 → 联动无从发生，JSDoc 主场景就是"超过一屏"）。
 - 滚动：`LazyForEach` **有虚拟滚动**（1000 项只渲染 11 项，spacer 撑总高）；但普通 `ForEach` 仍是**全量渲染**，
   `LazyForEach` 的数据变更也是**整窗重建**（未做按 key 的增量 diff），且无 `onDataAdd/Delete` 的精确索引更新。
 - **虚拟滚动已支持变高列表项**（`run.sh lazyvh`）：偏移 = 逐项 advance 的前缀和、渲染后**逐项实测回填**、

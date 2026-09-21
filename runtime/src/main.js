@@ -1181,6 +1181,30 @@
   const TITLE_HEIGHT_VALUE = { 0: NAV_TITLE_H.main, 1: NAV_TITLE_H.mainSub };
   const NAV_DIVIDER_PX = 1;               // 分栏时的分割线宽度
   const NAV_DEFAULT_BAR_W = 240;          // navBarWidth 默认 240vp（.d.ts JSDoc 原文）
+  // push/pop 的系统转场（R25）。.d.ts 对默认转场只说"有"（pop 的 JSDoc："Whether to enable the
+  // transition animation ... Default value: true"），没给时长与曲线 —— 目的地从右滑入/滑出、
+  // 300ms、ease-out 族曲线是本实现的 DOM 化选择（**推断**，已写进 docs 已知限制）。
+  const NAV_TRANS_MS = 300;
+  const NAV_TRANS_CURVE = 'cubic-bezier(0.2, 0.0, 0.0, 1.0)';
+  // 转场运行记录（测试轮询"挂着的转场"用，与 animation.js 的 transitionRuns 同思想）
+  const navTransRuns = [];
+  let navTransRunSeq = 0;
+  function navTransDescribe() {
+    let pending = 0;
+    navTransRuns.forEach((r) => { if (!r.done) pending++; });
+    return { runs: navTransRuns.map((r) => ({ ...r })), pending };
+  }
+  function navWitness(el, run) {          // transitionend 只当"见证"，不当收口依据（坑 ⑧ 同源）
+    const fn = () => { run.sawTransitionEnd = true; };
+    el.addEventListener('transitionend', fn, { once: true });
+    return () => el.removeEventListener('transitionend', fn);
+  }
+  function navEndTransStyle(el) {
+    el.style.transitionProperty = '';
+    el.style.transitionDuration = '';
+    el.style.transitionTimingFunction = '';
+    delete el.dataset.arkuiNavTrans;
+  }
 
   // NavDestination 的生命周期回调：属性名 → state 键
   const NAVDEST_LIFECYCLE = {
@@ -1191,7 +1215,7 @@
   // Navigation/NavDestination 上【仍未】覆盖的语义项（只列 .d.ts 里真实存在、而本实现没做的）。
   // 标题栏/工具栏/分栏已于 R12 收口实现（见下面的 navSyncChrome）—— 未实现的仍然不能静默。
   const NAV_UNSUPPORTED = new Set([
-    'onTitleModeChange',        // 标题栏随内容滚动而收缩/展开 —— 本实现不做滚动联动
+    // onTitleModeChange 已于 R25 实现（Free 滚动联动，见 navOnContentScroll）
     'onNavBarStateChange',      // 长按隐藏导航栏
     'navBarWidthRange', 'minNavBarWidth', 'hideNavBar', 'enableDragBar',
     'ignoreLayoutSafeArea', 'systemBarStyle', 'onNavigationModeChange',
@@ -1226,24 +1250,39 @@
       navSyncVisibility(this._nav);
     }
 
-    // ── 压栈 ──
-    pushPath(info, options) { navPushRec(this, info || {}, animOf(options)); }
-    pushPathByName(name, param, a3, a4) {
-      const onPop = typeof a3 === 'function' ? a3 : undefined;
-      navPushRec(this, { name, param, onPop }, animOf(typeof a3 === 'function' ? a4 : a3));
+    // ── 压栈 ──（animated 一律透传原值，默认 true 的解释在 navWantAnim）
+    pushPath(info, options) {
+      navPushRec(this, info || {}, options && typeof options === 'object' ? options.animated : options);
     }
-    pushDestination(info) { navPushRec(this, info || {}, animOf(arguments[1])); return Promise.resolve(); }
-    pushDestinationByName(name, param) { navPushRec(this, { name, param }, animOf(arguments[2])); return Promise.resolve(); }
+    pushPathByName(name, param, a3, a4) {
+      // .d.ts 重载：(name, param, animated?) / (name, param, onPop, animated?)。
+      // a3 是函数 → a4 才是 animated；a3 是布尔 → a3 就是 animated（三参形态）；
+      // a3=undefined（如 (name, param, undefined, false)）→ 看 a4。
+      const onPop = typeof a3 === 'function' ? a3 : undefined;
+      const animated = typeof a3 === 'function' ? a4 : (typeof a3 === 'boolean' ? a3 : a4);
+      navPushRec(this, { name, param, onPop }, animated);
+    }
+    pushDestination(info) {
+      navPushRec(this, info || {}, info && typeof info === 'object' ? info.animated : undefined);
+      return Promise.resolve();
+    }
+    pushDestinationByName(name, param) {
+      navPushRec(this, { name, param }, arguments[2]);
+      return Promise.resolve();
+    }
 
     // ── 弹栈 ──
-    pop(a1) {
+    // .d.ts 重载：pop(animated?) / pop(result, animated?)；popToName/Index(name, result?, animated?)
+    // 都有 "Whether to enable the transition animation ... Default value: true"
+    pop(a1, a2) {
       if (!this._paths.length) return undefined;
       const result = a1 !== undefined && typeof a1 !== 'boolean' ? a1 : undefined;
+      const animated = typeof a1 === 'boolean' ? a1 : a2;
       const rec = this._paths[this._paths.length - 1];
-      navPopRange(this, this._paths.length - 1, 1, result);
+      navPopRange(this, this._paths.length - 1, 1, result, animated);
       return { name: rec.name, param: rec.param };
     }
-    popToName(name, a2) {
+    popToName(name, a2, a3) {
       const idx = this.getIndexByName(name);
       if (!idx.length) {
         layoutWarnings.push(`NavPathStack.popToName('${name}')：栈里没有该 name（约定返回 -1）`);
@@ -1251,17 +1290,19 @@
       }
       const target = idx[idx.length - 1];
       const result = a2 !== undefined && typeof a2 !== 'boolean' ? a2 : undefined;
-      navPopRange(this, target + 1, this._paths.length - target - 1, result);
+      const animated = typeof a2 === 'boolean' ? a2 : a3;
+      navPopRange(this, target + 1, this._paths.length - target - 1, result, animated);
       return target;
     }
-    popToIndex(index, a2) {
+    popToIndex(index, a2, a3) {
       const n = this._paths.length;
       if (!Number.isInteger(index) || index < 0 || index >= n) {
         layoutWarnings.push(`NavPathStack.popToIndex(${index})：越界（共 ${n} 项）`);
         return;
       }
       const result = a2 !== undefined && typeof a2 !== 'boolean' ? a2 : undefined;
-      navPopRange(this, index + 1, n - index - 1, result);
+      const animated = typeof a2 === 'boolean' ? a2 : a3;
+      navPopRange(this, index + 1, n - index - 1, result, animated);
     }
 
     // ── 改写 ──
@@ -1347,6 +1388,46 @@
     const hasSub = !!(spec && spec.kind === 'common' && spec.sub !== undefined && spec.sub !== null
       && String(spec.sub) !== '');
     return hasSub ? NAV_TITLE_H.mainSub : NAV_TITLE_H.main;   // Full；Free 非滚动态等同 Full
+  }
+
+  // 滚动联动的生效条件（三条都来自 .d.ts 原文）：
+  //   ① titleMode 必须 Free —— onTitleModeChange 的 JSDoc："Triggered when titleMode is set to
+  //      NavigationTitleMode.Free and the title bar mode changes as content scrolls."
+  //   ② NavigationCustomTitle.height 显式给过就不联动 —— "When the NavigationCustomTitle type
+  //      is used to set the height, titleMode does not take effect."
+  //   ③ 标题栏整个藏了（hideTitleBar）自然没有联动。
+  function navCollapseAllowed(st) {
+    return st.titleMode === NavigationTitleMode.Free && !st.hideTitleBar
+      && !(st.titleSpec && st.titleSpec.height !== undefined && st.titleSpec.height !== null);
+  }
+
+  // 内容滚动 → 标题栏收缩（capture 监听挂在 Navigation 上，见 createNavState）。
+  // 进度 p∈[0,1]：0 = 全高（Free 非滚动态等同 Full），1 = 收到 Mini；
+  // 滚动距离与收缩进度线性，滚满 (Full−Mini) px 收到底 —— 该换算是本实现的选择
+  //（.d.ts 只说 "the main title shrinks as the content scrolls down ... and restores
+  // as the content scrolls up to the top"，没给阈值）。
+  function navOnContentScroll(st, e) {
+    const t = e.target;
+    if (!t || t === st.node) return;
+    if (st.areaEl && (t === st.areaEl || st.areaEl.contains(t))) return;   // 目的地自己滚不算
+    if (!navCollapseAllowed(st)) return;
+    const fullH = navTitleBarH(st.titleSpec, NavigationTitleMode.Full);
+    if (fullH <= NAV_TITLE_H.mini) return;
+    const p = Math.max(0, Math.min(1, (t.scrollTop || 0) / (fullH - NAV_TITLE_H.mini)));
+    if (p === st.collapseP) return;
+    st.collapseP = p;
+    // 模式切换只发生在两个端点（阈值点 .d.ts 没写，端点判定是本实现的选择）：
+    // 收到底 → Mini；滚回顶 → Full（"restores as the content scrolls up to the top"）。
+    const s = p >= 1 ? 'mini' : (p <= 0 ? 'full' : st.tmcState);
+    if (s !== st.tmcState) {
+      st.tmcState = s;
+      if (typeof st.tmc === 'function') {
+        try {
+          st.tmc(s === 'mini' ? NavigationTitleMode.Mini : NavigationTitleMode.Full);
+        } catch (err) { layoutWarnings.push(`onTitleModeChange 回调抛错：${err && err.message}`); }
+      }
+    }
+    syncOneNav(st.node);     // 高度/内边距/标题内部视觉统一走 syncOneNav，不维护两份几何
   }
 
   // 把 builder 建出来的节点收进 host（复用 NavDestination 深渲染那套：压栈 + 保存/还原 elmtId）
@@ -1474,6 +1555,10 @@
       hideTitleBar: false, hideBackButton: false, menus: null,
       navBarWidth: null, navBarPosition: NavBarPosition.Start, minContentWidth: null,
       barEl: null, titleEl: null, dividerEl: null, titleDrawn: null, effectiveMode: 'stack',
+      // R25：Free 滚动联动 + 转场
+      tmc: null,              // onTitleModeChange 回调
+      collapseP: 0,           // 收缩进度 0(=Full)…1(=Mini)，随内容滚动更新
+      tmcState: 'full',       // 已通知的模式端点：'full' | 'mini'
     };
     node.__navState = st;
     node.style.position = 'relative';
@@ -1493,6 +1578,7 @@
     title.style.top = '0';
     title.style.padding = '0 8px';
     title.style.fontSize = '16px';
+    title.style.overflow = 'hidden';      // Free 收缩时内容随高度裁剪
     bar.appendChild(title);
     st.barEl = bar;
     st.titleEl = title;
@@ -1504,6 +1590,9 @@
     divider.style.background = '#e5e5e5';
     st.dividerEl = divider;
     node.insertBefore(divider, bar.nextSibling);
+    // Free 滚动联动：scroll 不冒泡，用 capture 在 Navigation 子树里接（List/Scroll 的滚动
+    // 容器都在里面）。目的地自己滚不该动 Navigation 的标题栏 —— navOnContentScroll 里排除。
+    node.addEventListener('scroll', (e) => navOnContentScroll(st, e), true);
     bindNavStack(st, stack);
     return st;
   }
@@ -1553,8 +1642,10 @@
       });
     }
     st.titleEl.style.display = st.hideTitleBar ? 'none' : 'flex';
-    // ② 高度与分栏几何
-    const H = st.hideTitleBar ? 0 : navTitleBarH(st.titleSpec, st.titleMode);
+    // ② 高度与分栏几何。Free 联动时高度在 Full 与 Mini 之间随收缩进度插值（R25）
+    const H0 = st.hideTitleBar ? 0 : navTitleBarH(st.titleSpec, st.titleMode);
+    const col = !st.hideTitleBar && navCollapseAllowed(st) && H0 > NAV_TITLE_H.mini ? st.collapseP : 0;
+    const H = H0 - (H0 - NAV_TITLE_H.mini) * col;
     st.barHeight = H;
     st.effectiveMode = navEffectiveMode(st);
     const split = st.effectiveMode === 'split';
@@ -1593,6 +1684,18 @@
       node.style.paddingRight = '0';
       st.dividerEl.style.display = 'none';
     }
+    // Free 收缩的标题内部视觉（Free JSDoc）：主标题随滚动缩小、副标题淡出但尺寸不变 ——
+    // 只对 text/common 形态生效（"effective only when title is set to ResourceStr or
+    // NavigationCommonTitle"）；builder 等其他形态只随高度变小（"changes in mere location"）。
+    // 缩放比取高度比（Full 112→Mini 56 即缩到一半），是 DOM 化映射的选择。
+    const shrinkEl = st.titleEl.querySelector('[data-arkui-nav-title-main],[data-arkui-nav-title-text]');
+    if (shrinkEl) {
+      const k = H0 > 0 ? H / H0 : 1;
+      shrinkEl.style.transformOrigin = 'left center';
+      shrinkEl.style.transform = col > 0 && k < 1 ? `scale(${k})` : '';
+    }
+    const subEl = st.titleEl.querySelector('[data-arkui-nav-title-sub]');
+    if (subEl) subEl.style.opacity = col > 0 ? String(0.7 * (1 - col)) : '';
     // ③ 目标区：Split 时只占内容列（右侧/左侧），Stack 时铺满整个 Navigation
     if (st.areaEl) {
       if (split) {
@@ -1699,16 +1802,56 @@
     return true;
   }
 
-  function navPushRec(stack, info, _animated) {
+  // animated：boolean | {animated} | undefined。.d.ts（pop 的 JSDoc，push 同）：
+  // "Whether to enable the transition animation ... Default value: true" —— 未给就默认开。
+  function navWantAnim(stack, animated) {
+    if (stack._noAnim) return false;                       // disableAnimation(true)
+    if (animated === undefined || animated === null) return true;
+    return animOf(animated);
+  }
+
+  // push 转场（R25）：新栈顶从右滑入、盖在上一个栈顶上；上一个栈顶在滑入期间保持可见，
+  // 结束才藏。样式收口与 animation.js 同一约定：先提交起始值（强制重排，坑 ⑧），
+  // transitionend 只当见证，真正收口靠定时器。
+  function navSlidePush(st, rec, prev) {
+    const el = rec.el;
+    if (!el) return;
+    const showPrev = !!(prev && prev.el && prev !== rec);
+    if (showPrev) prev.el.style.display = 'block';         // navSyncVisibility 刚把它藏掉
+    const run = { seq: ++navTransRunSeq, kind: 'push', name: rec.name, done: false, sawTransitionEnd: false, endedBy: null };
+    navTransRuns.push(run);
+    if (navTransRuns.length > 50) navTransRuns.shift();
+    el.dataset.arkuiNavTrans = 'push';
+    el.style.transform = 'translateX(100%)';
+    void el.offsetHeight;
+    const stopWitness = navWitness(el, run);
+    el.style.transitionProperty = 'transform';
+    el.style.transitionDuration = `${NAV_TRANS_MS}ms`;
+    el.style.transitionTimingFunction = NAV_TRANS_CURVE;
+    el.style.transform = '';
+    const timer = setTimeout(() => {
+      run.endedBy = 'timer';
+      navEndTransStyle(el);
+      stopWitness();
+      run.done = true;
+      // 期间若有新栈操作，可见性已由那次的 sync 接管：只藏"现在仍然不是栈顶"的前任
+      if (showPrev && prev !== st.visible) prev.el.style.display = 'none';
+    }, NAV_TRANS_MS + 30);
+  }
+
+  function navPushRec(stack, info, animated) {
     const st = stack._nav;
     if (!st) { layoutWarnings.push('NavPathStack 尚未绑定到任何 Navigation'); return false; }
     if (!info || !info.name) { layoutWarnings.push('NavPathStack 压栈缺少 name'); return false; }
     if (!ensureBuilder(st)) return false;
+    const prev = st.paths.length ? st.paths[st.paths.length - 1] : null;   // push 前的栈顶
     const rec = { name: info.name, param: info.param, onPop: info.onPop, el: null, cbs: {}, everShown: false };
     // 先入栈再建树：builder 里若读 size()/getAllPathName() 应看到新状态
     stack._paths.push(rec);
     if (!navBuildDest(st, rec)) { stack._paths.pop(); return false; }   // 建不出来不留幽灵路径项
     navSyncVisibility(st);
+    // 转场（R25）：栈空 → 首个目的地也滑（真机如此）；disableAnimation / animated:false 不滑
+    if (navWantAnim(stack, animated)) navSlidePush(st, rec, prev);
     return true;
   }
 
@@ -1785,10 +1928,64 @@
     if (typeof syncNavChrome === 'function') syncNavChrome(st.node);
   }
 
+  // pop 转场（R25）：栈顶向右滑出、露出新栈顶（或空栈时的根内容）。状态层回调照旧立刻发
+  //（willHide → hidden → willDisappear，顺序与立即版一致），DOM 摘除推迟到滑出结束 ——
+  // 这是"动画期间目的地还在"与"生命周期语义不变"的唯一交点，已写进 docs。
+  function navPopAnimated(stack, rec, result) {
+    const st = stack._nav;
+    const el = rec.el;
+    navFire(rec, 'willHide');
+    navFire(rec, 'hidden');
+    navFire(rec, 'willDisappear');
+    if (typeof rec.onPop === 'function') {
+      try { rec.onPop({ info: { name: rec.name, param: rec.param }, result }); }
+      catch (e) { layoutWarnings.push(`NavPathStack 的 onPop 回调抛错：${e && e.message}`); }
+    }
+    const idx = st.paths.indexOf(rec);
+    if (idx >= 0) st.paths.splice(idx, 1);
+    purgeDetachedRecords();
+    navSyncVisibility(st);                 // 露出新栈顶 / 根内容（在滑出层的下面）
+    if (!el) return;
+    if (st.areaEl) st.areaEl.style.display = 'block';   // 空栈时 sync 会藏目标区——滑出期间撑住
+    const run = { seq: ++navTransRunSeq, kind: 'pop', name: rec.name, done: false, sawTransitionEnd: false, endedBy: null };
+    navTransRuns.push(run);
+    if (navTransRuns.length > 50) navTransRuns.shift();
+    el.dataset.arkuiNavTrans = 'pop';
+    el.style.display = 'block';
+    el.style.zIndex = '3';                 // DOM 顺序上新栈顶在后面（盖住它），滑出期间要反超
+    el.style.transform = '';
+    void el.offsetHeight;
+    const stopWitness = navWitness(el, run);
+    el.style.transitionProperty = 'transform';
+    el.style.transitionDuration = `${NAV_TRANS_MS}ms`;
+    el.style.transitionTimingFunction = NAV_TRANS_CURVE;
+    el.style.transform = 'translateX(100%)';
+    const timer = setTimeout(() => {
+      run.endedBy = 'timer';
+      navEndTransStyle(el);
+      stopWitness();
+      run.done = true;
+      el.style.zIndex = '';
+      el.style.transform = '';
+      navDestroyDest(rec);
+      purgeDetachedRecords();
+      // 目标区的显隐以【当下】的栈为准（滑出期间可能有新 push）
+      if (st.areaEl && !st.paths.length) st.areaEl.style.display = 'none';
+    }, NAV_TRANS_MS + 30);
+  }
+
   // 弹出 [from, from+count)：从【栈顶向下】处理，保证生命周期顺序
-  function navPopRange(stack, from, count, result) {
+  function navPopRange(stack, from, count, result, animated) {
     const st = stack._nav;
     if (count <= 0) return;
+    // 转场只给"从可见栈顶弹出 1 项"的典型 pop（pop(animated) 的语义）；范围弹栈（popToName/
+    // popToIndex/clear/setPathStack）照旧立即销毁 —— 真机对范围弹栈也只动画栈顶。
+    const topIdx = from + count - 1;
+    const rec = st.paths[topIdx];
+    if (count === 1 && rec && rec.el && st.visible === rec && navWantAnim(stack, animated)) {
+      navPopAnimated(stack, rec, result);
+      return;
+    }
     for (let i = from + count - 1; i >= from; i--) {
       const rec = st.paths[i];
       if (!rec) continue;
@@ -1927,6 +2124,10 @@
       st.titleOptions = opts && typeof opts === 'object' ? opts : null;
     },
     titleMode: (st, v) => { st.titleMode = Number(v); },
+    // R25：Free 滚动联动的事件（.d.ts：titleMode=Free 且内容滚动导致标题栏模式变化时触发）。
+    // ⚠️ 属性分发必须在通用 on* 规则之前把它拦下 —— 否则 fn 会被当成 DOM 事件监听挂到
+    // 'titlemodechange' 上，永远没人派发（R25 测量时撞上的分发陷阱）。
+    onTitleModeChange: (st, v) => { st.tmc = typeof v === 'function' ? v : null; },
     hideTitleBar: (st, v) => { st.hideTitleBar = !!v; },
     hideBackButton: (st, v) => { st.hideBackButton = !!v; },
     backButtonIcon: (st, v) => { st.backButtonIcon = resolveResource(v); },
@@ -2548,6 +2749,12 @@
         return;
       }
       node.__navDestCbs[kind] = value;
+      return;
+    }
+    // Navigation 的事件类属性必须在下面的通用 on* 规则之前拦下：否则 onTitleModeChange(fn)
+    // 会变成 addEventListener('titlemodechange')，永远没人派发（R25 实测的分发陷阱，坑 86）
+    if (node.__navState && prop === 'onTitleModeChange') {
+      NAV_ATTRS.onTitleModeChange(node.__navState, value, extra);
       return;
     }
     if (typeof value === 'function') {          // 事件类（onClick/onChange…）
@@ -3816,6 +4023,8 @@
     TransitionType, TransitionEffect, TransitionEdge,
     // 过渡自省：登记了什么、每次出现/消失实际用了多久/哪个来源（effect / animateTo / default）
     __arkui_dom_transitions: transitionsDescribe,
+    // R25：Nav 转场自省（push/pop 各一条运行记录 + 当前挂着的数目），测试轮询"滑完没有"用
+    __arkui_dom_navTrans: navTransDescribe,
     // R23：手势。产物里是 `globalThis.Gesture.create(...)` + `PanGesture.create(...)` 这类
     // 自由变量引用（两层栈），所以这些名字都必须挂在 global 上。
     // R23 收口：`Gesture.create` 是【两参】的（第二参 mask），且优先级名字来自 ets-loader 的

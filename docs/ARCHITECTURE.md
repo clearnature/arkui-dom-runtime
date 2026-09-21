@@ -1252,8 +1252,45 @@ minContentWidth 360，`.d.ts` 原文；用组件宽度而不是窗口宽度，�
 
 **已知限制**：`NavDestination` 标题栏高度（56vp）与 `TitleHeight` 的数值（112/138）都是**推断**
 （`.d.ts` 没写数字，后者按其 JSDoc 措辞对应 Full 的那两个数字）；`menus`/`toolbarConfiguration` 只支持
-数组形态；`onTitleModeChange`（随内容滚动收缩）/`navBarWidthRange`/`hideNavBar`/`enableDragBar`/
-转场动画/系统栏样式未实现（记警告）。
+数组形态；`navBarWidthRange`/`hideNavBar`/`enableDragBar`/系统栏样式未实现（记警告）。
+（`onTitleModeChange` 与转场动画已由 §4.18b 实现。）
+
+---
+
+### 4.18b `Navigation` 的转场动画 + `onTitleModeChange` 滚动联动（R25 收口）
+
+**先看产物**（`fixtures/pages/NavTransDemo.ts`）。三条实测：
+① `.onTitleModeChange(cb)` 是**函数值属性**——而 `applyAttr` 的分发里"函数值 = 通用 `on*` DOM 监听"
+排在组件属性表**之前**，不拦下就变成 `addEventListener('titlemodechange')`、永远没人派发（坑 86；
+`NAVDEST_LIFECYCLE` 在旧代码里正是靠"排在通用规则前"才活着的）；
+② `pushPathByName` 两套重载 `(name, param, animated?)` / `(name, param, onPop, animated?)`，
+`animated` 的 JSDoc 原文 **"Default value: true"**（`pop`/`popToName`/`popToIndex` 同）；四参
+`(name, param, undefined, false)` 的 a3 不是函数，解析要看 a4；③ `disableAnimation(true)` 进产物。
+
+**转场**：`navWantAnim`（`animated` 未给默认 true × `disableAnimation` 压制）→ `navSlidePush` /
+`navPopAnimated`。目的地元素 `transform: translateX` 300ms、`cubic-bezier(0.2,0,0,1)`（**推断**，
+`.d.ts` 只说"有系统默认转场"）。push：`navSyncVisibility` 之后把**上一个栈顶临时点亮垫底**，新栈顶
+从 `translateX(100%)` 归零，收口时只藏"当下仍不是栈顶"的前任；pop：**状态层回调照旧立刻发**
+（`willHide → hidden → willDisappear → onPop`，与立即版同序），`splice → purge → sync` 后元素
+`zIndex:3` 滑出、**DOM 摘除推迟到滑出结束**，弹到空栈时目标区滑出期间撑住、结束后按【当下】栈显隐
+（滑出期间可能有新 push）。范围弹栈（`popToName`/`popToIndex`/`clear`）不动画、立即销毁。
+运行记录进 `__arkui_dom_navTrans()`（`runs`/`pending`，测试轮询收口；`data-arkui-nav-trans` 属性
+标记飞行中方向）。收口三件套与 `animation.js` 同约定：先强制重排提交起始值（坑 ⑧）、
+`transitionend` 只当见证、定时器兜底。
+
+**滚动联动**：`createNavState` 在 Navigation 元素上挂 **capture** `scroll` 监听（scroll 不冒泡；
+目的地自己滚被 `navOnContentScroll` 用 `areaEl.contains` 排除）。生效条件 = `titleMode=Free` ×
+未 `hideTitleBar` × 无 `NavigationCustomTitle.height`（三条都有 JSDoc 原文）。高度在 Full↔Mini 间
+随 `scrollTop` **线性插值**（阈值 = 滚满 `Full−Mini` px，实现选择），`collapseP` 进 state 后**统一由
+`syncOneNav` 出几何**（滚动处理器只改 state 再调 syncOneNav，不维护第二份几何）——push/pop 触发的
+`syncNavChrome` 不会把收缩态冲掉。标题内部视觉：string/common 形态主标题 `scale = H/H0`
+（transformOrigin left center）、副标题 `opacity 0.7→0`（尺寸不变）；builder 等其他形态内容不动
+（JSDoc："changes in mere location"）。**模式通知只在端点**：`p≥1` → `Mini`、`p=0` → `Full`，
+中途往返不重发。
+
+**已知限制**：转场时长/曲线、收缩阈值、缩放比都是**推断**；`customNavContentTransition`（自定义转场
+协议）、`enableModeChangeAnimation`（单↔分栏切换动画，API 15）未实现（记警告）；`edgeEffect` 弹性
+不模拟（不足一屏滚不动 → 联动无从发生，JSDoc 主场景就是超一屏）。
 
 ---
 
@@ -1338,10 +1375,10 @@ minContentWidth 360，`.d.ts` 原文；用组件宽度而不是窗口宽度，�
   属性元数据总数       1078（平均 7.2／组件，最多 TextInput=70）
 
 == 运行时 API ==
-  global 导出        181 个
+  global 导出        182 个
   状态类            ObservedPropertySimplePU ObservedPropertyObjectPU SynchedPropertySimpleOneWayPU SynchedPropertySimpleTwoWayPU SynchedPropertyNesedObjectPU
   内置组件          Text Button Column Row Stack List ListItem If ForEach LazyForEach RelativeContainer Tabs TabContent Swiper Navigation NavDestination Progress Gauge DataPanel Rating
-  内部钩子 __arkui_dom_*  31 个
+  内部钩子 __arkui_dom_*  32 个
 
 == 状态管理 ==
   v1  状态类        5 个（包装对象模型）
@@ -1355,22 +1392,22 @@ minContentWidth 360，`.d.ts` 原文；用组件宽度而不是窗口宽度，�
   14 个：app.ability.AbilityConstant app.ability.ConfigurationConstant app.ability.UIAbility app.ability.Want data.preferences file.fs hilog measure multimedia.image net.http notificationManager promptAction router window
 
 == 用例矩阵 ==
-  浏览器 run.sh     32 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify measure lazy provide v2 observe async ability promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo router netfile persist
-  Electron          31 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo measure lazy provide async v2 observe
-  测试页            32 个
-  fixtures 转换产物  30 个：AnimDemo AsyncIO Callee Detail DrawDemo GestureDemo GestureGroupDemo Home Index Layout Lazy LazyVar MeasArea MeasImage MeasNotify Measure NavBarDemo NavDemo NetFile Observe PromptAct Provide RelDemo Rich SwiperDemo TabsGrid TextMeasure TransitionDemo V2 Widgets
+  浏览器 run.sh     33 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify measure lazy provide v2 observe async ability promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo router netfile persist
+  Electron          32 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo measure lazy provide async v2 observe
+  测试页            33 个
+  fixtures 转换产物  31 个：AnimDemo AsyncIO Callee Detail DrawDemo GestureDemo GestureGroupDemo Home Index Layout Lazy LazyVar MeasArea MeasImage MeasNotify Measure NavBarDemo NavDemo NavTransDemo NetFile Observe PromptAct Provide RelDemo Rich SwiperDemo TabsGrid TextMeasure TransitionDemo V2 Widgets
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          353.3 KB
-  runtime(src)     240.7 KB
-  test             252.0 KB
+  runtime          365.2 KB
+  runtime(src)     252.6 KB
+  test             267.1 KB
   tools            52.7 KB
-  electron(src)    19.4 KB
-  docs             350.6 KB
-  fixtures         258.3 KB
+  electron(src)    19.6 KB
+  docs             359.4 KB
+  fixtures         279.2 KB
 
 == 逐文件（文档"文件职责"表的来源）==
-  runtime/arkui-dom-runtime.js        246380 B  240.6 KB
+  runtime/arkui-dom-runtime.js        258571 B  252.5 KB
   runtime/generated-components.js      57617 B  56.3 KB
   runtime/ohos-shims.js                57789 B  56.4 KB
   tools/extract.mjs                     6563 B  6.4 KB
@@ -1381,23 +1418,23 @@ minContentWidth 360，`.d.ts` 原文；用组件宽度而不是窗口宽度，�
   tools/preflight.mjs                   5422 B  5.3 KB
   tools/check-all.sh                    3673 B  3.6 KB
   tools/build-runtime.mjs               5138 B  5.0 KB
-  run.sh                               16855 B  16.5 KB
-  electron/run.sh                      10856 B  10.6 KB
+  run.sh                               17364 B  17.0 KB
+  electron/run.sh                      11074 B  10.8 KB
   electron/main.js                      6795 B  6.6 KB
   electron/preload.js                   1961 B  1.9 KB
   package.json                          1321 B  1.3 KB
-  .gitignore                             674 B  0.7 KB
-  README.md                            81349 B  79.4 KB
+  .gitignore                             757 B  0.7 KB
+  README.md                            87196 B  85.2 KB
   THIRD-PARTY-NOTICES.md                8256 B  8.1 KB
-  docs/ARCHITECTURE.md                116383 B  113.7 KB
-  docs/CAPABILITY.md                   36183 B  35.3 KB
-  docs/DEVELOPING.md                   56745 B  55.4 KB
-  docs/ROADMAP.md                      82577 B  80.6 KB
+  docs/ARCHITECTURE.md                119803 B  117.0 KB
+  docs/CAPABILITY.md                   37317 B  36.4 KB
+  docs/DEVELOPING.md                   58521 B  57.1 KB
+  docs/ROADMAP.md                      85272 B  83.3 KB
   docs/surface-measurement.md           6496 B  6.3 KB
   docs/SESSION-2026-09-20.md           12842 B  12.5 KB
   runtime/src/animation.js             25906 B  25.3 KB
   runtime/src/gesture.js               29527 B  28.8 KB
-  runtime/src/main.js                 190993 B  186.5 KB
+  runtime/src/main.js                 203184 B  198.4 KB
   fixtures/pages/AnimDemo.ts            6451 B  6.3 KB
   fixtures/pages/AsyncIO.ts             6206 B  6.1 KB
   fixtures/pages/Callee.ts              1726 B  1.7 KB
@@ -1416,6 +1453,7 @@ minContentWidth 360，`.d.ts` 原文；用组件宽度而不是窗口宽度，�
   fixtures/pages/Measure.ts             6262 B  6.1 KB
   fixtures/pages/NavBarDemo.ts         22445 B  21.9 KB
   fixtures/pages/NavDemo.ts            14129 B  13.8 KB
+  fixtures/pages/NavTransDemo.ts       21393 B  20.9 KB
   fixtures/pages/NetFile.ts             5039 B  4.9 KB
   fixtures/pages/Observe.ts            11906 B  11.6 KB
   fixtures/pages/PromptAct.ts           6916 B  6.8 KB
@@ -1445,7 +1483,8 @@ minContentWidth 360，`.d.ts` 原文；用组件宽度而不是窗口宽度，�
   test/measnotify.html                 10722 B  10.5 KB
   test/measure.html                     6072 B  5.9 KB
   test/navbardemo.html                 12670 B  12.4 KB
-  test/navdemo.html                    14172 B  13.8 KB
+  test/navdemo.html                    14837 B  14.5 KB
+  test/navtransdemo.html               14780 B  14.4 KB
   test/netfile.html                     5302 B  5.2 KB
   test/observe.html                     6232 B  6.1 KB
   test/opfs-probe.html                  1620 B  1.6 KB

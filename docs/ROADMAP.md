@@ -449,11 +449,10 @@ bash run.sh observe && bash electron/run.sh observe   # 19 条断言双通过
 `fixtures/pages/NavBarDemo.ts`、`harmony-proj/`（`NavBarDemo.ets` + main_pages.json）、
 `test/navbardemo.html`、`test/navdemo.html`、`run.sh`、`electron/run.sh`
 
-### R13 — 数据可视化类：`Progress` / `Gauge` / `DataPanel` / `Rating`
+### ~~R13 — 数据可视化类：`Progress` / `Gauge` / `DataPanel` / `Rating`~~ ✅ 已完成
 
-**内容**：这 4 个是纯绘制，DOM 侧用 `conic-gradient` / `linear-gradient` / SVG 可实现，性价比高。
-
-**验收**：断言 `Progress({value:50,total:100})` 的宽度/`--progress` 变量为 50%；`Rating({rating:3})` 有 3 个高亮元素。
+> 本条是建仓时的规划残本（同轮号在 P3 下还有一份，完成记录在**那一节**，commit `8a362b9`：
+> `drawdemo` 47 条断言、画法与坑）。2026-09-21 收口 R25 时发现并划掉。
 
 ---
 
@@ -1098,6 +1097,43 @@ grep -n "v2Field" runtime/arkui-dom-runtime.js    # → const v2Field = (kind) =
 
 **触及**：`docs/ARKVM-RESEARCH.md`（新增）、本节、`docs/DEVELOPING.md`（§8 构建命令 + 坑 80）、
 `run.sh`（缺输入提示）、`docs/CAPABILITY.md`（已知限制里点名"结论只对 JS 路径成立"的类别）
+
+---
+
+### R25 收口 — `Navigation` 转场动画 + `onTitleModeChange` 滚动联动 ✅（2026-09-21）
+
+R12 收口的已知限制里点名的两块**可见差异**，本轮收掉。
+
+**先测量**（新增 `pages/NavTransDemo.ets` → 官方构建 → 读产物）：① `onTitleModeChange(cb)` 是
+**函数值属性**，而属性分发里通用 `on*` 规则在组件属性表**之前**——不拦下就变成
+`addEventListener('titlemodechange')`，永远没人派发（坑 86）；② `pushPathByName` 两套重载
+`(name, param, animated?)` / `(name, param, onPop, animated?)`，`animated` 默认 **true**（`.d.ts`
+JSDoc 原文），四参 `(name, param, undefined, false)` 的解析要看 a4；③ `disableAnimation(true)`
+进产物、全局关动画。
+
+**实现**：目的地 300ms ease-out 从右滑入/滑出（**推断**，`.d.ts` 只说"有系统默认转场"没给数字）；
+push 时上一栈顶垫底可见、滑完才藏；pop 时状态层回调照旧立刻发、DOM 摘除推迟到滑出结束、弹到空栈
+目标区滑出期间撑住；范围弹栈仍立即销毁。联动只在 `titleMode=Free`（且无 `NavigationCustomTitle.
+height`、未 `hideTitleBar`）生效：高度随滚动在 Full↔Mini 间线性插值、主标题缩小（scale=高度比）、
+副标题淡出（尺寸不变，仅 string/common 形态）；**模式通知只在端点**（收到底→Mini、回顶→Full），
+中途不抖动。
+
+**验收**：`bash run.sh navtransdemo`（**48 条断言**）—— Free 联动的三个插值点与端点通知、
+Full 对照组不触发、common 的淡出/缩小数值、builder 只收高度、push/pop 转场的运行记录与样式标记、
+animated=false 与 disableAnimation 的"不滑"对照。双端通过。
+
+**破坏验证（3 处）**：联动入口 return → **13 红**；动画全关 → **6 红**；端点 `p>=1`→`p>1` → **5 红**
+（全是通知、插值一条不红——几何与通知两条链互相独立）。还原后 md5 一致。
+
+**已知限制**：时长/曲线/阈值/缩放比是**推断**；`customNavContentTransition`、
+`enableModeChangeAnimation`（单↔分栏切换动画，API 15）、`onNavBarStateChange` 未实现（记警告）；
+`edgeEffect` 弹性不模拟（不足一屏滚不动，联动无从发生——`.d.ts` 主场景就是超一屏）。
+
+**触及**：`runtime/src/main.js`（nav 节：`navSlidePush`/`navPopAnimated`/`navWantAnim`/
+`navOnContentScroll`/`navCollapseAllowed` + `NAV_ATTRS.onTitleModeChange` + `pop`/`popToName`/
+`popToIndex` 重载 + `__arkui_dom_navTrans`）、`fixtures/pages/NavTransDemo.ts`、
+`harmony-proj/`（`NavTransDemo.ets` + main_pages.json）、`test/navtransdemo.html`、
+`run.sh`、`electron/run.sh`
 
 ---
 

@@ -19,3 +19,6 @@ npm-debug.log*
 *.log
 *.tmp
 .DS_Store
+
+# ── 安全扫描插件的产物（mimosa，非项目文件）──
+.mimosa/

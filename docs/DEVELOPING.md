@@ -433,6 +433,9 @@ node tools/extract.mjs fixtures/pages/NewPage.ts build/newpage.js --cjs --regist
 
 | 85 | **builder 产物不一定是你以为的"直接子节点"**：`PageMap` 这类 `navDestination` builder 里的 `if/else`，编译后会生成 `If` 包装层（`display:contents`）——每个 `if` 分支一层。`navBuildDest` 原来用 `area.lastElementChild` 认领"刚建出来的目的地"，遇到带 `if` 的 builder 拿到的是 `If` 元素 → 判成"没建出来"→ **把栈项回滚掉**。结果是：目的地节点在页面上看得见，栈却是空的，push 再点返回键就再也回不去。旧的 NavDemo 恰好没有 `if` 分支，这个坑埋了三代版本 | ① 认领"刚建出来的东西"用**标记**而不是位置：建之前把已有的标记清掉、建的时候打 `__arkuiNavNew = true`、建完找带标记的那个（`querySelectorAll` + `find`），对"孙子辈"天然免疫；② 同理，"在不在某个容器里"要**向上找祖先**，不能只看 `parentElement`；③ 测量页要故意用**会让结构变复杂的写法**（多个 `if` 分支）——旧的测量页写得太"乖"，等于替实现掩盖了它对结构的假设。**判据：这段代码依赖"X 是 Y 的直接子节点/最后一个子节点"吗？builder 产物没有这种保证** |
 
+| 86 | **属性分发里"通用 `on*` 事件规则"会抢走组件的事件类属性**：`.onTitleModeChange(cb)` 的产物是 `Navigation.onTitleModeChange((m) => …)` —— 函数值属性。而 `applyAttr` 的分发顺序是「NavDestination 生命周期 → **通用规则：函数值 = `prop.replace(/^on/,'').toLowerCase()` 加 DOM 监听** → 组件属性表」；`onTitleModeChange` 在组件属性表（`NAV_ATTRS`）里，但根本轮不到它查 —— cb 被挂成 `addEventListener('titlemodechange')`，**永远没人派发**，而"属性应用成功"没有任何征兆（R25 首跑 48 条里 3 条红，红的全是回调没发） | 组件的**事件类属性必须在通用 `on*` 规则之前**拦下（`NAVDEST_LIFECYCLE` 就是这么活的，`onTitleModeChange` 照抄）；每加一个"由运行时派发而非 DOM 事件"的回调，先在分发函数里确认它走得通。**判据：这个属性是函数值吗？它该由谁派发——DOM 事件，还是运行时状态机？后者就必须绕开通用规则** |
+| 87 | **`@State` 写了 ≠ DOM 已经变了**：`onTitleModeChange` 的回调里 `this.log = this.log + 'TMC2;'`，回调发完立刻 `txt('tmc-log')` 读到的是**旧字符串**——状态写入到 `Text` 重渲染之间隔着批量渲染调度。首版测试三条回调断言全红，红因不是回调没发（后续断言证明 log 确实在涨），而是**读得太早**。它与坑 ⑧ 同族：都是"驱动何时生效"的时序假设 | 测断言读的是**渲染结果**（DOM 文本/样式）还是**同步几何**（`syncOneNav` 直写 style 的）？前者断言前 `await tick()`，后者可以立即读。**判据：我读的这个值走没走"状态 → 批量重渲染"这条异步链？走了就必须 tick** |
+
 ### 确定性与时序
 
 | # | 陷阱 | 正确做法 |
