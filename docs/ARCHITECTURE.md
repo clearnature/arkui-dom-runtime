@@ -1521,10 +1521,15 @@ minContentWidth 360，`.d.ts` 原文；用组件宽度而不是窗口宽度，�
 pages 段——子组件挂载晚于容器，且重渲染会把子项重新挂回根上，所以每次汇入都重定位。
 label 汇入导航条：`goTo(i)` 时读 `items[i].dataset.prevLabel/nextLabel`，缺省回退 ‹/›。
 
-**派发语义**（`.d.ts` 原文）：导航条点击 → `fireNext`/`firePrev`。next：当前页
-`status === ItemState.Skip` → `onSkip()`；当前页是最后一页且 Normal → `onFinish()`；其余 →
-`onNext(index, index+1)`；随后 `goTo` 切页并发 `onChange(prev, index)`——**只在索引真变时发**
-（初始汇入也走 `goTo(0)`，不算切换）。回调经 `el.__stepCbs` 闭包间接引用（覆盖语义，坑 88 同族）。
+**派发语义**（R39 起以真机源码为准：ace_engine `stepper_pattern.cpp`
+`HandlingRight/LeftButtonClickEvent`；`.d.ts` JSDoc 只给签名不给时序，坑 94）：
+右键——当前页 Skip → 只发 `onSkip()`，**不切页、不发 onChange**（去向由 app 决定）；末页
+Normal → 只发 `onFinish()`，同样不切页；Normal 非末页 → **先 `onChange(index, index+1)` 再
+`onNext(index, index+1)`**，然后才切页；Waiting/Disabled/未知 → 点击整体忽略。左键——先
+`onChange(index, clamp(index-1, 0, max))` 再 `onPrevious`，然后切页（第 0 页点 prev 也发
+change(0,0)+prev(0,0)，clamp 的怪边界，照抄）。编程改 index 走 swiper 桥**静默切页**
+（`InitSwiperChangeEvent` 只更新按钮与 index）。回调经 `el.__stepCbs` 闭包间接引用（覆盖
+语义，坑 88 同族）。
 
 **两个坑**：① `ItemState` 的枚举值必须按 `.d.ts` 声明顺序 `{Normal:0, Disabled:1, Waiting:2,
 Skip:3}`——产物把 `ItemState.Skip` 原样留给运行时求值（与 `FlexDirection` 等"挂 global"模式同），
@@ -1670,16 +1675,16 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   fixtures 转换产物  43 个：AnimDemo AsyncIO Callee CanvasDemo Detail DrawDemo GestureDemo GestureGroupDemo Home Index InputDemo Layout Lazy LazyVar MeasArea MeasImage MeasNotify Measure MediaDemo NavBarDemo NavDemo NavTransDemo NetFile Observe PopDemo PromptAct Provide QrDemo RelDemo Rich ShapeDemo ShowDemo SmallDemo StepDemo SwiperDemo TabsGrid TextDemo TextMeasure TransitionDemo UiContextDemo V2 Widgets XCompDemo
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          506.9 KB
-  runtime(src)     331.3 KB
-  test             603.2 KB
+  runtime          507.7 KB
+  runtime(src)     332.1 KB
+  test             604.1 KB
   tools            56.5 KB
   electron(src)    22.1 KB
-  docs             421.9 KB
+  docs             425.3 KB
   fixtures         338.8 KB
 
 == 逐文件（文档"文件职责"表的来源）==
-  runtime/arkui-dom-runtime.js        333938 B  326.1 KB
+  runtime/arkui-dom-runtime.js        334754 B  326.9 KB
   runtime/generated-components.js      57617 B  56.3 KB
   runtime/ohos-shims.js                61848 B  60.4 KB
   tools/extract.mjs                     6563 B  6.4 KB
@@ -1696,12 +1701,12 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   electron/preload.js                   1961 B  1.9 KB
   package.json                          1366 B  1.3 KB
   .gitignore                             757 B  0.7 KB
-  README.md                           132406 B  129.3 KB
+  README.md                           134605 B  131.5 KB
   THIRD-PARTY-NOTICES.md                9672 B  9.4 KB
-  docs/ARCHITECTURE.md                143582 B  140.2 KB
-  docs/CAPABILITY.md                   48205 B  47.1 KB
-  docs/DEVELOPING.md                   63522 B  62.0 KB
-  docs/ROADMAP.md                     109572 B  107.0 KB
+  docs/ARCHITECTURE.md                144446 B  141.1 KB
+  docs/CAPABILITY.md                   48428 B  47.3 KB
+  docs/DEVELOPING.md                   64310 B  62.8 KB
+  docs/ROADMAP.md                     111223 B  108.6 KB
   docs/surface-measurement.md           6496 B  6.3 KB
   docs/SESSION-2026-09-20.md           12842 B  12.5 KB
   runtime/src/ability.js                9225 B  9.0 KB
@@ -1718,7 +1723,7 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   runtime/src/runtime.d.ts              5042 B  4.9 KB
   runtime/src/shape.js                  7206 B  7.0 KB
   runtime/src/show.js                  16091 B  15.7 KB
-  runtime/src/small.js                 10830 B  10.6 KB
+  runtime/src/small.js                 11646 B  11.4 KB
   runtime/src/v2.js                    12577 B  12.3 KB
   fixtures/pages/AnimDemo.ts            6451 B  6.3 KB
   fixtures/pages/AsyncIO.ts             6206 B  6.1 KB
@@ -1799,7 +1804,7 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   test/shapedemo.html                   9951 B  9.7 KB
   test/showdemo.html                    8019 B  7.8 KB
   test/smalldemo.html                   5299 B  5.2 KB
-  test/stepdemo.html                    8813 B  8.6 KB
+  test/stepdemo.html                    9752 B  9.5 KB
   test/swiper.html                      9177 B  9.0 KB
   test/tabgrid.html                    10096 B  9.9 KB
   test/textdemo.html                    5921 B  5.8 KB
@@ -1890,6 +1895,12 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
 - `README.md` —— 快速开始
 
 ## 9. 外部依赖与参考
+
+- **OpenHarmony 真机源码树**：`/data/work/compiler/Ark`（只读参考，不构建）。语义与事件时序的
+  权威是 `arkui_ace_engine/frameworks/core/components_ng/pattern/<组件>/`（C++ pattern）；
+  `arkui_qrcodegen` 是真机 QRCode 的编码器（R33 我们移植 node-qrcode，可对照）；
+  `arkcompiler_ets_runtime` 是 R24 ArkVM 调研的对象本体。R39 起，凡标"推断"的组件语义，
+  优先到这里对照清账。
 
 | 依赖 | 位置 | 说明 |
 |---|---|---|

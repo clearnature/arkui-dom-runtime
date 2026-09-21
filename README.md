@@ -1162,24 +1162,52 @@ decoration 红（fontColor/fontSize 走的是样式层也变红，但内联文�
 
 **实现**：`StepperItem` → 隐藏 div（`data-stepper-item`）；`Stepper` → 内置导航条
 （prev/pages/next），子项在渲染后同步阶段汇入 pages 段，label 汇入导航条文案（缺省回退
-‹/›）。派发语义照 `.d.ts`：**当前页 Skip → onSkip；最后一页 Normal → onFinish；其余 →
-onNext(index, index+1)**，切换后发 `onChange(prev, index)`（索引真变了才发，初始汇入不算）。
+‹/›）。派发语义 ~~照 `.d.ts` 推断~~ **R39 照真机源码纠偏**（ace_engine
+`stepper_pattern.cpp` 的 `HandlingRight/LeftButtonClickEvent`）：**先 `onChange(index, pending)`
+再 `onNext`/`onPrevious`**；Skip 页点 next 只发 onSkip、**不切页**；末页 Normal 只发 onFinish、
+不切页；Waiting/Disabled 点 next 整体忽略；编程改 index 静默切页（swiper 桥不转发事件）。
 **`ItemState` 枚举值按声明顺序 `{Normal:0, Disabled:1, Waiting:2, Skip:3}`**——产物把
 `ItemState.Skip` 原样留给运行时求值，照抄"想当然"的值（0/1/2）会让 onSkip 永不触发。
 
 ```
 $ bash run.sh stepdemo
-=== ALL PASS ===                    （25 条断言，双端同数；R38 扩到 25）
+=== ALL PASS ===                    （26 条断言，双端同数；R37 时 16，R39 照真机纠偏后 26）
 PASS 结构：三页汇入 pages 段／首页可见／导航条存在／label 汇入（back0/next0）
 PASS 注册面：onChange/onNext/onPrevious/onSkip/onFinish 各一条
-PASS 派发链：点 next → NEXT0,1;CHG0>1; → Skip 页 → SKIP;CHG1>2; → 末页 → FIN;
-            → prev → PREV2,1;CHG2>1;
-PASS 导航边界（R38）：go(99)/go(-1) 越界拒绝／编程跳页派发 onChange(1,2)／缺省 label 回退 ‹/›
+PASS 派发链（R39 真机时序）：点 next → CHG0>1;NEXT0,1;（onChange 先发）→ Skip 页 →
+            只发 SKIP; 不切页 → 末页 → 只发 FIN; 不切页 → prev → CHG2>1;PREV2,1;
+PASS 导航边界（R38）：go(99)/go(-1) 越界拒绝／编程跳页静默不发事件／缺省 label 回退 ‹/›
 PASS 多实例与状态族（R38）：路由外 DSL 建第二台 Stepper／Waiting/Disabled 落 data-status
-            （'2,1'，枚举序）／onChange 注册两次覆盖语义（坑 88 同族）／Waiting 页放行
-            onNext（限制已记录）／sp1 索引不受 sp2 影响
+            ／onChange 注册两次覆盖语义（坑 88 同族）／Waiting 页点 next 被忽略（真机语义）
+            ／sp1 索引不受 sp2 影响
 PASS 回归：Stepper.* 不再记"未实现"警告
 ```
+
+## R39：语义纠偏——对照 OpenHarmony 真机源码 ✅
+
+**参考仓库**：`/data/work/compiler/Ark`（完整 OpenHarmony 树，54 个子系统，5.4G）。对本项目
+最有价值的三个：`arkui_ace_engine`（真机 ArkUI 框架，`frameworks/core/components_ng/pattern/`
+下每个组件的 C++ pattern 是**语义与事件时序的权威**）、`arkui_qrcodegen`（真机 QRCode 组件的
+编码器源码，R33 我们移植的是 node-qrcode，可对照）、`arkcompiler_ets_runtime`（R24 ArkVM
+调研的对象本体）。
+
+**纠偏内容（Stepper）**：R37 按 `.d.ts` JSDoc 实现的派发时序与真机源码有**三处分歧**，本轮全部
+对齐——①顺序：真机**先 FireChangeEvent 再 FireNextEvent**（我们原先反了）；②Skip 页：真机只
+FireSkipEvent、**不切页不发 onChange**（页面去向由 app 决定；我们原先自动前进并补发 onChange）；
+③Waiting/Disabled：真机点击**整体忽略**（我们原先按 Normal 放行）。另外确认：末页 onFinish
+也不切页；prev 的 pendingIndex 经 `clamp(index-1, 0, maxIndex)`（第 0 页点 prev 会发
+change(0,0)+prev(0,0)，照抄）；编程改 index 走 swiper 桥**静默切页**。
+
+**教训（新坑 94）**：`.d.ts` JSDoc 只给**签名**（参数、默认值），不给**时序**（事件先后、
+要不要切页、边界态如何分流）——后者必须读真机 pattern 源码。R37 的实现"每条都符合 JSDoc"，
+但整条链路的顺序是错的。
+
+**验收**：`bash run.sh stepdemo`（26 条断言）双端通过。**破坏验证（3 处，各 1 红）**：顺序反转
+→ 派发链断言红；Skip 页误切页 → onSkip 组红；Waiting 放行 → 忽略断言红。还原后 md5 一致。
+
+**触及**：`runtime/src/small.js`（fireNext/firePrev/goTo 照真机重写）、`test/stepdemo.html`
+（期望值改真机时序，16→26 条）、五文档、`.reasonix/handoff.md`
+
 
 **破坏验证**（3 处）：① STEP 分派短路 → **9 红**（注册面 5 + 派发链 4）；② XC 分派短路 →
 **1 红**（通用 data-* 落点走 `JSON.stringify`，导航条文案带引号 `"back0"` 现形）；

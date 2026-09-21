@@ -71,31 +71,36 @@
         check(typeof cbs.finish === 'function', `onFinish 已注册`);
       });
 
-      // ══════════ ②b 派发链路：点导航条 → 事件按 .d.ts 原文派发 ══════════
+      // ══════════ ②b 派发链路（R39 照真机源码时序）：先 onChange 再 onNext/onPrevious；
+      // Skip 页只发 onSkip 不切页；末页只发 onFinish；编程改 index 静默 ══════════
       await group('onNext·onChange', async () => {
         click('[data-arkui-stepper-next]');
         await tick(40);
-        check(txt('st-log') === 'NEXT0,1;CHG0>1;', `点 next → onNext(0,1)+onChange(0,1)（log='${txt('st-log')}'）`);
+        check(txt('st-log') === 'CHG0>1;NEXT0,1;', `点 next → onChange(0,1) 先发、onNext(0,1) 后发（log='${txt('st-log')}'）`);
       });
       await group('onSkip', async () => {
         click('[data-arkui-stepper-next]');
         await tick(40);
-        check(txt('st-log').includes('SKIP;') && txt('st-log').includes('CHG1>2;'),
-          `Skip 页点 next → onSkip+onChange(1,2)（log='${txt('st-log')}'）`);
+        check(txt('st-log').endsWith('SKIP;') && el('sp1').__arkuiStepperIndex === 1,
+          `Skip 页点 next → 只发 onSkip，不切页不发 onChange（log 尾='${txt('st-log').slice(-6)}'，idx=${el('sp1').__arkuiStepperIndex}）`);
       });
       await group('onFinish', async () => {
+        el('sp1').__arkuiStepperGo(2);          // skip 页不自动前进：编程跳到末页（真机 swiper 桥静默）
+        await tick(20);
+        const before = txt('st-log');
         click('[data-arkui-stepper-next]');
         await tick(40);
-        check(txt('st-log').includes('FIN;'), `最后一页 Normal 点 next → onFinish（log='${txt('st-log')}'）`);
+        check(txt('st-log') === before + 'FIN;' && el('sp1').__arkuiStepperIndex === 2,
+          `末页 Normal 点 next → 只发 onFinish，不切页（log 尾='${txt('st-log').slice(-4)}'，idx=${el('sp1').__arkuiStepperIndex}）`);
       });
       await group('onPrevious', async () => {
         click('[data-arkui-stepper-prev]');
         await tick(40);
-        check(txt('st-log').includes('PREV2,1;') && txt('st-log').includes('CHG2>1;'),
-          `prev → onPrevious(2,1)+onChange(2,1)（log='${txt('st-log')}'）`);
+        check(txt('st-log').endsWith('CHG2>1;PREV2,1;') && el('sp1').__arkuiStepperIndex === 1,
+          `prev → onChange(2,1) 先发、onPrevious(2,1) 后发，切到页 1（log 尾='${txt('st-log').slice(-16)}'）`);
       });
 
-      // ══════════ ②c 导航边界：越界拒绝 + 缺省 label 回退 + 编程跳页派发 ══════════
+      // ══════════ ②c 导航边界：越界拒绝 + 编程跳页静默 + 缺省 label 回退 ══════════
       await group('导航边界', async () => {
         const sp = el('sp1');
         sp.__arkuiStepperGo(99);
@@ -104,10 +109,11 @@
         sp.__arkuiStepperGo(-1);
         await tick(20);
         check(sp.__arkuiStepperIndex === 1, `go(-1) 越界拒绝（idx=${sp.__arkuiStepperIndex}）`);
+        const before = txt('st-log');
         sp.__arkuiStepperGo(2);
         await tick(20);
-        check(sp.__arkuiStepperIndex === 2 && txt('st-log').endsWith('CHG1>2;'),
-          `编程跳页 go(2) → onChange(1,2)（idx=${sp.__arkuiStepperIndex}，log 尾='${txt('st-log').slice(-8)}'）`);
+        check(sp.__arkuiStepperIndex === 2 && txt('st-log') === before,
+          `编程跳页 go(2) 静默切页不发事件（真机 swiper 桥只更新 index，idx=${sp.__arkuiStepperIndex}）`);
         check(sp.querySelector('[data-arkui-stepper-prev]').textContent === '‹'
           && sp.querySelector('[data-arkui-stepper-next]').textContent === '›',
           `无 label 的页回退缺省文案 ‹/›（'${sp.querySelector('[data-arkui-stepper-prev]').textContent}'/'${sp.querySelector('[data-arkui-stepper-next]').textContent}'）`);
@@ -123,7 +129,9 @@
         Stepper.onChange(() => { mark += 'B'; });
         Stepper.onNext((i, p) => { nextTrace += i + '>' + p + ';'; });
         StepperItem.create();
-        StepperItem.nextLabel('W-next');
+        StepperItem.nextLabel('N-next');
+        StepperItem.pop();
+        StepperItem.create();
         StepperItem.status(ItemState.Waiting);
         StepperItem.pop();
         StepperItem.create();
@@ -132,17 +140,21 @@
         Stepper.pop();
         await tick(60);
         const sp2 = el('sp2');
-        check(!!sp2 && sp2.querySelectorAll('[data-stepper-item]').length === 2,
-          `路由外 DSL 建第二台 Stepper（2 页，与 sp1 互不影响）`);
+        check(!!sp2 && sp2.querySelectorAll('[data-stepper-item]').length === 3,
+          `路由外 DSL 建第二台 Stepper（3 页，与 sp1 互不影响）`);
         const statuses = [...sp2.querySelectorAll('[data-stepper-item]')]
           .map((m) => m.dataset.status).join(',');
-        check(statuses === '2,1',
-          `ItemState.Waiting/Disabled 按声明顺序落 data-status（'${statuses}'，枚举序 Normal/Disabled/Waiting/Skip）`);
+        check(statuses === ',2,1',
+          `ItemState.Waiting/Disabled 按声明顺序落 data-status（'${statuses}'，枚举序 Normal/Disabled/Waiting/Skip，未设为空）`);
         click('#sp2 [data-arkui-stepper-next]');
         await tick(40);
         check(mark === 'B', `onChange 注册两次 → 覆盖语义只留后一个（mark='${mark}'，坑 88 同族）`);
         check(nextTrace === '0>1;' && sp2.__arkuiStepperIndex === 1,
-          `Waiting 页点 next 放行 onNext(0,1)（CAPABILITY 记录的限制：Waiting 无 loading 形态）`);
+          `Normal 页点 next → onChange 先、onNext(0,1) 后，切到页 1（trace='${nextTrace}'）`);
+        click('#sp2 [data-arkui-stepper-next]');
+        await tick(40);
+        check(sp2.__arkuiStepperIndex === 1 && nextTrace === '0>1;' && mark === 'B',
+          `Waiting 页点 next 被忽略（真机语义；idx=${sp2.__arkuiStepperIndex}，trace/onChange 不变）`);
         check(el('sp1').__arkuiStepperIndex === 2,
           `sp1 索引不受 sp2 导航影响（idx=${el('sp1').__arkuiStepperIndex}）`);
       });

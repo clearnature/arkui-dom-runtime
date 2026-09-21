@@ -735,16 +735,13 @@ LoadingProgress → CSS spinner（color → currentColor）；Blank → flex:1 +
 **实现**：`runtime/src/small.js` 追加。`StepperItem` → div（`data-stepper-item`，初始隐藏）；
 `Stepper` → 内置导航条（prev / pages / next 三段，`:scope > [data-stepper-item]` 在渲染后
 同步阶段移进 pages 段）；label 汇入导航条文案（goTo 时读 `dataset.prevLabel/nextLabel`，
-没有则回退 ‹/›）；导航条点击派发：**当前页 status=Skip → onSkip；最后一页 Normal →
-onFinish；其余 → onNext(index, index+1)**；切换后派发 `onChange(prev, index)`——只在索引
-真的变了才发（初始汇入也走 goTo，不算切换）。**`ItemState` 枚举值按 `.d.ts` 声明顺序**
+没有则回退 ‹/›）；~~导航条点击派发按 .d.ts JSDoc 推断~~ → **R39 照真机源码纠偏**（见下节）。**`ItemState` 枚举值按 `.d.ts` 声明顺序**
 `{Normal:0, Disabled:1, Waiting:2, Skip:3}`——产物把 `ItemState.Skip` 原样留给运行时求值，
 值错了 onSkip 永远不触发（坑 83 的枚举两套来源又现形）。`area.js` 分发链加两级：
 `STEP_ATTRS`（五事件）+ `XC_ITEM_ATTRS`（label/status，含 closest 向 Stepper 回报重汇入）。
 
-**验收**：`bash run.sh stepdemo`（~~16 条~~ → **R38 扩到 25 条**：结构 6 + 注册面 5 +
-派发链 4 + 导航边界 4 + 多实例与状态族 5 + 回归 1）双端通过。**破坏验证（3 处）**：STEP 分派
-短路 → **9 红**（注册 5 + 派发 4）；
+**验收**：`bash run.sh stepdemo`（~~16 条~~ → **R39 照真机纠偏后 26 条**）双端通过。**破坏
+验证（3 处）**：STEP 分派短路 → **9 红**（注册 5 + 派发 4）；
 XC 分派短路 → **1 红**（label 断言现形——通用 data-* 落点是 `JSON.stringify`，导航条出现
 `"back0"` 带引号）；Skip 语义短路 → **1 红**（Skip 页错走 onNext）。还原后 md5 一致。
 
@@ -779,6 +776,32 @@ textdemo onSubmit 断言升级端到端。**破坏验证（3 处）**：越界�
 **触及**：`runtime/src/runtime.d.ts`（新）、`tsconfig.check.json`（新）、`tools/typecheck.mjs`（新）、
 `tools/check-all.sh`（+1 步）、`package.json`、12 个源分片（JSDoc 注解）、
 `test/{stepdemo,inputdemo,textdemo}.html`、五文档
+
+### R39 — 语义纠偏：对照 OpenHarmony 真机源码 ✅（2026-09-21）
+
+**参考仓库**：`/data/work/compiler/Ark`（完整 OHOS 树，54 个子系统）。权威出处：
+`arkui_ace_engine/frameworks/core/components_ng/pattern/stepper/stepper_pattern.cpp` 的
+`HandlingRightButtonClickEvent()` / `HandlingLeftButtonClickEvent()` / `InitSwiperChangeEvent()`。
+
+**Stepper 三处分歧全部对齐**：① **顺序**——真机先 `FireChangeEvent(index, pending)` 再
+`FireNextEvent`/`FirePreviousEvent`（我们原先 next/prev 在前）；② **Skip 页**——只发
+onSkip，**不切页、不发 onChange**（页面去向由 app 决定；我们原先自动前进并补发 onChange）；
+③ **Waiting/Disabled**——点击整体忽略（我们原先按 Normal 放行）。同时确认：末页 onFinish
+也不切页；prev 的 pending 经 `clamp(index-1, 0, maxIndex)`（第 0 页点 prev 也发
+change(0,0)+prev(0,0)，照抄）；编程改 index 走 swiper 桥**静默切页**（`InitSwiperChangeEvent`
+的回调只更新按钮与 index，不转发事件）。
+
+**教训（新坑 94）**：`.d.ts` JSDoc 只给**签名**（参数、默认值），不给**时序**（事件先后、
+切不切页、边界态如何分流）——后者必须读真机 pattern 源码。R37 的实现"每条都符合 JSDoc"，
+但整条链路的顺序是错的。`pattern/` 目录覆盖我们已实现的全部组件，后续逐个对照可再清一批
+"推断"标注。
+
+**验收**：`bash run.sh stepdemo`（26 条断言）双端通过。**破坏验证（3 处，各 1 红）**：顺序
+反转 → 派发链断言红；Skip 页误切页 → onSkip 组红；Waiting 放行 → 忽略断言红。还原后
+md5 一致。
+
+**触及**：`runtime/src/small.js`（fireNext/firePrev/goTo 照真机重写）、`test/stepdemo.html`
+（期望值改真机时序）、五文档、`.reasonix/handoff.md`
 
 ---
 

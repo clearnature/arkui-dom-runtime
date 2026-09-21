@@ -5678,45 +5678,53 @@
     el.appendChild(prev);
     el.appendChild(pages);
     el.appendChild(next);
-    // 派发（.d.ts 原文语义）：走 wrapper 闭包引用 __stepCbs（覆盖语义，重渲染重挂安全）
+    // 派发（R39 照真机源码 ace_engine stepper_pattern.cpp 的 HandlingRight/LeftButtonClickEvent）：
+    // · 右键：当前页 skip → 只发 onSkip，【不切页、不发 onChange】（去向由 app 决定）；
+    //   normal 末页 → 只发 onFinish，同样不切页；normal 非末页 → 先 onChange(index, index+1)
+    //   【再】onNext(index, index+1)，然后才切页；waiting/disabled/未知 → 点击整体忽略
+    // · 左键：先 onChange(index, clamp(index-1)) 再 onPrevious(index, clamp(index-1))，然后切页
+    //   （clamp 下界 0：真机在第 0 页点 prev 也会发 change(0,0)+prev(0,0)，此处照抄）
+    // · 编程改 index（swiper 桥）只切页，不发 Stepper 事件 —— goTo 是纯切页
+    // 回调走 wrapper 闭包引用 __stepCbs（覆盖语义，重渲染重挂安全）；.d.ts 只给了签名，
+    // 时序与切页行为以真机源码为准（坑 94）
     // @type 档位：querySelectorAll 返回 NodeListOf<Element>，而 style/dataset 在 HTMLElement 上
     const fireNext = () => {
       const items = /** @type {NodeListOf<HTMLElement>} */ (el.querySelectorAll('[data-stepper-item]'));
-      const cur = items[/** @type {number} */ (el.__arkuiStepperIndex)];
+      const idx = /** @type {number} */ (el.__arkuiStepperIndex);
+      const cur = items[idx];
       const curStatus = cur ? Number(cur.dataset.status || 0) : 0;
-      if (el.__stepCbs) {
-        if (curStatus === ItemState.Skip) {
-          if (typeof el.__stepCbs.skip === 'function') { try { el.__stepCbs.skip(); } catch (e) { layoutWarnings.push(`onSkip 抛错：${e && e.message}`); } }
-        } else if (/** @type {number} */ (el.__arkuiStepperIndex) >= items.length - 1) {
-          if (typeof el.__stepCbs.finish === 'function') { try { el.__stepCbs.finish(); } catch (e) { layoutWarnings.push(`onFinish 抛错：${e && e.message}`); } }
-        } else if (typeof el.__stepCbs.next === 'function') {
-          try { el.__stepCbs.next(/** @type {number} */ (el.__arkuiStepperIndex), /** @type {number} */ (el.__arkuiStepperIndex) + 1); }
-          catch (e) { layoutWarnings.push(`onNext 抛错：${e && e.message}`); }
-        }
+      const cbs = el.__stepCbs;
+      if (curStatus === ItemState.Skip) {
+        if (cbs && typeof cbs.skip === 'function') { try { cbs.skip(); } catch (e) { layoutWarnings.push(`onSkip 抛错：${e && e.message}`); } }
+        return;
       }
-      goTo(/** @type {number} */ (el.__arkuiStepperIndex) + 1);
+      if (curStatus !== ItemState.Normal) return;
+      if (idx >= items.length - 1) {
+        if (cbs && typeof cbs.finish === 'function') { try { cbs.finish(); } catch (e) { layoutWarnings.push(`onFinish 抛错：${e && e.message}`); } }
+        return;
+      }
+      if (cbs && typeof cbs.change === 'function') { try { cbs.change(idx, idx + 1); } catch (e) { layoutWarnings.push(`Stepper.onChange 抛错：${e && e.message}`); } }
+      if (cbs && typeof cbs.next === 'function') { try { cbs.next(idx, idx + 1); } catch (e) { layoutWarnings.push(`onNext 抛错：${e && e.message}`); } }
+      goTo(idx + 1);
     };
     const firePrev = () => {
-      if (el.__stepCbs && typeof el.__stepCbs.prev === 'function') {
-        try { el.__stepCbs.prev(/** @type {number} */ (el.__arkuiStepperIndex), /** @type {number} */ (el.__arkuiStepperIndex) - 1); }
-        catch (e) { layoutWarnings.push(`onPrevious 抛错：${e && e.message}`); }
-      }
-      goTo(/** @type {number} */ (el.__arkuiStepperIndex) - 1);
+      const items = /** @type {NodeListOf<HTMLElement>} */ (el.querySelectorAll('[data-stepper-item]'));
+      const idx = /** @type {number} */ (el.__arkuiStepperIndex);
+      const p2 = Math.max(0, idx - 1);
+      const cbs = el.__stepCbs;
+      if (cbs && typeof cbs.change === 'function') { try { cbs.change(idx, p2); } catch (e) { layoutWarnings.push(`Stepper.onChange 抛错：${e && e.message}`); } }
+      if (cbs && typeof cbs.prev === 'function') { try { cbs.prev(idx, p2); } catch (e) { layoutWarnings.push(`onPrevious 抛错：${e && e.message}`); } }
+      goTo(p2);
     };
+    // 纯切页：显隐 + label 汇入 + index 更新，不发任何事件（与真机 swiper 桥一致）
     const goTo = (i) => {
       const items = /** @type {NodeListOf<HTMLElement>} */ (el.querySelectorAll('[data-stepper-item]'));
       if (i < 0 || i >= items.length) return;
-      const p = el.__arkuiStepperIndex;
       items.forEach((m, k) => { m.style.display = k === i ? 'block' : 'none'; });
       el.__arkuiStepperIndex = i;
       // 导航条文案随子项 label 汇入
       prev.textContent = (items[i] && items[i].dataset.prevLabel) || '‹';
       next.textContent = (items[i] && items[i].dataset.nextLabel) || '›';
-      // onChange 只在索引真的切换时派发（初始汇入 syncStepper 也走 goTo，不算切换）
-      if (p !== i && el.__stepCbs && typeof el.__stepCbs.change === 'function') {
-        try { el.__stepCbs.change(p, i); }
-        catch (e) { layoutWarnings.push(`Stepper.onChange 抛错：${e && e.message}`); }
-      }
     };
     el.__arkuiStepperGo = goTo;
     // 初始显隐 + label 汇入：StepperItem 挂在根上（与 prev/pages/next 并列）——汇入时
