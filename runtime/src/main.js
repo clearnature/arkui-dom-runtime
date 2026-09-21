@@ -497,6 +497,14 @@
     if (typeof a.space === 'number') node.style.gap = a.space + 'px';
     // Stack({alignContent}) 是【create 选项】而非属性 setter —— 这条路径容易漏（踩过）
     if (a.alignContent !== undefined) applyAlignment(node, a.alignContent);
+    // Flex({direction/wrap/justifyContent/alignItems}) 是【create 选项】（R36 实测）——
+    // 与 CSS 同名对齐（取值层已对齐 CSS 关键字，透传即可）
+    if (node.__arkuiComp === 'Flex') {
+      if (a.direction !== undefined) node.style.flexDirection = String(resolveResource(a.direction));
+      if (a.wrap !== undefined) node.style.flexWrap = String(resolveResource(a.wrap));
+      if (a.justifyContent !== undefined) node.style.justifyContent = String(resolveResource(a.justifyContent));
+      if (a.alignItems !== undefined) node.style.alignItems = String(resolveResource(a.alignItems));
+    }
   }
 
   // 生成组件的"原生控件参数"映射：把 create({...}) 的常用键落到真实控件属性上
@@ -1480,6 +1488,8 @@
 
   // @include canvas
 
+  // @include small
+
   // ── 由 tools/gen-components.mjs 生成的 149 个组件骨架 ──
   // 手写实现（上面那些，已被测试覆盖）优先；生成的只补缺口。
   // 骨架保证"能建出正确的 DOM 标签 + 基础样式"，精细化布局语义按需手补（见 docs）。
@@ -1684,6 +1694,13 @@
     QRCode,
     // R34：输入收官。EnterKeyType 是产物里的自由变量枚举
     TextInput, TextArea, Search, Hyperlink, TextInputController, TextInputControllerBase, EnterKeyType,
+    // R36：小件收官。FlexDirection/FlexAlign/ItemAlign/TextDecorationType 已在安装全局（R2）
+    Flex, Span, LoadingProgress, Blank,
+    // R36 补：FlexDirection/TextDecorationType 在产物里也是自由变量枚举（此前产物没引用，
+    // 本轮起挂 global）。成员与值照 .d.ts 声明顺序：Row=0/Column=1/RowReverse=2/ColumnReverse=3；
+    // None=0/Underline=1/Overline=2/LineThrough=3
+    FlexDirection: { Row: 'row', Column: 'column', RowReverse: 'row-reverse', ColumnReverse: 'column-reverse' },
+    TextDecorationType: { None: 'none', Underline: 'underline', Overline: 'overline', LineThrough: 'line-through' },
     __Common__: _CommonWrapper,
     FontWeight, VerticalAlign, HorizontalAlign, FlexAlign, TextAlign, ItemAlign, Color,
     TextOverflow, Alignment, Scroller, Axis,

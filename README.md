@@ -1112,6 +1112,51 @@ data URI 恒 -1（无真实解码）；`seek` 的 offset/`SubmitEvent` 类语义
 `harmony-proj/`（MediaDemo.ets + main_pages.json）、`test/mediademo.html`、
 `run.sh`、`electron/run.sh`
 
+**触及**：`runtime/ohos-shims.js`（multimedia.media 垫片，第 15 个平台模块）、
+`electron/main.js`（autoplay-policy 放行）、`fixtures/pages/MediaDemo.ts`、
+`harmony-proj/`（MediaDemo.ets + main_pages.json）、`test/mediademo.html`、
+`run.sh`、`electron/run.sh`
+
+## R36：小件收官 `Flex` / `Span` / `LoadingProgress` / `Blank` ✅
+
+**测量**（新增 `pages/SmallDemo.ets` → 官方构建）实测形态：`Flex.create({direction,
+justifyContent, alignItems, wrap})` 是 **create 选项**（与 CSS 同名对齐，取值层已把枚举值
+对齐成 CSS 关键字，透传即可）；`Span.create('…')` 是 **Text 的内联子段**（Text 栈内挂 span）；
+`LoadingProgress.color` → spinner 的 currentColor；`Blank.color` → 空白背景。
+
+**实现**（新分片 `runtime/src/small.js`，第 15 个，手写优先）：Flex → display:flex 直落 +
+applyCreateArgs 的 Flex 分支（create 参数在组件创建时落 CSS——属性应用时的 span 栈还没有
+子节点，几何在渲染后由浏览器布局给出）；Span = span 元素 + 字体属性落自身
+（fontColor/fontSize/decoration——decoration 的枚举值就是 CSS 关键字，挂 global 后直接
+透传）；LoadingProgress → CSS spinner（`border-top-color: transparent` 的圆环 + rotate
+动画，`color` → currentColor）；Blank → flex:1 占位（Row/Column 内自动填充剩余空间），
+color → 空白背景。**`FlexDirection`/`TextDecorationType` 挂 global**（此前产物没引用这两个
+枚举，本轮起需要）。
+
+```
+$ bash run.sh smalldemo
+=== ALL PASS ===                    （14 条断言，双端同数）
+PASS Flex：display:flex／direction=Row → row／SpaceBetween → space-between／
+     Blank 在 Flex 里占满中段（L 在 R 左侧）
+PASS Span：内联子段文本连续／fontColor/fontSize 落自身／decoration → underline + 颜色
+PASS LoadingProgress：spinner 容器＋旋转动画＋color → currentColor
+PASS Blank.color → 空白背景
+```
+
+**破坏验证**（3 处，各恰好 1 条红）：① Flex.create 参数不落 CSS → `justifyContent` 红
+（Blank 占满是**布局结果**，不受参数影响——各断言管各的面）；② Span 属性分派短路 →
+decoration 红（fontColor/fontSize 走的是样式层也变红，但内联文本仍在）；③ Blank 的 flex:1
+摘除 → 占满断言红（宽 0 现形）。还原后 md5 与基准一致，inputdemo 回归绿。
+
+**已知限制**（写进 CAPABILITY）：`Span` 的 `textShadow`/`textCase` 只记录；`LoadingProgress`
+的 spinner 是 CSS 近似（真机是弧形进度动画）；`Flex` 的 `alignItems` 基座默认 center
+（与 ArkUI 默认一致）。
+
+**触及**：`runtime/src/small.js`（新分片，第 16 个）、`runtime/src/area.js`（SMALL 分支）、
+`runtime/src/main.js`（@include + 安装全局 4 组件 + 2 枚举 + applyCreateArgs Flex 分支）、
+`tools/stats.mjs`（手写 38 → 42）、`fixtures/pages/SmallDemo.ts`、`harmony-proj/`
+（SmallDemo.ets + main_pages.json）、`test/smalldemo.html`、`run.sh`、`electron/run.sh`
+
 ## R14：多层锚链 + `Guideline` + `bias` ✅
 
 ```

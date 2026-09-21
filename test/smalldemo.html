@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R36：小件收官 Flex / Span / LoadingProgress / Blank</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 320px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R36：小件收官（Flex 布局选项 / Span 内联 / spinner / Blank 占位）</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/smalldemo-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const el = (id) => root.querySelector('#' + id);
+    const txt = (id) => String(el(id) ? el(id).textContent : '<缺>');
+    const group = async (name, fn) => {
+      try { await fn(); } catch (e) {
+        allPass = false;
+        lines.push(`FAIL [${name}] 抛出异常：${e && e.stack ? String(e.stack).split('\n')[0] : e}`);
+      }
+    };
+
+    try {
+      __arkui_dom_requireModule('SmallDemo');
+      __arkui_dom_loadRoute('pages/SmallDemo', root);
+      await tick(80);
+      check(!!el('fx1') && !!el('tx1') && !!el('lp1') && !!el('bk1'), 'SmallDemo 页面已渲染');
+
+      // ══════════ ① Flex：create 参数直落 CSS（同名对齐）══════════
+      await group('Flex', async () => {
+        const fx = el('fx1');
+        check(fx.tagName === 'DIV' && fx.style.display === 'flex', `display:flex（实际 ${fx.style.display}）`);
+        check(fx.style.flexDirection === 'row', `direction=Row → row（实际 '${fx.style.flexDirection}'）`);
+        check(fx.style.justifyContent === 'space-between',
+          `justifyContent=SpaceBetween → space-between（实际 '${fx.style.justifyContent}'）`);
+        check(fx.style.alignItems === 'center' || fx.style.alignItems === '',
+          `alignItems=Center → center（实际 '${fx.style.alignItems}'）`);
+        // Blank 在 Flex 里占满剩余空间（两端布局的语义载体）
+        const blank = fx.querySelector('#fx-blank');
+        check(blank.offsetWidth > 100 && el('fx-l').offsetLeft < el('fx-r').offsetLeft,
+          `Blank 占满中段（宽 ${blank.offsetWidth}，L 在 R 左侧）`);
+      });
+
+      // ══════════ ② Span：Text 内联子段 + 字体属性 ══════════
+      await group('Span', async () => {
+        check(txt('tx1').includes('normal red under'), `内联子段文本连续（'${txt('tx1')}'）`);
+        check(el('sp1').style.color === 'red' && el('sp1').style.fontSize === '18px',
+          `fontColor/fontSize 落自身（'${el('sp1').style.color}'/${el('sp1').style.fontSize}'）`);
+        check(el('sp2').style.textDecorationLine === 'underline'
+          && el('sp2').style.textDecorationColor === 'blue',
+          `decoration → underline + 颜色（实际 '${el('sp2').style.textDecorationLine}'）`);
+      });
+
+      // ══════════ ③ LoadingProgress：spinner ══════════
+      await group('LoadingProgress', async () => {
+        check(el('lp1').tagName === 'DIV' && el('lp1').dataset.loadingProgress !== undefined,
+          `spinner 容器（data-loading-progress）`);
+        check(el('lp1').style.animation.includes('arkuiLoading'), `旋转动画挂上（animation='${el('lp1').style.animation}'）`);
+        check(el('lp1').style.color === 'blue' || el('lp1').style.color === 'rgb(0, 0, 255)',
+          `color(Color.Blue) → currentColor（实际 '${el('lp1').style.color}'）`);
+      });
+
+      // ══════════ ④ Blank.color ══════════
+      await group('Blank', async () => {
+        check(el('bk1').style.backgroundColor === 'rgb(0, 255, 0)',
+          `Blank.color → 空白背景（实际 ${el('bk1').style.backgroundColor}）`);
+      });
+
+      // ══════════ ⑤ 回归 ══════════
+      await group('回归', async () => {
+        const bad = __arkui_dom_layout_warnings.filter((w) =>
+          /Flex\.|Span\.|LoadingProgress\.|Blank\./.test(String(w)));
+        check(bad.length === 0, `小件属性不再记"未实现"警告（剩 ${bad.length} 条：${bad.slice(0, 2).join('|')}）`);
+      });
+
+      lines.push(`SMALL fx=${el('fx1').style.justifyContent} span=${!!el('sp1')} lp=${!!el('lp1')}`);
+      lines.push(`ELMT ${__arkui_dom_elmtRecords.size}`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

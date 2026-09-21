@@ -19,6 +19,7 @@
     "pages/XCompDemo",
     "pages/QrDemo",
     "pages/TextDemo",
-    "pages/MediaDemo"
+    "pages/MediaDemo",
+    "pages/SmallDemo"
   ]
 }

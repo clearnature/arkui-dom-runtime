@@ -250,6 +250,21 @@
       QR_ATTRS[prop](node, value);
       return;
     }
+    // 小件收官（R36）：Span 的字体属性落在自身元素（Text 内联子段语义）；
+    // LoadingProgress.color → currentColor（spinner 边框色）；Blank.color → 空白背景色；
+    // Flex 的 create 参数在 ensureComponent.create 时由 applyFlexOptions 处理（CSS 同名透传）
+    if (node.__arkuiSpan && SPAN_ATTRS[prop]) {
+      SPAN_ATTRS[prop](node, value);
+      return;
+    }
+    if (node.__arkuiLoading && prop === 'color') {
+      node.style.color = colorOf(value);
+      return;
+    }
+    if (node.__arkuiBlank && prop === 'color') {
+      node.style.backgroundColor = colorOf(value);
+      return;
+    }
     if (node.__arkuiPopup) {
       if (POPUP_ATTRS[prop]) {
         POPUP_ATTRS[prop](node, value);

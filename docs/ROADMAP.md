@@ -700,6 +700,28 @@ Electron 状态机绿、时钟未打通——**断言分端**（时钟断言记 
 `fixtures/pages/MediaDemo.ts`、`harmony-proj/`（MediaDemo.ets + main_pages.json）、
 `test/mediademo.html`、`run.sh`、`electron/run.sh`
 
+### R36 — 小件收官：`Flex` / `Span` / `LoadingProgress` / `Blank` ✅（2026-09-21）
+
+**测量**（新增 `pages/SmallDemo.ets`）：Flex.create 参数与 CSS 同名对齐（透传）；Span.create
+是 Text 内联子段（Text 栈内挂 span）；LoadingProgress.color → spinner currentColor；
+Blank = flex:1 占位。
+
+**实现**：新分片 `runtime/src/small.js`（第 16 个）。Flex → display:flex + applyCreateArgs
+Flex 分支（direction/wrap/justify/align 透传）；Span → span 元素 + SPAN_ATTRS（fontColor/
+fontSize/decoration——decoration 枚举值就是 CSS 关键字，挂 global 后直接透传）；
+LoadingProgress → CSS spinner（color → currentColor）；Blank → flex:1 + color → 背景色。
+**FlexDirection/TextDecorationType 挂 global**（此前产物没引用这两个枚举）。
+
+**验收**：`bash run.sh smalldemo`（**14 条断言**）双端通过。**破坏验证（3 处）**：Flex.create
+参数不落 CSS → **1 红**；Span 分派短路 → **1 红**；Blank flex:1 摘除 → **1 红**（占满断言
+宽 0 现形）。还原后 md5 一致。
+
+**触及**：`runtime/src/small.js`（新，第 16 个分片）、`runtime/src/area.js`（SMALL 分支）、
+`runtime/src/main.js`（@include + 安装全局 + applyCreateArgs Flex 分支 + 两枚举挂 global）、
+`tools/stats.mjs`（手写 38→41）、`fixtures/pages/SmallDemo.ts`、
+`harmony-proj/`（SmallDemo.ets + main_pages.json）、`test/smalldemo.html`、`run.sh`、
+`electron/run.sh`
+
 ---
 
 ## P3 布局引擎

@@ -1588,6 +1588,14 @@
     if (typeof a.space === 'number') node.style.gap = a.space + 'px';
     // Stack({alignContent}) 是【create 选项】而非属性 setter —— 这条路径容易漏（踩过）
     if (a.alignContent !== undefined) applyAlignment(node, a.alignContent);
+    // Flex({direction/wrap/justifyContent/alignItems}) 是【create 选项】（R36 实测）——
+    // 与 CSS 同名对齐（取值层已对齐 CSS 关键字，透传即可）
+    if (node.__arkuiComp === 'Flex') {
+      if (a.direction !== undefined) node.style.flexDirection = String(resolveResource(a.direction));
+      if (a.wrap !== undefined) node.style.flexWrap = String(resolveResource(a.wrap));
+      if (a.justifyContent !== undefined) node.style.justifyContent = String(resolveResource(a.justifyContent));
+      if (a.alignItems !== undefined) node.style.alignItems = String(resolveResource(a.alignItems));
+    }
   }
 
   // 生成组件的"原生控件参数"映射：把 create({...}) 的常用键落到真实控件属性上
@@ -3947,6 +3955,21 @@
       QR_ATTRS[prop](node, value);
       return;
     }
+    // 小件收官（R36）：Span 的字体属性落在自身元素（Text 内联子段语义）；
+    // LoadingProgress.color → currentColor（spinner 边框色）；Blank.color → 空白背景色；
+    // Flex 的 create 参数在 ensureComponent.create 时由 applyFlexOptions 处理（CSS 同名透传）
+    if (node.__arkuiSpan && SPAN_ATTRS[prop]) {
+      SPAN_ATTRS[prop](node, value);
+      return;
+    }
+    if (node.__arkuiLoading && prop === 'color') {
+      node.style.color = colorOf(value);
+      return;
+    }
+    if (node.__arkuiBlank && prop === 'color') {
+      node.style.backgroundColor = colorOf(value);
+      return;
+    }
     if (node.__arkuiPopup) {
       if (POPUP_ATTRS[prop]) {
         POPUP_ATTRS[prop](node, value);
@@ -5483,6 +5506,75 @@
     },
   };
 
+  // ────────────────── 小件收官（R36）：Flex / Span / LoadingProgress / Blank ──────────────────
+  //
+  // 产物形态（实测 fixtures/pages/SmallDemo.ts）：
+  //   Flex.create({direction, justifyContent, alignItems});   ← 与 CSS 同名对齐（style 透传）
+  //   Span.create('…'); Span.fontColor/fontSize/decoration;   ← Text 的【内联子段】（Text 栈内挂）
+  //   LoadingProgress.create(); LoadingProgress.color(...);   ← spinner
+  //   Blank.create(); Blank.color(...);                       ← Row/Column 里的 flex 占位
+  //
+  // 语义锚点：Flex 的 create 参数与 CSS flex 同名同义（对齐值已由取值层对齐 CSS 关键字，
+  // style 透传即可）；Blank 在 Row/Column 内 = flex:1 自动填充；color = 空白背景色。
+  // Span 的语义 = Text 内联子段：字体属性落在自身 span 元素上（与 Text 手写实现的
+  // 内联文本模型一致——见 §4.1 Text 的 node 结构）。
+  const Flex = ensureComponent('Flex', defaultDom('div', {
+    display: 'flex', flexDirection: 'row', alignItems: 'center',
+  }));
+  // Flex.create 的 create 参数：direction/wrap/justifyContent/alignItems → style（CSS 同名）
+  function applyFlexOptions(el, o) {
+    if (o.direction !== undefined) el.style.flexDirection = String(resolveResource(o.direction));
+    if (o.wrap !== undefined) el.style.flexWrap = String(resolveResource(o.wrap));
+    if (o.justifyContent !== undefined) el.style.justifyContent = String(resolveResource(o.justifyContent));
+    if (o.alignItems !== undefined) el.style.alignItems = String(resolveResource(o.alignItems));
+  }
+  const Span = ensureComponent('Span', (args) => {
+    const el = document.createElement('span');
+    el.__arkuiSpan = true;
+    el.textContent = args && args[0] !== undefined ? String(resolveResource(args[0])) : '';
+    return el;
+  });
+  const SPAN_ATTRS = {
+    fontColor: (n, v) => { n.style.color = colorOf(v); },
+    fontSize: (n, v) => { n.style.fontSize = `${dimOf(v, 16)}px`; },
+    fontStyle: (n, v) => { n.style.fontStyle = String(resolveResource(v)); },
+    fontWeight: (n, v) => { n.style.fontWeight = String(resolveResource(v)); },
+    decoration: (n, v) => {
+      const o = (v && typeof v === 'object' && v) || {};
+      // TextDecorationType 的枚举值就是 CSS 关键字（挂 global 时已对齐），t 直接可用
+      const t = String(resolveResource(o.type === undefined ? 'none' : o.type));
+      n.style.textDecorationLine = t === 'line-through' ? 'line-through' : t;
+      if (t !== 'none' && o.color !== undefined) n.style.textDecorationColor = colorOf(o.color);
+    },
+    textCase: (n, v) => { n.dataset.textCase = String(resolveResource(v)); },
+    textShadow: (n, v) => { n.dataset.textShadow = '1'; },
+  };
+  const LoadingProgress = ensureComponent('LoadingProgress', () => {
+    const el = document.createElement('div');
+    el.__arkuiLoading = true;
+    el.dataset.loadingProgress = '';
+    if (!document.getElementById('arkui-loading-keyframes')) {
+      const kf = document.createElement('style');
+      kf.id = 'arkui-loading-keyframes';
+      kf.textContent = '@keyframes arkuiLoading{to{transform:rotate(360deg)}}';
+      document.head.appendChild(kf);
+    }
+    el.style.border = '3px solid currentColor';
+    el.style.borderTopColor = 'transparent';
+    el.style.borderRadius = '50%';
+    el.style.boxSizing = 'border-box';
+    el.style.animation = 'arkuiLoading 1s linear infinite';
+    return el;
+  });
+  const Blank = ensureComponent('Blank', (args) => {
+    const el = document.createElement('div');
+    el.__arkuiBlank = true;
+    el.__arkuiBlankMin = 0;
+    // Row/Column 内：flex:1 占满剩余空间；无父 flex 时按 min 呈现
+    el.style.flex = '1 1 auto';
+    return el;
+  });
+
   // ── 由 tools/gen-components.mjs 生成的 149 个组件骨架 ──
   // 手写实现（上面那些，已被测试覆盖）优先；生成的只补缺口。
   // 骨架保证"能建出正确的 DOM 标签 + 基础样式"，精细化布局语义按需手补（见 docs）。
@@ -6132,6 +6224,13 @@
     QRCode,
     // R34：输入收官。EnterKeyType 是产物里的自由变量枚举
     TextInput, TextArea, Search, Hyperlink, TextInputController, TextInputControllerBase, EnterKeyType,
+    // R36：小件收官。FlexDirection/FlexAlign/ItemAlign/TextDecorationType 已在安装全局（R2）
+    Flex, Span, LoadingProgress, Blank,
+    // R36 补：FlexDirection/TextDecorationType 在产物里也是自由变量枚举（此前产物没引用，
+    // 本轮起挂 global）。成员与值照 .d.ts 声明顺序：Row=0/Column=1/RowReverse=2/ColumnReverse=3；
+    // None=0/Underline=1/Overline=2/LineThrough=3
+    FlexDirection: { Row: 'row', Column: 'column', RowReverse: 'row-reverse', ColumnReverse: 'column-reverse' },
+    TextDecorationType: { None: 'none', Underline: 'underline', Overline: 'overline', LineThrough: 'line-through' },
     __Common__: _CommonWrapper,
     FontWeight, VerticalAlign, HorizontalAlign, FlexAlign, TextAlign, ItemAlign, Color,
     TextOverflow, Alignment, Scroller, Axis,
