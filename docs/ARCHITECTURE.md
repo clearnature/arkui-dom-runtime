@@ -1273,9 +1273,10 @@ globalThis.Gesture.pop();                         // ③ 关作用域 → 挂到
     `childView.initialRender()` **之后**（那时子节点才存在，`measure()` 才有东西可量）。
     协议里**返回的尺寸优先**于声明尺寸，施加在"带 `.id()` 的那一层"（可能是编译器合成的 `__Common__`）。
 20. **`runtime/arkui-dom-runtime.js` 是拼接产物，源在 `runtime/src/`**。手写语义一律加在源分片里
-    （目前 `main.js` = 除过渡一节外的全部，`transition.js` = 出现/消失过渡），改完跑
-    `npm run build:runtime` 重拼；产物入库，靠 `npm run check` 第 3 步（`build-runtime --check`）
-    守"产物 = 源"。**为什么必须"源拆、产物不拆"**：分片共享同一个闭包
+    （**一个分片 = 一组相关小节**：`main.js` = 其余全部，`animation.js` = 显式动画 + 出现/消失过渡，
+    `gesture.js` = 手势含分组与仲裁），改完跑 `npm run build:runtime` 重拼；产物入库，
+    靠 `npm run check` 第 3 步（`build-runtime --check`）守"产物 = 源"。
+    **为什么必须"源拆、产物不拆"**：分片共享同一个闭包
     （`elmtRecords`/`propDeps`/`ViewStackProcessor`/`animWindow`…），其中 `animWindow` 还是
     **可变绑定**（动画分片里 `let` 重新赋值、批量重渲染段在块外读它并 push）——拆成多个 `<script>`
     就得把 6 个导入名 + 3 个导出名显式穿线，并让 30 处 HTML 的加载顺序变成新的失败模式。
@@ -1327,11 +1328,11 @@ globalThis.Gesture.pop();                         // ③ 关作用域 → 挂到
 
 == 体积（源码，不含产物/Electron 运行时）==
   runtime          328.4 KB
-  runtime(src)     215.7 KB
+  runtime(src)     215.8 KB
   test             239.3 KB
   tools            52.7 KB
   electron(src)    19.2 KB
-  docs             339.5 KB
+  docs             340.6 KB
   fixtures         236.4 KB
 
 == 逐文件（文档"文件职责"表的来源）==
@@ -1343,7 +1344,7 @@ globalThis.Gesture.pop();                         // ③ 关作用域 → 挂到
   tools/serve.py                        3887 B  3.8 KB
   tools/stats.mjs                      14005 B  13.7 KB
   tools/assert-counts.mjs               7476 B  7.3 KB
-  tools/preflight.mjs                   5397 B  5.3 KB
+  tools/preflight.mjs                   5422 B  5.3 KB
   tools/check-all.sh                    3673 B  3.6 KB
   tools/build-runtime.mjs               5138 B  5.0 KB
   run.sh                               16406 B  16.0 KB
@@ -1352,16 +1353,17 @@ globalThis.Gesture.pop();                         // ③ 关作用域 → 挂到
   electron/preload.js                   1961 B  1.9 KB
   package.json                          1321 B  1.3 KB
   .gitignore                             674 B  0.7 KB
-  README.md                            76854 B  75.1 KB
+  README.md                            77233 B  75.4 KB
   THIRD-PARTY-NOTICES.md                8256 B  8.1 KB
-  docs/ARCHITECTURE.md                112835 B  110.2 KB
+  docs/ARCHITECTURE.md                113139 B  110.5 KB
   docs/CAPABILITY.md                   34482 B  33.7 KB
-  docs/DEVELOPING.md                   55338 B  54.0 KB
-  docs/ROADMAP.md                      77928 B  76.1 KB
+  docs/DEVELOPING.md                   55534 B  54.2 KB
+  docs/ROADMAP.md                      78490 B  76.7 KB
   docs/surface-measurement.md           6496 B  6.3 KB
   docs/SESSION-2026-09-20.md           12842 B  12.5 KB
-  runtime/src/main.js                 197167 B  192.5 KB
-  runtime/src/transition.js            23757 B  23.2 KB
+  runtime/src/animation.js             25906 B  25.3 KB
+  runtime/src/gesture.js               29527 B  28.8 KB
+  runtime/src/main.js                 165512 B  161.6 KB
   fixtures/pages/AnimDemo.ts            6451 B  6.3 KB
   fixtures/pages/AsyncIO.ts             6206 B  6.1 KB
   fixtures/pages/Callee.ts              1726 B  1.7 KB
@@ -1462,8 +1464,9 @@ globalThis.Gesture.pop();                         // ③ 关作用域 → 挂到
 | 文件 | 体积 | 职责 | 改它的时机 |
 |---|---|---|---|
 | `runtime/arkui-dom-runtime.js` | 215.7 KB | **拼接产物**：`tools/build-runtime.mjs` 把 `runtime/src/` 的分片按 `// @include` 标记拼成（语义内容见下面两行源分片）。为什么不做成多个 `<script>`：分片共享同一个闭包（`elmtRecords`/`ViewStackProcessor`/`animWindow`…，其中 `animWindow` 还是可变绑定），且 30 个手写 HTML 与 Electron 都按固定顺序加载这一个文件 | **不手改**；改 `runtime/src/` 后 `npm run build:runtime`；`build-runtime --check` 守门（在 `npm run check` 第 3 步） |
-| `runtime/src/main.js` | 192.5 KB | **手写源**（除 `transition` 一节外的全部）：v1 状态类 + 深度观测（`@Observed`/`@ObjectLink`）、`ViewPU`/`ViewV2`、装饰器层、组件栈、布局（`alignRules` 多层锚链 + `Guideline` + `bias`、`Grid` 轨道）、`Tabs`/`TabContent`+`TabsController`、`Swiper`+`SwiperController`、`Navigation`/`NavDestination`+`NavPathStack`、**绘制类四件套**（SVG/CSS）、`LazyForEach`、路由、**ability 栈**（`startAbilityForResult`/`terminateSelf*`）、**显式动画**（`Context.animateTo` → CSS transition）、**手势**（两层栈 + pointer 识别器 + `GestureGroup` 三态 + 元素级优先级仲裁） | 实现新语义（**手写优先**） |
-| `runtime/src/transition.js` | 23.2 KB | **手写源**：出现/消失过渡一节（`TransitionOptions` / `TransitionEffect` / `TransitionType` 方向门控 / `detachChildren` 延迟摘除） | 改过渡语义 |
+| `runtime/src/main.js` | 161.6 KB | **手写源**（其余全部，3524 行）：v1 状态类 + 深度观测（`@Observed`/`@ObjectLink`）、`ViewPU`/`ViewV2`、装饰器层、组件栈、布局（`alignRules` 多层锚链 + `Guideline` + `bias`、`Grid` 轨道）、`Tabs`/`TabContent`+`TabsController`、`Swiper`+`SwiperController`、`Navigation`/`NavDestination`+`NavPathStack`、**绘制类四件套**（SVG/CSS）、`LazyForEach`、路由、**ability 栈**（`startAbilityForResult`/`terminateSelf*`） | 实现新语义（**手写优先**） |
+| `runtime/src/animation.js` | 25.3 KB | **手写源**（476 行）：显式动画（`Context.animateTo`/`animateToImmediately` → 被重渲染节点上的 CSS transition）+ 出现/消失过渡（`TransitionOptions`/`TransitionEffect`/`TransitionType` 方向门控/`detachChildren` 延迟摘除） | 改动画/过渡语义 |
+| `runtime/src/gesture.js` | 28.8 KB | **手写源**（617 行）：手势（pointer 识别器 + 两层栈 + `GestureGroup` 三态 + 元素级优先级仲裁；`GesturePriority`/`GestureMask`/`GestureMode`） | 改手势语义 |
 | `runtime/generated-components.js` | 56.3 KB | 149 个组件骨架（**生成物**） | **不手改**；改 `tools/gen-components.mjs` 后重新生成，`--check` 会守门 |
 | `runtime/ohos-shims.js` | 56.4 KB | `@ohos:*` 模块（14 个，含 **`measure`**/**`multimedia.image`**/**`notificationManager`**/**`promptAction`**）+ 持久化后端（含 R21 的探测与自报）+ 文本/图像测量原语 | 新增平台模块 |
 | `tools/extract.mjs` | 6.4 KB | hvigor 缓存 `.ts` → 可执行 `.js`；**装饰器作用域内绑定前奏 + 未就绪守卫**（§3.4） | 产物形态/装饰器集合变化时 |

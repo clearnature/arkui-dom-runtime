@@ -70,7 +70,7 @@ else bad('以下脚本缺可执行位', `${notExec.join(' ')}\n     修复: chmo
 const mustExist = [
   'runtime/arkui-dom-runtime.js', 'runtime/generated-components.js', 'runtime/ohos-shims.js',
   // runtime 产物现在是 runtime/src/ 的拼接物 —— 源没了就没法重建，同样算核心文件
-  'runtime/src/main.js', 'runtime/src/transition.js', 'tools/build-runtime.mjs',
+  'runtime/src/main.js', 'runtime/src/animation.js', 'runtime/src/gesture.js', 'tools/build-runtime.mjs',
   'fixtures/pages/Index.ts', 'test/index.html',
 ];
 const missing = mustExist.filter((f) => !fs.existsSync(path.join(ROOT, f)));

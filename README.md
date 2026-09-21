@@ -72,9 +72,10 @@ PASS 100 次切换中分支内容始终与状态一致（不一致 0 次）
 ## 目录
 
 ```
-runtime/src/                   运行时【手写源】—— 手写语义都加这里
-  main.js                        除下面那节之外的全部（状态管理/布局/组件/动画/手势/ability 栈…）
-  transition.js                  出现/消失过渡一节（R22 收口）
+runtime/src/                   运行时【手写源】—— 手写语义都加这里（一个分片 = 一组相关小节）
+  main.js                        其余全部（状态管理 / 布局 / 组件 / 路由 / ability 栈 …）
+  animation.js                   显式动画（animateTo → CSS transition）+ 出现/消失过渡（R22/R22 收口）
+  gesture.js                     手势（pointer 识别器 + GestureGroup 三态 + 优先级仲裁，R23/R23 收口）
 runtime/arkui-dom-runtime.js   运行时核心（经典脚本，加载后安装全部 ArkUI 全局）
                                ↑【拼接产物】由 tools/build-runtime.mjs 拼 runtime/src/，不要手改
   ├ v1 状态类（ObservedPropertySimplePU / SynchedProperty*PU）
@@ -1130,9 +1131,14 @@ PASS starStyle 的图片 URI 不可用已记警告
 **权威清单在 `docs/ROADMAP.md`**（每项带可复现的验收命令）。当前优先：
 
 1. `Navigation` 的标题栏/工具栏与分栏模式、其余 85 个骨架组件的视觉语义、`@ohos:media`/`UIContext`
-2. **继续把 `runtime/src/main.js` 拆细**——拼接机制与门禁已经就位（`tools/build-runtime.mjs` +
-   `check:runtime`），`transition` 一节已拆出并验证无损；下一步是**动画 + 手势**那一块
-   （实测 1093 行 / 54 KB，对外只被 4 个入口引用、向内只提到 `ViewStackProcessor` 1 次）。
+2. **继续把 `runtime/src/main.js` 拆细**——拼接机制、门禁与"逐字节无损"的做法都已验证
+   （`tools/build-runtime.mjs` + `check:runtime`，已拆出 `animation.js` 与 `gesture.js`）。
+   `main.js` 现在 **3524 行 / 165,512 B，内含 26 个分节/子节横幅**；按横幅切的实测候选切口：
+   `Navigation`/`NavDestination` 栈导航 **370 行 / 16.2 KB**、布局（`alignRules`/`Guideline`/`bias`/
+   截断/叠放/`Scroller`）**263 行 / 14.2 KB**、状态管理 v2 **252 行 / 11.8 KB**、
+   `onAreaChange`+自定义布局协议 **231 行 / 13.3 KB**、`ability` 栈 **197 行 / 8.8 KB**、
+   `LazyForEach` **195 行 / 9.8 KB**（`组件注册表` 308 行与 `安装全局` 197 行不建议动 —— 前者被各节引用、
+   后者是 IIFE 的出口）
 
 > 已完成：`transition`（见上文「R22 收口」）、**手势分组与优先级仲裁**（见上文「R23 收口」）、
 > **R24 ArkVM/`.abc` 路径调研**（`docs/ARKVM-RESEARCH.md`）。
@@ -1159,18 +1165,15 @@ PASS starStyle 的图片 URI 不可用已记警告
   `Navigation` 的标题栏与分栏 / `Grid` 无模板时的 `cellLength` 自适应 / `chainMode` /
   `Gauge.indicator`·`trackShadow` **未覆盖**（这些会记 `layoutWarnings`，不是静默忽略）
 - **布局仍不是约束求解器**：多层锚链靠不动点迭代（有上限），环状锚定只记警告
-- **`runtime/` 已完成"源拆、产物不拆"的第一步**（2026-09-21）：`runtime/arkui-dom-runtime.js` 现在是
-  `runtime/src/` 的**拼接产物**（`tools/build-runtime.mjs`，`// @include <分片名>` 做拼接点），
-  `transition` 一节（447 行）已拆到 `runtime/src/transition.js`，**产物与拆分前逐字节一致**
-  （220,899 B，`md5sum -c` 自证），门禁加了第 3 步 `build-runtime --check`。
-  **还没做完**：`main.js` 仍是 192.5 KB / 4170 行的单体（含动画+手势那一块 1093 行）。
+- **`runtime/` 的"源拆、产物不拆"已跑通并拆到 3 个分片**（2026-09-21）：`runtime/arkui-dom-runtime.js`
+  是 `runtime/src/` 的**拼接产物**（`tools/build-runtime.mjs`，`// @include <分片名>` 做拼接点），
+  已拆出 `animation.js`（476 行：显式动画 + 出现/消失过渡）与 `gesture.js`（617 行：手势含分组与仲裁），
+  `main.js` 剩 3524 行。两次拆分**产物都与拆分前逐字节一致**（220,899 B / `md5sum -c` 自证，
+  `git` 里产物零改动）。门禁第 3 步 `build-runtime --check` 守"产物 = 源"。
   为什么必须"源拆、产物不拆"：产物是经典脚本，30 个手写 HTML 与 Electron 按固定顺序加载它；
   分片共享同一个闭包（`elmtRecords`/`propDeps`/`ViewStackProcessor`…），其中 `animWindow` 还是
   **可变绑定**（动画分片里 `let` 重新赋值、批量重渲染段在块外读它并 push）——拆成多个 `<script>`
   要把 6 个导入名 + 3 个导出名显式穿线，并让 30 处加载顺序成为新的失败模式。
-  已实测**下一刀**：动画+手势（281–1373 行，1093 行 / 约 54 KB）向外只被 4 个入口引用
-  （`registerTransition` ×2、`detachChildren` ×2、`transitionsDescribe`/`gestureTypes` 各 1），
-  向内只提到 `ViewStackProcessor` 1 次、`mountNode` 1 次（`elmtRecords` **0 次**）。
 
 ---
 

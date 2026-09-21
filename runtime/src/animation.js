@@ -1,3 +1,32 @@
+  // ────────────────────── 显式动画：animateTo / animateToImmediately（R22） ──────────────────────
+  //
+  // ⚠️ 调用约定（实测的产物）：源码里写全局 `animateTo(...)`，编译后是 **`Context.animateTo(...)`**
+  // （`Context` 是自由变量）。所以必须提供全局 `Context` 对象 —— 只挂裸名 `animateTo` 会 ReferenceError。
+  //
+  // 语义：`animateTo(param, fn)` = "把 fn() 引起的状态变更变成一次过渡"。DOM 里能表达的是 CSS transition
+  // （不是 ArkUI 的插值引擎）：
+  //   · fn() 改状态 → 同步 flush → 把【这次真的被重渲染的节点】找出来（rerenderElmt 里收集），
+  //     给它们挂 `transition: all <duration>ms <curve> <delay>ms`
+  //   · 窗口结束（时长+延迟到点）时清掉，并调 onFinish
+  //   · `duration: 0` → **不进动画**（不挂 transition），但状态变更照常落地
+  // 已知限制：CSS transition 表达不了 `iterations`/`playMode`/`tempo`/`expectedFrameRateRange` 与
+  // "弹簧"曲线（ICurve）→ 一律写 layoutWarnings（出声，不静默）。
+  const CURVE_NAMES = [
+    'Linear', 'Ease', 'EaseIn', 'EaseOut', 'EaseInOut', 'FastOutSlowIn', 'LinearOutSlowIn',
+    'FastOutLinearIn', 'ExtremeDeceleration', 'Sharp', 'Rhythm', 'Smooth', 'Friction',
+  ];
+  const Curve = {};
+  CURVE_NAMES.forEach((n, i) => { Curve[n] = i; });
+  // ArkUI 的曲线名 → CSS 等价物（名字对得上的直接透传）
+  const CURVE_CSS = {
+    Linear: 'linear', Ease: 'ease', EaseIn: 'ease-in', EaseOut: 'ease-out', EaseInOut: 'ease-in-out',
+    FastOutSlowIn: 'cubic-bezier(0.4, 0, 0.2, 1)', LinearOutSlowIn: 'cubic-bezier(0, 0, 0.2, 1)',
+    FastOutLinearIn: 'cubic-bezier(0.4, 0, 1, 1)', ExtremeDeceleration: 'cubic-bezier(0, 0, 0, 1)',
+    Sharp: 'cubic-bezier(0.33, 0, 0.67, 1)', Rhythm: 'cubic-bezier(0.7, 0, 0.2, 1)',
+    Smooth: 'cubic-bezier(0.4, 0, 0.4, 1)', Friction: 'cubic-bezier(0.2, 0, 0.2, 1)',
+  };
+  const PlayMode = { Normal: 0, Reverse: 1, Alternate: 2, AlternateReverse: 3 };
+
   // ────────────────────── transition：组件出现/消失动画（R22 收口） ──────────────────────
   //
   // 实测产物（fixtures/pages/TransitionDemo.ts）：

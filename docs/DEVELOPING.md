@@ -24,9 +24,10 @@
 ```
 runtime/       运行时（与宿主无关）
   arkui-dom-runtime.js       ← 【拼接产物】由 tools/build-runtime.mjs 生成，不要手改
-  src/                       ← 【手写源】手写语义都加这里
-    main.js                    除下面那节之外的全部（含手势/动画/布局/状态管理/组件）
-    transition.js              出现/消失过渡一节
+  src/                       ← 【手写源】手写语义都加这里（一个分片 = 一组相关小节）
+    main.js                    其余全部（状态管理 / 布局 / 组件 / 路由 / ability 栈 …）
+    animation.js               显式动画（animateTo/animateToImmediately）+ 出现/消失过渡（transition）
+    gesture.js                 手势（pointer 识别器 + GestureGroup 三态 + 优先级仲裁）
   generated-components.js    ← 生成物，不要手改
   ohos-shims.js              ← 平台模块
 tools/         构建/统计脚本（都是 .mjs，可直接 node 跑）

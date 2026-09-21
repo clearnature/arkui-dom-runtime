@@ -200,20 +200,24 @@ Electron 按固定顺序加载这一个文件），所以选【源拆、产物�
 
 - 新增 `tools/build-runtime.mjs`：把 `runtime/src/` 的分片按 `// @include <分片名>` 拼成
   `runtime/arkui-dom-runtime.js`（产物入库；`--check` 只校验不落盘，孤儿分片/成环/漏展开都报错）
-- 先把 **`transition` 一节（447 行）** 拆到 `runtime/src/transition.js`（`main.js` 留占位标记）
+- 分两次拆完：先 `transition` 一节，再把**动画 + 手势**整块拆出，最终 3 个分片 ——
+  `main.js`（3524 行，其余全部）、`animation.js`（476 行：显式动画 + 出现/消失过渡）、
+  `gesture.js`（617 行：手势含分组与仲裁）。规则是"**一个分片 = 一组相关小节**"，而非一节一个文件
+  （产物内部有 30 个分节/子节横幅，逐个建文件没有意义）
 
-**验收（已执行）**：
+**验收（已执行，两次拆分各一遍）**：
 - **产物与拆分前逐字节一致**：`md5sum -c` → `e73be14f90600b0d490e8a7873c94bc7`（220,899 B），
-  `diff -q` 无输出 —— 拆分类重构的唯一硬判据
+  `diff -q` 无输出，`git` 里产物**零改动** —— 拆分类重构的唯一硬判据
 - `node tools/build-runtime.mjs --check` 绿；破坏验证：改分片不重拼 → 红（报首个不同行 + 修法）、
   删掉 `@include` 标记 → 红（孤儿分片）
 - `npm run check` → **6 步全绿**（新增第 3 步 `build-runtime --check`）
 
-**已知限制（下一步）**：`main.js` 仍是 192.5 KB / 4170 行的单体，动画+手势那一块（1093 行 / 54 KB）
-还没拆出去 —— 机制已就位，剩下的只是重复一次上面的动作。
+**下一步（机制已就位，只是重复同一动作）**：`main.js` 剩 3524 行 / 165,512 B / 26 个分节横幅。
+按横幅切的实测候选切口（`README.md` 的「下一步」列了完整清单）：`Navigation` 栈导航 370 行、
+布局 263 行、状态管理 v2 252 行、`onAreaChange`+自定义布局协议 231 行、`ability` 栈 197 行。
 
-**触及**：`tools/build-runtime.mjs`（新）、`runtime/src/main.js`、`runtime/src/transition.js`（新）、
-`tools/check-all.sh`、`tools/preflight.mjs`、`tools/stats.mjs`、`package.json`、
+**触及**：`tools/build-runtime.mjs`（新）、`runtime/src/main.js`、`runtime/src/animation.js`（新）、
+`runtime/src/gesture.js`（新）、`tools/check-all.sh`、`tools/preflight.mjs`、`tools/stats.mjs`、`package.json`、
 `README.md`、`docs/ARCHITECTURE.md`（§5 不变量 20 + §7 文件职责）、`docs/DEVELOPING.md`（§2 + 坑 84）
 
 ---
