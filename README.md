@@ -981,6 +981,53 @@ PASS set 后 get 返回记录值（RECT320x240）
 `fixtures/pages/XCompDemo.ts`、`harmony-proj/`（XCompDemo.ets + main_pages.json）、
 `test/xcompdemo.html`、`run.sh`、`electron/run.sh`
 
+**触及**：`runtime/src/canvas.js`（表层类分片扩展）、`runtime/src/area.js`（XC 分支）、
+`runtime/src/main.js`（安装全局 3 个名字）、`tools/stats.mjs`（手写 36 → 37）、
+`fixtures/pages/XCompDemo.ts`、`harmony-proj/`（XCompDemo.ets + main_pages.json）、
+`test/xcompdemo.html`、`run.sh`、`electron/run.sh`
+
+## R33：信息展示收官 `QRCode`（真实编码器 + 独立解码交叉验证）✅
+
+**测量**（新增 `pages/QrDemo.ets` → 官方构建）实测形态：`QRCode.create(value)` create 单参数；
+`color` 默认 **'#ff000000'**、`backgroundColor` 默认 **'#ffffffff'**（API 11+）、`contentOpacity`
+默认 1 范围 [0,1]（全部 JSDoc 原文）；最多 512 字符（超出取前 512）。
+
+**实现**（QRCode 组件接在 `runtime/src/show.js` 信息展示家族）：**不自己实现编码器**——
+编码器是移植的第三方库 node-qrcode@1.5.4（`global.ArkuiVendorQrcode`，bun 打包为单文件经典脚本，
+**库代码零修改**，只加我们自己的 ESM 胶水入口）；未加载 vendor 时**记警告并降级**（不静默、
+不假画）。渲染在渲染后同步阶段（`redrawQr`，挂在 `syncDrawings`——不变量 18：等真实尺寸）；
+canvas 内容尺寸 1:1、quiet zone 4 模块（node-qrcode 默认）、颜色变化整幅重画。
+
+**交叉验证的牙齿**：解码器来自**另一个独立第三方** jsQR@1.4.0（test/vendor，Apache-2.0，
+原样拷贝）——"画出来的码能被独立解码器读回原文"（qr1 ASCII / qr2 UTF-8 多字节 / qr3 定制色
+三块都能解码回原文）才是有牙齿的断言。两库互为独立实现，编码错了就过不了这条。
+
+**入向合规**：两件第三方源码**首次入库**，登记在 `THIRD-PARTY-NOTICES.md` 新增 §3b
+（出处、版本、许可原文、复现命令）。
+
+```
+$ bash run.sh qrdemo
+=== ALL PASS ===                    （11 条断言，双端同数）
+PASS 三 canvas 渲染落位（总模块数含 quiet zone 37）／沿用原生 <canvas>
+PASS 独立解码：qr1/qr2/qr3 全部解码回原文（jsQR 独立实现）
+PASS 像素断言：默认背景 #ffffffff 不透明白／定制背景 '#eeeeff' → rgb(238,238,255)
+```
+
+**破坏验证**（3 处）：① vendor 缺席时不记警告（移除 vendor script 的破坏环境）→ 3+ 条断言红；
+② 前景色未经 ARGB 归一（画成全透明）→ 恰好 **2 条**红（解码 null，qr3 有定制前景仍绿）；
+③ quiet zone 摘除 → 恰好 **1 条**红（(5,5) 采样点从背景区变暗模块区）。还原后 md5 与基准一致。
+
+**过程里抓到的一个真问题**：**ArkUI 的 8 位颜色字面量是 ARGB**（'#ff000000' = 不透明黑，JSDoc
+原文默认），CSS 是 RRGGBBAA——位数歧义必须归一，否则默认前景画成全透明（首跑解码 null）。
+
+**已知限制**（写进 CAPABILITY）：ECC 级别 `.d.ts` 未写、移植库按其默认（L 级，**推断**——
+真机可能不同）；`contentOpacity` 作用于内容层（真机语义待核对）；512 截断未测（fixture 未覆盖）。
+
+**触及**：`runtime/vendor/`（新目录：qrcode bundle + LICENSE）、`test/vendor/`（jsQR + LICENSE）、
+`runtime/src/show.js`（QRCode 组件 + redrawQr）、`runtime/src/draw.js`（syncDrawings 的 QR 口）、
+`runtime/src/main.js`（安装全局）、`fixtures/pages/QrDemo.ts`、`harmony-proj/`（QrDemo.ets +
+main_pages.json）、`test/qrdemo.html`、`run.sh`、`electron/run.sh`
+
 ## R14：多层锚链 + `Guideline` + `bias` ✅
 
 ```
@@ -1573,15 +1620,15 @@ PASS starStyle 的图片 URI 不可用已记警告
 | 文档数字守门 | `npm run stats:check-doc` | `ARCHITECTURE.md` §6 的整块实测数字逐行比对，漂移即非 0 退出；`stats:write-doc` 就地重写 |
 | 覆盖统计 | `npm run stats` | 文档里的所有数字都由它产出（`--json` 机器可读） |
 
-`npm run check` 当前：**6 步全绿（preflight + 生成物一致 + 产物/源一致 + 文档数字 + 浏览器 40 用例 + Electron 39 用例）**。
+`npm run check` 当前：**6 步全绿（preflight + 生成物一致 + 产物/源一致 + 文档数字 + 浏览器 41 用例 + Electron 40 用例）**。
 
 ## 下一步
 
 **权威清单在 `docs/ROADMAP.md`**（每项带可复现的验收命令）。当前优先：
 
-1. 其余骨架组件的视觉语义——**按家族推进**：已收形状族 8（R26）、输入类 4（R27）、
-   信息展示类 4（R28）、弹出类 3（R29）、表层类 2（R31 Canvas / R32 XComponent）；
-   剩余候选：`QRCode`（需 QR 编码器，单列）。`UIContext` 已收（R30），`@ohos:media` 待办
+1. 骨架组件的视觉语义——**信息展示家族已收官**：形状族 8（R26）、输入类 4（R27）、
+   信息展示类 4（R28）、弹出类 3（R29）、表层类 2（R31/R32）、QRCode（R33）——累计 20 个；
+   剩余候选以骨架清单为准。`UIContext` 已收（R30），`@ohos:media` 待办
 2. ~~**继续把 `runtime/src/main.js` 拆细**~~ **已拆到位（2026-09-21，源拆分第三步）**：9 个分片，
    `main.js` 剩 **1869 行 / 86,452 B**（基础设施 / 状态 v1 / ViewPU / 属性映射 / Tabs / Swiper /
    组件注册表 / 具体组件 / LazyForEach / 枚举路由 / 安装全局），已拆出

@@ -635,6 +635,32 @@ set 记录断 → **1 红**。还原后 md5 一致。
 `fixtures/pages/XCompDemo.ts`、`harmony-proj/`（XCompDemo.ets + main_pages.json）、
 `test/xcompdemo.html`、`run.sh`、`electron/run.sh`
 
+### R33 — 信息展示收官：`QRCode`（真实编码器 + 独立解码交叉验证）✅（2026-09-21）
+
+**测量**（新增 `pages/QrDemo.ets`）：`QRCode.create(value)` 单参数；color 默认 '#ff000000'／
+backgroundColor 默认 '#ffffffff'（API 11+）／contentOpacity 默认 1 [0,1]（全部 JSDoc 原文）；
+最多 512 字符（超出取前 512）。
+
+**实现**：QRCode 组件接在信息展示家族（show.js）。**不自己实现编码器**——移植第三方库
+node-qrcode@1.5.4（`global.ArkuiVendorQrcode`，bun 打包单文件经典脚本，库代码零修改，只加
+ESM 胶水入口）；vendor 缺席记警告并降级（不静默）。渲染在渲染后同步阶段（redrawQr 挂
+syncDrawings——不变量 18）；1:1、quiet zone 4、颜色变化重画。**解码器**来自另一个独立第三方
+jsQR@1.4.0（test/vendor，Apache-2.0，原样拷贝）——"画出来的码能被独立解码器读回原文"
+（ASCII/UTF-8/定制色三块）是交叉验证的牙齿。**入向合规**：两件第三方源码首次入库，登记
+THIRD-PARTY-NOTICES 新增 §3b。
+
+**验收**：`bash run.sh qrdemo`（**11 条断言**）双端通过。**破坏验证（3 处）**：vendor 缺席不警告
+→ 3+ 红；前景色未经 ARGB 归一 → **2 红**（解码 null，定制色 qr3 仍绿）；quiet zone 摘除 →
+**1 红**。还原后 md5 一致。
+
+**真问题**：ArkUI 的 8 位颜色字面量是 **ARGB**（'#ff000000' = 不透明黑，JSDoc 原文默认），
+CSS 是 RRGGBBAA——位数歧义必须归一（首跑解码 null）。
+
+**触及**：`runtime/vendor/`、`test/vendor/`、`runtime/src/show.js`（QRCode + redrawQr）、
+`runtime/src/draw.js`（QR 同步口）、`runtime/src/main.js`（安装全局）、
+`fixtures/pages/QrDemo.ts`、`harmony-proj/`（QrDemo.ets + main_pages.json）、
+`test/qrdemo.html`、`run.sh`、`electron/run.sh`
+
 ---
 
 ## P3 布局引擎

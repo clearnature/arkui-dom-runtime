@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R33：QRCode（真实编码器 + 独立解码交叉验证）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 320px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R33：QRCode（vendor 编码器 / 默认色 / 定制色 / jsQR 独立解码交叉验证）</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+    <script src="../runtime/vendor/qrcode-1.5.4.js"></script>
+  <script src="../test/vendor/jsqr-1.4.0.js"></script>
+  <script src="../build/qrdemo-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const el = (id) => root.querySelector('#' + id);
+    const txt = (id) => String(el(id) ? el(id).textContent : '<缺>');
+    // 读 canvas 像素 → jsQR（独立解码器）→ 解码文本
+    const decodeCanvas = (id) => {
+      const cv = el(id);
+      const native = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height);
+      const out = window.jsQR(native.data, cv.width, cv.height);
+      return out ? out.data : null;
+    };
+    const group = async (name, fn) => {
+      try { await fn(); } catch (e) {
+        allPass = false;
+        lines.push(`FAIL [${name}] 抛出异常：${e && e.stack ? String(e.stack).split('\n')[0] : e}`);
+      }
+    };
+
+    try {
+      __arkui_dom_requireModule('QrDemo');
+      __arkui_dom_loadRoute('pages/QrDemo', root);
+      await tick(120);                     // 首绘在渲染后同步阶段（syncDrawings）
+      check(!!el('qr1') && !!el('qr2') && !!el('qr3'), 'QrDemo 页面已渲染');
+
+      // ══════════ ① 渲染落位：三个 canvas 都画出来了 ══════════
+      await group('渲染落位', async () => {
+        check(el('qr1').tagName === 'CANVAS', `沿用原生 <canvas>（tag=${el('qr1').tagName}）`);
+        check(el('qr1').dataset.qrRendered !== undefined
+          && Number(el('qr1').dataset.qrRendered) > 25,
+          `矩阵已画（总模块数含 quiet zone：${el('qr1').dataset.qrRendered}）`);
+        check(!!el('qr2').dataset.qrRendered && !!el('qr3').dataset.qrRendered, 'qr2/qr3 同样渲染');
+      });
+
+      // ══════════ ② 交叉验证：jsQR（独立实现）解码回原文 ══════════
+      await group('独立解码', async () => {
+        check(decodeCanvas('qr1') === 'https://example.com/qr-test-123',
+          `qr1 解码回原文（'${decodeCanvas('qr1')}'）`);
+        check(decodeCanvas('qr2') === '你好 QR 码 123',
+          `qr2（UTF-8 多字节）解码回原文（'${decodeCanvas('qr2')}'）`);
+        check(decodeCanvas('qr3') === 'https://example.com/colored',
+          `qr3（定制色）同样可解码（'${decodeCanvas('qr3')}'）`);
+      });
+
+      // ══════════ ③ 像素断言：前景/背景色（默认与定制）══════════
+      await group('颜色', async () => {
+        const n1 = el('qr1').getContext('2d').getImageData(5, 5, 1, 1);
+        check(n1.data[3] === 255 && n1.data[0] === 255,
+          `默认背景（#ffffffff）左上角空白 → 不透明白（R${n1.data[0]} A${n1.data[3]}）`);
+        const n3 = el('qr3').getContext('2d').getImageData(5, 5, 1, 1);
+        check(n3.data[0] === 238 && n3.data[1] === 238 && n3.data[2] === 255,
+          `定制背景 '#eeeeff'（rgb(238,238,255)，实际 ${n3.data[0]}/${n3.data[1]}/${n3.data[2]}）`);
+      });
+
+      // ══════════ ④ 回归：没有"未实现"假警告 ══════════
+      await group('回归', async () => {
+        const bad = __arkui_dom_layout_warnings.filter((w) => /QRCode\./.test(String(w)));
+        check(bad.length === 0, `QRCode 属性不再记"未实现"警告（剩 ${bad.length} 条：${bad.slice(0, 2).join('|')}）`);
+        check(typeof window.ArkuiVendorQrcode.create === 'function', 'vendor 编码器已加载');
+      });
+
+      lines.push(`QR rendered=${el('qr1').dataset.qrRendered} dec='${decodeCanvas('qr1')}'`);
+      lines.push(`ELMT ${__arkui_dom_elmtRecords.size}`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

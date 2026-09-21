@@ -356,6 +356,7 @@
     for (const el of r.querySelectorAll('*')) {
       if (el.__drawKind === 'Gauge') redrawGauge(el);
       else if (el.__drawKind === 'Progress' && el.__svg) drawProgressRing(el, el.__ratio || 0);
+      else if (el.__arkuiQrPending) redrawQr(el);          // QRCode 同思想：等真实尺寸画
     }
   }
 

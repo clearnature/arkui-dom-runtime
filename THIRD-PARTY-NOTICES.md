@@ -98,6 +98,28 @@ grep -c "Huawei Device" /tmp/hmtest/app/entry/src/main/ets/pages/{Index,Provide,
 
 ---
 
+## 3b. R33 轮入库的第三方源码（QRCode 组件的真实编码器 + 测试侧独立解码器）
+
+入库文件与出处（**均零修改**，只打包/拷贝/附加来源说明）：
+
+| 入库文件 | 出处 | 许可 | 用途 |
+|---|---|---|---|
+| `runtime/vendor/qrcode-1.5.4.js` | npm `qrcode@1.5.4`（node-qrcode，Ryan Day），入口 `lib/browser.js`，bun 打包为单文件经典脚本 | MIT（原文：`runtime/vendor/qrcode-1.5.4.LICENSE`） | `QRCode` 组件的**真实编码器**（矩阵生成）；未加载 vendor 时组件记警告并降级（不静默） |
+| `test/vendor/jsqr-1.4.0.js` | npm `jsqr@1.4.0`（jsQR，cozmo），`dist/jsQR.js` webpack UMD，**原样拷贝** | Apache-2.0（原文：`test/vendor/jsqr-1.4.0.LICENSE`） | **测试侧独立解码器**——与编码器互为独立实现，qrdemo 用例的交叉验证（画出来的码能被独立解码器读回） |
+
+- **移植形式**：库代码**零修改**——编码器仅附加了我们自己的 ESM 胶水入口
+  （re-export + `globalThis.ArkuiVendorQrcode = qrcode` 一行，负责暴露全局）。
+- **复现**（bun 缓存 → 仓库）：
+
+```bash
+B=/home/yanli/.bun/install/cache
+cp "$B/jsqr@1.4.0@@@1/dist/jsQR.js" test/vendor/jsqr-1.4.0.js
+cp "$B/jsqr@1.4.0@@@1/LICENSE" test/vendor/jsqr-1.4.0.LICENSE
+# 编码器：见 tools 内一次性脚本 /tmp/qr-port.cjs（bun bundle lib/browser.js → iife）
+```
+
+---
+
 ## 4. 仅作参考阅读的上游（**开源**，可放心引用其接口形状）
 
 | 来源 | 许可 | 我们如何使用 |

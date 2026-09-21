@@ -16,6 +16,7 @@
     "pages/PopDemo",
     "pages/UiContextDemo",
     "pages/CanvasDemo",
-    "pages/XCompDemo"
+    "pages/XCompDemo",
+    "pages/QrDemo"
   ]
 }

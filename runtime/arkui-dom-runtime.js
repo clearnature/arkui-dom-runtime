@@ -3643,6 +3643,7 @@
     for (const el of r.querySelectorAll('*')) {
       if (el.__drawKind === 'Gauge') redrawGauge(el);
       else if (el.__drawKind === 'Progress' && el.__svg) drawProgressRing(el, el.__ratio || 0);
+      else if (el.__arkuiQrPending) redrawQr(el);          // QRCode 同思想：等真实尺寸画
     }
   }
 
@@ -3924,6 +3925,10 @@
     }
     // 弹出类（R29）：selected 按身份分派；Select.onSelect 双参拦在通用 on* 规则之前；
     // MenuItem.onChange 只登记（点击切换在工厂里派发）
+    if (node.__arkuiQrValue !== undefined && QR_ATTRS[prop]) {
+      QR_ATTRS[prop](node, value);
+      return;
+    }
     if (node.__arkuiPopup) {
       if (POPUP_ATTRS[prop]) {
         POPUP_ATTRS[prop](node, value);
@@ -5059,6 +5064,83 @@
     onFinish: (n, v) => { (n.__marqueeCbs = n.__marqueeCbs || {}).finish = v; },
   };
 
+  // ────────────────── 信息展示收官：QRCode（R33）──────────────────
+  //
+  // 产物形态（实测 fixtures/pages/QrDemo.ts）：
+  //   QRCode.create('…');        ← create 单参（最多 512 字符，超出取前 512，JSDoc 原文）
+  //   QRCode.color(...); QRCode.backgroundColor(...); QRCode.contentOpacity(...)
+  //
+  // 语义锚点（qrcode.d.ts JSDoc 原文）：color 默认 '#ff000000'、backgroundColor 默认
+  // '#ffffffff'（API 11+）、contentOpacity 默认 1 范围 [0,1]；空串 → 无效 QR。
+  //
+  // 编码器是**移植的第三方库**（global.ArkuiVendorQrcode = node-qrcode@1.5.4 的浏览器 bundle，
+  // 见 THIRD-PARTY-NOTICES §3b，库代码零修改）——不自己实现。未加载 vendor 时记警告并降级
+  // 为占位（不静默、不假画）。
+  // 渲染走渲染后同步阶段（redrawQr，由 syncDrawings 调用——绘制要等尺寸生效，不变量 18）：
+  // canvas 内容尺寸 = 组件尺寸（1:1），模块边长 = floor(尺寸/总模块数)，quiet zone 4 模块
+  // （node-qrcode 默认）计入矩阵。颜色变化 → 整幅重画。
+  // ArkUI 的 8 位颜色字面量是【ARGB】（'#ff000000' = 不透明黑，JSDoc 原文默认），CSS 是 RRGGBBAA
+  // ——位数歧义必须归一，否则默认前景画成全透明（首跑当场抓住：解码 null）。
+  const qrColor = (c) => {
+    const s = colorOf(c);
+    return s[0] === '#' && s.length === 9 ? '#' + s.slice(3) + s.slice(1, 3) : s;
+  };
+  function redrawQr(el) {
+    if (!global.ArkuiVendorQrcode) {
+      delete el.__arkuiQrPending; // BROKEN-1：应记警告（不静默降级）
+      return;
+    }
+    el.__arkuiQrPending = false;
+    try {
+      const w = el.offsetWidth || 0;
+      const h = el.offsetHeight || 0;
+      if (w > 0) el.width = w;
+      if (h > 0) el.height = h;
+      const value = el.__arkuiQrValue.slice(0, 512);           // JSDoc：取前 512
+      if (!value) return;                                     // 空串 → 无效 QR（JSDoc 原文）
+      const native = el.getContext('2d');
+      const matrix = global.ArkuiVendorQrcode.create(value).modules;
+      const quiet = 4;                                        // quiet zone 4 模块（node-qrcode 默认）
+      const total = matrix.size + quiet * 2;
+      const cell = Math.max(1, Math.floor(Math.min(w, h) / total));
+      const offX = Math.floor((w - cell * total) / 2);
+      const offY = Math.floor((h - cell * total) / 2);
+      native.fillStyle = qrColor(el.__arkuiQrBg);
+      native.fillRect(0, 0, w, h);
+      native.globalAlpha = el.__arkuiQrOpacity;
+      native.fillStyle = qrColor(el.__arkuiQrFg);
+      for (let y = 0; y < matrix.size; y++) {
+        for (let x = 0; x < matrix.size; x++) {
+          if (matrix.data[y * matrix.size + x]) {
+            native.fillRect(offX + (x + quiet) * cell, offY + (y + quiet) * cell, cell, cell);
+          }
+        }
+      }
+      native.globalAlpha = 1;
+      el.dataset.qrRendered = String(total);
+    } catch (e) {
+      layoutWarnings.push(`QRCode 渲染抛错：${e && e.message}`);
+    }
+  }
+  const QRCode = ensureComponent('QRCode', (args) => {
+    const el = document.createElement('canvas');
+    el.__arkuiQrValue = args && args[0] !== undefined ? String(resolveResource(args[0])) : '';
+    el.__arkuiQrFg = '#ff000000';              // JSDoc 默认
+    el.__arkuiQrBg = '#ffffffff';              // JSDoc 默认（API 11+）
+    el.__arkuiQrOpacity = 1;
+    el.__arkuiQrPending = true;                // 等渲染后同步阶段画（不变量 18）
+    return el;
+  });
+  const QR_ATTRS = {
+    color: (n, v) => { n.__arkuiQrFg = colorOf(v); redrawQr(n); },
+    backgroundColor: (n, v) => { n.__arkuiQrBg = colorOf(v); redrawQr(n); },
+    contentOpacity: (n, v) => {
+      const o = Number(resolveResource(v));
+      n.__arkuiQrOpacity = Number.isFinite(o) && o >= 0 && o <= 1 ? o : 1;   // JSDoc：出界取默认 1
+      redrawQr(n);
+    },
+  };
+
   // ────────────────── 弹出类：Select / Menu + MenuItem（R29）──────────────────
   //
   // 产物形态（实测 fixtures/pages/PopDemo.ts）：
@@ -5961,6 +6043,8 @@
     Canvas, CanvasRenderingContext2D, RenderingContextSettings,
     // R32：表层类另一半。XComponentType 同为产物里的自由变量枚举
     XComponent, XComponentController, XComponentType,
+    // R33：信息展示收官（QRCode 组件；其编码器由 runtime/vendor/qrcode-1.5.4.js 提供）
+    QRCode,
     __Common__: _CommonWrapper,
     FontWeight, VerticalAlign, HorizontalAlign, FlexAlign, TextAlign, ItemAlign, Color,
     TextOverflow, Alignment, Scroller, Axis,

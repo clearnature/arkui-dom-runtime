@@ -228,6 +228,10 @@
     }
     // 弹出类（R29）：selected 按身份分派；Select.onSelect 双参拦在通用 on* 规则之前；
     // MenuItem.onChange 只登记（点击切换在工厂里派发）
+    if (node.__arkuiQrValue !== undefined && QR_ATTRS[prop]) {
+      QR_ATTRS[prop](node, value);
+      return;
+    }
     if (node.__arkuiPopup) {
       if (POPUP_ATTRS[prop]) {
         POPUP_ATTRS[prop](node, value);
