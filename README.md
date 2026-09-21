@@ -818,6 +818,49 @@ Marquee 2 + log 全程 1；**Badge 全绿**——它的语义全在 create 参�
 `fixtures/pages/ShowDemo.ts`、`harmony-proj/`（ShowDemo.ets + main_pages.json）、
 `test/showdemo.html`、`run.sh`、`electron/run.sh`
 
+## R29：弹出类 `Select` / `Menu` + `MenuItem` ✅
+
+骨架组件视觉语义第四批（弹出类）。生成的骨架已把 Select 映射成**原生 `<select>`**，
+Menu/MenuItem 是 flex div 骨架——本轮补语义层。
+
+**测量**（新增 `pages/PopDemo.ets` → 官方构建）实测形态：`Select.create([{value}])` **create 单参数**
+（`selected` 是属性方法 `selected(value: number | Resource)`，`SelectOption = {value, icon?, …}`）；
+`Select.onSelect` 签名是**双参** `(index: number, value: string)`（index = 选中序号、value =
+选中项文本）；`Menu.create()` + `MenuItem.create({content})`；`MenuItem.onChange` 是**多选语义**
+（每项独立 `selected` + onChange，非互斥——selectIcon/selected 是 MenuItem 的选择标记）。
+
+**实现**（新分片 `runtime/src/popup.js`，第 13 个，手写优先）：`Select` 沿用原生 `<select>` 基座
+（options → `<option>`，`selected(i)` → `selectedIndex` 直落）；`onSelect` 在通用 `on*` 规则前拦截、
+change 事件带双参派发（`selectedIndex` 编程改不派发 change——DOM 取舍已记录，测试用
+`dispatchEvent('change')` 驱动）；`MenuItem` 行式面板：点击切换自身选中（带 ✓ 标记）并派发
+`onChange(新状态)`（多选语义，每项独立）；`Select.value(str)`（"设置当前显示文本"）：原生
+`<select>` 的显示文本不可覆盖 → **照实记 `data-value-text`**（取舍已写进 docs）。
+
+```
+$ bash run.sh popdemo
+=== ALL PASS ===                    （16 条断言，双端同数）
+PASS Select：三选项建成 <option>／selected(1) → selectedIndex=1 显示 'B'／fontColor → color
+PASS onSelect 双参：dispatch change → (2,'C')、再选 A → (0,'A')
+PASS Select.value('Choosed') → data-value-text（原生 select 显示文本不可覆盖，记录取舍）
+PASS Menu/MenuItem：内容渲染／selected(true) → ✓ 标记／点 item1 → onChange(true)／
+     点已选 item2 → onChange(false) 并取消选中（多选语义）
+```
+
+**破坏验证**（3 处，各被精确抓住）：① `POPUP_ATTRS`/`onSelect` 分派短路 → **7 条**红；
+② MenuItem 点击切换摘除 → 恰好 **3 条**红；③ options 构建摘除 → 恰好 **5 条**红
+（selectedIndex 变 -1、onSelect 双参全空——证明 `<option>` 构建是 selectedIndex 与回调的基座）。
+还原后 md5 与基准一致。
+
+**已知限制**（写进 CAPABILITY）：`Select.value` 显示文本覆盖记 `data-value-text`（原生 select
+不可覆盖，取舍已记录）；`Select` 编程改 `selectedIndex` 不派发 onSelect（同 R27 取舍）；
+`MenuItem` 无 `onMenuItemClick`（该 SDK 版本的多选语义走 onChange）；`Menu.showMenu`/`hide`、
+`MenuItemGroup`、`Select` 的 `icon/symbolIcon` 选项未实现（记警告）。
+
+**触及**：`runtime/src/popup.js`（新分片，第 13 个）、`runtime/src/area.js`（POPUP 分支）、
+`runtime/src/main.js`（@include + 安装全局 3 个名字）、`tools/stats.mjs`（手写 33 → 35）、
+`fixtures/pages/PopDemo.ts`、`harmony-proj/`（PopDemo.ets + main_pages.json）、
+`test/popdemo.html`、`run.sh`、`electron/run.sh`
+
 ## R14：多层锚链 + `Guideline` + `bias` ✅
 
 ```
@@ -1410,14 +1453,14 @@ PASS starStyle 的图片 URI 不可用已记警告
 | 文档数字守门 | `npm run stats:check-doc` | `ARCHITECTURE.md` §6 的整块实测数字逐行比对，漂移即非 0 退出；`stats:write-doc` 就地重写 |
 | 覆盖统计 | `npm run stats` | 文档里的所有数字都由它产出（`--json` 机器可读） |
 
-`npm run check` 当前：**6 步全绿（preflight + 生成物一致 + 产物/源一致 + 文档数字 + 浏览器 36 用例 + Electron 35 用例）**。
+`npm run check` 当前：**6 步全绿（preflight + 生成物一致 + 产物/源一致 + 文档数字 + 浏览器 37 用例 + Electron 36 用例）**。
 
 ## 下一步
 
 **权威清单在 `docs/ROADMAP.md`**（每项带可复现的验收命令）。当前优先：
 
 1. 其余骨架组件的视觉语义——**按家族推进**：已收形状族 8（R26）、输入类 4（R27）、
-   信息展示类 4（R28）；下一批候选：`Select`/`Menu`（弹出类）、`Canvas`/`XComponent`（表层类）、
+   信息展示类 4（R28）、弹出类 3（R29）；剩余候选：`Canvas`/`XComponent`（表层类）、
    `QRCode`（需 QR 编码器，单列）。另有 `@ohos:media`/`UIContext`
 2. ~~**继续把 `runtime/src/main.js` 拆细**~~ **已拆到位（2026-09-21，源拆分第三步）**：9 个分片，
    `main.js` 剩 **1869 行 / 86,452 B**（基础设施 / 状态 v1 / ViewPU / 属性映射 / Tabs / Swiper /
@@ -1430,9 +1473,10 @@ PASS starStyle 的图片 URI 不可用已记警告
 > **`Navigation` 标题栏/工具栏/分栏**（见上文「R12 收口」）、
 > **`Navigation` 转场动画 + `onTitleModeChange` 滚动联动**（见上文「R25 收口」）、
 > **runtime 源码分片**（R5c）、**R24 ArkVM/`.abc` 路径调研**（`docs/ARKVM-RESEARCH.md`）、
-> **SVG 形状族**（见上文「R26」）、**输入类**（见上文「R27」）、**信息展示类**（见上文「R28」）。
+> **SVG 形状族**（见上文「R26」）、**输入类**（见上文「R27」）、**信息展示类**（见上文「R28」）、
+> **弹出类**（见上文「R29」）。
 
-**仍未覆盖**：`chainMode`、其余 ~69 个骨架组件的视觉语义、`@ohos:media`/`UIContext`。
+**仍未覆盖**：`chainMode`、其余 ~66 个骨架组件的视觉语义、`@ohos:media`/`UIContext`。
 **别把没验的当结论**——`docs/CAPABILITY.md` 里有逐项的能力矩阵，其中标了哪些语义是**推断**的。
 
 **已知待办（别当已完成）**：

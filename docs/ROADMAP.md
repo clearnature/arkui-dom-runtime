@@ -548,6 +548,29 @@ strokeWidth 方向分支摘除 → **1 红**。还原后 md5 一致。
 `fixtures/pages/ShowDemo.ts`、`harmony-proj/`（ShowDemo.ets + main_pages.json）、
 `test/showdemo.html`、`run.sh`、`electron/run.sh`
 
+### R29 — 弹出类：`Select` / `Menu` + `MenuItem` ✅（2026-09-21）
+
+**内容**：骨架语义第四批。Select 生成骨架已映射原生 `<select>`，本轮补语义层。
+
+**测量**（新增 `pages/PopDemo.ets`）：`Select.create([{value}])` 单参数（`selected` 是属性方法，
+`SelectOption = {value, icon?}`）；`onSelect` 双参 `(index, value)`（选中序号 + 选中项文本）；
+`MenuItem.onChange` 是**多选语义**（每项独立 selected，非互斥）。
+
+**实现**：新分片 `runtime/src/popup.js`（第 13 个）。Select：options → `<option>`、
+`selected(i) → selectedIndex` 直落、`onSelect` 拦在通用 on* 规则前带双参派发（编程改
+selectedIndex 不派发 change——DOM 取舍已记录）；`value(str)` 显示文本覆盖记 `data-value-text`
+（原生 select 不可覆盖，取舍已记录）；MenuItem 行式面板：点击切换自身选中（✓ 标记）并派发
+`onChange(新状态)`。
+
+**验收**：`bash run.sh popdemo`（**16 条断言**）双端通过。**破坏验证（3 处）**：分派短路 →
+**7 红**；点击切换摘除 → **3 红**；options 构建摘除 → **5 红**（selectedIndex 变 -1、
+双参全空——证明 `<option>` 构建是 selectedIndex 与回调的基座）。还原后 md5 一致。
+
+**触及**：`runtime/src/popup.js`（新）、`runtime/src/area.js`（POPUP 分支）、
+`runtime/src/main.js`（@include + 安装全局）、`tools/stats.mjs`（手写 33→35）、
+`fixtures/pages/PopDemo.ts`、`harmony-proj/`（PopDemo.ets + main_pages.json）、
+`test/popdemo.html`、`run.sh`、`electron/run.sh`
+
 ---
 
 ## P3 布局引擎

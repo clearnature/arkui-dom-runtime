@@ -12,6 +12,7 @@
     "pages/NavTransDemo",
     "pages/ShapeDemo",
     "pages/InputDemo",
-    "pages/ShowDemo"
+    "pages/ShowDemo",
+    "pages/PopDemo"
   ]
 }

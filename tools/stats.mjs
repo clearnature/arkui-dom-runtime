@@ -31,7 +31,9 @@ const HANDWRITTEN = ['Text', 'Button', 'Column', 'Row', 'Stack', 'List', 'ListIt
   // R27：输入类（Checkbox/Radio/Toggle/Slider）
   'Checkbox', 'Radio', 'Toggle', 'Slider',
   // R28：信息展示类（Badge/Counter/Divider/Marquee；QRCode 需要 QR 编码器，单列）
-  'Badge', 'Counter', 'Divider', 'Marquee'];
+  'Badge', 'Counter', 'Divider', 'Marquee',
+  // R29：弹出类（Select/Menu/MenuItem）
+  'Select', 'Menu', 'MenuItem'];
 const CONTROL_FLOW = ['If', 'ForEach', 'LazyForEach'];   // 不在 149 注册表内，单独实现
 
 const gen = read('runtime/generated-components.js');
