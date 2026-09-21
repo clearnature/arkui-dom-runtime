@@ -78,7 +78,7 @@
     value: (n, v) => { n.dataset.valueText = String(resolveResource(v)); },   // Select.value：显示文本覆盖（记录取舍）
     fontColor: (n, v) => { n.style.color = colorOf(v); },
     showPosition: (n, v) => { n.dataset.showPosition = String(resolveResource(v)); },
-    onChange: (n, v) => { (n.__popupCbs = n.__popupCbs || {}).onChange = v; },   // MenuItem 的回调（点击切换见工厂）
+    onChange: (n, v) => { (/** @type {any} */ (n.__popupCbs = n.__popupCbs || {})).onChange = v; },   // MenuItem 的回调（点击切换见工厂）
   };
 
   // Select.onSelect 的双参派发（特殊签名，拦在通用 on* 规则之前）：change 事件 → (index, value)。

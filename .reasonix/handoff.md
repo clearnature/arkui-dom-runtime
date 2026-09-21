@@ -8,8 +8,9 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R37**（分步器 Stepper/StepperItem：内置导航条 + 五事件按 .d.ts 派发 + Skip 语义）— **PASS**
-  （stepdemo 16 条双端；破坏 9/1/1 红；**ItemState 枚举值按声明顺序 0-3**，照抄想当然的值 onSkip 永不触发）
+- 上次切片：**R38**（质量切片：渐进强类型化 tsc --checkJs 门禁 + stepdemo/inputdemo/textdemo
+  断言补全 + 两个真 bug：onSubmit `value` 未定义、v2 `Event` 遮蔽 DOM Event）— **PASS**
+  （typecheck 211→0；stepdemo 25/inputdemo 29 双端；破坏 4/3/2 红；Mimosa deep 审计重跑封印 0 findings）
 - 下一步（README「下一步」原文）：
   1. 其余骨架组件的视觉语义——**按家族推进**；已收：形状族 8 + 输入类 7 + 信息展示类 5 +
      弹出类 3 + 表层类 2 + 小件 4 + 分步器 2 + UIContext + @ohos.media（R35）；
@@ -93,4 +94,5 @@ bash electron/run.sh <用例>   # 单用例·Electron
 | 2026-09-21 | R34 输入收官 | 2f8af86 | 双端 16 条 PASS | TextInputController.caretPosition；Enter→onSubmit 的回调值派发未通（keydown 到、终态链接未解），CAPABILITY 记限制 |
 | 2026-09-21 | R35 media | 4ec3cab | 双端通过 | AVPlayer → HTMLAudioElement 垫片（第 15 个平台模块）；Electron autoplay-policy 放行 |
 | 2026-09-21 | R36 小件收官 | e8d209b | 双端 14 条 PASS + 破坏 1/1/1 红 | Flex 透传 CSS 同名；Span 内联子段；新分片 small.js（第 16 个） |
-| 2026-09-21 | R37 分步器 | （本次提交） | 双端 16 条 PASS + 破坏 9/1/1 红 | **破坏验证残留 BROKEN-1 跨轮持有 → 派发断言误删**（新坑 90）；分派分支嵌兄弟条件块=静默死分支（新坑 91）；ItemState 枚举值必须按声明顺序（坑 83 再现）；README R35 重复「触及」块顺手清理 |
+| 2026-09-21 | R37 分步器 | bf06354 | 双端 16 条 PASS + 破坏 9/1/1 红 | **破坏验证残留 BROKEN-1 跨轮持有 → 派发断言误删**（新坑 90）；分派分支嵌兄弟条件块=静默死分支（新坑 91）；ItemState 枚举值必须按声明顺序（坑 83 再现）；README R35 重复「触及」块顺手清理 |
+| 2026-09-21 | R38 质量切片 | （本次提交） | 门禁 7 步全绿（+typecheck）；stepdemo 25 / inputdemo 29 双端；破坏 4/3/2 红 | **检查单元=拼接产物不是分片**（假阳性 153 全消）；runtime.d.ts Element 合并固化 123 个挂载字段；**真 bug×2**：onSubmit `value` 未定义被 try/catch 吞（R34 之谜破案）、v2 `Event` 遮蔽 Scroller new Event（flush 兜底掩盖）；enterKeyType 处理器补全；Mimosa deep 审计封印 0 findings（dependencySummary partial：零 npm 依赖无可扫包，如实记录） |

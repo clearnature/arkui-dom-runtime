@@ -63,6 +63,11 @@ step "build-runtime --check" node tools/build-runtime.mjs --check
 # 触发了怎么修： npm run stats:write-doc
 step "stats --check-doc" node tools/stats.mjs --check-doc
 
+# ── 4b. 类型检查（R38：tsc --checkJs 检查拼接产物 + runtime.d.ts 词汇表）──
+# 红线 0 错误。曾挖出 2 个真 bug（onSubmit 的 value 未定义 / v2 Event 遮蔽 DOM Event）。
+# 触发了怎么修：按报错的 文件:行 修源分片（JSDoc 断言优先，零运行时改动），别用 @ts-ignore。
+step "typecheck" node tools/typecheck.mjs
+
 # ── 5. 浏览器用例 ──
 step "browser (run.sh all)" bash run.sh all
 

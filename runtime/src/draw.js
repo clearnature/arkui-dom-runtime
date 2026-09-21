@@ -68,9 +68,9 @@
     const ring = style === 'ring' || style === 'eclipse' || style === 'scaleRing';
     if (ring) {
       node.__svg = svgEl('svg', {});
-      node.__svg.style.width = '100%';
-      node.__svg.style.height = '100%';
-      node.appendChild(node.__svg);
+      (/** @type {SVGElement} */ (node.__svg)).style.width = '100%';
+      (/** @type {SVGElement} */ (node.__svg)).style.height = '100%';
+      node.appendChild(/** @type {SVGElement} */ (node.__svg));
       if (style === 'scaleRing') warnOnce('Progress(style=ScaleRing) 的刻度未实现（只画环）');
       node.__stroke = 4;
     } else {
@@ -136,9 +136,9 @@
     node.__strokeW = 4;
     node.__colors = null;
     node.__svg = svgEl('svg', {});
-    node.__svg.style.width = '100%';
-    node.__svg.style.height = '100%';
-    node.appendChild(node.__svg);
+    (/** @type {SVGElement} */ (node.__svg)).style.width = '100%';
+    (/** @type {SVGElement} */ (node.__svg)).style.height = '100%';
+    node.appendChild(/** @type {SVGElement} */ (node.__svg));
     return node;
   }
 

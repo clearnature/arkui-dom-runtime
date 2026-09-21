@@ -5,7 +5,9 @@
   // ⚠️ 实测更正：API 26 SDK 里【没有】onAbilityResult（全 SDK grep 0 命中），
   // stage 模型的结果只走 startAbilityForResult 的 Promise / AsyncCallback —— 见 docs/ROADMAP R20。
   const abilityStack = [];
-  const abilityWindowStats = { created: 0, closed: 0, history: [] };
+  // @type 档位：history 不写会推成 never[]
+  // @type 档位：history 不写会推成 never[]（属性位置的 JSDoc 在 TS4.9 不生效，整袋收）
+  const abilityWindowStats = /** @type {any} */ ({ created: 0, closed: 0, history: [] });
   let abilityClassForChildren = null;     // 同一进程内再起实例时用的类（不按 abilityName 路由）
 
   function abilityLog(rec) {
@@ -98,12 +100,13 @@
       throw bizError(16000001, '没有可启动的 ability：本运行时只会启动 '
         + '__arkui_dom_startAbility 注册的那个类（不按 want.abilityName 路由，见 docs 已知限制）');
     }
-    const entry = {
+    // @type 档位：windowEl/context/ability 是 null↔对象 摆动（生命周期里先后赋值）
+    const entry = /** @type {any} */ ({
       name: (want.abilityName !== undefined && want.abilityName !== null) ? String(want.abilityName) : AbilityClass.name,
       role: 'child', parent, rootEl: null, windowEl: null, pagePath: null,
       ability: null, context: null, terminated: false,
       pending: onResult ? [onResult] : [],   // 先登记结果接收者：子 ability 可能在自己的
-    };                                       // 生命周期里【同步】就 terminateSelfWithResult
+    });                                      // 生命周期里【同步】就 terminateSelfWithResult
     entry.windowEl = makeAbilityWindow(entry);
     abilityStack.push(entry);
     entry.context = makeAbilityContext(entry);
@@ -177,10 +180,11 @@
     const logs = (global.__arkui_dom_logs = global.__arkui_dom_logs || []);
     abilityClassForChildren = AbilityClass;
 
-    const entry = {
+    // @type 档位：windowEl/context/ability 是 null↔对象 摆动（同 child entry）
+    const entry = /** @type {any} */ ({
       name: AbilityClass.name, role: 'root', parent: null, rootEl, windowEl: null,
       pagePath: null, ability: null, context: null, terminated: false, pending: [],
-    };
+    });
     abilityStack.push(entry);
     const context = makeAbilityContext(entry);
     entry.context = context;

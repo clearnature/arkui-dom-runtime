@@ -252,11 +252,13 @@
 
   function attachGestures(el, gestures) {
     detachGestures(el);
-    const st = {
+    // @type 档位：listeners/longPress 不写会推成 never[]，push 全红；tapTimer null↔number 摆动；
+    // arbClass 等字段是挂上后才有的 → 整袋 any（识别器状态的形状本来就是动态的）
+    const st = /** @type {any} */ ({
       el,
       gestures: gestures.slice(), listeners: [], longPress: [],
       ptrs: new Map(), recState: new Map(), tapCount: 0, tapTimer: null,
-    };
+    });
     st.arbClass = gestureArbClass(st.gestures);
     // 识别循环一律跑【摊平后】的手势表：组只是登记层，识别与回调仍在元素这一层做
     const flat = flattenGestures(st.gestures);
@@ -283,7 +285,7 @@
       for (const rec of flat) {
         if (rec.type === 'longPress') {
           const dur = rec.params.duration === undefined ? 500 : Number(rec.params.duration);
-          const rs = { rec, timer: null, fired: 0, dur };
+          const rs = /** @type {any} */ ({ rec, timer: null, fired: 0, dur });
           const tick = () => {
             fireGesture(st, rec, 'onAction', gestureEvent({ repeat: rs.fired > 0 }));
             rs.fired++;

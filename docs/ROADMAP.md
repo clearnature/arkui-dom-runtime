@@ -114,7 +114,7 @@ du -sh .git                                   # 648K
 
 ### ~~R3 — `tools/check-all.sh`：一条命令做完所有验收~~ ✅ 已完成
 
-6 步：preflight → 生成物一致 → **产物/源一致（`build-runtime --check`）** → 文档数字一致 → 浏览器 → Electron
+7 步：preflight → 生成物一致 → **产物/源一致（`build-runtime --check`）** → 文档数字一致 → **typecheck（R38）** → 浏览器 → Electron
 （另加统计，留档，不影响退出码）。
 （后两步由 R5a 之后的守门补上：`stats --check-doc` 于工程化阶段加、`build-runtime --check` 于 2026-09-21
 拆分 runtime 源码时加。）
@@ -509,7 +509,7 @@ Moving=1, End=2, Click=3}`。
 ③ Chrome 只给新选中者发 change，被取消成员的 `onChange(false)` 按组**补发**（radio.d.ts JSDoc：
 false = "changes from selected to unselected"）。
 
-**验收**：`bash run.sh inputdemo`（**27 条断言**）双端通过。**破坏验证（3 处）**：摘 target 校验
+**验收**：`bash run.sh inputdemo`（**29 条断言**；R27 时 27，R38 +onSubmit 组）双端通过。**破坏验证（3 处）**：摘 target 校验
 → **3 红**；补发摘除 → **2 红**；幂等 diff 改无条件赋值 → **2 红**（重渲染拉回声明值 + 凭空
 RD 对）。还原后 md5 一致，navdemo/tabgrid 回归绿。
 
@@ -672,9 +672,11 @@ caretColor → style.caretColor；onChange 按 type 分流（checkbox/radio → 
 文本 → input+change+字符串——R27 的 boolean 包装对文本不适用）；onSubmit 挂 keydown wrapper
 （enterKey 未设取 Done=6，.d.ts 默认值原文）；Hyperlink → 原生 `<a>`（href/target/content）。
 
-**验收**：`bash run.sh textdemo`（**16 条断言**）双端通过。**诚实收尾**：Enter→onSubmit 回调的
-value 派发**本轮未打通**（keydown 到达已证、wrapper 已挂、最后一环待查）——断言改为"派发路径
-已注册"并如实写进 docs/CAPABILITY 已知限制（别把没验的当结论）。
+**验收**：`bash run.sh textdemo`（**16 条断言**）双端通过。~~诚实收尾：Enter→onSubmit 的 value
+派发未打通~~ → **R38 已解决**：根因是 wrapper 里写了未定义标识符 `value`（正确是参数 `v`），
+ReferenceError 被自家 try/catch 吞掉——tsc --checkJs 静态抓出。textdemo 断言升级为端到端
+"Enter → log 出现 SUB6;"，inputdemo 另加 enterKeyType(Send) 的派发断言（顺手补上一直缺失的
+`enterKeyType` 属性处理器——此前 wrapper 读的 data-enter-key 无人写入）。
 
 **触及**：`runtime/src/input.js`（三组件 + Controller 基座 + EnterKeyType）、
 `runtime/src/area.js`（文本 onChange 分流）、`runtime/src/main.js`（安装全局）、
@@ -740,8 +742,9 @@ onFinish；其余 → onNext(index, index+1)**；切换后派发 `onChange(prev,
 值错了 onSkip 永远不触发（坑 83 的枚举两套来源又现形）。`area.js` 分发链加两级：
 `STEP_ATTRS`（五事件）+ `XC_ITEM_ATTRS`（label/status，含 closest 向 Stepper 回报重汇入）。
 
-**验收**：`bash run.sh stepdemo`（**16 条断言**：结构 6 + 注册面 5 + 派发链 4 + 回归 1）
-双端通过。**破坏验证（3 处）**：STEP 分派短路 → **9 红**（注册 5 + 派发 4）；
+**验收**：`bash run.sh stepdemo`（~~16 条~~ → **R38 扩到 25 条**：结构 6 + 注册面 5 +
+派发链 4 + 导航边界 4 + 多实例与状态族 5 + 回归 1）双端通过。**破坏验证（3 处）**：STEP 分派
+短路 → **9 红**（注册 5 + 派发 4）；
 XC 分派短路 → **1 红**（label 断言现形——通用 data-* 落点是 `JSON.stringify`，导航条出现
 `"back0"` 带引号）；Skip 语义短路 → **1 红**（Skip 页错走 onNext）。还原后 md5 一致。
 
@@ -754,6 +757,28 @@ XC 分派短路 → **1 红**（label 断言现形——通用 data-* 落点是 
 Stepper/StepperItem/ItemState）、`tools/stats.mjs`（手写 42→44）、`fixtures/pages/StepDemo.ts`、
 `harmony-proj/`（StepDemo.ets + main_pages.json）、`test/stepdemo.html`、`run.sh`、
 `electron/run.sh`
+
+### R38 — 质量切片：渐进强类型化 + 测试补全 + 两个真 bug ✅（2026-09-21）
+
+**强类型化**：检查单元 = 拼接产物（分片是同一 IIFE 的片段，按文件检查出 153 个假
+Cannot-find-name；370 → 211 全是假阳性消失）。三件套：`runtime/src/runtime.d.ts`（Element
+声明合并，123 个挂载状态字段成接口词汇表）+ `tsconfig.check.json`（checkJs +
+strictNullChecks；noImplicitAny 约 1508 个列后续路线）+ `tools/typecheck.mjs`（门禁第 5 步，
+红线 0）。211 → 0 全部 JSDoc/括号级修复（零运行时改动）。
+
+**两个真 bug**（详见 README R38 节）：① onSubmit wrapper 的 `value` 未定义标识符被自家
+try/catch 吞掉（R34 "未打通之谜" 的根因）→ 修复 + textdemo 断言端到端化 + enterKeyType
+处理器补全；② v2 `const Event` 遮蔽 Scroller 的 `new Event`（flush() 兜底让 lazy.html 一直绿，
+炸点潜伏）→ 内部改名 EventDeco。
+
+**测试补全**：stepdemo 16→25（导航边界 4 + 多实例与状态族 5）；inputdemo 27→29（onSubmit 组）；
+textdemo onSubmit 断言升级端到端。**破坏验证（3 处）**：越界守卫摘除 **4 红**／Skip 语义反转
+**3 红**／enterKeyType 摘除 **2 红**。新坑 92（`x = x || {}` 类型坍缩）/ 93（属性位置 JSDoc
+不生效）。
+
+**触及**：`runtime/src/runtime.d.ts`（新）、`tsconfig.check.json`（新）、`tools/typecheck.mjs`（新）、
+`tools/check-all.sh`（+1 步）、`package.json`、12 个源分片（JSDoc 注解）、
+`test/{stepdemo,inputdemo,textdemo}.html`、五文档
 
 ---
 

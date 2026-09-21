@@ -15,6 +15,7 @@
     "stats:json": "node tools/stats.mjs --json",
     "stats:check-doc": "node tools/stats.mjs --check-doc",
     "stats:write-doc": "node tools/stats.mjs --write-doc",
+    "typecheck": "node tools/typecheck.mjs",
     "check:gen": "node tools/gen-components.mjs --check",
     "check:runtime": "node tools/build-runtime.mjs --check",
     "build:runtime": "node tools/build-runtime.mjs",

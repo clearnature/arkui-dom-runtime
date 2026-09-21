@@ -1535,6 +1535,30 @@ Skip:3}`——产物把 `ItemState.Skip` 原样留给运行时求值（与 `Flex
 **已知限制**：`ItemState.Waiting` 的视觉语义（隐藏 next 按钮、换进度条）按 Normal 放行；
 `Disabled` 禁用未实现；create 的 `index` 只在创建时生效。
 
+### 4.20 渐进强类型化（R38）
+
+**检查单元 = 拼接产物，不是分片**。15 个分片在运行时是同一个 IIFE 的函数作用域片段
+（`resolveResource` 等声明在 main.js 的 IIFE 体内），按文件检查（全局脚本模型）会得到 153 个
+假 "Cannot find name" 和 6 个与 lib.dom 的重名假冲突；按产物检查（`runtime/arkui-dom-runtime.js`
+单文件单 Program）作用域模型与运行时一致。实测：分片 370 错 → 产物 211 错，全部可修。
+
+**三件套**：`runtime/src/runtime.d.ts`（与 lib.dom 做 **Element 声明合并**，把 123 个挂在元素上
+的状态字段 `__stepCbs/__svg/__arkuiComp…` 固化成接口词汇表；build-runtime 只按 @include 链取
+.js，d.ts 天然不进产物）+ `tsconfig.check.json`（checkJs + strictNullChecks + noImplicitAny:false；
+`noImplicitAny` 约 1508 个隐式 any，是后续路线不是本档位）+ `tools/typecheck.mjs`（复用
+ets-loader 自带 TS 4.9.5，项目保持零 npm 依赖；`check-all.sh` 第 5 步，红线 0）。
+
+**修法纪律**：类型错误必须用 JSDoc 断言/括号级改动修（运行时字节一个不动），不允许
+`@ts-ignore`；只有两类例外动了运行时且都是修真 bug（见下）。机制沉淀：坑 92（`(x = x || {})`
+赋值表达式在 TS 4.9 坍缩成 `{}`——惰性初始化回调袋全中招，修法是行内
+`(/** @type {any} */ (...))`）、坑 93（对象字面量属性位置的 JSDoc 静默不生效——要标就整袋收）。
+
+**两个真 bug（类型检查的直接战果）**：① `input.js` onSubmit wrapper 引用未定义的 `value`
+（应为参数 `v`），Enter 一按 ReferenceError 且被自家 try/catch 吞——"派发未打通"之谜的根因；
+② v2 装饰器 `const Event` 与 Scroller 的 `new Event('scroll')` 同处 IIFE 作用域，遮蔽后
+dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush() 兜底一直绿，炸点潜伏。
+修法：`value→v`；v2 内部绑定改名 `EventDeco`（装饰器表键不变，extract.mjs 产物前奏不受影响）。
+
 ---
 
 ## 5. 架构不变量
@@ -1632,9 +1656,9 @@ Skip:3}`——产物把 `ItemState.Skip` 原样留给运行时求值（与 `Flex
   v1  状态类        5 个（包装对象模型）
   v1  深度观测      @Observed 已实现（Proxy 拦截字段写入） + @ObjectLink 已实现（SynchedPropertyNesedObjectPU，官方拼写如此）
   v2  基类          ViewV2 已实现（extends ViewPU）
-  v2  装饰器        11 个：ViewV2 Param Local Once Event Monitor Computed Provider Consumer ObservedV2 Trace
+  v2  装饰器        10 个：ViewV2 Param Local Once Monitor Computed Provider Consumer ObservedV2 Trace
   注入方式          作用域内绑定（__arkui_dom_decorators），不挂 global —— 见 ARCHITECTURE.md §3.4
-  装饰器表合计      12 个（含 v1 的 Observed）
+  装饰器表合计      11 个（含 v1 的 Observed）
 
 == 平台模块（@ohos:*）==
   15 个：app.ability.AbilityConstant app.ability.ConfigurationConstant app.ability.UIAbility app.ability.Want data.preferences file.fs hilog measure multimedia.image multimedia.media net.http notificationManager promptAction router window
@@ -1646,16 +1670,16 @@ Skip:3}`——产物把 `ItemState.Skip` 原样留给运行时求值（与 `Flex
   fixtures 转换产物  43 个：AnimDemo AsyncIO Callee CanvasDemo Detail DrawDemo GestureDemo GestureGroupDemo Home Index InputDemo Layout Lazy LazyVar MeasArea MeasImage MeasNotify Measure MediaDemo NavBarDemo NavDemo NavTransDemo NetFile Observe PopDemo PromptAct Provide QrDemo RelDemo Rich ShapeDemo ShowDemo SmallDemo StepDemo SwiperDemo TabsGrid TextDemo TextMeasure TransitionDemo UiContextDemo V2 Widgets XCompDemo
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          501.7 KB
-  runtime(src)     321.1 KB
-  test             599.1 KB
-  tools            53.5 KB
+  runtime          506.9 KB
+  runtime(src)     331.3 KB
+  test             603.2 KB
+  tools            56.5 KB
   electron(src)    22.1 KB
-  docs             415.8 KB
+  docs             421.9 KB
   fixtures         338.8 KB
 
 == 逐文件（文档"文件职责"表的来源）==
-  runtime/arkui-dom-runtime.js        328551 B  320.9 KB
+  runtime/arkui-dom-runtime.js        333938 B  326.1 KB
   runtime/generated-components.js      57617 B  56.3 KB
   runtime/ohos-shims.js                61848 B  60.4 KB
   tools/extract.mjs                     6563 B  6.4 KB
@@ -1664,37 +1688,38 @@ Skip:3}`——产物把 `ItemState.Skip` 原样留给运行时求值（与 `Flex
   tools/stats.mjs                      14834 B  14.5 KB
   tools/assert-counts.mjs               7476 B  7.3 KB
   tools/preflight.mjs                   5422 B  5.3 KB
-  tools/check-all.sh                    3673 B  3.6 KB
+  tools/check-all.sh                    4053 B  4.0 KB
   tools/build-runtime.mjs               5138 B  5.0 KB
   run.sh                               21994 B  21.5 KB
   electron/run.sh                      13402 B  13.1 KB
   electron/main.js                      7025 B  6.9 KB
   electron/preload.js                   1961 B  1.9 KB
-  package.json                          1321 B  1.3 KB
+  package.json                          1366 B  1.3 KB
   .gitignore                             757 B  0.7 KB
-  README.md                           128637 B  125.6 KB
+  README.md                           132406 B  129.3 KB
   THIRD-PARTY-NOTICES.md                9672 B  9.4 KB
-  docs/ARCHITECTURE.md                141433 B  138.1 KB
-  docs/CAPABILITY.md                   47456 B  46.3 KB
-  docs/DEVELOPING.md                   62184 B  60.7 KB
-  docs/ROADMAP.md                     107613 B  105.1 KB
+  docs/ARCHITECTURE.md                143582 B  140.2 KB
+  docs/CAPABILITY.md                   48205 B  47.1 KB
+  docs/DEVELOPING.md                   63522 B  62.0 KB
+  docs/ROADMAP.md                     109572 B  107.0 KB
   docs/surface-measurement.md           6496 B  6.3 KB
   docs/SESSION-2026-09-20.md           12842 B  12.5 KB
-  runtime/src/ability.js                8802 B  8.6 KB
-  runtime/src/animation.js             25906 B  25.3 KB
+  runtime/src/ability.js                9225 B  9.0 KB
+  runtime/src/animation.js             27711 B  27.1 KB
   runtime/src/area.js                  21648 B  21.1 KB
   runtime/src/canvas.js                 9472 B  9.3 KB
-  runtime/src/draw.js                  18032 B  17.6 KB
-  runtime/src/gesture.js               29527 B  28.8 KB
-  runtime/src/input.js                 10095 B  9.9 KB
+  runtime/src/draw.js                  18208 B  17.8 KB
+  runtime/src/gesture.js               29797 B  29.1 KB
+  runtime/src/input.js                 10336 B  10.1 KB
   runtime/src/layout.js                14213 B  13.9 KB
-  runtime/src/main.js                  90650 B  88.5 KB
-  runtime/src/nav.js                   50317 B  49.1 KB
-  runtime/src/popup.js                  4884 B  4.8 KB
+  runtime/src/main.js                  91236 B  89.1 KB
+  runtime/src/nav.js                   50765 B  49.6 KB
+  runtime/src/popup.js                  4905 B  4.8 KB
+  runtime/src/runtime.d.ts              5042 B  4.9 KB
   runtime/src/shape.js                  7206 B  7.0 KB
-  runtime/src/show.js                  15986 B  15.6 KB
-  runtime/src/small.js                 10256 B  10.0 KB
-  runtime/src/v2.js                    11839 B  11.6 KB
+  runtime/src/show.js                  16091 B  15.7 KB
+  runtime/src/small.js                 10830 B  10.6 KB
+  runtime/src/v2.js                    12577 B  12.3 KB
   fixtures/pages/AnimDemo.ts            6451 B  6.3 KB
   fixtures/pages/AsyncIO.ts             6206 B  6.1 KB
   fixtures/pages/Callee.ts              1726 B  1.7 KB
@@ -1747,7 +1772,7 @@ Skip:3}`——产物把 `ItemState.Skip` 原样留给运行时求值（与 `Flex
   test/gesturedemo.html                 9875 B  9.6 KB
   test/gesturegroupdemo.html           14791 B  14.4 KB
   test/index.html                       3560 B  3.5 KB
-  test/inputdemo.html                   8065 B  7.9 KB
+  test/inputdemo.html                   9334 B  9.1 KB
   test/layout.html                      4135 B  4.0 KB
   test/lazy.html                        4380 B  4.3 KB
   test/lazyvar.html                    10093 B  9.9 KB
@@ -1774,10 +1799,10 @@ Skip:3}`——产物把 `ItemState.Skip` 原样留给运行时求值（与 `Flex
   test/shapedemo.html                   9951 B  9.7 KB
   test/showdemo.html                    8019 B  7.8 KB
   test/smalldemo.html                   5299 B  5.2 KB
-  test/stepdemo.html                    5732 B  5.6 KB
+  test/stepdemo.html                    8813 B  8.6 KB
   test/swiper.html                      9177 B  9.0 KB
   test/tabgrid.html                    10096 B  9.9 KB
-  test/textdemo.html                    6095 B  6.0 KB
+  test/textdemo.html                    5921 B  5.8 KB
   test/textmeasure.html                 9021 B  8.8 KB
   test/transitiondemo.html             17007 B  16.6 KB
   test/uictxdemo.html                   4532 B  4.4 KB

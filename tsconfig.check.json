@@ -1,0 +1,19 @@
+{
+  "//": "R38 渐进强类型化：检查对象是【拼接后的产物】（作用域模型与运行时一致），分片不是。",
+  "//lib": "dom.iterable 是 NodeList 展开的必需 lib（...nodeList 用到 Symbol.iterator）。",
+  "//档位": "checkJs + strictNullChecks 已是门禁档；noImplicitAny 是后续路线（1508 个隐式 any，见 ROADMAP）。",
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "target": "es2020",
+    "lib": ["es2020", "dom", "dom.iterable"],
+    "strictNullChecks": true,
+    "noImplicitAny": false,
+    "types": []
+  },
+  "files": [
+    "runtime/src/runtime.d.ts",
+    "runtime/arkui-dom-runtime.js"
+  ]
+}

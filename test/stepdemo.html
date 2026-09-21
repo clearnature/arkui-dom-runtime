@@ -95,6 +95,58 @@
           `prev → onPrevious(2,1)+onChange(2,1)（log='${txt('st-log')}'）`);
       });
 
+      // ══════════ ②c 导航边界：越界拒绝 + 缺省 label 回退 + 编程跳页派发 ══════════
+      await group('导航边界', async () => {
+        const sp = el('sp1');
+        sp.__arkuiStepperGo(99);
+        await tick(20);
+        check(sp.__arkuiStepperIndex === 1, `go(99) 越界拒绝（idx=${sp.__arkuiStepperIndex}）`);
+        sp.__arkuiStepperGo(-1);
+        await tick(20);
+        check(sp.__arkuiStepperIndex === 1, `go(-1) 越界拒绝（idx=${sp.__arkuiStepperIndex}）`);
+        sp.__arkuiStepperGo(2);
+        await tick(20);
+        check(sp.__arkuiStepperIndex === 2 && txt('st-log').endsWith('CHG1>2;'),
+          `编程跳页 go(2) → onChange(1,2)（idx=${sp.__arkuiStepperIndex}，log 尾='${txt('st-log').slice(-8)}'）`);
+        check(sp.querySelector('[data-arkui-stepper-prev]').textContent === '‹'
+          && sp.querySelector('[data-arkui-stepper-next]').textContent === '›',
+          `无 label 的页回退缺省文案 ‹/›（'${sp.querySelector('[data-arkui-stepper-prev]').textContent}'/'${sp.querySelector('[data-arkui-stepper-next]').textContent}'）`);
+      });
+
+      // ══════════ ②d 多实例 / 覆盖语义 / 状态族（路由外 DSL 建第二台 Stepper）══════════
+      await group('多实例与状态族', async () => {
+        let mark = '';          // onChange：注册两次（cbA/cbB），覆盖语义下只应出现 B
+        let nextTrace = '';     // onNext 轨迹
+        Stepper.create({ index: 0 });
+        Stepper.id('sp2');
+        Stepper.onChange(() => { mark += 'A'; });
+        Stepper.onChange(() => { mark += 'B'; });
+        Stepper.onNext((i, p) => { nextTrace += i + '>' + p + ';'; });
+        StepperItem.create();
+        StepperItem.nextLabel('W-next');
+        StepperItem.status(ItemState.Waiting);
+        StepperItem.pop();
+        StepperItem.create();
+        StepperItem.status(ItemState.Disabled);
+        StepperItem.pop();
+        Stepper.pop();
+        await tick(60);
+        const sp2 = el('sp2');
+        check(!!sp2 && sp2.querySelectorAll('[data-stepper-item]').length === 2,
+          `路由外 DSL 建第二台 Stepper（2 页，与 sp1 互不影响）`);
+        const statuses = [...sp2.querySelectorAll('[data-stepper-item]')]
+          .map((m) => m.dataset.status).join(',');
+        check(statuses === '2,1',
+          `ItemState.Waiting/Disabled 按声明顺序落 data-status（'${statuses}'，枚举序 Normal/Disabled/Waiting/Skip）`);
+        click('#sp2 [data-arkui-stepper-next]');
+        await tick(40);
+        check(mark === 'B', `onChange 注册两次 → 覆盖语义只留后一个（mark='${mark}'，坑 88 同族）`);
+        check(nextTrace === '0>1;' && sp2.__arkuiStepperIndex === 1,
+          `Waiting 页点 next 放行 onNext(0,1)（CAPABILITY 记录的限制：Waiting 无 loading 形态）`);
+        check(el('sp1').__arkuiStepperIndex === 2,
+          `sp1 索引不受 sp2 导航影响（idx=${el('sp1').__arkuiStepperIndex}）`);
+      });
+
       // ══════════ ③ 回归：没有"未实现"假警告 ══════════
       await group('回归', async () => {
         const bad = __arkui_dom_layout_warnings.filter((w) => /Stepper\.|StepperItem\./.test(String(w)));

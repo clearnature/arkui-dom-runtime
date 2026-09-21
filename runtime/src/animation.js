@@ -97,7 +97,10 @@
 
   // 偏离态 → CSS（ArkUI 的裸数字 = vp，这里 1vp=1px，与项目其它地方一致）
   function _offStyleOf(effectOrOptions, isEffect) {
-    const out = { opacity: undefined, transforms: [], warnings: [] };
+    // @type 档位：opacity 是 number|undefined（初值 undefined 是"未提及"语义，后面会赋数字）、
+    // 两个数组不写 @type 会被推成 never[]，push 全红
+    const out = /** @type {{opacity: number|undefined, transforms: string[], warnings: string[]}} */
+      ({ opacity: undefined, transforms: [], warnings: [] });
     const list = isEffect ? _effectChain(effectOrOptions) : [{ kind: 'options', value: effectOrOptions }];
     for (const item of list) {
       const kind = item.kind;
@@ -217,11 +220,14 @@
     }
   }
   function runEnterTransition(el, plan) {
-    const run = {
+    // @type 档位：endedBy 初值 null 终值 string；不写会推成 null 型，赋 'timer'/'transitionend' 全红
+    const run = /** @type {{seq: number, dir: string, id: any, target: string, duration: number,
+          delay: number, curve: string, curveCss: string, source: string, offText: string,
+          endedBy: string|null, sawTransitionEnd: boolean}} */ ({
       seq: ++transitionRunSeq, dir: 'enter', id: plan.identifier, target: 'identity',
       duration: plan.duration, delay: plan.delay, curve: plan.curveName, curveCss: plan.curveCss, source: plan.source,
       offText: _offText(plan.off), endedBy: null, sawTransitionEnd: false,
-    };
+    });
     transitionRuns.push(run);
     const offOpacity = plan.off.opacity;
     const offTransform = plan.off.transforms.join(' ');
@@ -245,11 +251,14 @@
     transitionTimers.add(timer);
   }
   function runExitTransition(el, plan) {
-    const run = {
+    // @type 同 runEnterTransition 的 run（endedBy 初值 null 终值 string）
+    const run = /** @type {{seq: number, dir: string, id: any, target: string, duration: number,
+          delay: number, curve: string, curveCss: string, source: string, offText: string,
+          endedBy: string|null, sawTransitionEnd: boolean}} */ ({
       seq: ++transitionRunSeq, dir: 'exit', id: plan.identifier, target: 'off',
       duration: plan.duration, delay: plan.delay, curve: plan.curveName, curveCss: plan.curveCss, source: plan.source,
       offText: _offText(plan.off), endedBy: null, sawTransitionEnd: false,
-    };
+    });
     transitionRuns.push(run);
     const offOpacity = plan.off.opacity;
     const offTransform = plan.off.transforms.join(' ');
@@ -284,6 +293,8 @@
   // 登记：属性管线把 `.transition(...)` 的实参原样交过来
   function registerTransition(node, value, onFinish) {
     if (!node) return;
+    // @type 档位：spec 的字段在两个分支里形状不同，且 onFinish/seq 是后挂的动态字段
+    /** @type {{isEffect: boolean, payload: any, type: any, summary: string, onFinish?: any, seq?: number} | undefined} */
     let spec;
     if (value instanceof TransitionEffect) {
       spec = { isEffect: true, payload: value, summary: _effectSummary(value), type: TransitionType.All };
@@ -409,11 +420,15 @@
     // 同一时刻只维护一个窗口：上一个还没结束就先收口（否则两个窗口会互相清 transition）
     if (animWindow) animFinish(animWindow, 'superseded');
 
-    const rec = {
+    // @type 档位：endedBy 初值 null、终值 string（'duration-0'/'timer'/…），不写会推成 null 型
+    const rec = /** @type {{seq: number, api: string, duration: number, delay: number,
+          curve: string, curveCss: string, els: number, endedBy: string|null,
+          sawTransitionEnd: boolean}} */
+      ({
       seq: ++animSeq, api, duration, delay,
       curve: animCurveName(p.curve), curveCss: animCurveCss(p.curve),
       els: 0, endedBy: null, sawTransitionEnd: false,
-    };
+    });
     animHistory.push(rec);
 
     if (!(duration > 0)) {
@@ -424,10 +439,13 @@
       return undefined;
     }
 
-    const win = {
-      seq: rec.seq, api, duration, delay, onFinish: p.onFinish, rec,
+    // @type 档位：els/listeners 不写会被推成 never[]；onFinish/timer 是后挂字段
+    const win = /** @type {{seq: number, api: string, duration: number, delay: number,
+          onFinish: any, rec: any, els: any[], listeners: any[],
+          sawTransitionEnd: boolean, done: boolean, timer?: any}} */
+      ({ seq: rec.seq, api, duration, delay, onFinish: p.onFinish, rec,
       els: [], listeners: [], sawTransitionEnd: false, done: false,
-    };
+    });
     animWindow = win;
     try {
       fn();

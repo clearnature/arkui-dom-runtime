@@ -98,7 +98,7 @@ tools/gen-components.mjs       由 ets-loader 的组件 JSON 生成骨架（--ch
 tools/build-runtime.mjs        runtime/src/ 分片 → runtime/arkui-dom-runtime.js（--check 只校验不写）
 tools/serve.py                 极简静态服务（端口由 OS 分配，避免冲突）
 tools/preflight.mjs            环境自检（工具链 / 宿主 / 可执行位）
-tools/check-all.sh             一条命令做完所有验收（6 步）
+tools/check-all.sh             一条命令做完所有验收（7 步，含 t --typecheck）
 tools/stats.mjs                覆盖范围统计（文档里的数字都来自它）
 test/*.html                    断言页（32 个用例；断言数由 runner 守门，见 docs/DEVELOPING.md 坑 77）
 fixtures/                      冻结的 ets-loader 转换产物（30 个，测试的输入）
@@ -741,7 +741,7 @@ unselected"）——按登记的组**补发**。
 
 ```
 $ bash run.sh inputdemo
-=== ALL PASS ===                    （27 条断言，双端同数）
+=== ALL PASS ===                    （29 条断言，双端同数；R27 时 27，R38 +onSubmit 组）
 PASS Checkbox：select(true) 编程选中／selectedColor → accent-color／编程改态不派发 change（取舍已记录）
 PASS Radio：{value,group} → type=radio name=g1 value=a／点 rd2 → rd1 互斥取消
 PASS 组内互斥两边都发：rd2 onChange(true) + rd1 onChange(false)（.d.ts JSDoc 语义）
@@ -1056,7 +1056,7 @@ PASS TextInput：初始 text→value／placeholder／maxLength(4) 原生截断�
 PASS input → onChange('abcd')（值字符串，R27 的 boolean 包装按 type 分流）
 PASS TextArea 原生 <textarea>／Search type=search + value 直落／search change 也派发 onChange
 PASS Hyperlink：<a>＋href=address＋content 渲染＋外链新开
-PASS onSubmit 已注册 keydown 派发路径（wrapper 挂自身元素）
+PASS Enter → onSubmit(6, event) 回调真发（R38 起端到端断言）
 ```
 
 **破坏验证**（2 处，均如实收尾）：① TextInput 的 onChange 误用 checkbox 的 boolean 包装
@@ -1169,11 +1169,15 @@ onNext(index, index+1)**，切换后发 `onChange(prev, index)`（索引真变�
 
 ```
 $ bash run.sh stepdemo
-=== ALL PASS ===                    （16 条断言，双端同数）
+=== ALL PASS ===                    （25 条断言，双端同数；R38 扩到 25）
 PASS 结构：三页汇入 pages 段／首页可见／导航条存在／label 汇入（back0/next0）
 PASS 注册面：onChange/onNext/onPrevious/onSkip/onFinish 各一条
 PASS 派发链：点 next → NEXT0,1;CHG0>1; → Skip 页 → SKIP;CHG1>2; → 末页 → FIN;
             → prev → PREV2,1;CHG2>1;
+PASS 导航边界（R38）：go(99)/go(-1) 越界拒绝／编程跳页派发 onChange(1,2)／缺省 label 回退 ‹/›
+PASS 多实例与状态族（R38）：路由外 DSL 建第二台 Stepper／Waiting/Disabled 落 data-status
+            （'2,1'，枚举序）／onChange 注册两次覆盖语义（坑 88 同族）／Waiting 页放行
+            onNext（限制已记录）／sp1 索引不受 sp2 影响
 PASS 回归：Stepper.* 不再记"未实现"警告
 ```
 
@@ -1195,6 +1199,43 @@ md5、重跑绿态**；分派分支必须与兄弟分支同级（嵌进兄弟组
 Stepper/StepperItem/ItemState）、`tools/stats.mjs`（手写 42 → 44）、`fixtures/pages/StepDemo.ts`、
 `harmony-proj/`（StepDemo.ets + main_pages.json）、`test/stepdemo.html`、`run.sh`、
 `electron/run.sh`
+
+## R38：质量切片——渐进强类型化 + 测试补全 + 两个真 bug ✅
+
+**起因**：R37 提交时 Mimosa 钩子提示"没拿到完整扫描结论，请重跑完整审计"；顺手把三件事一起收：
+①重跑 Mimosa deep 审计；②补全测试流程与断言；③渐进强类型化。
+
+**强类型化（渐进路线，红线 0 错误）**：TypeScript 用 ets-loader 自带的 4.9.5（项目零 npm 依赖）。
+**检查单元是【拼接后的产物】而不是分片**——15 个分片运行时是同一个 IIFE 的函数作用域片段，
+按文件检查会得到 153 个假 "Cannot find name"（分片模式 370 错 → 产物模式 211 错，假阳性全消）。
+三件套：`runtime/src/runtime.d.ts`（与 lib.dom 的 **Element 声明合并**，把 123 个挂载状态字段
+`__stepCbs/__svg/__arkuiComp…` 固化成接口词汇表——拼错字段名直接红）+ `tsconfig.check.json`
+（checkJs + strictNullChecks；`noImplicitAny` 约 1508 个，列为后续路线）+ `tools/typecheck.mjs`
+（接进 `check-all.sh` 成为**第 5 步**，红线 0）。211 → 0 逐桶修完，修法全部 JSDoc/括号级
+（零运行时改动），机制沉淀为坑 92（`x = x || {}` 赋值表达式类型坍缩）与坑 93（属性位置 JSDoc
+不生效）。
+
+**两个真 bug（类型检查挖出，都有潜伏史）**：
+1. `onSubmit` 的 wrapper 写了 `value(...)`——未定义标识符，Enter 一按 ReferenceError 且被自家
+   try/catch 吞掉，这就是 R34 "派发未打通之谜" 的全部真相；修复（`value`→`v`）后 textdemo
+   弱断言升级为端到端 `SUB6;`，并顺手补上一直缺失的 `enterKeyType` 属性处理器
+   （此前 wrapper 读的 data-enter-key 无人写入）——inputdemo 新增 onSubmit 组（27→29 条）。
+2. v2 装饰器内部绑定 `const Event` 与 Scroller 的 `new Event('scroll')` 同处一个 IIFE 作用域——
+   遮蔽后 `dispatchEvent` 收到的是装饰器函数实例（TypeError）。lazy.html 一直绿是因为该分支
+   有 `flush()` 兜底——炸点是潜伏的。修复：内部改名 `EventDeco`（装饰器表键名不变，产物前奏
+   不受影响）。教训：当年只防住了"挂 global 遮蔽 window"，没防住"IIFE 内部互相遮蔽"。
+
+**测试补全**：stepdemo 16→**25 条**（新增导航边界：越界拒绝/编程跳页派发/缺省 label 回退；
+多实例与状态族：路由外 DSL 建第二台 Stepper、Waiting/Disabled 落 data-status、onChange 覆盖
+语义、实例隔离）。**破坏验证（3 处）**：越界守卫摘除 → **4 红**；Skip 语义反转 → **3 红**；
+enterKeyType 处理器摘除 → **2 红**（失败信息恰好演示回退 Done(6)）。还原后 md5 一致。
+
+**审计（Mimosa deep，2026-09-21 重跑）**：见 `.reasonix/handoff.md` 会话日志的审计结论行。
+
+**触及**：`runtime/src/runtime.d.ts`（新）、`tsconfig.check.json`（新）、`tools/typecheck.mjs`（新）、
+`tools/check-all.sh`（+1 步）、`package.json`（typecheck script）、`runtime/src/{input,v2,small,
+main,nav,ability,draw,animation,gesture,show,popup,area}.js`（JSDoc 类型注解 + EventDeco 改名 +
+onSubmit 修复 + enterKeyType 补全）、`test/{stepdemo,inputdemo,textdemo}.html`、五文档
 
 ## R14：多层锚链 + `Guideline` + `bias` ✅
 
@@ -1788,7 +1829,7 @@ PASS starStyle 的图片 URI 不可用已记警告
 | 文档数字守门 | `npm run stats:check-doc` | `ARCHITECTURE.md` §6 的整块实测数字逐行比对，漂移即非 0 退出；`stats:write-doc` 就地重写 |
 | 覆盖统计 | `npm run stats` | 文档里的所有数字都由它产出（`--json` 机器可读） |
 
-`npm run check` 当前：**6 步全绿（preflight + 生成物一致 + 产物/源一致 + 文档数字 + 浏览器 41 用例 + Electron 40 用例）**。
+`npm run check` 当前：**7 步全绿（preflight + 生成物一致 + 产物/源一致 + 文档数字 + typecheck + 浏览器 41 用例 + Electron 40 用例）**。
 
 ## 下一步
 

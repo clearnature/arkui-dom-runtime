@@ -36,8 +36,9 @@
   let viewSeq = 0;
 
   // 组件栈：官方命名，产物里的 ViewStackProcessor.StartGetAccessRecordingFor/Stop… 由它承载
+  //（stack 不写 @type 会被推成 never[]，push 全红）
   const ViewStackProcessor = {
-    stack: [],
+    /** @type {any[]} */ stack: [],
     push(n) { this.stack.push(n); return n; },
     pop() { return this.stack.pop(); },
     top() { return this.stack.length ? this.stack[this.stack.length - 1] : null; },
@@ -603,10 +604,11 @@
   }
 
   function createTabsState(node, opt) {
-    const st = {
+    // @type 档位：contents/onChange 不写会推成 never[]；barEl/contentEl null↔Element 摆动
+    const st = /** @type {any} */ ({
       node, index: 0, barPosition: 'start', controller: null,
       contents: [], onChange: [], barEl: null, contentEl: null,
-    };
+    });
     node.__tabsState = st;
     node.style.display = 'flex';
     node.style.flexDirection = 'column';
@@ -1311,15 +1313,16 @@
     mountNode(holder, elmtRecords.get(currentNodeElmtId));
     ViewStackProcessor.push(holder);              // create 入栈，pop 出栈（与 ForEach 一致）
 
-    const state = {
+    // @type 档位：scrollEl/window/prefix 都是 null↔对象 摆动，onScroll 等后挂 → 整袋 any
+    const state = /** @type {any} */ ({
       total: typeof source.totalCount === 'function' ? source.totalCount() : 0,
       estItemH: 26,                                  // 未实测项的【估计高度】（不含 gap）
       heights: new Map(),                            // index → 实测高度（不含 gap）
       gap: parentGap,
-      prefix: null,                                  // 累计偏移（长度 total+1），懒算
+      /** @type {any} */ prefix: null,               // 累计偏移（长度 total+1），懒算
       prefixDirty: true,
       window: [-1, -1], scrollEl: null, tid: 0, passes: 0,
-    };
+    });
     lazyMeta.set(holder, state);
 
     // advance 取整：布局最终落在整像素上（spacer 的 px 高度会被浏览器取整），
@@ -1388,7 +1391,7 @@
         currentNodeElmtId = savedElmt;
 
         // 项间距用 margin-bottom 表达（最后一项不加，否则总高会多一个 gap）
-        const freshItems = [...holder.querySelectorAll('[data-arkui-comp="ListItem"]')];
+        const freshItems = /** @type {HTMLElement[]} */ ([...holder.querySelectorAll('[data-arkui-comp="ListItem"]')]);
         freshItems.forEach((node, k) => {
           const idx = start + k;
           node.style.marginBottom = (state.gap > 0 && idx < state.total - 1) ? state.gap + 'px' : '0';
@@ -1413,7 +1416,7 @@
       const anchor = indexAt(scrollTop);
       const anchorOld = offsetOf(anchor);
       let changed = false;
-      const rendered = [...holder.querySelectorAll('[data-arkui-comp="ListItem"]')];
+      const rendered = /** @type {HTMLElement[]} */ ([...holder.querySelectorAll('[data-arkui-comp="ListItem"]')]);
       rendered.forEach((node, k) => {
         const idx = start + k;
         const h = node.offsetHeight;
@@ -1808,7 +1811,9 @@
     __arkui_dom_registerGenerated: registerGeneratedComponents,
     __arkui_dom_componentNames: () => Object.keys(components).sort(),
     // 状态管理 v2 的装饰器表。刻意【不】把裸名挂 global：`Event` 与浏览器全局同名，
-    // 挂上去会打断 `new Event(...)`（Scroller 与 test/lazy.html 都在用）。
+    // 挂上去会打断页面脚本里的 `new Event(...)`（test/lazy.html 在用）。
+    // IIFE 内部的绑定已改名 EventDeco（R38：原先 `const Event` 把 Scroller 的 new Event
+    // 一并遮蔽了——潜伏炸点，见 v2.js EventDeco 处说明）。
     // 由 tools/extract.mjs 在产物里生成作用域内绑定，只绑实际用到的名字。
     __arkui_dom_decorators: decorators,
     // V1 深度观测自省：断言"@Observed 确实产出了可观测代理"，而不只看渲染结果。

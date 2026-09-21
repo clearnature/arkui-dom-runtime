@@ -36,8 +36,9 @@
   let viewSeq = 0;
 
   // 组件栈：官方命名，产物里的 ViewStackProcessor.StartGetAccessRecordingFor/Stop… 由它承载
+  //（stack 不写 @type 会被推成 never[]，push 全红）
   const ViewStackProcessor = {
-    stack: [],
+    /** @type {any[]} */ stack: [],
     push(n) { this.stack.push(n); return n; },
     pop() { return this.stack.pop(); },
     top() { return this.stack.length ? this.stack[this.stack.length - 1] : null; },
@@ -378,7 +379,10 @@
 
   // 偏离态 → CSS（ArkUI 的裸数字 = vp，这里 1vp=1px，与项目其它地方一致）
   function _offStyleOf(effectOrOptions, isEffect) {
-    const out = { opacity: undefined, transforms: [], warnings: [] };
+    // @type 档位：opacity 是 number|undefined（初值 undefined 是"未提及"语义，后面会赋数字）、
+    // 两个数组不写 @type 会被推成 never[]，push 全红
+    const out = /** @type {{opacity: number|undefined, transforms: string[], warnings: string[]}} */
+      ({ opacity: undefined, transforms: [], warnings: [] });
     const list = isEffect ? _effectChain(effectOrOptions) : [{ kind: 'options', value: effectOrOptions }];
     for (const item of list) {
       const kind = item.kind;
@@ -498,11 +502,14 @@
     }
   }
   function runEnterTransition(el, plan) {
-    const run = {
+    // @type 档位：endedBy 初值 null 终值 string；不写会推成 null 型，赋 'timer'/'transitionend' 全红
+    const run = /** @type {{seq: number, dir: string, id: any, target: string, duration: number,
+          delay: number, curve: string, curveCss: string, source: string, offText: string,
+          endedBy: string|null, sawTransitionEnd: boolean}} */ ({
       seq: ++transitionRunSeq, dir: 'enter', id: plan.identifier, target: 'identity',
       duration: plan.duration, delay: plan.delay, curve: plan.curveName, curveCss: plan.curveCss, source: plan.source,
       offText: _offText(plan.off), endedBy: null, sawTransitionEnd: false,
-    };
+    });
     transitionRuns.push(run);
     const offOpacity = plan.off.opacity;
     const offTransform = plan.off.transforms.join(' ');
@@ -526,11 +533,14 @@
     transitionTimers.add(timer);
   }
   function runExitTransition(el, plan) {
-    const run = {
+    // @type 同 runEnterTransition 的 run（endedBy 初值 null 终值 string）
+    const run = /** @type {{seq: number, dir: string, id: any, target: string, duration: number,
+          delay: number, curve: string, curveCss: string, source: string, offText: string,
+          endedBy: string|null, sawTransitionEnd: boolean}} */ ({
       seq: ++transitionRunSeq, dir: 'exit', id: plan.identifier, target: 'off',
       duration: plan.duration, delay: plan.delay, curve: plan.curveName, curveCss: plan.curveCss, source: plan.source,
       offText: _offText(plan.off), endedBy: null, sawTransitionEnd: false,
-    };
+    });
     transitionRuns.push(run);
     const offOpacity = plan.off.opacity;
     const offTransform = plan.off.transforms.join(' ');
@@ -565,6 +575,8 @@
   // 登记：属性管线把 `.transition(...)` 的实参原样交过来
   function registerTransition(node, value, onFinish) {
     if (!node) return;
+    // @type 档位：spec 的字段在两个分支里形状不同，且 onFinish/seq 是后挂的动态字段
+    /** @type {{isEffect: boolean, payload: any, type: any, summary: string, onFinish?: any, seq?: number} | undefined} */
     let spec;
     if (value instanceof TransitionEffect) {
       spec = { isEffect: true, payload: value, summary: _effectSummary(value), type: TransitionType.All };
@@ -690,11 +702,15 @@
     // 同一时刻只维护一个窗口：上一个还没结束就先收口（否则两个窗口会互相清 transition）
     if (animWindow) animFinish(animWindow, 'superseded');
 
-    const rec = {
+    // @type 档位：endedBy 初值 null、终值 string（'duration-0'/'timer'/…），不写会推成 null 型
+    const rec = /** @type {{seq: number, api: string, duration: number, delay: number,
+          curve: string, curveCss: string, els: number, endedBy: string|null,
+          sawTransitionEnd: boolean}} */
+      ({
       seq: ++animSeq, api, duration, delay,
       curve: animCurveName(p.curve), curveCss: animCurveCss(p.curve),
       els: 0, endedBy: null, sawTransitionEnd: false,
-    };
+    });
     animHistory.push(rec);
 
     if (!(duration > 0)) {
@@ -705,10 +721,13 @@
       return undefined;
     }
 
-    const win = {
-      seq: rec.seq, api, duration, delay, onFinish: p.onFinish, rec,
+    // @type 档位：els/listeners 不写会被推成 never[]；onFinish/timer 是后挂字段
+    const win = /** @type {{seq: number, api: string, duration: number, delay: number,
+          onFinish: any, rec: any, els: any[], listeners: any[],
+          sawTransitionEnd: boolean, done: boolean, timer?: any}} */
+      ({ seq: rec.seq, api, duration, delay, onFinish: p.onFinish, rec,
       els: [], listeners: [], sawTransitionEnd: false, done: false,
-    };
+    });
     animWindow = win;
     try {
       fn();
@@ -1009,11 +1028,13 @@
 
   function attachGestures(el, gestures) {
     detachGestures(el);
-    const st = {
+    // @type 档位：listeners/longPress 不写会推成 never[]，push 全红；tapTimer null↔number 摆动；
+    // arbClass 等字段是挂上后才有的 → 整袋 any（识别器状态的形状本来就是动态的）
+    const st = /** @type {any} */ ({
       el,
       gestures: gestures.slice(), listeners: [], longPress: [],
       ptrs: new Map(), recState: new Map(), tapCount: 0, tapTimer: null,
-    };
+    });
     st.arbClass = gestureArbClass(st.gestures);
     // 识别循环一律跑【摊平后】的手势表：组只是登记层，识别与回调仍在元素这一层做
     const flat = flattenGestures(st.gestures);
@@ -1040,7 +1061,7 @@
       for (const rec of flat) {
         if (rec.type === 'longPress') {
           const dur = rec.params.duration === undefined ? 500 : Number(rec.params.duration);
-          const rs = { rec, timer: null, fired: 0, dur };
+          const rs = /** @type {any} */ ({ rec, timer: null, fired: 0, dur });
           const tick = () => {
             fireGesture(st, rec, 'onAction', gestureEvent({ repeat: rs.fired > 0 }));
             rs.fired++;
@@ -1955,10 +1976,11 @@
   }
 
   function createTabsState(node, opt) {
-    const st = {
+    // @type 档位：contents/onChange 不写会推成 never[]；barEl/contentEl null↔Element 摆动
+    const st = /** @type {any} */ ({
       node, index: 0, barPosition: 'start', controller: null,
       contents: [], onChange: [], barEl: null, contentEl: null,
-    };
+    });
     node.__tabsState = st;
     node.style.display = 'flex';
     node.style.flexDirection = 'column';
@@ -2671,7 +2693,9 @@
   }
 
   function createNavState(node, stack) {
-    const st = {
+    // @type 档位：整袋 any —— barEl/titleEl/dividerEl/tmc 等十来个字段都是 null↔对象 摆动，
+    // 后渲染才赋值；属性级 @type 只能管到紧随其后的一个属性，这里必须整袋收
+    const st = /** @type {any} */ ({
       node, stack: null, builder: null, areaEl: null, mode: 'stack', visible: null, paths: null,
       // 标题栏 / 工具栏 / 分栏（R12 收口）
       titleSpec: null, titleOptions: null, titleMode: NavigationTitleMode.Free,
@@ -2682,7 +2706,7 @@
       tmc: null,              // onTitleModeChange 回调
       collapseP: 0,           // 收缩进度 0(=Full)…1(=Mini)，随内容滚动更新
       tmcState: 'full',       // 已通知的模式端点：'full' | 'mini'
-    };
+    });
     node.__navState = st;
     node.style.position = 'relative';
     node.style.overflow = 'hidden';
@@ -2941,7 +2965,8 @@
     if (!el) return;
     const showPrev = !!(prev && prev.el && prev !== rec);
     if (showPrev) prev.el.style.display = 'block';         // navSyncVisibility 刚把它藏掉
-    const run = { seq: ++navTransRunSeq, kind: 'push', name: rec.name, done: false, sawTransitionEnd: false, endedBy: null };
+    // @type 档位：endedBy null↔string 摆动
+    const run = /** @type {any} */ ({ seq: ++navTransRunSeq, kind: 'push', name: rec.name, done: false, sawTransitionEnd: false, endedBy: null });
     navTransRuns.push(run);
     if (navTransRuns.length > 50) navTransRuns.shift();
     el.dataset.arkuiNavTrans = 'push';
@@ -3070,7 +3095,7 @@
     navSyncVisibility(st);                 // 露出新栈顶 / 根内容（在滑出层的下面）
     if (!el) return;
     if (st.areaEl) st.areaEl.style.display = 'block';   // 空栈时 sync 会藏目标区——滑出期间撑住
-    const run = { seq: ++navTransRunSeq, kind: 'pop', name: rec.name, done: false, sawTransitionEnd: false, endedBy: null };
+    const run = /** @type {any} */ ({ seq: ++navTransRunSeq, kind: 'pop', name: rec.name, done: false, sawTransitionEnd: false, endedBy: null });
     navTransRuns.push(run);
     if (navTransRuns.length > 50) navTransRuns.shift();
     el.dataset.arkuiNavTrans = 'pop';
@@ -3166,11 +3191,12 @@
       // NavDestination 自己的标题栏 / 工具栏（R12 收口）。它没有 titleMode（.d.ts 里不存在），
       // 标题栏恒为紧凑高度 56vp（= Mini 高度）。**这一条是推断** —— .d.ts 没写 NavDestination
       // 标题栏的高度，取 Mini 的依据是"目标页用紧凑标题栏"这一可见事实，已写进 docs 已知限制。
-      node.__navDest = {
+      // @type 档位：barEl/toolbarEl null↔HTMLElement 摆动 → 整袋 any
+      node.__navDest = /** @type {any} */ ({
         titleSpec: null, menus: null, toolbar: null,
         hideBackButton: false, hideTitleBar: false, hideToolBar: false,
         backButtonIcon: null, titleDrawn: null, barEl: null, toolbarEl: null,
-      };
+      });
       node.style.width = '100%';
       node.style.height = '100%';
       node.style.overflow = 'auto';
@@ -3250,7 +3276,7 @@
     // R25：Free 滚动联动的事件（.d.ts：titleMode=Free 且内容滚动导致标题栏模式变化时触发）。
     // ⚠️ 属性分发必须在通用 on* 规则之前把它拦下 —— 否则 fn 会被当成 DOM 事件监听挂到
     // 'titlemodechange' 上，永远没人派发（R25 测量时撞上的分发陷阱）。
-    onTitleModeChange: (st, v) => { st.tmc = typeof v === 'function' ? v : null; },
+    onTitleModeChange: (st, v, extra) => { st.tmc = typeof v === 'function' ? v : null; },
     hideTitleBar: (st, v) => { st.hideTitleBar = !!v; },
     hideBackButton: (st, v) => { st.hideBackButton = !!v; },
     backButtonIcon: (st, v) => { st.backButtonIcon = resolveResource(v); },
@@ -3363,9 +3389,9 @@
     const ring = style === 'ring' || style === 'eclipse' || style === 'scaleRing';
     if (ring) {
       node.__svg = svgEl('svg', {});
-      node.__svg.style.width = '100%';
-      node.__svg.style.height = '100%';
-      node.appendChild(node.__svg);
+      (/** @type {SVGElement} */ (node.__svg)).style.width = '100%';
+      (/** @type {SVGElement} */ (node.__svg)).style.height = '100%';
+      node.appendChild(/** @type {SVGElement} */ (node.__svg));
       if (style === 'scaleRing') warnOnce('Progress(style=ScaleRing) 的刻度未实现（只画环）');
       node.__stroke = 4;
     } else {
@@ -3431,9 +3457,9 @@
     node.__strokeW = 4;
     node.__colors = null;
     node.__svg = svgEl('svg', {});
-    node.__svg.style.width = '100%';
-    node.__svg.style.height = '100%';
-    node.appendChild(node.__svg);
+    (/** @type {SVGElement} */ (node.__svg)).style.width = '100%';
+    (/** @type {SVGElement} */ (node.__svg)).style.height = '100%';
+    node.appendChild(/** @type {SVGElement} */ (node.__svg));
     return node;
   }
 
@@ -4486,15 +4512,16 @@
     mountNode(holder, elmtRecords.get(currentNodeElmtId));
     ViewStackProcessor.push(holder);              // create 入栈，pop 出栈（与 ForEach 一致）
 
-    const state = {
+    // @type 档位：scrollEl/window/prefix 都是 null↔对象 摆动，onScroll 等后挂 → 整袋 any
+    const state = /** @type {any} */ ({
       total: typeof source.totalCount === 'function' ? source.totalCount() : 0,
       estItemH: 26,                                  // 未实测项的【估计高度】（不含 gap）
       heights: new Map(),                            // index → 实测高度（不含 gap）
       gap: parentGap,
-      prefix: null,                                  // 累计偏移（长度 total+1），懒算
+      /** @type {any} */ prefix: null,               // 累计偏移（长度 total+1），懒算
       prefixDirty: true,
       window: [-1, -1], scrollEl: null, tid: 0, passes: 0,
-    };
+    });
     lazyMeta.set(holder, state);
 
     // advance 取整：布局最终落在整像素上（spacer 的 px 高度会被浏览器取整），
@@ -4563,7 +4590,7 @@
         currentNodeElmtId = savedElmt;
 
         // 项间距用 margin-bottom 表达（最后一项不加，否则总高会多一个 gap）
-        const freshItems = [...holder.querySelectorAll('[data-arkui-comp="ListItem"]')];
+        const freshItems = /** @type {HTMLElement[]} */ ([...holder.querySelectorAll('[data-arkui-comp="ListItem"]')]);
         freshItems.forEach((node, k) => {
           const idx = start + k;
           node.style.marginBottom = (state.gap > 0 && idx < state.total - 1) ? state.gap + 'px' : '0';
@@ -4588,7 +4615,7 @@
       const anchor = indexAt(scrollTop);
       const anchorOld = offsetOf(anchor);
       let changed = false;
-      const rendered = [...holder.querySelectorAll('[data-arkui-comp="ListItem"]')];
+      const rendered = /** @type {HTMLElement[]} */ ([...holder.querySelectorAll('[data-arkui-comp="ListItem"]')]);
       rendered.forEach((node, k) => {
         const idx = start + k;
         const h = node.offsetHeight;
@@ -4829,7 +4856,7 @@
       const el = document.createElement(type === 'textarea' ? 'textarea' : 'input');
       el.style.display = 'inline-block';
       el.__arkuiInput = name === 'Slider' ? 'slider' : 'input';
-      if (type && type !== 'textarea') el.type = type;
+      if (type && type !== 'textarea') (/** @type {any} */ (el)).type = type;
       const o = args && typeof args[0] === 'object' && args[0] !== null ? args[0] : {};
       setup(el, o);
       return el;
@@ -4937,17 +4964,19 @@
     // 文本输入收官（R34）
     maxLength: (n, v) => { n.maxLength = Number(resolveResource(v)); },          // 原生截断
     caretColor: (n, v) => { n.style.caretColor = colorOf(v); },
+    // enterKeyType 落 data-enter-key，onSubmit 的 wrapper 按它取回调整数（.d.ts：Go=2…NEW_LINE=8）
+    enterKeyType: (n, v) => { n.setAttribute('data-enter-key', String(Number(resolveResource(v)))); },
     onSubmit: (n, v) => {
-      // ⚠️ 已知限制（R34）：键盘 Enter → onSubmit 回调的 value 派发本轮未打通
-      // （keydown 已到达元素、wrapper 已挂、最后一环待查）——见 docs/CAPABILITY 已知限制。
       // ArkUI 签名：(enterKey, event: SubmitEvent)。DOM 在 keydown Enter 时派发
       // （原生 input 无 submit 事件——必须拦在通用 on* 规则之前，坑 86 同族）。
       // enterKey 未设时取 Done(6)（.d.ts 默认值原文："Default value: EnterKeyType.Done"）。
+      // （R38 修复：此前的 wrapper 里写的是 `value(...)`——未定义标识符，Enter 一按就
+      // ReferenceError 且被本 try/catch 吞掉，表现为"派发未打通"之谜；tsc --checkJs 抓出。）
       const wrapper = (e) => {
         if (e.target !== n) return;
         const key = n.getAttribute('data-enter-key');
         const enterKey = key !== null ? Number(key) : EnterKeyType.Done;
-        try { value(enterKey, { keepEditable: true }); }
+        try { v(enterKey, { keepEditable: true }); }
         catch (err) { layoutWarnings.push(`onSubmit 派发抛错：${err && err.message}`); }
       };
       if (!n.__arkuiEv) n.__arkuiEv = {};
@@ -5149,8 +5178,8 @@
   // 语义属性分派（applyAttr 里抢在通用落点之前）：Divider 三件 + Marquee 字体 +
   // Counter 的 onInc/onDec/enable（函数值，必须拦在通用 on* 规则之前）
   const SHOW_ATTRS = {
-    onInc: (n, v) => { (n.__counterCbs = n.__counterCbs || {}).inc = v; },
-    onDec: (n, v) => { (n.__counterCbs = n.__counterCbs || {}).dec = v; },
+    onInc: (n, v) => { (/** @type {any} */ (n.__counterCbs = n.__counterCbs || {})).inc = v; },
+    onDec: (n, v) => { (/** @type {any} */ (n.__counterCbs = n.__counterCbs || {})).dec = v; },
     enableInc: (n, v) => {
       const b = n.querySelector('[data-arkui-counter-inc]');
       if (b) { b.style.opacity = v === false ? '0.4' : ''; b.style.pointerEvents = v === false ? 'none' : ''; }
@@ -5177,9 +5206,9 @@
     lineCap: (n, v) => { n.dataset.lineCap = String(resolveResource(v)); },
     allowScale: (n, v) => { n.dataset.allowScale = String(v); },
     marqueeUpdateStrategy: (n, v) => { n.dataset.updateStrategy = String(resolveResource(v)); },
-    onStart: (n, v) => { (n.__marqueeCbs = n.__marqueeCbs || {}).start = v; },
-    onBounce: (n, v) => { (n.__marqueeCbs = n.__marqueeCbs || {}).bounce = v; },
-    onFinish: (n, v) => { (n.__marqueeCbs = n.__marqueeCbs || {}).finish = v; },
+    onStart: (n, v) => { (/** @type {any} */ (n.__marqueeCbs = n.__marqueeCbs || {})).start = v; },
+    onBounce: (n, v) => { (/** @type {any} */ (n.__marqueeCbs = n.__marqueeCbs || {})).bounce = v; },
+    onFinish: (n, v) => { (/** @type {any} */ (n.__marqueeCbs = n.__marqueeCbs || {})).finish = v; },
   };
 
   // ────────────────── 信息展示收官：QRCode（R33）──────────────────
@@ -5339,7 +5368,7 @@
     value: (n, v) => { n.dataset.valueText = String(resolveResource(v)); },   // Select.value：显示文本覆盖（记录取舍）
     fontColor: (n, v) => { n.style.color = colorOf(v); },
     showPosition: (n, v) => { n.dataset.showPosition = String(resolveResource(v)); },
-    onChange: (n, v) => { (n.__popupCbs = n.__popupCbs || {}).onChange = v; },   // MenuItem 的回调（点击切换见工厂）
+    onChange: (n, v) => { (/** @type {any} */ (n.__popupCbs = n.__popupCbs || {})).onChange = v; },   // MenuItem 的回调（点击切换见工厂）
   };
 
   // Select.onSelect 的双参派发（特殊签名，拦在通用 on* 规则之前）：change 事件 → (index, value)。
@@ -5619,11 +5648,11 @@
     status: (n, v) => { n.dataset.status = String(Number(resolveResource(v))); },   // ItemState
   };
   const STEP_ATTRS = {
-    onChange: (n, v) => { (n.__stepCbs = n.__stepCbs || {}).change = v; },
-    onNext: (n, v) => { (n.__stepCbs = n.__stepCbs || {}).next = v; },
-    onPrevious: (n, v) => { (n.__stepCbs = n.__stepCbs || {}).prev = v; },
-    onSkip: (n, v) => { (n.__stepCbs = n.__stepCbs || {}).skip = v; },
-    onFinish: (n, v) => { (n.__stepCbs = n.__stepCbs || {}).finish = v; },
+    onChange: (n, v) => { (/** @type {any} */ (n.__stepCbs = n.__stepCbs || {})).change = v; },
+    onNext: (n, v) => { (/** @type {any} */ (n.__stepCbs = n.__stepCbs || {})).next = v; },
+    onPrevious: (n, v) => { (/** @type {any} */ (n.__stepCbs = n.__stepCbs || {})).prev = v; },
+    onSkip: (n, v) => { (/** @type {any} */ (n.__stepCbs = n.__stepCbs || {})).skip = v; },
+    onFinish: (n, v) => { (/** @type {any} */ (n.__stepCbs = n.__stepCbs || {})).finish = v; },
   };
   const Stepper = ensureComponent('Stepper', () => {
     const el = document.createElement('div');
@@ -5650,31 +5679,32 @@
     el.appendChild(pages);
     el.appendChild(next);
     // 派发（.d.ts 原文语义）：走 wrapper 闭包引用 __stepCbs（覆盖语义，重渲染重挂安全）
+    // @type 档位：querySelectorAll 返回 NodeListOf<Element>，而 style/dataset 在 HTMLElement 上
     const fireNext = () => {
-      const items = el.querySelectorAll('[data-stepper-item]');
-      const cur = items[el.__arkuiStepperIndex];
+      const items = /** @type {NodeListOf<HTMLElement>} */ (el.querySelectorAll('[data-stepper-item]'));
+      const cur = items[/** @type {number} */ (el.__arkuiStepperIndex)];
       const curStatus = cur ? Number(cur.dataset.status || 0) : 0;
       if (el.__stepCbs) {
         if (curStatus === ItemState.Skip) {
           if (typeof el.__stepCbs.skip === 'function') { try { el.__stepCbs.skip(); } catch (e) { layoutWarnings.push(`onSkip 抛错：${e && e.message}`); } }
-        } else if (el.__arkuiStepperIndex >= items.length - 1) {
+        } else if (/** @type {number} */ (el.__arkuiStepperIndex) >= items.length - 1) {
           if (typeof el.__stepCbs.finish === 'function') { try { el.__stepCbs.finish(); } catch (e) { layoutWarnings.push(`onFinish 抛错：${e && e.message}`); } }
         } else if (typeof el.__stepCbs.next === 'function') {
-          try { el.__stepCbs.next(el.__arkuiStepperIndex, el.__arkuiStepperIndex + 1); }
+          try { el.__stepCbs.next(/** @type {number} */ (el.__arkuiStepperIndex), /** @type {number} */ (el.__arkuiStepperIndex) + 1); }
           catch (e) { layoutWarnings.push(`onNext 抛错：${e && e.message}`); }
         }
       }
-      goTo(el.__arkuiStepperIndex + 1);
+      goTo(/** @type {number} */ (el.__arkuiStepperIndex) + 1);
     };
     const firePrev = () => {
       if (el.__stepCbs && typeof el.__stepCbs.prev === 'function') {
-        try { el.__stepCbs.prev(el.__arkuiStepperIndex, el.__arkuiStepperIndex - 1); }
+        try { el.__stepCbs.prev(/** @type {number} */ (el.__arkuiStepperIndex), /** @type {number} */ (el.__arkuiStepperIndex) - 1); }
         catch (e) { layoutWarnings.push(`onPrevious 抛错：${e && e.message}`); }
       }
-      goTo(el.__arkuiStepperIndex - 1);
+      goTo(/** @type {number} */ (el.__arkuiStepperIndex) - 1);
     };
     const goTo = (i) => {
-      const items = el.querySelectorAll('[data-stepper-item]');
+      const items = /** @type {NodeListOf<HTMLElement>} */ (el.querySelectorAll('[data-stepper-item]'));
       if (i < 0 || i >= items.length) return;
       const p = el.__arkuiStepperIndex;
       items.forEach((m, k) => { m.style.display = k === i ? 'block' : 'none'; });
@@ -5694,9 +5724,9 @@
     const syncStepper = () => {
       const strays = el.querySelectorAll(':scope > [data-stepper-item]');
       strays.forEach((m) => pages.appendChild(m));
-      const items = el.querySelectorAll('[data-stepper-item]');
-      items.forEach((m, k) => { m.style.display = k === el.__arkuiStepperIndex ? 'block' : 'none'; });
-      if (items.length) goTo(el.__arkuiStepperIndex);
+      const items = /** @type {NodeListOf<HTMLElement>} */ (el.querySelectorAll('[data-stepper-item]'));
+      items.forEach((m, k) => { m.style.display = k === /** @type {number} */ (el.__arkuiStepperIndex) ? 'block' : 'none'; });
+      if (items.length) goTo(/** @type {number} */ (el.__arkuiStepperIndex));
     };
     setTimeout(syncStepper, 0);
     // 导航条点击 → 派发语义（.d.ts 原文）
@@ -5762,9 +5792,10 @@
   //   访问器 __decorate([Computed], Proto, "doubled", null) → 拿到 {get,...}，可返回改写后的
   //   类     __decorate([ObservedV2], Cls) → 只有 1 个实参 → ObservedV2(Cls)，必须【返回类】
   //
-  // 为什么装饰器不挂 global：`Event` 既是装饰器名也是浏览器全局，而 runtime 自己
-  // （Scroller 里 `new Event('scroll')`）与 test/lazy.html 都在用 new Event(...)。
-  // 挂 global 会直接把滚动事件打断。改为导出装饰器表 __arkui_dom_decorators，
+  // 为什么装饰器不挂 global：`Event` 既是装饰器名也是浏览器全局，挂上去会把 window.Event
+  // 覆盖掉（test/lazy.html 等页面脚本在用 new Event）。R38 再进一步：IIFE 【内部】的装饰器
+  // 绑定也不能叫 Event（会遮蔽 Scroller 的 new Event，见下方 EventDeco 处的说明）。
+  // 改为导出装饰器表 __arkui_dom_decorators，
   // 由 tools/extract.mjs 在产物里生成【作用域内】的绑定前奏（只绑实际用到的名字）。
 
   const v2InstCells = new WeakMap();   // 任意对象 -> Map<字段名, 依赖单元>（复用 propDeps 机制）
@@ -5803,7 +5834,7 @@
   const v2Slot = (key) => '__v2slot_' + key;
 
   function installV2Accessor(proto, key, kind) {
-    const existing = Object.getOwnPropertyDescriptor(proto, key);
+    const existing = /** @type {any} */ (Object.getOwnPropertyDescriptor(proto, key));
     if (existing && existing.get && existing.get.__v2) return;    // 已装过（重复装饰）
     Object.defineProperty(proto, key, {
       configurable: true,
@@ -5830,7 +5861,7 @@
         if (!Object.is(before, v)) fireV2Monitors(this, key, v, before);
       },
     });
-    const d = Object.getOwnPropertyDescriptor(proto, key);
+    const d = /** @type {any} */ (Object.getOwnPropertyDescriptor(proto, key));
     d.get.__v2 = true;
     d.set.__v2 = true;
     // observed 的语义是"参与观测的字段"。@Event 只是回调槽（不记依赖、不发通知），
@@ -5881,7 +5912,12 @@
   const Param = v2Field('param');
   const Local = v2Field('local');
   const Once = v2Field('once');
-  const Event = v2Field('event');
+  // ⚠️ 内部绑定名【不能】叫 Event：整个 runtime 是一个 IIFE，这里的 `const Event` 会把
+  // 同作用域里 Scroller 的 `new Event('scroll')`（layout.js scrollToIndex 未渲染分支）一并
+  // 遮蔽掉——IIFE 求值完成后那次 new 构造的是装饰器函数实例，dispatchEvent 直接 TypeError。
+  // 该分支有 flush() 兜底所以 lazy.html 一直绿，炸点是潜伏的（R38 tsc --checkJs 抓出）。
+  // 装饰器表的【键名】保持 'Event'（extract.mjs 给产物生成的作用域绑定按表键取，不受影响）。
+  const EventDeco = v2Field('event');
   const Trace = v2Field('trace');
 
   const Provider = (name) => function (target, key) {
@@ -5993,7 +6029,7 @@
   // 由抽取工具在产物里做作用域内绑定。
   // `Observed` 是 V1 的类装饰器（与 V2 的 `ObservedV2` 对应），走同一张表同一套机制。
   const decorators = {
-    ViewV2, Param, Local, Once, Event, Monitor, Computed, Provider, Consumer, ObservedV2, Trace,
+    ViewV2, Param, Local, Once, Event: EventDeco, Monitor, Computed, Provider, Consumer, ObservedV2, Trace,
     Observed,
   };
 
@@ -6043,7 +6079,9 @@
   // ⚠️ 实测更正：API 26 SDK 里【没有】onAbilityResult（全 SDK grep 0 命中），
   // stage 模型的结果只走 startAbilityForResult 的 Promise / AsyncCallback —— 见 docs/ROADMAP R20。
   const abilityStack = [];
-  const abilityWindowStats = { created: 0, closed: 0, history: [] };
+  // @type 档位：history 不写会推成 never[]
+  // @type 档位：history 不写会推成 never[]（属性位置的 JSDoc 在 TS4.9 不生效，整袋收）
+  const abilityWindowStats = /** @type {any} */ ({ created: 0, closed: 0, history: [] });
   let abilityClassForChildren = null;     // 同一进程内再起实例时用的类（不按 abilityName 路由）
 
   function abilityLog(rec) {
@@ -6136,12 +6174,13 @@
       throw bizError(16000001, '没有可启动的 ability：本运行时只会启动 '
         + '__arkui_dom_startAbility 注册的那个类（不按 want.abilityName 路由，见 docs 已知限制）');
     }
-    const entry = {
+    // @type 档位：windowEl/context/ability 是 null↔对象 摆动（生命周期里先后赋值）
+    const entry = /** @type {any} */ ({
       name: (want.abilityName !== undefined && want.abilityName !== null) ? String(want.abilityName) : AbilityClass.name,
       role: 'child', parent, rootEl: null, windowEl: null, pagePath: null,
       ability: null, context: null, terminated: false,
       pending: onResult ? [onResult] : [],   // 先登记结果接收者：子 ability 可能在自己的
-    };                                       // 生命周期里【同步】就 terminateSelfWithResult
+    });                                      // 生命周期里【同步】就 terminateSelfWithResult
     entry.windowEl = makeAbilityWindow(entry);
     abilityStack.push(entry);
     entry.context = makeAbilityContext(entry);
@@ -6215,10 +6254,11 @@
     const logs = (global.__arkui_dom_logs = global.__arkui_dom_logs || []);
     abilityClassForChildren = AbilityClass;
 
-    const entry = {
+    // @type 档位：windowEl/context/ability 是 null↔对象 摆动（同 child entry）
+    const entry = /** @type {any} */ ({
       name: AbilityClass.name, role: 'root', parent: null, rootEl, windowEl: null,
       pagePath: null, ability: null, context: null, terminated: false, pending: [],
-    };
+    });
     abilityStack.push(entry);
     const context = makeAbilityContext(entry);
     entry.context = context;
@@ -6469,7 +6509,9 @@
     __arkui_dom_registerGenerated: registerGeneratedComponents,
     __arkui_dom_componentNames: () => Object.keys(components).sort(),
     // 状态管理 v2 的装饰器表。刻意【不】把裸名挂 global：`Event` 与浏览器全局同名，
-    // 挂上去会打断 `new Event(...)`（Scroller 与 test/lazy.html 都在用）。
+    // 挂上去会打断页面脚本里的 `new Event(...)`（test/lazy.html 在用）。
+    // IIFE 内部的绑定已改名 EventDeco（R38：原先 `const Event` 把 Scroller 的 new Event
+    // 一并遮蔽了——潜伏炸点，见 v2.js EventDeco 处说明）。
     // 由 tools/extract.mjs 在产物里生成作用域内绑定，只绑实际用到的名字。
     __arkui_dom_decorators: decorators,
     // V1 深度观测自省：断言"@Observed 确实产出了可观测代理"，而不只看渲染结果。

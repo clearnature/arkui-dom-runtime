@@ -62,10 +62,8 @@
         // Enter → onSubmit(enterKey, event)：fixture 没设 enterKeyType，DOM 侧记 DONE(6)
         ti.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
         await tick(30);
-        check(!!ti.__arkuiEv && !!ti.__arkuiEv.keydown,
-          `onSubmit 已注册 keydown 派发路径（wrapper 挂在自身元素上）`);
-        // ⚠️ 键盘 Enter → onSubmit 回调的【value 派发】本轮未打通（keydown 已到达元素、
-        // wrapper 已挂，派发链路最后一环待查）——如实写进 docs/CAPABILITY 已知限制
+        check(txt('txt-log') === 'TIabcd;SUB6;',
+          `Enter → onSubmit(6, event) 回调真发（未设 enterKeyType → 默认 Done=6；R38 前此链路断在 undefined 引用被吞）`);
         // search 的 change 事件也派发 onChange（Search 兼容）——在"TextArea·Search"组里断言
       });
 

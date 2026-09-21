@@ -408,7 +408,9 @@
   }
 
   function createNavState(node, stack) {
-    const st = {
+    // @type 档位：整袋 any —— barEl/titleEl/dividerEl/tmc 等十来个字段都是 null↔对象 摆动，
+    // 后渲染才赋值；属性级 @type 只能管到紧随其后的一个属性，这里必须整袋收
+    const st = /** @type {any} */ ({
       node, stack: null, builder: null, areaEl: null, mode: 'stack', visible: null, paths: null,
       // 标题栏 / 工具栏 / 分栏（R12 收口）
       titleSpec: null, titleOptions: null, titleMode: NavigationTitleMode.Free,
@@ -419,7 +421,7 @@
       tmc: null,              // onTitleModeChange 回调
       collapseP: 0,           // 收缩进度 0(=Full)…1(=Mini)，随内容滚动更新
       tmcState: 'full',       // 已通知的模式端点：'full' | 'mini'
-    };
+    });
     node.__navState = st;
     node.style.position = 'relative';
     node.style.overflow = 'hidden';
@@ -678,7 +680,8 @@
     if (!el) return;
     const showPrev = !!(prev && prev.el && prev !== rec);
     if (showPrev) prev.el.style.display = 'block';         // navSyncVisibility 刚把它藏掉
-    const run = { seq: ++navTransRunSeq, kind: 'push', name: rec.name, done: false, sawTransitionEnd: false, endedBy: null };
+    // @type 档位：endedBy null↔string 摆动
+    const run = /** @type {any} */ ({ seq: ++navTransRunSeq, kind: 'push', name: rec.name, done: false, sawTransitionEnd: false, endedBy: null });
     navTransRuns.push(run);
     if (navTransRuns.length > 50) navTransRuns.shift();
     el.dataset.arkuiNavTrans = 'push';
@@ -807,7 +810,7 @@
     navSyncVisibility(st);                 // 露出新栈顶 / 根内容（在滑出层的下面）
     if (!el) return;
     if (st.areaEl) st.areaEl.style.display = 'block';   // 空栈时 sync 会藏目标区——滑出期间撑住
-    const run = { seq: ++navTransRunSeq, kind: 'pop', name: rec.name, done: false, sawTransitionEnd: false, endedBy: null };
+    const run = /** @type {any} */ ({ seq: ++navTransRunSeq, kind: 'pop', name: rec.name, done: false, sawTransitionEnd: false, endedBy: null });
     navTransRuns.push(run);
     if (navTransRuns.length > 50) navTransRuns.shift();
     el.dataset.arkuiNavTrans = 'pop';
@@ -903,11 +906,12 @@
       // NavDestination 自己的标题栏 / 工具栏（R12 收口）。它没有 titleMode（.d.ts 里不存在），
       // 标题栏恒为紧凑高度 56vp（= Mini 高度）。**这一条是推断** —— .d.ts 没写 NavDestination
       // 标题栏的高度，取 Mini 的依据是"目标页用紧凑标题栏"这一可见事实，已写进 docs 已知限制。
-      node.__navDest = {
+      // @type 档位：barEl/toolbarEl null↔HTMLElement 摆动 → 整袋 any
+      node.__navDest = /** @type {any} */ ({
         titleSpec: null, menus: null, toolbar: null,
         hideBackButton: false, hideTitleBar: false, hideToolBar: false,
         backButtonIcon: null, titleDrawn: null, barEl: null, toolbarEl: null,
-      };
+      });
       node.style.width = '100%';
       node.style.height = '100%';
       node.style.overflow = 'auto';
@@ -987,7 +991,7 @@
     // R25：Free 滚动联动的事件（.d.ts：titleMode=Free 且内容滚动导致标题栏模式变化时触发）。
     // ⚠️ 属性分发必须在通用 on* 规则之前把它拦下 —— 否则 fn 会被当成 DOM 事件监听挂到
     // 'titlemodechange' 上，永远没人派发（R25 测量时撞上的分发陷阱）。
-    onTitleModeChange: (st, v) => { st.tmc = typeof v === 'function' ? v : null; },
+    onTitleModeChange: (st, v, extra) => { st.tmc = typeof v === 'function' ? v : null; },
     hideTitleBar: (st, v) => { st.hideTitleBar = !!v; },
     hideBackButton: (st, v) => { st.hideBackButton = !!v; },
     backButtonIcon: (st, v) => { st.backButtonIcon = resolveResource(v); },

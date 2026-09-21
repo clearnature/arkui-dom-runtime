@@ -28,7 +28,7 @@
       const el = document.createElement(type === 'textarea' ? 'textarea' : 'input');
       el.style.display = 'inline-block';
       el.__arkuiInput = name === 'Slider' ? 'slider' : 'input';
-      if (type && type !== 'textarea') el.type = type;
+      if (type && type !== 'textarea') (/** @type {any} */ (el)).type = type;
       const o = args && typeof args[0] === 'object' && args[0] !== null ? args[0] : {};
       setup(el, o);
       return el;
@@ -136,17 +136,19 @@
     // 文本输入收官（R34）
     maxLength: (n, v) => { n.maxLength = Number(resolveResource(v)); },          // 原生截断
     caretColor: (n, v) => { n.style.caretColor = colorOf(v); },
+    // enterKeyType 落 data-enter-key，onSubmit 的 wrapper 按它取回调整数（.d.ts：Go=2…NEW_LINE=8）
+    enterKeyType: (n, v) => { n.setAttribute('data-enter-key', String(Number(resolveResource(v)))); },
     onSubmit: (n, v) => {
-      // ⚠️ 已知限制（R34）：键盘 Enter → onSubmit 回调的 value 派发本轮未打通
-      // （keydown 已到达元素、wrapper 已挂、最后一环待查）——见 docs/CAPABILITY 已知限制。
       // ArkUI 签名：(enterKey, event: SubmitEvent)。DOM 在 keydown Enter 时派发
       // （原生 input 无 submit 事件——必须拦在通用 on* 规则之前，坑 86 同族）。
       // enterKey 未设时取 Done(6)（.d.ts 默认值原文："Default value: EnterKeyType.Done"）。
+      // （R38 修复：此前的 wrapper 里写的是 `value(...)`——未定义标识符，Enter 一按就
+      // ReferenceError 且被本 try/catch 吞掉，表现为"派发未打通"之谜；tsc --checkJs 抓出。）
       const wrapper = (e) => {
         if (e.target !== n) return;
         const key = n.getAttribute('data-enter-key');
         const enterKey = key !== null ? Number(key) : EnterKeyType.Done;
-        try { value(enterKey, { keepEditable: true }); }
+        try { v(enterKey, { keepEditable: true }); }
         catch (err) { layoutWarnings.push(`onSubmit 派发抛错：${err && err.message}`); }
       };
       if (!n.__arkuiEv) n.__arkuiEv = {};

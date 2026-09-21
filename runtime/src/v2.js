@@ -15,9 +15,10 @@
   //   访问器 __decorate([Computed], Proto, "doubled", null) → 拿到 {get,...}，可返回改写后的
   //   类     __decorate([ObservedV2], Cls) → 只有 1 个实参 → ObservedV2(Cls)，必须【返回类】
   //
-  // 为什么装饰器不挂 global：`Event` 既是装饰器名也是浏览器全局，而 runtime 自己
-  // （Scroller 里 `new Event('scroll')`）与 test/lazy.html 都在用 new Event(...)。
-  // 挂 global 会直接把滚动事件打断。改为导出装饰器表 __arkui_dom_decorators，
+  // 为什么装饰器不挂 global：`Event` 既是装饰器名也是浏览器全局，挂上去会把 window.Event
+  // 覆盖掉（test/lazy.html 等页面脚本在用 new Event）。R38 再进一步：IIFE 【内部】的装饰器
+  // 绑定也不能叫 Event（会遮蔽 Scroller 的 new Event，见下方 EventDeco 处的说明）。
+  // 改为导出装饰器表 __arkui_dom_decorators，
   // 由 tools/extract.mjs 在产物里生成【作用域内】的绑定前奏（只绑实际用到的名字）。
 
   const v2InstCells = new WeakMap();   // 任意对象 -> Map<字段名, 依赖单元>（复用 propDeps 机制）
@@ -56,7 +57,7 @@
   const v2Slot = (key) => '__v2slot_' + key;
 
   function installV2Accessor(proto, key, kind) {
-    const existing = Object.getOwnPropertyDescriptor(proto, key);
+    const existing = /** @type {any} */ (Object.getOwnPropertyDescriptor(proto, key));
     if (existing && existing.get && existing.get.__v2) return;    // 已装过（重复装饰）
     Object.defineProperty(proto, key, {
       configurable: true,
@@ -83,7 +84,7 @@
         if (!Object.is(before, v)) fireV2Monitors(this, key, v, before);
       },
     });
-    const d = Object.getOwnPropertyDescriptor(proto, key);
+    const d = /** @type {any} */ (Object.getOwnPropertyDescriptor(proto, key));
     d.get.__v2 = true;
     d.set.__v2 = true;
     // observed 的语义是"参与观测的字段"。@Event 只是回调槽（不记依赖、不发通知），
@@ -134,7 +135,12 @@
   const Param = v2Field('param');
   const Local = v2Field('local');
   const Once = v2Field('once');
-  const Event = v2Field('event');
+  // ⚠️ 内部绑定名【不能】叫 Event：整个 runtime 是一个 IIFE，这里的 `const Event` 会把
+  // 同作用域里 Scroller 的 `new Event('scroll')`（layout.js scrollToIndex 未渲染分支）一并
+  // 遮蔽掉——IIFE 求值完成后那次 new 构造的是装饰器函数实例，dispatchEvent 直接 TypeError。
+  // 该分支有 flush() 兜底所以 lazy.html 一直绿，炸点是潜伏的（R38 tsc --checkJs 抓出）。
+  // 装饰器表的【键名】保持 'Event'（extract.mjs 给产物生成的作用域绑定按表键取，不受影响）。
+  const EventDeco = v2Field('event');
   const Trace = v2Field('trace');
 
   const Provider = (name) => function (target, key) {
@@ -246,6 +252,6 @@
   // 由抽取工具在产物里做作用域内绑定。
   // `Observed` 是 V1 的类装饰器（与 V2 的 `ObservedV2` 对应），走同一张表同一套机制。
   const decorators = {
-    ViewV2, Param, Local, Once, Event, Monitor, Computed, Provider, Consumer, ObservedV2, Trace,
+    ViewV2, Param, Local, Once, Event: EventDeco, Monitor, Computed, Provider, Consumer, ObservedV2, Trace,
     Observed,
   };

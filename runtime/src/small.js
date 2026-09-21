@@ -101,11 +101,11 @@
     status: (n, v) => { n.dataset.status = String(Number(resolveResource(v))); },   // ItemState
   };
   const STEP_ATTRS = {
-    onChange: (n, v) => { (n.__stepCbs = n.__stepCbs || {}).change = v; },
-    onNext: (n, v) => { (n.__stepCbs = n.__stepCbs || {}).next = v; },
-    onPrevious: (n, v) => { (n.__stepCbs = n.__stepCbs || {}).prev = v; },
-    onSkip: (n, v) => { (n.__stepCbs = n.__stepCbs || {}).skip = v; },
-    onFinish: (n, v) => { (n.__stepCbs = n.__stepCbs || {}).finish = v; },
+    onChange: (n, v) => { (/** @type {any} */ (n.__stepCbs = n.__stepCbs || {})).change = v; },
+    onNext: (n, v) => { (/** @type {any} */ (n.__stepCbs = n.__stepCbs || {})).next = v; },
+    onPrevious: (n, v) => { (/** @type {any} */ (n.__stepCbs = n.__stepCbs || {})).prev = v; },
+    onSkip: (n, v) => { (/** @type {any} */ (n.__stepCbs = n.__stepCbs || {})).skip = v; },
+    onFinish: (n, v) => { (/** @type {any} */ (n.__stepCbs = n.__stepCbs || {})).finish = v; },
   };
   const Stepper = ensureComponent('Stepper', () => {
     const el = document.createElement('div');
@@ -132,31 +132,32 @@
     el.appendChild(pages);
     el.appendChild(next);
     // 派发（.d.ts 原文语义）：走 wrapper 闭包引用 __stepCbs（覆盖语义，重渲染重挂安全）
+    // @type 档位：querySelectorAll 返回 NodeListOf<Element>，而 style/dataset 在 HTMLElement 上
     const fireNext = () => {
-      const items = el.querySelectorAll('[data-stepper-item]');
-      const cur = items[el.__arkuiStepperIndex];
+      const items = /** @type {NodeListOf<HTMLElement>} */ (el.querySelectorAll('[data-stepper-item]'));
+      const cur = items[/** @type {number} */ (el.__arkuiStepperIndex)];
       const curStatus = cur ? Number(cur.dataset.status || 0) : 0;
       if (el.__stepCbs) {
         if (curStatus === ItemState.Skip) {
           if (typeof el.__stepCbs.skip === 'function') { try { el.__stepCbs.skip(); } catch (e) { layoutWarnings.push(`onSkip 抛错：${e && e.message}`); } }
-        } else if (el.__arkuiStepperIndex >= items.length - 1) {
+        } else if (/** @type {number} */ (el.__arkuiStepperIndex) >= items.length - 1) {
           if (typeof el.__stepCbs.finish === 'function') { try { el.__stepCbs.finish(); } catch (e) { layoutWarnings.push(`onFinish 抛错：${e && e.message}`); } }
         } else if (typeof el.__stepCbs.next === 'function') {
-          try { el.__stepCbs.next(el.__arkuiStepperIndex, el.__arkuiStepperIndex + 1); }
+          try { el.__stepCbs.next(/** @type {number} */ (el.__arkuiStepperIndex), /** @type {number} */ (el.__arkuiStepperIndex) + 1); }
           catch (e) { layoutWarnings.push(`onNext 抛错：${e && e.message}`); }
         }
       }
-      goTo(el.__arkuiStepperIndex + 1);
+      goTo(/** @type {number} */ (el.__arkuiStepperIndex) + 1);
     };
     const firePrev = () => {
       if (el.__stepCbs && typeof el.__stepCbs.prev === 'function') {
-        try { el.__stepCbs.prev(el.__arkuiStepperIndex, el.__arkuiStepperIndex - 1); }
+        try { el.__stepCbs.prev(/** @type {number} */ (el.__arkuiStepperIndex), /** @type {number} */ (el.__arkuiStepperIndex) - 1); }
         catch (e) { layoutWarnings.push(`onPrevious 抛错：${e && e.message}`); }
       }
-      goTo(el.__arkuiStepperIndex - 1);
+      goTo(/** @type {number} */ (el.__arkuiStepperIndex) - 1);
     };
     const goTo = (i) => {
-      const items = el.querySelectorAll('[data-stepper-item]');
+      const items = /** @type {NodeListOf<HTMLElement>} */ (el.querySelectorAll('[data-stepper-item]'));
       if (i < 0 || i >= items.length) return;
       const p = el.__arkuiStepperIndex;
       items.forEach((m, k) => { m.style.display = k === i ? 'block' : 'none'; });
@@ -176,9 +177,9 @@
     const syncStepper = () => {
       const strays = el.querySelectorAll(':scope > [data-stepper-item]');
       strays.forEach((m) => pages.appendChild(m));
-      const items = el.querySelectorAll('[data-stepper-item]');
-      items.forEach((m, k) => { m.style.display = k === el.__arkuiStepperIndex ? 'block' : 'none'; });
-      if (items.length) goTo(el.__arkuiStepperIndex);
+      const items = /** @type {NodeListOf<HTMLElement>} */ (el.querySelectorAll('[data-stepper-item]'));
+      items.forEach((m, k) => { m.style.display = k === /** @type {number} */ (el.__arkuiStepperIndex) ? 'block' : 'none'; });
+      if (items.length) goTo(/** @type {number} */ (el.__arkuiStepperIndex));
     };
     setTimeout(syncStepper, 0);
     // 导航条点击 → 派发语义（.d.ts 原文）

@@ -114,6 +114,26 @@
         check(txt('in-log').includes('SL70/1;SL70/2;'), `双参形态 = (70, Moving)/(70, End)（log='${txt('in-log')}'）`);
       });
 
+      // ══════════ ⑤b TextInput.onSubmit：键盘 Enter → (enterKey, event) 派发（R38 修复面）══════════
+      await group('TextInput.onSubmit', async () => {
+        // 路由外直接用 DSL 建一个 TextInput（与 R37 probe 同路：ViewStack 在路由外仍可用）
+        window.__stLog = '';
+        TextInput.create({ placeholder: 'st' });
+        TextInput.id('st1');
+        TextInput.enterKeyType(EnterKeyType.Send);
+        TextInput.onSubmit((k, ev) => { window.__stLog += 'SUB' + k + '/' + (ev && ev.keepEditable ? 'K' : '-') + ';'; });
+        TextInput.pop();
+        await tick(40);
+        const st1 = el('st1');
+        check(!!st1 && st1.tagName === 'INPUT' && st1.dataset.enterKey === '4',
+          `TextInput 建出 + enterKeyType(Send=4) 落 data-enter-key（'${st1 && st1.dataset.enterKey}'）`);
+        // 键盘 Enter（原生 input 无 submit 事件，keydown 是运行时自己的派发源）
+        st1.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+        await tick(20);
+        check(window.__stLog === 'SUB4/K;',
+          `Enter → onSubmit(4, {keepEditable:true})（log='${window.__stLog}'；R38 前是 undefined 引用被吞）`);
+      });
+
       // ══════════ ⑥ 回归：没有"未实现"假警告 ══════════
       await group('回归', async () => {
         const bad = __arkui_dom_layout_warnings.filter((w) =>

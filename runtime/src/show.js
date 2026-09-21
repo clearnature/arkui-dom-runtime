@@ -189,8 +189,8 @@
   // 语义属性分派（applyAttr 里抢在通用落点之前）：Divider 三件 + Marquee 字体 +
   // Counter 的 onInc/onDec/enable（函数值，必须拦在通用 on* 规则之前）
   const SHOW_ATTRS = {
-    onInc: (n, v) => { (n.__counterCbs = n.__counterCbs || {}).inc = v; },
-    onDec: (n, v) => { (n.__counterCbs = n.__counterCbs || {}).dec = v; },
+    onInc: (n, v) => { (/** @type {any} */ (n.__counterCbs = n.__counterCbs || {})).inc = v; },
+    onDec: (n, v) => { (/** @type {any} */ (n.__counterCbs = n.__counterCbs || {})).dec = v; },
     enableInc: (n, v) => {
       const b = n.querySelector('[data-arkui-counter-inc]');
       if (b) { b.style.opacity = v === false ? '0.4' : ''; b.style.pointerEvents = v === false ? 'none' : ''; }
@@ -217,9 +217,9 @@
     lineCap: (n, v) => { n.dataset.lineCap = String(resolveResource(v)); },
     allowScale: (n, v) => { n.dataset.allowScale = String(v); },
     marqueeUpdateStrategy: (n, v) => { n.dataset.updateStrategy = String(resolveResource(v)); },
-    onStart: (n, v) => { (n.__marqueeCbs = n.__marqueeCbs || {}).start = v; },
-    onBounce: (n, v) => { (n.__marqueeCbs = n.__marqueeCbs || {}).bounce = v; },
-    onFinish: (n, v) => { (n.__marqueeCbs = n.__marqueeCbs || {}).finish = v; },
+    onStart: (n, v) => { (/** @type {any} */ (n.__marqueeCbs = n.__marqueeCbs || {})).start = v; },
+    onBounce: (n, v) => { (/** @type {any} */ (n.__marqueeCbs = n.__marqueeCbs || {})).bounce = v; },
+    onFinish: (n, v) => { (/** @type {any} */ (n.__marqueeCbs = n.__marqueeCbs || {})).finish = v; },
   };
 
   // ────────────────── 信息展示收官：QRCode（R33）──────────────────
