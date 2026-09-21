@@ -436,6 +436,8 @@ node tools/extract.mjs fixtures/pages/NewPage.ts build/newpage.js --cjs --regist
 | 86 | **属性分发里"通用 `on*` 事件规则"会抢走组件的事件类属性**：`.onTitleModeChange(cb)` 的产物是 `Navigation.onTitleModeChange((m) => …)` —— 函数值属性。而 `applyAttr` 的分发顺序是「NavDestination 生命周期 → **通用规则：函数值 = `prop.replace(/^on/,'').toLowerCase()` 加 DOM 监听** → 组件属性表」；`onTitleModeChange` 在组件属性表（`NAV_ATTRS`）里，但根本轮不到它查 —— cb 被挂成 `addEventListener('titlemodechange')`，**永远没人派发**，而"属性应用成功"没有任何征兆（R25 首跑 48 条里 3 条红，红的全是回调没发） | 组件的**事件类属性必须在通用 `on*` 规则之前**拦下（`NAVDEST_LIFECYCLE` 就是这么活的，`onTitleModeChange` 照抄）；每加一个"由运行时派发而非 DOM 事件"的回调，先在分发函数里确认它走得通。**判据：这个属性是函数值吗？它该由谁派发——DOM 事件，还是运行时状态机？后者就必须绕开通用规则** |
 | 87 | **`@State` 写了 ≠ DOM 已经变了**：`onTitleModeChange` 的回调里 `this.log = this.log + 'TMC2;'`，回调发完立刻 `txt('tmc-log')` 读到的是**旧字符串**——状态写入到 `Text` 重渲染之间隔着批量渲染调度。首版测试三条回调断言全红，红因不是回调没发（后续断言证明 log 确实在涨），而是**读得太早**。它与坑 ⑧ 同族：都是"驱动何时生效"的时序假设 | 测断言读的是**渲染结果**（DOM 文本/样式）还是**同步几何**（`syncOneNav` 直写 style 的）？前者断言前 `await tick()`，后者可以立即读。**判据：我读的这个值走没走"状态 → 批量重渲染"这条异步链？走了就必须 tick** |
 
+| 88 | **事件类属性的重复注册：重渲染会把 `.onChange(cb)` 再应用一遍，追加语义下监听器每轮翻倍**。`@State` 每变一次 → `updateDirtyElements` 重放组件的属性应用 → `applyAttr('onChange', cb)` 又跑一次 → `addEventListener` 追加。inputdemo 首跑当场抓住：点一次 ck2 回调发两次、日志 `CK[object Event];`（连同另一个问题：通用规则把 DOM Event **原样**传给 cb，而 ArkUI 的签名是 `(isOn: boolean)`）。这类 bug 在"注册一次、不重渲染"的旧测试里**永远看不到**——它只在"注册之后状态又变过"的页面上发作 | ① 同属性同事件改**覆盖语义**（`__arkuiEv[ev]` 记住上一个，`removeEventListener` 后再加）——与真框架"属性 setter 覆盖"一致；② 包装回调带 **target 校验**（实测 rd 的包装器会被错挂到 tg1/sl1 上，change 目标不是自己就不触发）；③ 不在通用规则里的特殊签名（Slider 的 `(value, mode)`）必须在通用规则**之前**拦截并自己包参。**判据：这个回调注册一次会跑几次？把"注册路径"和"触发路径"分开各断言一次** |
+
 ### 确定性与时序
 
 | # | 陷阱 | 正确做法 |

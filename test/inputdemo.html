@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R27：输入类 Checkbox / Radio / Toggle / Slider</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 320px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R27：输入类（select/checked / 组内互斥 / onChange 双参 / 原生控件语义）</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/inputdemo-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const el = (id) => root.querySelector('#' + id);
+    const txt = (id) => String(el(id) ? el(id).textContent : '<缺>');
+    const click = async (id) => { el(id).click(); await tick(40); };
+    const group = async (name, fn) => {
+      try { await fn(); } catch (e) {
+        allPass = false;
+        lines.push(`FAIL [${name}] 抛出异常：${e && e.stack ? String(e.stack).split('\n')[0] : e}`);
+      }
+    };
+
+    try {
+      __arkui_dom_requireModule('InputDemo');
+      __arkui_dom_loadRoute('pages/InputDemo', root);
+      await tick(80);
+      check(!!el('ck1') && !!el('sl1') && !!el('in-log'), 'InputDemo 页面已渲染');
+
+      // ══════════ ① 契约：产物里的自由变量枚举必须可用 ══════════
+      await group('契约', async () => {
+        check(ToggleType.Switch === 'switch' && ToggleType.Checkbox === 'checkbox' && ToggleType.Button === 'button',
+          `ToggleType 三态可用（${ToggleType.Switch}/${ToggleType.Checkbox}/${ToggleType.Button}）`);
+        check(SliderChangeMode.Begin === 0 && SliderChangeMode.Moving === 1
+          && SliderChangeMode.End === 2 && SliderChangeMode.Click === 3,
+          `SliderChangeMode = 0/1/2/3（.d.ts 声明顺序）`);
+      });
+
+      // ══════════ ② Checkbox：select/selectedColor/onChange ══════════
+      await group('Checkbox', async () => {
+        check(el('ck1').type === 'checkbox' && el('ck1').name === 'cb1',
+          `原生 checkbox + name 来自产物（type/name=${el('ck1').type}/${el('ck1').name}）`);
+        check(el('ck1').checked === true, `select(true) 编程选中（checked=${el('ck1').checked}）`);
+        check(el('ck1').style.accentColor === 'red', `selectedColor → accent-color 'red'（实际 '${el('ck1').style.accentColor}'）`);
+        check(txt('in-log') === '', `编程 select 不派发 change（实现取舍，log='${txt('in-log')}'）`);
+        await click('ck2');
+        check(txt('in-log') === 'CKtrue;', `点 ck2 → onChange(true)（log='${txt('in-log')}'）`);
+        await click('ck2');
+        check(txt('in-log') === 'CKtrue;CKfalse;', `再点 → onChange(false)（log='${txt('in-log')}'）`);
+        check(el('ck2').checked === false, '点两次回到未选');
+      });
+
+      // ══════════ ③ Radio：组内互斥（name=group）+ checked ══════════
+      await group('Radio', async () => {
+        check(el('rd1').type === 'radio' && el('rd1').name === 'g1' && el('rd1').value === 'a',
+          `Radio({value:'a', group:'g1'}) → type=radio name=g1 value=a（实测 ${el('rd1').type}/${el('rd1').name}/${el('rd1').value}）`);
+        check(el('rd1').checked === true, `checked(true) 初始选中（checked=${el('rd1').checked}）`);
+        await click('rd2');
+        check(el('rd2').checked === true && el('rd1').checked === false,
+          `点 rd2 → rd2 选中、rd1 被互斥取消（${el('rd1').checked}/${el('rd2').checked}）`);
+        // 组内互斥：新选中的发 true、被取消的发 false —— 两边 onChange 都发（HTML/真机同语义）
+        check(txt('in-log') === 'CKtrue;CKfalse;RDtrue;RDfalse;',
+          `点 rd2 → rd2 onChange(true)、rd1 onChange(false)（log='${txt('in-log')}'）`);
+      });
+
+      // ══════════ ④ Toggle：isOn 在 create 参数里 + Switch 形态 ══════════
+      await group('Toggle', async () => {
+        check(el('tg1').type === 'checkbox' && el('tg1').dataset.toggleType === 'switch',
+          `type=Switch 记成 data-toggle-type（实测 '${el('tg1').dataset.toggleType}'）`);
+        check(el('tg1').checked === true, `create 的 isOn:true → 初始选中（checked=${el('tg1').checked}）`);
+        check(el('tg1').style.accentColor === 'green', `selectedColor → accent-color 'green'（实测 '${el('tg1').style.accentColor}'）`);
+        await click('tg1');
+        // ⚠️ tg1 点击后【不许】再冒出 RD 对 —— 幂等 diff 修复的就是这个：重渲染重新应用
+        // .checked(true) 时，若与上次应用的值相同必须是无操作（否则 rd1 被强行拉回选中）
+        check(txt('in-log') === 'CKtrue;CKfalse;RDtrue;RDfalse;TGfalse;',
+          `点 tg1 → 只发 TGfalse（log='${txt('in-log')}'）`);
+        check(el('rd1').checked === false && el('rd2').checked === true,
+          `重渲染后组内状态不被拉回声明值（rd1=${el('rd1').checked}/rd2=${el('rd2').checked}）`);
+      });
+
+      // ══════════ ⑤ Slider：min/max/step/value + 双参 onChange ══════════
+      await group('Slider', async () => {
+        const s = el('sl1');
+        check(s.type === 'range' && s.min === '0' && s.max === '100' && s.step === '10',
+          `create 参数直落控件（min/max/step=${s.min}/${s.max}/${s.step}）`);
+        check(s.value === '40', `初始 value = 40（实际 ${s.value}）`);
+        check(s.style.accentColor === 'orange' && s.dataset.trackColor === '#dddddd',
+          `selectedColor → accent-color、trackColor 记 data-*（'${s.style.accentColor}'/'${s.dataset.trackColor}'）`);
+        check(s.dataset.showTips === 'true' && s.dataset.blockColor === 'blue',
+          `showTips/blockColor 照实记 data-*（'${s.dataset.showTips}'/'${s.dataset.blockColor}'）`);
+        // 拖动中：input 事件 → Moving(1)；松手：change 事件 → End(2)
+        s.value = '70';
+        s.dispatchEvent(new Event('input', { bubbles: true }));
+        await tick(20);
+        check(txt('in-log').endsWith('SL70/1;'), `input → Moving(1)（log 尾='${txt('in-log').slice(-8)}'）`);
+        s.dispatchEvent(new Event('change', { bubbles: true }));
+        await tick(20);
+        check(txt('in-log').endsWith('SL70/2;'), `change → End(2)（log 尾='${txt('in-log').slice(-8)}'）`);
+        check(txt('in-log').includes('SL70/1;SL70/2;'), `双参形态 = (70, Moving)/(70, End)（log='${txt('in-log')}'）`);
+      });
+
+      // ══════════ ⑥ 回归：没有"未实现"假警告 ══════════
+      await group('回归', async () => {
+        const bad = __arkui_dom_layout_warnings.filter((w) =>
+          /Checkbox\.|Radio\.|Toggle\.|Slider\./.test(String(w)));
+        check(bad.length === 0, `输入类属性不再记"未实现"警告（剩 ${bad.length} 条：${bad.slice(0, 2).join('|')}）`);
+      });
+
+      lines.push(`INPUT log='${txt('in-log')}'`);
+      lines.push(`ELMT ${__arkui_dom_elmtRecords.size}`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

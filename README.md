@@ -711,6 +711,60 @@ PASS 没设 stroke → 无 stroke 属性（Transparent 语义）；显式 .fill(
 （手写清单 17 → 25）、`fixtures/pages/ShapeDemo.ts`、`harmony-proj/`（ShapeDemo.ets +
 main_pages.json）、`test/shapedemo.html`、`run.sh`、`electron/run.sh`
 
+## R27：输入类 `Checkbox` / `Radio` / `Toggle` / `Slider` ✅
+
+骨架组件视觉语义第二批（按家族推进）。生成的骨架已把它们映射成**原生控件**
+（checkbox/radio/checkbox/range），本轮补的是 **ArkUI 语义层**：选中态、颜色、回调参数、枚举。
+
+**先测量**（新增 `pages/InputDemo.ets` → 官方构建），编译期当场抓到两条 API 形状：
+① **`RadioOptions` = `{value, group}`，没有 `name`**（放进去编译就红）；② **`ToggleAttribute`
+没有 `.select()`**——初始选中在 create 的 `isOn`。`SliderChangeMode = {Begin=0, Moving=1, End=2,
+Click=3}`（`.d.ts` 声明顺序）。
+
+**实现**（新分片 `runtime/src/input.js`，第 11 个，手写优先）：沿用原生控件基座，语义层四件事——
+`select`/`checked` → `checked`（**按上次应用的值做幂等 diff**）；`selectedColor` → `accent-color`
+（原生控件唯一可映射的选中色），`unselectedColor`/`mark`/`radioStyle`/`trackColor` 等原生控件没有
+对应物的**照实记 data-***（不静默）；`Radio` 的 `name = group`（原生单选互斥靠同名 name）；
+`Slider.onChange` 是**双参** `(value, mode)`——`input` → `Moving(1)`、`change` → `End(2)`，
+在通用 `on*` 规则之前拦截（否则只会原样收到 Event 对象）。`ToggleType`/`SliderChangeMode`
+挂 global（产物自由变量）。
+
+**过程里抓到的三个运行时真问题**（都比语义本身值钱）：
+① **事件类属性的重复注册**：`@State` 每次变化触发重渲染、重渲染把 `.onChange(cb)` 再应用一遍，
+追加语义下监听器**每轮翻倍**（一次点击回调发两次）——通用事件规则改成**覆盖语义**（同属性
+同事件替换上一个，与真框架属性 setter 一致），见坑 88；
+② **跨节点错投**：排查实测 rd 的包装器会被挂到其他 input 节点上（tg1/sl1 的 change 也会带起
+rd 回调）——包装器加 **target 校验**（事件目标必须是自己）兜住；
+③ **组内互斥的另一半**：Chrome 只给新选中者发 change，而被取消成员的 `onChange(false)` 也是
+"选中态变化"（radio.d.ts JSDoc 原文："false means that the radio button changes from selected to
+unselected"）——按登记的组**补发**。
+
+```
+$ bash run.sh inputdemo
+=== ALL PASS ===                    （27 条断言，双端同数）
+PASS Checkbox：select(true) 编程选中／selectedColor → accent-color／编程改态不派发 change（取舍已记录）
+PASS Radio：{value,group} → type=radio name=g1 value=a／点 rd2 → rd1 互斥取消
+PASS 组内互斥两边都发：rd2 onChange(true) + rd1 onChange(false)（.d.ts JSDoc 语义）
+PASS Toggle：isOn:true 初始选中／data-toggle-type=switch／selectedColor → accent-color
+PASS Slider：value/min/max/step=40/0/100/10 直落控件／selectedColor → accent-color／
+     trackColor/blockColor/showTips 记 data-*／input → Moving(1)、change → End(2) 双参
+PASS 重渲染后组内状态不被拉回声明值（幂等 diff 的直接验证）
+```
+
+**破坏验证**（3 处，各被精确抓住）：① 摘掉 target 校验（错投回归）→ **3 条**红；
+② 组内补发摘除 → 恰好 **2 条**红；③ 幂等 diff 改回无条件赋值 → 恰好 **2 条**红（重渲染把
+状态拉回声明值 + 凭空 RD 对）。还原后 md5 与基准一致，navdemo（74 条）与 tabgrid 回归全绿。
+
+**已知限制**（写进 CAPABILITY）：`select`/`checked` 编程改态**不派发** onChange（DOM 语义里
+change 是用户交互事件，`.d.ts` 没写死编程改态是否触发，取"不派发"并已写进 docs）；
+`Slider` 的 `Click(3)`/`Begin(0)` 模式没有 DOM 事件对应（`input`→Moving、`change`→End）；
+`contentModifier` 自定义形态、`mark`/`shape`/`radioStyle`/`switchStyle` 只记 data-*。
+
+**触及**：`runtime/src/input.js`（新分片，第 11 个）、`runtime/src/area.js`（通用事件规则改
+**覆盖语义** + INPUT/Slider 分支）、`runtime/src/input.js` 的组内补发、`runtime/src/main.js`
+（@include + 安装全局 6 个名字）、`tools/stats.mjs`（手写 25 → 29）、`fixtures/pages/InputDemo.ts`、
+`harmony-proj/`（InputDemo.ets + main_pages.json）、`test/inputdemo.html`、`run.sh`、`electron/run.sh`
+
 ## R14：多层锚链 + `Guideline` + `bias` ✅
 
 ```
@@ -1303,15 +1357,15 @@ PASS starStyle 的图片 URI 不可用已记警告
 | 文档数字守门 | `npm run stats:check-doc` | `ARCHITECTURE.md` §6 的整块实测数字逐行比对，漂移即非 0 退出；`stats:write-doc` 就地重写 |
 | 覆盖统计 | `npm run stats` | 文档里的所有数字都由它产出（`--json` 机器可读） |
 
-`npm run check` 当前：**6 步全绿（preflight + 生成物一致 + 产物/源一致 + 文档数字 + 浏览器 34 用例 + Electron 33 用例）**。
+`npm run check` 当前：**6 步全绿（preflight + 生成物一致 + 产物/源一致 + 文档数字 + 浏览器 35 用例 + Electron 34 用例）**。
 
 ## 下一步
 
 **权威清单在 `docs/ROADMAP.md`**（每项带可复现的验收命令）。当前优先：
 
-1. 其余骨架组件的视觉语义——**按家族推进**：R26 已收形状族 8 个（Circle/Ellipse/Rect/Line/Path/
-   Polygon/Polyline/Shape）；下一批候选：`Checkbox`/`Radio`/`Toggle`/`Slider`（原生输入类）、
-   `Select`/`Menu`（弹出类）、`Canvas`/`XComponent`（表层类）。另有 `@ohos:media`/`UIContext`
+1. 其余骨架组件的视觉语义——**按家族推进**：已收形状族 8 个（R26）、输入类 4 个（R27）；
+   下一批候选：`Select`/`Menu`（弹出类）、`Canvas`/`XComponent`（表层类）、`Badge`/`Counter`/
+   `Divider`/`Marquee`/`QRCode`（信息展示类）。另有 `@ohos:media`/`UIContext`
 2. ~~**继续把 `runtime/src/main.js` 拆细**~~ **已拆到位（2026-09-21，源拆分第三步）**：9 个分片，
    `main.js` 剩 **1869 行 / 86,452 B**（基础设施 / 状态 v1 / ViewPU / 属性映射 / Tabs / Swiper /
    组件注册表 / 具体组件 / LazyForEach / 枚举路由 / 安装全局），已拆出
@@ -1323,9 +1377,9 @@ PASS starStyle 的图片 URI 不可用已记警告
 > **`Navigation` 标题栏/工具栏/分栏**（见上文「R12 收口」）、
 > **`Navigation` 转场动画 + `onTitleModeChange` 滚动联动**（见上文「R25 收口」）、
 > **runtime 源码分片**（R5c）、**R24 ArkVM/`.abc` 路径调研**（`docs/ARKVM-RESEARCH.md`）、
-> **SVG 形状族**（见上文「R26」）。
+> **SVG 形状族**（见上文「R26」）、**输入类**（见上文「R27」）。
 
-**仍未覆盖**：`chainMode`、其余 ~77 个骨架组件的视觉语义、`@ohos:media`/`UIContext`。
+**仍未覆盖**：`chainMode`、其余 ~73 个骨架组件的视觉语义、`@ohos:media`/`UIContext`。
 **别把没验的当结论**——`docs/CAPABILITY.md` 里有逐项的能力矩阵，其中标了哪些语义是**推断**的。
 
 **已知待办（别当已完成）**：

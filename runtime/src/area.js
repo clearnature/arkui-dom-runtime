@@ -158,6 +158,68 @@
       SHAPE_ATTRS[prop](node, value);
       return;
     }
+    // 输入类（R27）：select/checked/selectedColor 等语义抢在通用 data-* 落点之前；
+    // Slider 的 onChange 是 (value, mode) 双参 —— 必须抢在通用 on* 规则【之前】拦下，
+    // 否则只挂 change、丢掉拖动中的 Moving 派发与双参形态（'input'→Moving(1)，'change'→End(2)）
+    if (node.__arkuiInput) {
+      if (INPUT_ATTRS[prop]) {
+        INPUT_ATTRS[prop](node, value);
+        return;
+      }
+      // ArkUI 的 onChange(isOn/isChecked: boolean)：包掉 DOM Event —— 通用规则会原样透传
+      // Event 对象（inputdemo 首跑实测 log='CK[object Event];'）。覆盖语义同上（__arkuiEv）。
+      if (node.__arkuiInput === 'input' && prop === 'onChange') {
+        // ⚠️ 包装器带【target 校验】：实测（inputdemo 排查）rd 的包装器会被错误地挂到
+        // 其他 input 节点上（tg1/sl1 的 change 也会带起 rd 回调）—— 根因在组件栈复用，
+        // 先用"事件目标必须是自己"兜住错投：change 目标不是这个节点就不算它的选中态变化。
+        const wrapper = (e) => {
+          if (e.target !== node) return;
+          try { value(!!node.checked); }
+          catch (err) { layoutWarnings.push(`输入类 onChange 派发抛错：${err && err.message}`); }
+          // 组内互斥的另一半：Chrome 只给新选中者发 change，被取消成员的 onChange(false)
+          // 由这里按登记的组补发（radio.d.ts JSDoc：false = "changes from selected to unselected"）
+          if (node.type === 'radio' && node.checked && typeof radioGroups !== 'undefined') {
+            const members = radioGroups.get(node.name);
+            if (members) {
+              members.forEach((m) => {
+                if (m !== node && m.__arkuiRadioOn && m.__arkuiEv && m.__arkuiEv.change) {
+                  m.__arkuiRadioOn = false;
+                  m.__arkuiEv.change({ target: m, type: 'change' });
+                }
+              });
+            }
+          }
+          node.__arkuiRadioOn = node.checked;
+        };
+        if (!node.__arkuiEv) node.__arkuiEv = {};
+        if (node.__arkuiEv.change) node.removeEventListener('change', node.__arkuiEv.change);
+        node.__arkuiEv.change = wrapper;
+        node.addEventListener('change', wrapper);
+        layoutWarnings.push('DBG-REG onChange id=' + node.id); // TODO 调试后删
+        return;
+      }
+      if (node.__arkuiInput === 'slider' && prop === 'onChange') {
+        // 覆盖语义同上：input→Moving(1)，change→End(2)；target 校验同上（防错投）
+        const onInput = (e) => {
+          if (e.target !== node) return;
+          try { value(Number(node.value), 1); }
+          catch (err) { layoutWarnings.push(`Slider.onChange 派发抛错：${err && err.message}`); }
+        };
+        const onChangeEv = (e) => {
+          if (e.target !== node) return;
+          try { value(Number(node.value), 2); }
+          catch (err) { layoutWarnings.push(`Slider.onChange 派发抛错：${err && err.message}`); }
+        };
+        if (!node.__arkuiEv) node.__arkuiEv = {};
+        if (node.__arkuiEv.input) node.removeEventListener('input', node.__arkuiEv.input);
+        if (node.__arkuiEv.change) node.removeEventListener('change', node.__arkuiEv.change);
+        node.__arkuiEv.input = onInput;
+        node.__arkuiEv.change = onChangeEv;
+        node.addEventListener('input', onInput);
+        node.addEventListener('change', onChangeEv);
+        return;
+      }
+    }
     // Tabs/Swiper 的 onChange 要由它们自己收集并在切换时派发，不能落成 DOM 事件 ——
     // 必须拦在通用事件分支【之前】，否则会变成永不触发的 'change' 监听器（静默失效）。
     if (prop === 'onChange' && (node.__tabsState || node.__swiperState)) {
@@ -184,6 +246,12 @@
     }
     if (typeof value === 'function') {          // 事件类（onClick/onChange…）
       const ev = prop.replace(/^on/, '').toLowerCase() || 'click';
+      // 覆盖语义（R27 实测教训）：同一个属性重复注册【替换】上一个，而不是追加 ——
+      // @State 变化会触发重渲染、重渲染会把 `.onChange(cb)` 再应用一遍（isInitialRender=false
+      // 的路径），追加语义下监听器每轮翻倍（inputdemo 首跑当场抓住：一次点击回调发两次）
+      if (!node.__arkuiEv) node.__arkuiEv = {};
+      if (node.__arkuiEv[ev]) node.removeEventListener(ev, node.__arkuiEv[ev]);
+      node.__arkuiEv[ev] = value;
       node.addEventListener(ev, value);
       return;
     }

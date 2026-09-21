@@ -838,6 +838,27 @@ DOM 侧有两条路，按形状天然二分：
 fixture 的 Circle 是 80×80 正方形，min=max。改成 80×60 后恰好 1 红。**取值方向的断言必须用
 "两分支不同值"的输入**。
 
+### 4.9c 输入类（R27）
+
+`Checkbox` / `Radio` / `Toggle` / `Slider`（新分片 `runtime/src/input.js`，第 11 个）。生成骨架
+已把它们映射成**原生控件**（checkbox/radio/checkbox/range），本节补 ArkUI 语义层。
+
+**产物形态**（实测 `fixtures/pages/InputDemo.ts`）：`RadioOptions = {value, group}`（没有 `name`，
+编译期实测）；`Toggle` 初始选中在 create 的 `isOn`（`ToggleAttribute` 没有 `.select()`）；
+`Slider.create({value, min, max, step})`；`ToggleType`/`SliderChangeMode` 是自由变量（挂 global）。
+
+**三个语义机制**（都比映射本身值钱）：
+1. **幂等 diff**：`select`/`checked` 按"上次应用的值"比较，重渲染同值 = 无操作。否则用户交互后的
+   每次重渲染都会把状态拉回声明值、还连带触发组内互斥 change（inputdemo 首跑当场抓住）。
+2. **覆盖语义的事件注册**（通用事件规则改造，坑 88）：同属性同事件**替换**上一个监听器
+   （`__arkuiEv` 表），因为 `@State` 每变一次就重放属性应用，追加语义下监听器每轮翻倍。
+3. **target 校验 + 组内补发**：包装器只在 `e.target === node` 时触发（实测存在跨节点错投）；
+   Radio 组内互斥的**被取消成员**也要发 `onChange(false)`——Chrome 只给新选中者发 change，
+   按登记的组补发（radio.d.ts JSDoc：false = "changes from selected to unselected"）。
+
+**已知限制**：编程改态不派发 onChange（取舍已记录）；`Begin`/`Click` 模式无 DOM 事件对应；
+`contentModifier` 等自定义形态记 data-*。
+
 ### 4.10 文本测量：让浏览器自己排版，而不是自己模拟（R15）
 
 实现的是真实平台模块 **`@ohos:measure`**（`runtime/ohos-shims.js`），不是自造 API。
@@ -1397,16 +1418,16 @@ minContentWidth 360，`.d.ts` 原文；用组件宽度而不是窗口宽度，�
 ```
 == 组件库 ==
   ets-loader 注册名    149
-  手写实现（真布局语义）25：Text Button Column Row Stack List ListItem RelativeContainer Tabs TabContent Swiper Navigation NavDestination Progress Gauge DataPanel Rating Circle Ellipse Rect Line Path Polygon Polyline Shape
+  手写实现（真布局语义）29：Text Button Column Row Stack List ListItem RelativeContainer Tabs TabContent Swiper Navigation NavDestination Progress Gauge DataPanel Rating Circle Ellipse Rect Line Path Polygon Polyline Shape Checkbox Radio Toggle Slider
   控制流宏（非组件）    3：If ForEach LazyForEach
-  骨架·有 DOM 画像     43（容器 22 / 叶子 21）
+  骨架·有 DOM 画像     39（容器 22 / 叶子 17）
   骨架·仅 data-*       81
   ⇒ 可建出的组件名      149 / 149
-  原生输入类控件       6
-  属性元数据总数       1057（平均 7.1／组件，最多 TextInput=70）
+  原生输入类控件       2
+  属性元数据总数       1019（平均 6.8／组件，最多 TextInput=70）
 
 == 运行时 API ==
-  global 导出        190 个
+  global 导出        196 个
   状态类            ObservedPropertySimplePU ObservedPropertyObjectPU SynchedPropertySimpleOneWayPU SynchedPropertySimpleTwoWayPU SynchedPropertyNesedObjectPU
   内置组件          Text Button Column Row Stack List ListItem If ForEach LazyForEach RelativeContainer Tabs TabContent Swiper Navigation NavDestination Progress Gauge DataPanel Rating
   内部钩子 __arkui_dom_*  32 个
@@ -1423,53 +1444,54 @@ minContentWidth 360，`.d.ts` 原文；用组件宽度而不是窗口宽度，�
   14 个：app.ability.AbilityConstant app.ability.ConfigurationConstant app.ability.UIAbility app.ability.Want data.preferences file.fs hilog measure multimedia.image net.http notificationManager promptAction router window
 
 == 用例矩阵 ==
-  浏览器 run.sh     34 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify measure lazy provide v2 observe async ability promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo router netfile persist
-  Electron          33 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo measure lazy provide async v2 observe
-  测试页            34 个
-  fixtures 转换产物  32 个：AnimDemo AsyncIO Callee Detail DrawDemo GestureDemo GestureGroupDemo Home Index Layout Lazy LazyVar MeasArea MeasImage MeasNotify Measure NavBarDemo NavDemo NavTransDemo NetFile Observe PromptAct Provide RelDemo Rich ShapeDemo SwiperDemo TabsGrid TextMeasure TransitionDemo V2 Widgets
+  浏览器 run.sh     35 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify measure lazy provide v2 observe async ability promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo inputdemo router netfile persist
+  Electron          34 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo inputdemo measure lazy provide async v2 observe
+  测试页            35 个
+  fixtures 转换产物  33 个：AnimDemo AsyncIO Callee Detail DrawDemo GestureDemo GestureGroupDemo Home Index InputDemo Layout Lazy LazyVar MeasArea MeasImage MeasNotify Measure NavBarDemo NavDemo NavTransDemo NetFile Observe PromptAct Provide RelDemo Rich ShapeDemo SwiperDemo TabsGrid TextMeasure TransitionDemo V2 Widgets
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          372.7 KB
-  runtime(src)     260.2 KB
-  test             276.8 KB
-  tools            52.8 KB
-  electron(src)    19.8 KB
-  docs             367.8 KB
-  fixtures         287.1 KB
+  runtime          382.4 KB
+  runtime(src)     269.9 KB
+  test             284.7 KB
+  tools            52.9 KB
+  electron(src)    20.0 KB
+  docs             374.1 KB
+  fixtures         294.0 KB
 
 == 逐文件（文档"文件职责"表的来源）==
-  runtime/arkui-dom-runtime.js        266283 B  260.0 KB
+  runtime/arkui-dom-runtime.js        276164 B  269.7 KB
   runtime/generated-components.js      57617 B  56.3 KB
   runtime/ohos-shims.js                57789 B  56.4 KB
   tools/extract.mjs                     6563 B  6.4 KB
   tools/gen-components.mjs              7775 B  7.6 KB
   tools/serve.py                        3887 B  3.8 KB
-  tools/stats.mjs                      14167 B  13.8 KB
+  tools/stats.mjs                      14265 B  13.9 KB
   tools/assert-counts.mjs               7476 B  7.3 KB
   tools/preflight.mjs                   5422 B  5.3 KB
   tools/check-all.sh                    3673 B  3.6 KB
   tools/build-runtime.mjs               5138 B  5.0 KB
-  run.sh                               17784 B  17.4 KB
-  electron/run.sh                      11271 B  11.0 KB
+  run.sh                               18172 B  17.7 KB
+  electron/run.sh                      11468 B  11.2 KB
   electron/main.js                      6795 B  6.6 KB
   electron/preload.js                   1961 B  1.9 KB
   package.json                          1321 B  1.3 KB
   .gitignore                             757 B  0.7 KB
-  README.md                            92293 B  90.1 KB
+  README.md                            96657 B  94.4 KB
   THIRD-PARTY-NOTICES.md                8256 B  8.1 KB
-  docs/ARCHITECTURE.md                124074 B  121.2 KB
-  docs/CAPABILITY.md                   38506 B  37.6 KB
-  docs/DEVELOPING.md                   58521 B  57.1 KB
-  docs/ROADMAP.md                      88420 B  86.3 KB
+  docs/ARCHITECTURE.md                125925 B  123.0 KB
+  docs/CAPABILITY.md                   39772 B  38.8 KB
+  docs/DEVELOPING.md                   59693 B  58.3 KB
+  docs/ROADMAP.md                      90554 B  88.4 KB
   docs/surface-measurement.md           6496 B  6.3 KB
   docs/SESSION-2026-09-20.md           12842 B  12.5 KB
   runtime/src/ability.js                8802 B  8.6 KB
   runtime/src/animation.js             25906 B  25.3 KB
-  runtime/src/area.js                  14072 B  13.7 KB
+  runtime/src/area.js                  18123 B  17.7 KB
   runtime/src/draw.js                  17932 B  17.5 KB
   runtime/src/gesture.js               29527 B  28.8 KB
+  runtime/src/input.js                  5672 B  5.5 KB
   runtime/src/layout.js                14213 B  13.9 KB
-  runtime/src/main.js                  86651 B  84.6 KB
+  runtime/src/main.js                  86829 B  84.8 KB
   runtime/src/nav.js                   50317 B  49.1 KB
   runtime/src/shape.js                  7206 B  7.0 KB
   runtime/src/v2.js                    11839 B  11.6 KB
@@ -1482,6 +1504,7 @@ minContentWidth 360，`.d.ts` 原文；用组件宽度而不是窗口宽度，�
   fixtures/pages/GestureGroupDemo.ts   20489 B  20.0 KB
   fixtures/pages/Home.ts                3232 B  3.2 KB
   fixtures/pages/Index.ts               2737 B  2.7 KB
+  fixtures/pages/InputDemo.ts           7020 B  6.9 KB
   fixtures/pages/Layout.ts              3434 B  3.4 KB
   fixtures/pages/Lazy.ts                4485 B  4.4 KB
   fixtures/pages/LazyVar.ts             7774 B  7.6 KB
@@ -1513,6 +1536,7 @@ minContentWidth 360，`.d.ts` 原文；用组件宽度而不是窗口宽度，�
   test/gesturedemo.html                 9875 B  9.6 KB
   test/gesturegroupdemo.html           14791 B  14.4 KB
   test/index.html                       3560 B  3.5 KB
+  test/inputdemo.html                   8065 B  7.9 KB
   test/layout.html                      4135 B  4.0 KB
   test/lazy.html                        4380 B  4.3 KB
   test/lazyvar.html                    10093 B  9.9 KB

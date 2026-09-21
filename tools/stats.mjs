@@ -27,7 +27,9 @@ const HANDWRITTEN = ['Text', 'Button', 'Column', 'Row', 'Stack', 'List', 'ListIt
   'Tabs', 'TabContent', 'Swiper', 'Navigation', 'NavDestination',
   'Progress', 'Gauge', 'DataPanel', 'Rating',
   // R26：SVG 形状族（Circle/Ellipse/Rect/Line/Path/Polygon/Polyline/Shape）
-  'Circle', 'Ellipse', 'Rect', 'Line', 'Path', 'Polygon', 'Polyline', 'Shape'];
+  'Circle', 'Ellipse', 'Rect', 'Line', 'Path', 'Polygon', 'Polyline', 'Shape',
+  // R27：输入类（Checkbox/Radio/Toggle/Slider）
+  'Checkbox', 'Radio', 'Toggle', 'Slider'];
 const CONTROL_FLOW = ['If', 'ForEach', 'LazyForEach'];   // 不在 149 注册表内，单独实现
 
 const gen = read('runtime/generated-components.js');

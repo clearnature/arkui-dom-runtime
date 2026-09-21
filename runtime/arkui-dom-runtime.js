@@ -3830,6 +3830,68 @@
       SHAPE_ATTRS[prop](node, value);
       return;
     }
+    // 输入类（R27）：select/checked/selectedColor 等语义抢在通用 data-* 落点之前；
+    // Slider 的 onChange 是 (value, mode) 双参 —— 必须抢在通用 on* 规则【之前】拦下，
+    // 否则只挂 change、丢掉拖动中的 Moving 派发与双参形态（'input'→Moving(1)，'change'→End(2)）
+    if (node.__arkuiInput) {
+      if (INPUT_ATTRS[prop]) {
+        INPUT_ATTRS[prop](node, value);
+        return;
+      }
+      // ArkUI 的 onChange(isOn/isChecked: boolean)：包掉 DOM Event —— 通用规则会原样透传
+      // Event 对象（inputdemo 首跑实测 log='CK[object Event];'）。覆盖语义同上（__arkuiEv）。
+      if (node.__arkuiInput === 'input' && prop === 'onChange') {
+        // ⚠️ 包装器带【target 校验】：实测（inputdemo 排查）rd 的包装器会被错误地挂到
+        // 其他 input 节点上（tg1/sl1 的 change 也会带起 rd 回调）—— 根因在组件栈复用，
+        // 先用"事件目标必须是自己"兜住错投：change 目标不是这个节点就不算它的选中态变化。
+        const wrapper = (e) => {
+          if (e.target !== node) return;
+          try { value(!!node.checked); }
+          catch (err) { layoutWarnings.push(`输入类 onChange 派发抛错：${err && err.message}`); }
+          // 组内互斥的另一半：Chrome 只给新选中者发 change，被取消成员的 onChange(false)
+          // 由这里按登记的组补发（radio.d.ts JSDoc：false = "changes from selected to unselected"）
+          if (node.type === 'radio' && node.checked && typeof radioGroups !== 'undefined') {
+            const members = radioGroups.get(node.name);
+            if (members) {
+              members.forEach((m) => {
+                if (m !== node && m.__arkuiRadioOn && m.__arkuiEv && m.__arkuiEv.change) {
+                  m.__arkuiRadioOn = false;
+                  m.__arkuiEv.change({ target: m, type: 'change' });
+                }
+              });
+            }
+          }
+          node.__arkuiRadioOn = node.checked;
+        };
+        if (!node.__arkuiEv) node.__arkuiEv = {};
+        if (node.__arkuiEv.change) node.removeEventListener('change', node.__arkuiEv.change);
+        node.__arkuiEv.change = wrapper;
+        node.addEventListener('change', wrapper);
+        layoutWarnings.push('DBG-REG onChange id=' + node.id); // TODO 调试后删
+        return;
+      }
+      if (node.__arkuiInput === 'slider' && prop === 'onChange') {
+        // 覆盖语义同上：input→Moving(1)，change→End(2)；target 校验同上（防错投）
+        const onInput = (e) => {
+          if (e.target !== node) return;
+          try { value(Number(node.value), 1); }
+          catch (err) { layoutWarnings.push(`Slider.onChange 派发抛错：${err && err.message}`); }
+        };
+        const onChangeEv = (e) => {
+          if (e.target !== node) return;
+          try { value(Number(node.value), 2); }
+          catch (err) { layoutWarnings.push(`Slider.onChange 派发抛错：${err && err.message}`); }
+        };
+        if (!node.__arkuiEv) node.__arkuiEv = {};
+        if (node.__arkuiEv.input) node.removeEventListener('input', node.__arkuiEv.input);
+        if (node.__arkuiEv.change) node.removeEventListener('change', node.__arkuiEv.change);
+        node.__arkuiEv.input = onInput;
+        node.__arkuiEv.change = onChangeEv;
+        node.addEventListener('input', onInput);
+        node.addEventListener('change', onChangeEv);
+        return;
+      }
+    }
     // Tabs/Swiper 的 onChange 要由它们自己收集并在切换时派发，不能落成 DOM 事件 ——
     // 必须拦在通用事件分支【之前】，否则会变成永不触发的 'change' 监听器（静默失效）。
     if (prop === 'onChange' && (node.__tabsState || node.__swiperState)) {
@@ -3856,6 +3918,12 @@
     }
     if (typeof value === 'function') {          // 事件类（onClick/onChange…）
       const ev = prop.replace(/^on/, '').toLowerCase() || 'click';
+      // 覆盖语义（R27 实测教训）：同一个属性重复注册【替换】上一个，而不是追加 ——
+      // @State 变化会触发重渲染、重渲染会把 `.onChange(cb)` 再应用一遍（isInitialRender=false
+      // 的路径），追加语义下监听器每轮翻倍（inputdemo 首跑当场抓住：一次点击回调发两次）
+      if (!node.__arkuiEv) node.__arkuiEv = {};
+      if (node.__arkuiEv[ev]) node.removeEventListener(ev, node.__arkuiEv[ev]);
+      node.__arkuiEv[ev] = value;
       node.addEventListener(ev, value);
       return;
     }
@@ -4623,6 +4691,98 @@
     return svg;
   });
 
+  // ────────────────── 输入类：Checkbox / Radio / Toggle / Slider（R27）──────────────────
+  //
+  // 产物形态（实测 fixtures/pages/InputDemo.ts）：
+  //   Checkbox.create({name});  Checkbox.select(bool);  Checkbox.selectedColor(...);  Checkbox.onChange((on)=>…)
+  //   Radio.create({value, group});
+  //     ⚠️ RadioOptions = {value, group}，【没有 name】（放进 create 编译就红，编译期实测）
+  //   Radio.checked(bool);  Radio.onChange((isChecked)=>…)
+  //   Toggle.create({type: ToggleType.Switch, isOn: true});
+  //     ⚠️ ToggleAttribute 没有 .select() —— 初始选中在 create 的 isOn（编译期实测）
+  //   Slider.create({value, min, max, step});  blockColor/trackColor/selectedColor/showTips;
+  //     Slider.onChange((value, mode: SliderChangeMode)=>…)
+  //
+  // 语义锚点（.d.ts）：SliderChangeMode = { Begin=0, Moving=1, End=2, Click=3 }
+  //（声明顺序；Begin=触摸滑块、Moving=拖动中、End=拖动结束）
+  //
+  // DOM 映射（沿用生成骨架的原生控件基座，手写优先接管）：
+  //   Checkbox/Toggle → <input type=checkbox>；Radio → <input type=radio> 且 **name = group**
+  //   （原生单选互斥就是同名 name）；Slider → <input type=range>，min/max/step/value 直落控件。
+  //   select/checked 落 checked；selectedColor → accent-color（原生控件唯一可映射的选中色）；
+  //   原生控件没有对应属性的（unselectedColor/mark/shape/radioStyle/switchPointColor/…）
+  //   照实记 data-*，不静默。select/checked 只改状态【不派发】change —— DOM 语义里
+  //   change 是用户交互事件，编程改态是否触发 onChange .d.ts 没写死，取"不派发"并已写进 docs。
+  const ToggleType = { Switch: 'switch', Checkbox: 'checkbox', Button: 'button' };
+  const SliderChangeMode = { Begin: 0, Moving: 1, End: 2, Click: 3 };
+
+  function inputComponent(name, type, setup) {
+    return ensureComponent(name, (args) => {
+      layoutWarnings.push('DBG-FACTORY ' + name); // TODO 调试后删
+      const el = document.createElement('input');
+      el.style.display = 'inline-block';
+      el.__arkuiInput = name === 'Slider' ? 'slider' : 'input';
+      if (type) el.type = type;
+      const o = args && typeof args[0] === 'object' && args[0] !== null ? args[0] : {};
+      setup(el, o);
+      return el;
+    });
+  }
+
+  const Checkbox = inputComponent('Checkbox', 'checkbox', (el, o) => {
+    if (o.name !== undefined && o.name !== null) el.name = String(o.name);
+  });
+  // Radio 的组登记：互斥时被取消成员的 onChange(false) 要【补发】—— Chrome 只给新选中者发
+  // change（radio.d.ts JSDoc："false means that the radio button changes from selected to
+  // unselected"，被取消的那次状态变化也是"选中态变化"，真机会发）
+  const radioGroups = new Map();
+  const Radio = inputComponent('Radio', 'radio', (el, o) => {
+    if (o.group !== undefined && o.group !== null) {
+      el.name = String(o.group);   // 互斥 = 同名 name
+      if (!radioGroups.has(el.name)) radioGroups.set(el.name, new Set());
+      radioGroups.get(el.name).add(el);
+    }
+    if (o.value !== undefined && o.value !== null) el.value = String(o.value);
+  });
+  const Toggle = inputComponent('Toggle', 'checkbox', (el, o) => {
+    el.dataset.toggleType = o.type === undefined ? ToggleType.Checkbox : String(o.type);
+    if (o.type === ToggleType.Switch) el.classList.add('arkui-toggle-switch');
+    if (o.isOn !== undefined) el.checked = !!o.isOn;
+  });
+  const Slider = inputComponent('Slider', 'range', (el, o) => {
+    const num = (v, d) => { const n = Number(resolveResource(v)); return Number.isFinite(n) ? n : d; };
+    el.min = String(num(o.min, 0));                       // .d.ts 默认：min 0、max 100
+    el.max = String(num(o.max, 100));
+    el.step = String(num(o.step, 1));
+    el.value = String(num(o.value, num(o.min, 0)));
+  });
+
+  // 输入类的语义属性：select/checked 落状态（**按上次应用的值做幂等 diff**——源码里是静态
+  // 字面量，重渲染再应用同值必须是无操作；否则用户交互后的每次重渲染都会把状态拉回去，
+  // 还连带触发组内互斥的 change —— inputdemo 首跑当场抓住）；selectedColor 落 accent-color；
+  // 原生控件没有对应物的照实记 data-*（不静默）
+  const INPUT_ATTRS = {
+    select: (n, v) => {
+      const want = !!v;
+      if (n.__arkuiCheckedApplied !== want) { n.checked = want; n.__arkuiCheckedApplied = want; n.__arkuiRadioOn = want; }
+    },
+    checked: (n, v) => {
+      const want = !!v;
+      if (n.__arkuiCheckedApplied !== want) { n.checked = want; n.__arkuiCheckedApplied = want; n.__arkuiRadioOn = want; }
+    },
+    selectedColor: (n, v) => { n.style.accentColor = colorOf(v); },
+    unselectedColor: (n, v) => { n.dataset.unselectedColor = String(colorOf(v)); },
+    mark: (n, v) => { n.dataset.mark = String(resolveResource(v)); },
+    shape: (n, v) => { n.dataset.shape = String(resolveResource(v)); },
+    radioStyle: (n, v) => { n.dataset.radioStyle = String(resolveResource(v)); },
+    switchPointColor: (n, v) => { n.dataset.switchPointColor = String(colorOf(v)); },
+    switchStyle: (n, v) => { n.dataset.switchStyle = String(resolveResource(v)); },
+    blockColor: (n, v) => { n.dataset.blockColor = String(colorOf(v)); },
+    trackColor: (n, v) => { n.dataset.trackColor = String(colorOf(v)); },
+    showTips: (n, v) => { n.dataset.showTips = String(v); },
+    showSteps: (n, v) => { n.dataset.showSteps = String(v); },
+  };
+
   // ── 由 tools/gen-components.mjs 生成的 149 个组件骨架 ──
   // 手写实现（上面那些，已被测试覆盖）优先；生成的只补缺口。
   // 骨架保证"能建出正确的 DOM 标签 + 基础样式"，精细化布局语义按需手补（见 docs）。
@@ -5258,6 +5418,8 @@
     Progress, Gauge, DataPanel, Rating, ProgressStyle, ProgressType, DataPanelType,
     // R26：SVG 形状族。产物里 `Circle.create(...)` 这类同样是自由变量引用，必须挂 global
     Circle, Ellipse, Rect, Line, Path, Polygon, Polyline, Shape,
+    // R27：输入类。ToggleType/SliderChangeMode 也是产物里的自由变量枚举
+    Checkbox, Radio, Toggle, Slider, ToggleType, SliderChangeMode,
     __Common__: _CommonWrapper,
     FontWeight, VerticalAlign, HorizontalAlign, FlexAlign, TextAlign, ItemAlign, Color,
     TextOverflow, Alignment, Scroller, Axis,

@@ -492,6 +492,35 @@ stroke opacity 0）恰好一致。
 `fixtures/pages/ShapeDemo.ts`、`harmony-proj/`（ShapeDemo.ets + main_pages.json）、
 `test/shapedemo.html`、`run.sh`、`electron/run.sh`
 
+### R27 — 输入类：`Checkbox` / `Radio` / `Toggle` / `Slider` ✅（2026-09-21）
+
+**内容**：骨架语义第二批。生成骨架已映射原生控件（checkbox/radio/checkbox/range），本轮补
+ArkUI 语义层：选中态（幂等 diff）、`selectedColor → accent-color`、无对应物的属性照实记 data-*、
+`Radio` 组互斥（`name = group`）、`Slider.onChange` 双参 `(value, mode)`（input→Moving、
+change→End，通用 on* 规则前拦截）。
+
+**测量**（新增 `pages/InputDemo.ets`，编译期抓到）：`RadioOptions = {value, group}` 没有 `name`；
+`ToggleAttribute` 没有 `.select()`（初始选中在 create 的 `isOn`）；`SliderChangeMode = {Begin=0,
+Moving=1, End=2, Click=3}`。
+
+**运行时三个真问题**（比语义本身值钱，已修）：① 事件类属性**重复注册**——`@State` 变化触发
+重渲染、重渲染把 `.onChange(cb)` 再应用一遍，追加语义下监听器每轮翻倍 → 通用事件规则改
+**覆盖语义**（坑 88）；② 跨节点错投（rd 包装器被挂到 tg1/sl1 上）→ 包装器加 **target 校验**；
+③ Chrome 只给新选中者发 change，被取消成员的 `onChange(false)` 按组**补发**（radio.d.ts JSDoc：
+false = "changes from selected to unselected"）。
+
+**验收**：`bash run.sh inputdemo`（**27 条断言**）双端通过。**破坏验证（3 处）**：摘 target 校验
+→ **3 红**；补发摘除 → **2 红**；幂等 diff 改无条件赋值 → **2 红**（重渲染拉回声明值 + 凭空
+RD 对）。还原后 md5 一致，navdemo/tabgrid 回归绿。
+
+**已知限制**：编程 `select`/`checked` 不派发 onChange（取舍已记录）；`Click`/`Begin` 模式无 DOM
+事件对应；`contentModifier` 等自定义形态只记 data-*。
+
+**触及**：`runtime/src/input.js`（新，第 11 个分片）、`runtime/src/area.js`（覆盖语义 + 分支）、
+`runtime/src/main.js`（@include + 安装全局）、`tools/stats.mjs`（手写 25→29）、
+`fixtures/pages/InputDemo.ts`、`harmony-proj/`（InputDemo.ets + main_pages.json）、
+`test/inputdemo.html`、`run.sh`、`electron/run.sh`
+
 ---
 
 ## P3 布局引擎

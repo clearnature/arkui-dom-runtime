@@ -194,6 +194,10 @@ case "${1:-index}" in
     run_one shapedemo "$(src_of pages/ShapeDemo.ts)" build/shapedemo-module.js test/shapedemo.html \
       "--cjs --register ShapeDemo" || rc=1
     echo
+    # R27：输入类 Checkbox/Radio/Toggle/Slider
+    run_one inputdemo "$(src_of pages/InputDemo.ts)" build/inputdemo-module.js test/inputdemo.html \
+      "--cjs --register InputDemo" || rc=1
+    echo
     run_one measure "$(src_of pages/Measure.ts)" build/measure.js test/measure.html || rc=1
     echo
     run_one lazy "$(src_of pages/Lazy.ts)" build/lazy.js test/lazy.html || rc=1
@@ -292,6 +296,10 @@ case "${1:-index}" in
     # R26：SVG 形状族
     run_one shapedemo "$(src_of pages/ShapeDemo.ts)" build/shapedemo-module.js test/shapedemo.html \
       "--cjs --register ShapeDemo" ;;
+  inputdemo)
+    # R27：输入类
+    run_one inputdemo "$(src_of pages/InputDemo.ts)" build/inputdemo-module.js test/inputdemo.html \
+      "--cjs --register InputDemo" ;;
   router)
     # 两个页面都要注册；Detail 先单独产出，Home 由 run_one 带 flags 产出
     "$NODE" tools/extract.mjs "$(src_of pages/Detail.ts)" build/detail-module.js --cjs --register Detail >/dev/null || exit 1
@@ -308,5 +316,5 @@ case "${1:-index}" in
     echo
     run_one netfile-2 "$(src_of pages/NetFile.ts)" build/netfile-module.js test/netfile.html \
       "--cjs --register NetFile" "?phase=2" "$PERSIST_PROFILE" "$PERSIST_PORT" ;;
-  *) echo "用法: bash run.sh [index|rich|leak|layout|widgets|tabgrid|swiper|navdemo|reldemo|drawdemo|textmeasure|lazyvh|measarea|measimage|measnotify|promptaction|realfs|animdemo|gesturedemo|transitiondemo|gesturegroupdemo|navbardemo|navtransdemo|shapedemo|measure|lazy|provide|async|ability|router|netfile|all]"; exit 2 ;;
+  *) echo "用法: bash run.sh [index|rich|leak|layout|widgets|tabgrid|swiper|navdemo|reldemo|drawdemo|textmeasure|lazyvh|measarea|measimage|measnotify|promptaction|realfs|animdemo|gesturedemo|transitiondemo|gesturegroupdemo|navbardemo|navtransdemo|shapedemo|inputdemo|measure|lazy|provide|async|ability|router|netfile|all]"; exit 2 ;;
 esac
