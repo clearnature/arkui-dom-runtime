@@ -812,6 +812,32 @@ DOM 侧有两条路，按形状天然二分：
 `Rating.starStyle` 是**图片 URI** —— 本运行时没有资源管线，加载不了，所以**退化为内置星形并记警告**
 （不静默画成"看起来对"的星）。
 
+### 4.9b SVG 形状族（R26）
+
+`Circle` / `Ellipse` / `Rect` / `Line` / `Path` / `Polygon` / `Polyline` / `Shape`（新分片
+`runtime/src/shape.js`，第 10 个，**手写优先**于生成骨架——生成的只有裸 SVG 标签、零属性语义）。
+「其余骨架组件的视觉语义」按家族推进的第一批。
+
+**产物形态**（实测 `fixtures/pages/ShapeDemo.ts`）：create 参数带几何
+（`Circle({width,height})`、`Rect({width,height,radiusWidth,radiusHeight})`、`Path({width,height,commands})`…）；
+**`Line` 的起点终点是属性方法** `startPoint([x,y])` / `endPoint([x,y])`——`LineOptions` 里没有它们
+（放 create 参数第一版编译就红）；`Shape.create()` 无参，`viewPort({x,y,width,height})` 设视口。
+
+**DOM 映射**：组件根 = `<svg>`（吃通用 `.width()/.height()`，viewBox 随 create 尺寸），
+真正的形状元素挂 `node.__shapeEl`；`fill/stroke/strokeWidth/fillOpacity/points/commands/…`
+经 `SHAPE_ATTRS`（`applyAttr` 里抢在通用落点之前）落成 **SVG 表现属性**——特意不用 data-*
+（不是形状语义）也不用 CSS（会破坏 Shape 容器的**继承语义**：容器 fill 落在 `<svg>` 上，
+没显式 fill 的子形状靠 SVG 表现属性继承被罩住，子形状自己的属性永远赢过继承）。
+默认值**不写属性**：SVG 原生默认（黑填充/无描边）与 `.d.ts` 默认值
+（fill 默认 Color.Black、stroke "the default stroke opacity is 0"）恰好一致，还省掉特判。
+
+**已知限制**：create 后改 `.width()/.height()` 只动 svg 视口**不反推几何**；
+渐变形态的 `fill`/`stroke`、`strokeMiterLimit`、`Path.mil` 未实现（记警告）。
+
+**破坏验证教训（R13 坑 2 重演）**：内切圆 `r = min(w,h)/2` 取反成 `max`，首轮破坏**空转 0 红**——
+fixture 的 Circle 是 80×80 正方形，min=max。改成 80×60 后恰好 1 红。**取值方向的断言必须用
+"两分支不同值"的输入**。
+
 ### 4.10 文本测量：让浏览器自己排版，而不是自己模拟（R15）
 
 实现的是真实平台模块 **`@ohos:measure`**（`runtime/ohos-shims.js`），不是自造 API。
@@ -1371,16 +1397,16 @@ minContentWidth 360，`.d.ts` 原文；用组件宽度而不是窗口宽度，�
 ```
 == 组件库 ==
   ets-loader 注册名    149
-  手写实现（真布局语义）17：Text Button Column Row Stack List ListItem RelativeContainer Tabs TabContent Swiper Navigation NavDestination Progress Gauge DataPanel Rating
+  手写实现（真布局语义）25：Text Button Column Row Stack List ListItem RelativeContainer Tabs TabContent Swiper Navigation NavDestination Progress Gauge DataPanel Rating Circle Ellipse Rect Line Path Polygon Polyline Shape
   控制流宏（非组件）    3：If ForEach LazyForEach
-  骨架·有 DOM 画像     51（容器 22 / 叶子 29）
+  骨架·有 DOM 画像     43（容器 22 / 叶子 21）
   骨架·仅 data-*       81
   ⇒ 可建出的组件名      149 / 149
   原生输入类控件       6
-  属性元数据总数       1078（平均 7.2／组件，最多 TextInput=70）
+  属性元数据总数       1057（平均 7.1／组件，最多 TextInput=70）
 
 == 运行时 API ==
-  global 导出        182 个
+  global 导出        190 个
   状态类            ObservedPropertySimplePU ObservedPropertyObjectPU SynchedPropertySimpleOneWayPU SynchedPropertySimpleTwoWayPU SynchedPropertyNesedObjectPU
   内置组件          Text Button Column Row Stack List ListItem If ForEach LazyForEach RelativeContainer Tabs TabContent Swiper Navigation NavDestination Progress Gauge DataPanel Rating
   内部钩子 __arkui_dom_*  32 个
@@ -1397,54 +1423,55 @@ minContentWidth 360，`.d.ts` 原文；用组件宽度而不是窗口宽度，�
   14 个：app.ability.AbilityConstant app.ability.ConfigurationConstant app.ability.UIAbility app.ability.Want data.preferences file.fs hilog measure multimedia.image net.http notificationManager promptAction router window
 
 == 用例矩阵 ==
-  浏览器 run.sh     33 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify measure lazy provide v2 observe async ability promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo router netfile persist
-  Electron          32 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo measure lazy provide async v2 observe
-  测试页            33 个
-  fixtures 转换产物  31 个：AnimDemo AsyncIO Callee Detail DrawDemo GestureDemo GestureGroupDemo Home Index Layout Lazy LazyVar MeasArea MeasImage MeasNotify Measure NavBarDemo NavDemo NavTransDemo NetFile Observe PromptAct Provide RelDemo Rich SwiperDemo TabsGrid TextMeasure TransitionDemo V2 Widgets
+  浏览器 run.sh     34 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify measure lazy provide v2 observe async ability promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo router netfile persist
+  Electron          33 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo measure lazy provide async v2 observe
+  测试页            34 个
+  fixtures 转换产物  32 个：AnimDemo AsyncIO Callee Detail DrawDemo GestureDemo GestureGroupDemo Home Index Layout Lazy LazyVar MeasArea MeasImage MeasNotify Measure NavBarDemo NavDemo NavTransDemo NetFile Observe PromptAct Provide RelDemo Rich ShapeDemo SwiperDemo TabsGrid TextMeasure TransitionDemo V2 Widgets
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          365.2 KB
-  runtime(src)     252.7 KB
-  test             267.1 KB
-  tools            52.7 KB
-  electron(src)    19.6 KB
-  docs             362.3 KB
-  fixtures         279.2 KB
+  runtime          372.7 KB
+  runtime(src)     260.2 KB
+  test             276.8 KB
+  tools            52.8 KB
+  electron(src)    19.8 KB
+  docs             367.8 KB
+  fixtures         287.1 KB
 
 == 逐文件（文档"文件职责"表的来源）==
-  runtime/arkui-dom-runtime.js        258571 B  252.5 KB
+  runtime/arkui-dom-runtime.js        266283 B  260.0 KB
   runtime/generated-components.js      57617 B  56.3 KB
   runtime/ohos-shims.js                57789 B  56.4 KB
   tools/extract.mjs                     6563 B  6.4 KB
   tools/gen-components.mjs              7775 B  7.6 KB
   tools/serve.py                        3887 B  3.8 KB
-  tools/stats.mjs                      14005 B  13.7 KB
+  tools/stats.mjs                      14167 B  13.8 KB
   tools/assert-counts.mjs               7476 B  7.3 KB
   tools/preflight.mjs                   5422 B  5.3 KB
   tools/check-all.sh                    3673 B  3.6 KB
   tools/build-runtime.mjs               5138 B  5.0 KB
-  run.sh                               17364 B  17.0 KB
-  electron/run.sh                      11074 B  10.8 KB
+  run.sh                               17784 B  17.4 KB
+  electron/run.sh                      11271 B  11.0 KB
   electron/main.js                      6795 B  6.6 KB
   electron/preload.js                   1961 B  1.9 KB
   package.json                          1321 B  1.3 KB
   .gitignore                             757 B  0.7 KB
-  README.md                            87736 B  85.7 KB
+  README.md                            92293 B  90.1 KB
   THIRD-PARTY-NOTICES.md                8256 B  8.1 KB
-  docs/ARCHITECTURE.md                121838 B  119.0 KB
-  docs/CAPABILITY.md                   37317 B  36.4 KB
+  docs/ARCHITECTURE.md                124074 B  121.2 KB
+  docs/CAPABILITY.md                   38506 B  37.6 KB
   docs/DEVELOPING.md                   58521 B  57.1 KB
-  docs/ROADMAP.md                      86195 B  84.2 KB
+  docs/ROADMAP.md                      88420 B  86.3 KB
   docs/surface-measurement.md           6496 B  6.3 KB
   docs/SESSION-2026-09-20.md           12842 B  12.5 KB
   runtime/src/ability.js                8802 B  8.6 KB
   runtime/src/animation.js             25906 B  25.3 KB
-  runtime/src/area.js                  13745 B  13.4 KB
+  runtime/src/area.js                  14072 B  13.7 KB
   runtime/src/draw.js                  17932 B  17.5 KB
   runtime/src/gesture.js               29527 B  28.8 KB
   runtime/src/layout.js                14213 B  13.9 KB
-  runtime/src/main.js                  86452 B  84.4 KB
+  runtime/src/main.js                  86651 B  84.6 KB
   runtime/src/nav.js                   50317 B  49.1 KB
+  runtime/src/shape.js                  7206 B  7.0 KB
   runtime/src/v2.js                    11839 B  11.6 KB
   fixtures/pages/AnimDemo.ts            6451 B  6.3 KB
   fixtures/pages/AsyncIO.ts             6206 B  6.1 KB
@@ -1471,6 +1498,7 @@ minContentWidth 360，`.d.ts` 原文；用组件宽度而不是窗口宽度，�
   fixtures/pages/Provide.ts             6731 B  6.6 KB
   fixtures/pages/RelDemo.ts             9702 B  9.5 KB
   fixtures/pages/Rich.ts                9256 B  9.0 KB
+  fixtures/pages/ShapeDemo.ts           8081 B  7.9 KB
   fixtures/pages/SwiperDemo.ts          7876 B  7.7 KB
   fixtures/pages/TabsGrid.ts           10513 B  10.3 KB
   fixtures/pages/TextMeasure.ts        11625 B  11.4 KB
@@ -1505,6 +1533,7 @@ minContentWidth 360，`.d.ts` 原文；用组件宽度而不是窗口宽度，�
   test/reldemo.html                     7328 B  7.2 KB
   test/rich.html                        3794 B  3.7 KB
   test/router.html                      4288 B  4.2 KB
+  test/shapedemo.html                   9951 B  9.7 KB
   test/swiper.html                      9177 B  9.0 KB
   test/tabgrid.html                    10096 B  9.9 KB
   test/textmeasure.html                 9021 B  8.8 KB

@@ -658,6 +658,59 @@ ArkTS 检查器拒 `Function.bind`（arkts-no-func-bind），且 `{builder}` 单
 `NavigationCustomTitle` 类型（缺 `height`）；`{ builder: this.SynthTitle.bind(this) }` 是 **loader 生成
 的形态**，源码里就该写 `.title(this.SynthTitle)`。又一次"产物形态 ≠ 源码写法"的现场证据。
 
+## R26：SVG 形状族 `Circle` / `Ellipse` / `Rect` / `Line` / `Path` / `Polygon` / `Polyline` + `Shape` ✅
+
+骨架组件视觉语义的第一批（README「下一步」①）：选形状族是因为它是**纯绘制**（无布局语义）、
+语义全在 `.d.ts` 的属性方法上、与 R13 绘制四件套同一打法。85 个骨架的推进策略 = 按家族逐批收。
+
+**先测量**（新增 `pages/ShapeDemo.ets` → 官方构建 → 读产物），量出三件事：
+① 八个组件的 `create` 参数形态（`Circle({width,height})`、`Rect({width,height,radiusWidth,radiusHeight})`、
+`Path({width,height,commands})`…）；② **`LineOptions` 里没有 `startPoint`/`endPoint`**——它们是
+**属性方法**（`line.d.ts`: `startPoint(value: Array<any>): LineAttribute`），放进 create 参数
+第一版编译就红了；③ `Shape.create()` 无参、容器经 `.viewPort({x,y,width,height})` 设视口，
+子形状 `Rect().width('100%')` 是官方示例写法。
+
+**实现**（新增 `runtime/src/shape.js` 分片，在生成骨架注册之前手写登记——手写优先）：
+组件根 = `<svg>`（吃通用 `.width()/.height()`，vp→px 1:1，viewBox 随 create 尺寸），
+真正的形状元素挂 `node.__shapeEl`；`fill/stroke/strokeWidth/fillOpacity/…` 经 `SHAPE_ATTRS`
+落成 **SVG 表现属性**（不是 data-*、不是 CSS）——fill 要靠表现属性才能被 Shape 容器**继承**。
+几何：`r = min(w,h)/2`（内切）、`rx/ry = w/2,h/2`、`commands → d` 原样、`points` 序列化成
+`'x,y x,y …'`。默认值不写属性：SVG 原生默认（黑填充、无描边）与 `.d.ts` 的默认值
+（fill 默认 Color.Black、stroke 默认 Transparent/opacity 0）恰好一致。
+**语义锚点**（JSDoc 原文）：fill 默认 Color.Black；stroke "the default stroke opacity is 0"；
+CircleOptions 的 width/height 无效值按 0。
+
+```
+$ bash run.sh shapedemo
+=== ALL PASS ===                    （36 条断言，双端同数）
+PASS Circle 根 = <svg> + 形状元素 <circle>；10 个 svg 根 = 8 顶层 + 2 嵌套
+PASS r = min(w,h)/2 = 30（80×60 非正方形）／cx/cy = 40/30／viewBox '0 0 80 60'
+PASS fill(Color.Red)→'red'／stroke '#333333' 原样／strokeWidth 落 stroke-width
+PASS Rect 圆角 rx/ry=12；无尺寸 Rect → width/height 100%（官方示例写法）
+PASS Line startPoint/endPoint → x1/y1/x2/y2（属性方法形态）
+PASS Path commands 原样进 d；fillOpacity(0) → fill-opacity=0
+PASS Polygon/Polyline points 序列化 '40,0 80,80 0,80'
+PASS Shape viewPort → viewBox；子形状真挂进容器；容器 fill '#eeeeee' 继承进无 fill 的子形状
+PASS 没设 stroke → 无 stroke 属性（Transparent 语义）；显式 .fill() 优先于继承
+```
+
+**破坏验证**（3 处，各被精确抓住）：① `SHAPE_ATTRS` 分派分支短路（全部退回 data-*）→ **19 条**红
+（所有 fill/stroke/points/commands 断言）；② 内切圆 `r` 取 `max` 而非 `min` → 恰好 **1 条**红
+——⚠️ 首轮 fixture 用的是 80×80 **正方形**，min=max，破坏**空转 0 红**：测量页当场改成 80×60
+非正方形（R13 坑 2"等于没测"的教训现场重演，fixture 与测试同步升级）；③ Shape 容器不吃
+`SHAPE_ATTRS`（fill/viewPort 落 data-*）→ 恰好 **4 条**红（viewBox、容器 fill/stroke、两条继承，
+且子形状退回 SVG 默认黑填充 rgb(0,0,0) 也被抓到）。还原后 md5 与基准一致。
+
+**已知限制**（写进 CAPABILITY）：`.width()/.height()` 在 create 之后改的只是 svg 视口，
+**不反推几何**（r/cx 不重算）；`fill`/`stroke` 的渐变（`ResourceColor` 的线性渐变形态）、
+`strokeMiterLimit`、`Path` 的 `mil`（command 单位）未实现（记警告）；`viewPort` 只接受
+对象形态；形状族没有 `onAreaChange` 之外的交互语义。
+
+**触及**：`runtime/src/shape.js`（新分片，第 10 个）、`runtime/src/area.js`（applyAttr 的
+`SHAPE_ATTRS` 分支）、`runtime/src/main.js`（@include + 安装全局 8 个名字）、`tools/stats.mjs`
+（手写清单 17 → 25）、`fixtures/pages/ShapeDemo.ts`、`harmony-proj/`（ShapeDemo.ets +
+main_pages.json）、`test/shapedemo.html`、`run.sh`、`electron/run.sh`
+
 ## R14：多层锚链 + `Guideline` + `bias` ✅
 
 ```
@@ -1250,13 +1303,15 @@ PASS starStyle 的图片 URI 不可用已记警告
 | 文档数字守门 | `npm run stats:check-doc` | `ARCHITECTURE.md` §6 的整块实测数字逐行比对，漂移即非 0 退出；`stats:write-doc` 就地重写 |
 | 覆盖统计 | `npm run stats` | 文档里的所有数字都由它产出（`--json` 机器可读） |
 
-`npm run check` 当前：**6 步全绿（preflight + 生成物一致 + 产物/源一致 + 文档数字 + 浏览器 33 用例 + Electron 32 用例）**。
+`npm run check` 当前：**6 步全绿（preflight + 生成物一致 + 产物/源一致 + 文档数字 + 浏览器 34 用例 + Electron 33 用例）**。
 
 ## 下一步
 
 **权威清单在 `docs/ROADMAP.md`**（每项带可复现的验收命令）。当前优先：
 
-1. 其余 85 个骨架组件的视觉语义、`@ohos:media`/`UIContext`
+1. 其余骨架组件的视觉语义——**按家族推进**：R26 已收形状族 8 个（Circle/Ellipse/Rect/Line/Path/
+   Polygon/Polyline/Shape）；下一批候选：`Checkbox`/`Radio`/`Toggle`/`Slider`（原生输入类）、
+   `Select`/`Menu`（弹出类）、`Canvas`/`XComponent`（表层类）。另有 `@ohos:media`/`UIContext`
 2. ~~**继续把 `runtime/src/main.js` 拆细**~~ **已拆到位（2026-09-21，源拆分第三步）**：9 个分片，
    `main.js` 剩 **1869 行 / 86,452 B**（基础设施 / 状态 v1 / ViewPU / 属性映射 / Tabs / Swiper /
    组件注册表 / 具体组件 / LazyForEach / 枚举路由 / 安装全局），已拆出
@@ -1267,9 +1322,10 @@ PASS starStyle 的图片 URI 不可用已记警告
 > 已完成：`transition`（见上文「R22 收口」）、**手势分组与优先级仲裁**（见上文「R23 收口」）、
 > **`Navigation` 标题栏/工具栏/分栏**（见上文「R12 收口」）、
 > **`Navigation` 转场动画 + `onTitleModeChange` 滚动联动**（见上文「R25 收口」）、
-> **runtime 源码分片**（R5c）、**R24 ArkVM/`.abc` 路径调研**（`docs/ARKVM-RESEARCH.md`）。
+> **runtime 源码分片**（R5c）、**R24 ArkVM/`.abc` 路径调研**（`docs/ARKVM-RESEARCH.md`）、
+> **SVG 形状族**（见上文「R26」）。
 
-**仍未覆盖**：`chainMode`、其余 85 个骨架组件的视觉语义、`@ohos:media`/`UIContext`。
+**仍未覆盖**：`chainMode`、其余 ~77 个骨架组件的视觉语义、`@ohos:media`/`UIContext`。
 **别把没验的当结论**——`docs/CAPABILITY.md` 里有逐项的能力矩阵，其中标了哪些语义是**推断**的。
 
 **已知待办（别当已完成）**：

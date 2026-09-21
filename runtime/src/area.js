@@ -152,6 +152,12 @@
       drawAttrs[prop](node, value);
       return;
     }
+    // SVG 形状族（R26）：fill/stroke/points/commands/… 必须抢在通用 data-* 落点之前变成
+    // SVG 表现属性 —— data-* 不是形状语义，CSS 属性又会让 Shape 容器的继承语义走样
+    if (node.__shapeEl && SHAPE_ATTRS[prop]) {
+      SHAPE_ATTRS[prop](node, value);
+      return;
+    }
     // Tabs/Swiper 的 onChange 要由它们自己收集并在切换时派发，不能落成 DOM 事件 ——
     // 必须拦在通用事件分支【之前】，否则会变成永不触发的 'change' 监听器（静默失效）。
     if (prop === 'onChange' && (node.__tabsState || node.__swiperState)) {

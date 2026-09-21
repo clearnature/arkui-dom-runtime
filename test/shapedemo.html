@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R26：SVG 形状族 Circle / Ellipse / Rect / Line / Path / Polygon / Polyline + Shape</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 320px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R26：形状族（create 几何 / fill·stroke 落 SVG 属性 / Shape 容器继承）</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/shapedemo-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const el = (id) => root.querySelector('#' + id);
+    const shapeOf = (id) => { const n = el(id); return n && n.__shapeEl ? n.__shapeEl : null; };
+    const attr = (id, name) => { const s = shapeOf(id); return s ? s.getAttribute(name) : undefined; };
+    const group = async (name, fn) => {
+      try { await fn(); } catch (e) {
+        allPass = false;
+        lines.push(`FAIL [${name}] 抛出异常：${e && e.stack ? String(e.stack).split('\n')[0] : e}`);
+      }
+    };
+
+    try {
+      __arkui_dom_requireModule('ShapeDemo');
+      __arkui_dom_loadRoute('pages/ShapeDemo', root);
+      await tick(80);
+      check(!!el('c1') && !!el('sh1'), 'ShapeDemo 页面已渲染');
+
+      // ══════════ ① DOM 形态：根是 <svg>，形状元素挂 __shapeEl ══════════
+      await group('DOM 形态', async () => {
+        check(el('c1').tagName === 'svg' && shapeOf('c1').tagName === 'circle',
+          `Circle 根 = <${el('c1').tagName}> + 形状元素 <${shapeOf('c1').tagName}>`);
+        check(root.querySelectorAll('svg').length === 10,
+          `10 个 svg 根 = 8 个顶层形状 + Shape 里 2 个嵌套（实测 ${root.querySelectorAll('svg').length}）`);
+      });
+
+      // ══════════ ② Circle：内切几何 + 颜色枚举 + 描边 ══════════
+      // ⚠️ 80×60 非正方形：r=min(80,60)/2=30 —— 取值方向只有非正方形才测得出（R13 坑 2 教训）
+      await group('Circle', async () => {
+        check(attr('c1', 'r') === '30', `r = min(w,h)/2 = 30（实际 ${attr('c1', 'r')}，取 min 才过）`);
+        check(attr('c1', 'cx') === '40' && attr('c1', 'cy') === '30', `cx/cy = 40/30（实际 ${attr('c1', 'cx')}/${attr('c1', 'cy')}）`);
+        check(attr('c1', 'fill') === 'red', `fill(Color.Red) → 'red'（实际 '${attr('c1', 'fill')}'）`);
+        check(attr('c1', 'stroke') === 'blue', `stroke(Color.Blue) → 'blue'（实际 '${attr('c1', 'stroke')}'）`);
+        check(attr('c1', 'stroke-width') === '3', `strokeWidth(3) → 3（实际 ${attr('c1', 'stroke-width')}）`);
+        check(el('c1').style.width === '80px' && el('c1').style.height === '60px',
+          `create 尺寸落到 svg 视口（width='${el('c1').style.width}' height='${el('c1').style.height}'）`);
+        check(el('c1').getAttribute('viewBox') === '0 0 80 60', `viewBox = '0 0 80 60'（实际 '${el('c1').getAttribute('viewBox')}'）`);
+      });
+
+      // ══════════ ③ Rect：圆角 + 字符串颜色 ══════════
+      await group('Rect', async () => {
+        check(attr('r1', 'rx') === '12' && attr('r1', 'ry') === '12',
+          `radiusWidth/Height(12) → rx/ry=12（实际 ${attr('r1', 'rx')}/${attr('r1', 'ry')}）`);
+        check(attr('r1', 'width') === '120' && attr('r1', 'height') === '60',
+          `width/height = 120/60（实际 ${attr('r1', 'width')}/${attr('r1', 'height')}）`);
+        check(attr('r1', 'fill') === 'green' && attr('r1', 'stroke') === '#333333',
+          `fill 'green'、stroke '#333333' 原样（实际 '${attr('r1', 'fill')}'/'${attr('r1', 'stroke')}'）`);
+      });
+
+      // ══════════ ④ Ellipse ══════════
+      await group('Ellipse', async () => {
+        check(attr('e1', 'rx') === '50' && attr('e1', 'ry') === '25',
+          `rx/ry = w/2、h/2 = 50/25（实际 ${attr('e1', 'rx')}/${attr('e1', 'ry')}）`);
+        check(attr('e1', 'fill') === '#ffcc00', `fill '#ffcc00'（实际 '${attr('e1', 'fill')}'）`);
+      });
+
+      // ══════════ ⑤ Line：startPoint/endPoint（属性方法，不在 create 参数里）══════════
+      await group('Line', async () => {
+        check(attr('l1', 'x1') === '0' && attr('l1', 'y1') === '20',
+          `startPoint([0,20]) → x1/y1 = 0/20（实际 ${attr('l1', 'x1')}/${attr('l1', 'y1')}）`);
+        check(attr('l1', 'x2') === '100' && attr('l1', 'y2') === '20',
+          `endPoint([100,20]) → x2/y2 = 100/20（实际 ${attr('l1', 'x2')}/${attr('l1', 'y2')}）`);
+        check(attr('l1', 'stroke') === 'red' && attr('l1', 'stroke-width') === '2',
+          `stroke red、stroke-width 2（实际 '${attr('l1', 'stroke')}'/${attr('l1', 'stroke-width')}）`);
+      });
+
+      // ══════════ ⑥ Path：commands 原样进 d ══════════
+      await group('Path', async () => {
+        check(attr('p1', 'd') === 'M0 0 L50 50 L100 0',
+          `commands 原样进 d（实际 '${attr('p1', 'd')}'）`);
+        check(attr('p1', 'fill-opacity') === '0', `fillOpacity(0) → fill-opacity=0（实际 ${attr('p1', 'fill-opacity')}）`);
+        check(attr('p1', 'stroke') === '#0066cc', `stroke '#0066cc'（实际 '${attr('p1', 'stroke')}'）`);
+      });
+
+      // ══════════ ⑦ Polygon / Polyline：points ══════════
+      await group('Polygon·Polyline', async () => {
+        check(attr('pg1', 'points') === '40,0 80,80 0,80',
+          `Polygon points → '40,0 80,80 0,80'（实际 '${attr('pg1', 'points')}'）`);
+        check(attr('pg1', 'fill') === '#cc6600', `fill '#cc6600'（实际 '${attr('pg1', 'fill')}'）`);
+        check(attr('pl1', 'points') === '0,40 50,0 100,40',
+          `Polyline points → '0,40 50,0 100,40'（实际 '${attr('pl1', 'points')}'）`);
+        check(attr('pl1', 'fill-opacity') === '0' && attr('pl1', 'stroke-width') === '3',
+          `fill-opacity 0、stroke-width 3（实际 ${attr('pl1', 'fill-opacity')}/${attr('pl1', 'stroke-width')}）`);
+      });
+
+      // ══════════ ⑧ Shape 容器：viewPort + 嵌套 + fill 继承 ══════════
+      await group('Shape 容器', async () => {
+        check(el('sh1').getAttribute('viewBox') === '0 0 120 80',
+          `viewPort → viewBox '0 0 120 80'（实际 '${el('sh1').getAttribute('viewBox')}'）`);
+        const innerRect = el('sh1').querySelector('rect');
+        const innerCircle = el('sh1').querySelector('circle');
+        check(!!innerRect && !!innerCircle, '两个子形状真的挂进容器（rect + circle）');
+        check(innerRect.getAttribute('width') === '100%' && innerRect.getAttribute('height') === '100%',
+          `无尺寸 Rect → width/height 100%（实际 '${innerRect.getAttribute('width')}'）`);
+        check(attr('sh1', 'fill') === '#eeeeee' && attr('sh1', 'stroke') === '#222222',
+          `容器自身 fill/stroke（实际 '${attr('sh1', 'fill')}'/'${attr('sh1', 'stroke')}'）`);
+        // 继承语义：子 Circle 没写 fill —— 容器的 fill 通过 CSS 继承罩住它
+        check(innerCircle.getAttribute('fill') === null,
+          '子 Circle 没有自己的 fill 属性（才能被容器继承）');
+        check(getComputedStyle(innerCircle).fill === 'rgb(238, 238, 238)',
+          `容器 fill '#eeeeee' 继承进子形状（实测 ${getComputedStyle(innerCircle).fill}）`);
+        check(getComputedStyle(innerRect).fill === 'rgb(238, 238, 238)',
+          `无 fill 的 Rect 同样被罩住（实测 ${getComputedStyle(innerRect).fill}）`);
+      });
+
+      // ══════════ ⑨ 默认值（.d.ts：fill 默认 Color.Black、stroke 默认 Transparent）══════════
+      await group('默认值', async () => {
+        const nested = el('sh1').querySelector('circle');
+        check(nested.getAttribute('stroke') === null,
+          '没设 stroke → 无 stroke 属性（SVG 原生 = 无描边 = Transparent 语义）');
+        const bare = shapeOf('c1');
+        check(bare.getAttribute('fill') !== null,
+          '显式 .fill() 落的是形状自己的属性（优先于容器继承）');
+      });
+
+      // ══════════ ⑩ 回归：没有"未实现"假警告 ══════════
+      await group('回归', async () => {
+        const bad = __arkui_dom_layout_warnings.filter((w) =>
+          /Circle\.|Ellipse\.|Rect\.|Line\.|Path\.|Polygon\.|Polyline\.|Shape\./.test(String(w)));
+        check(bad.length === 0, `形状属性不再记"未实现"警告（剩 ${bad.length} 条：${bad.slice(0, 2).join('|')}）`);
+        check(attr('c1', 'fill-opacity') === null, '没设 fillOpacity 就不写 fill-opacity 属性');
+      });
+
+      lines.push(`SHAPE svg=${root.querySelectorAll('svg').length}`);
+      lines.push(`ELMT ${__arkui_dom_elmtRecords.size}`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

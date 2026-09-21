@@ -9,6 +9,7 @@
     "pages/TransitionDemo",
     "pages/GestureGroupDemo",
     "pages/NavBarDemo",
-    "pages/NavTransDemo"
+    "pages/NavTransDemo",
+    "pages/ShapeDemo"
   ]
 }

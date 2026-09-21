@@ -8,13 +8,13 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**源码拆分第三步**（refactor）——`main.js` 4248 → 1869 行，3 → **9 个分片**（新增
-  `nav`/`layout`/`draw`/`area`/`v2`/`ability`），**重建产物 md5 与拆分前一致**（`e861eb81…`）——
-  字节同一性即行为同一性；全套门禁 PASS
+- 上次切片：**R26**（SVG 形状族 8 组件：Circle/Ellipse/Rect/Line/Path/Polygon/Polyline/Shape）— **PASS**
+  （shapedemo 36 条双端；破坏 19/1/4 红，含 fixture 空转自纠；手写实现 17→25）
 - 下一步（README「下一步」原文）：
-  1. 其余 85 个骨架组件的视觉语义、`@ohos:media`/`UIContext`
-  2. ~~继续拆 `main.js`~~ **已拆到位**：剩组件注册表/安装全局（**不建议动**）与更小子节，
-     性价比有限；机制随时可用（`tools/build-runtime.mjs` + `check:runtime`）
+  1. 其余骨架组件的视觉语义——**按家族推进**（形状族已收 8 个）；下一批候选：
+     `Checkbox`/`Radio`/`Toggle`/`Slider`（原生输入类）、`Select`/`Menu`（弹出类）、
+     `Canvas`/`XComponent`（表层类）。另有 `@ohos:media`/`UIContext`
+  2. ~~继续拆 `main.js`~~ **已拆到位**（9 分片）；机制随时可用
 
 ## 项目目标
 
@@ -81,4 +81,5 @@ bash electron/run.sh <用例>   # 单用例·Electron
 |------|------|---------|-------|------|
 | 2026-09-21 | R12 收口 | 4571f8f | 6/6 PASS（复跑核验） | 新增坑 85（builder 产物不保证直接子节点）；navdemo 旧契约升级为正向断言 |
 | 2026-09-21 | R25 收口 | 290119c | 6/6 PASS | navtransdemo 48 条双端；破坏 13/6/5 红；navdemo 旧契约升级（转场默认开 → 断言前等 settle，74 条恢复）；新增坑 86（on* 分发陷阱）/87（@State 渲染滞后）；ROADMAP R13 重复标题已修；`.mimosa/` 进 .gitignore |
-| 2026-09-21 | 拆分第三步 | （本次提交） | 产物 md5 同拆分前 + 双端全量 PASS | main.js 4248→1869 行，3→9 分片（nav/layout/draw/area/v2/ability）；分节间空行留在 main（坑 84）；LazyForEach 在具体组件内部，切了劈半，不拆 |
+| 2026-09-21 | 拆分第三步 | 1a8c99d | 产物 md5 同拆分前 + 双端全量 PASS | main.js 4248→1869 行，3→9 分片（nav/layout/draw/area/v2/ability）；分节间空行留在 main（坑 84）；LazyForEach 在具体组件内部，切了劈半，不拆 |
+| 2026-09-21 | R26 形状族 | （本次提交） | 双端 36 条 PASS + 破坏 19/1/4 红 | fixture 空转自纠（正方形 Circle min=max，改 80×60）；Line 起终点是属性方法不是 create 参数（编译期抓到）；新分片 shape.js（第 10 个） |

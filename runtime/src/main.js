@@ -1446,6 +1446,8 @@
     pop() { ViewStackProcessor.pop(); },
   };
 
+  // @include shape
+
   // ── 由 tools/gen-components.mjs 生成的 149 个组件骨架 ──
   // 手写实现（上面那些，已被测试覆盖）优先；生成的只补缺口。
   // 骨架保证"能建出正确的 DOM 标签 + 基础样式"，精细化布局语义按需手补（见 docs）。
@@ -1634,6 +1636,8 @@
     // R12 收口：标题栏/工具栏/分栏用到的枚举在产物里都是自由变量，必须挂 global
     NavigationTitleMode, NavBarPosition, TitleHeight,
     Progress, Gauge, DataPanel, Rating, ProgressStyle, ProgressType, DataPanelType,
+    // R26：SVG 形状族。产物里 `Circle.create(...)` 这类同样是自由变量引用，必须挂 global
+    Circle, Ellipse, Rect, Line, Path, Polygon, Polyline, Shape,
     __Common__: _CommonWrapper,
     FontWeight, VerticalAlign, HorizontalAlign, FlexAlign, TextAlign, ItemAlign, Color,
     TextOverflow, Alignment, Scroller, Axis,

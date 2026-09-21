@@ -463,6 +463,35 @@ bash run.sh observe && bash electron/run.sh observe   # 19 条断言双通过
 > 本条是建仓时的规划残本（同轮号在 P3 下还有一份，完成记录在**那一节**，commit `8a362b9`：
 > `drawdemo` 47 条断言、画法与坑）。2026-09-21 收口 R25 时发现并划掉。
 
+### R26 — SVG 形状族：`Circle` / `Ellipse` / `Rect` / `Line` / `Path` / `Polygon` / `Polyline` + `Shape` ✅（2026-09-21）
+
+**内容**：「其余骨架组件的视觉语义」第一批。形状族是纯绘制（无布局语义）、语义全在属性方法上，
+与 R13 绘制四件套同一打法。骨架推进策略 = **按家族逐批收**（下一批候选：输入类 / 弹出类 / 表层类）。
+
+**先测量**（新增 `pages/ShapeDemo.ets`）：① create 参数形态（`Rect({width,height,radiusWidth,
+radiusHeight})`、`Path({width,height,commands})`…）；② **`LineOptions` 没有 `startPoint`/`endPoint`
+—— 它们是属性方法**（放 create 参数第一版编译就红）；③ `Shape.create()` 无参 + `.viewPort({...})`
++ 子形状 `width('100%')` 官方写法。
+
+**实现**：新分片 `runtime/src/shape.js`（第 10 个，手写优先于生成骨架）。组件根 = `<svg>`，
+形状元素挂 `__shapeEl`，`fill/stroke/…` 经 `SHAPE_ATTRS` 落 **SVG 表现属性**（不是 data-*/CSS——
+fill 要靠表现属性被 Shape 容器继承）；几何 `r = min(w,h)/2`、`commands → d` 原样、`points` 序列化。
+默认值不写属性：SVG 原生默认（黑填充/无描边）与 `.d.ts` 默认值（fill=Color.Black、
+stroke opacity 0）恰好一致。
+
+**验收**：`bash run.sh shapedemo`（**36 条断言**）双端通过。**破坏验证（3 处）**：分派短路 →
+**19 红**；内切圆取 `max` → 恰好 **1 红**（⚠️ 首轮 fixture 是正方形 Circle，min=max 破坏**空转
+0 红**——当场改非正方形 80×60，R13 坑 2 教训现场重演）；Shape 容器摘出分派 → 恰好 **4 红**。
+还原后 md5 与基准一致。
+
+**已知限制**：create 后改 `.width()/.height()` 只动 svg 视口不反推几何；渐变形态的
+`fill`/`stroke`、`strokeMiterLimit`、`Path.mil` 未实现（记警告）。
+
+**触及**：`runtime/src/shape.js`（新）、`runtime/src/area.js`（applyAttr 分支）、
+`runtime/src/main.js`（@include + 安装全局）、`tools/stats.mjs`（手写 17→25）、
+`fixtures/pages/ShapeDemo.ts`、`harmony-proj/`（ShapeDemo.ets + main_pages.json）、
+`test/shapedemo.html`、`run.sh`、`electron/run.sh`
+
 ---
 
 ## P3 布局引擎

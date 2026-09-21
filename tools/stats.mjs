@@ -25,7 +25,9 @@ const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 // `if (components[name]) continue` 让手写实现优先。所以覆盖数必须减掉手写的那批。
 const HANDWRITTEN = ['Text', 'Button', 'Column', 'Row', 'Stack', 'List', 'ListItem', 'RelativeContainer',
   'Tabs', 'TabContent', 'Swiper', 'Navigation', 'NavDestination',
-  'Progress', 'Gauge', 'DataPanel', 'Rating'];
+  'Progress', 'Gauge', 'DataPanel', 'Rating',
+  // R26：SVG 形状族（Circle/Ellipse/Rect/Line/Path/Polygon/Polyline/Shape）
+  'Circle', 'Ellipse', 'Rect', 'Line', 'Path', 'Polygon', 'Polyline', 'Shape'];
 const CONTROL_FLOW = ['If', 'ForEach', 'LazyForEach'];   // 不在 149 注册表内，单独实现
 
 const gen = read('runtime/generated-components.js');

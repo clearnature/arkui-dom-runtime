@@ -190,6 +190,10 @@ case "${1:-index}" in
     run_one navtransdemo "$(src_of pages/NavTransDemo.ts)" build/navtransdemo-module.js test/navtransdemo.html \
       "--cjs --register NavTransDemo" || rc=1
     echo
+    # R26：SVG 形状族 Circle/Ellipse/Rect/Line/Path/Polygon/Polyline/Shape
+    run_one shapedemo "$(src_of pages/ShapeDemo.ts)" build/shapedemo-module.js test/shapedemo.html \
+      "--cjs --register ShapeDemo" || rc=1
+    echo
     run_one measure "$(src_of pages/Measure.ts)" build/measure.js test/measure.html || rc=1
     echo
     run_one lazy "$(src_of pages/Lazy.ts)" build/lazy.js test/lazy.html || rc=1
@@ -284,6 +288,10 @@ case "${1:-index}" in
     # R25 收口：Navigation push/pop 转场 + onTitleModeChange 滚动联动
     run_one navtransdemo "$(src_of pages/NavTransDemo.ts)" build/navtransdemo-module.js test/navtransdemo.html \
       "--cjs --register NavTransDemo" ;;
+  shapedemo)
+    # R26：SVG 形状族
+    run_one shapedemo "$(src_of pages/ShapeDemo.ts)" build/shapedemo-module.js test/shapedemo.html \
+      "--cjs --register ShapeDemo" ;;
   router)
     # 两个页面都要注册；Detail 先单独产出，Home 由 run_one 带 flags 产出
     "$NODE" tools/extract.mjs "$(src_of pages/Detail.ts)" build/detail-module.js --cjs --register Detail >/dev/null || exit 1
@@ -300,5 +308,5 @@ case "${1:-index}" in
     echo
     run_one netfile-2 "$(src_of pages/NetFile.ts)" build/netfile-module.js test/netfile.html \
       "--cjs --register NetFile" "?phase=2" "$PERSIST_PROFILE" "$PERSIST_PORT" ;;
-  *) echo "用法: bash run.sh [index|rich|leak|layout|widgets|tabgrid|swiper|navdemo|reldemo|drawdemo|textmeasure|lazyvh|measarea|measimage|measnotify|promptaction|realfs|animdemo|gesturedemo|transitiondemo|gesturegroupdemo|navbardemo|navtransdemo|measure|lazy|provide|async|ability|router|netfile|all]"; exit 2 ;;
+  *) echo "用法: bash run.sh [index|rich|leak|layout|widgets|tabgrid|swiper|navdemo|reldemo|drawdemo|textmeasure|lazyvh|measarea|measimage|measnotify|promptaction|realfs|animdemo|gesturedemo|transitiondemo|gesturegroupdemo|navbardemo|navtransdemo|shapedemo|measure|lazy|provide|async|ability|router|netfile|all]"; exit 2 ;;
 esac
