@@ -88,6 +88,7 @@ prepare() {
     popdemo) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/PopDemo.ts" "$ROOT/build/popdemo-module.js" --cjs --register PopDemo >/dev/null || return 1 ;;
     uictxdemo) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/UiContextDemo.ts" "$ROOT/build/uictxdemo-module.js" --cjs --register UiContextDemo >/dev/null || return 1 ;;
     canvasedemo) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/CanvasDemo.ts" "$ROOT/build/canvasedemo-module.js" --cjs --register CanvasDemo >/dev/null || return 1 ;;
+    xcompdemo) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/XCompDemo.ts" "$ROOT/build/xcompdemo-module.js" --cjs --register XCompDemo >/dev/null || return 1 ;;
   esac
   return 0
 }
@@ -156,7 +157,7 @@ case "${1:-layout}" in
   all)
     rc=0
     # 全矩阵：每个用例都是独立 Electron 进程
-    for t in index rich layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo measure lazy provide v2 observe ability router async; do
+    for t in index rich layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo measure lazy provide v2 observe ability router async; do
       run_one "$t" || rc=1
       echo
     done
@@ -176,6 +177,6 @@ case "${1:-layout}" in
     run_one netfile "?phase=2" netfile-2 || exit 1
     echo
     verify_disk ;;
-  layout|rich|index|leak|ability|router|widgets|tabgrid|swiper|navdemo|reldemo|drawdemo|textmeasure|lazyvh|measarea|measimage|measnotify|promptaction|realfs|animdemo|gesturedemo|transitiondemo|gesturegroupdemo|navbardemo|navtransdemo|shapedemo|inputdemo|showdemo|popdemo|uictxdemo|canvasedemo|measure|lazy|provide|async|v2|observe) run_one "$1" ;;
-  *) echo "用法: bash electron/run.sh [layout|rich|index|leak|ability|router|widgets|tabgrid|swiper|navdemo|reldemo|drawdemo|textmeasure|lazyvh|measarea|measimage|measnotify|promptaction|realfs|animdemo|gesturedemo|transitiondemo|gesturegroupdemo|navbardemo|navtransdemo|shapedemo|inputdemo|showdemo|popdemo|uictxdemo|canvasedemo|measure|lazy|provide|async|v2|observe|netfile|all]"; exit 2 ;;
+  layout|rich|index|leak|ability|router|widgets|tabgrid|swiper|navdemo|reldemo|drawdemo|textmeasure|lazyvh|measarea|measimage|measnotify|promptaction|realfs|animdemo|gesturedemo|transitiondemo|gesturegroupdemo|navbardemo|navtransdemo|shapedemo|inputdemo|showdemo|popdemo|uictxdemo|canvasedemo|xcompdemo|measure|lazy|provide|async|v2|observe) run_one "$1" ;;
+  *) echo "用法: bash electron/run.sh [layout|rich|index|leak|ability|router|widgets|tabgrid|swiper|navdemo|reldemo|drawdemo|textmeasure|lazyvh|measarea|measimage|measnotify|promptaction|realfs|animdemo|gesturedemo|transitiondemo|gesturegroupdemo|navbardemo|navtransdemo|shapedemo|inputdemo|showdemo|popdemo|uictxdemo|canvasedemo|xcompdemo|measure|lazy|provide|async|v2|observe|netfile|all]"; exit 2 ;;
 esac

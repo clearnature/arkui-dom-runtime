@@ -615,6 +615,26 @@ md5 一致。
 `fixtures/pages/CanvasDemo.ts`、`harmony-proj/`（CanvasDemo.ets + main_pages.json）、
 `test/canvasedemo.html`、`run.sh`、`electron/run.sh`
 
+### R32 — 表层类另一半：`XComponent` ✅（2026-09-21）
+
+**测量**（新增 `pages/XCompDemo.ets`）：`XComponent.create({id, type, controller}, "bundle/module")`
+——create 有第二参（bundle 串，记录）；`onLoad` 在 surface 创建后触发；`XComponentController` 的
+rect —— JSDoc 原文："不调用 set 则返回组件实际尺寸"。
+
+**实现**：接在表层类分片（canvas.js）。DOM **如实降级为占位容器**（真机 surface 由原生图形栈
+持有）；surfaceId 生成 `XComponent-<id>`（DOM 化选择）；onLoad 经 setTimeout(0) 派发
+（与 Canvas.onReady 同思想）；Controller 的 rect 默认取组件实际尺寸、set 只记录（DOM 无
+surface 缓冲对应物）；onDestroy 只登记（触发时机已写进 docs，不测）。
+
+**验收**：`bash run.sh xcompdemo`（**7 条断言**）双端通过（一次通过）。**破坏验证（3 处）**：
+surfaceId 空串 → **1 红**（fixture 的 LOAD+非空计数正是这颗牙）；rect 默认 0×0 → **1 红**；
+set 记录断 → **1 红**。还原后 md5 一致。
+
+**触及**：`runtime/src/canvas.js`（表层类分片扩展）、`runtime/src/area.js`（XC 分支）、
+`runtime/src/main.js`（安装全局）、`tools/stats.mjs`（手写 36→37）、
+`fixtures/pages/XCompDemo.ts`、`harmony-proj/`（XCompDemo.ets + main_pages.json）、
+`test/xcompdemo.html`、`run.sh`、`electron/run.sh`
+
 ---
 
 ## P3 布局引擎

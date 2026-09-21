@@ -93,3 +93,70 @@
     },
     enableAnalyzer: (n, v) => { n.dataset.enableAnalyzer = String(v); },
   };
+
+  // ────────────────── 表层类：XComponent（R32）──────────────────
+  //
+  // 产物形态（实测 fixtures/pages/XCompDemo.ts）：
+  //   XComponent.create({id, type, controller}, "bundle/module");   ← create 有第二参（bundle 串，记录）
+  //   XComponent.width/height; XComponent.onLoad(cb); XComponent.onDestroy(cb);
+  //   controller.getXComponentSurfaceId() / setXComponentSurfaceRect(rect) / getXComponentSurfaceRect()
+  //
+  // 语义锚点（.d.ts）：XComponentOptions = {type, controller}（id 也在 create 参数里）；
+  //   XComponentType = { SURFACE = 0, COMPONENT, NODE }（enums.d.ts 声明顺序）；onLoad 在
+  //   surface 创建后触发；getXComponentSurfaceRect —— JSDoc 原文："不调用 set 则返回
+  //   组件实际尺寸"。
+  // DOM 映射：真机的 surface 由原生图形栈持有，DOM 里**如实降级为占位容器**——surfaceId 是
+  // 生成的字符串（`XComponent-<id>`，DOM 化选择），rect 默认取组件实际尺寸（JSDoc 原文语义），
+  // set 只记录（真机会改 surface 缓冲尺寸，DOM 无对应物）。
+  const XComponentType = { SURFACE: 0, COMPONENT: 1, NODE: 2 };
+  const XComponentController = class {
+    constructor() {
+      this.__arkuiXcEl = null;
+      this.__arkuiXcRect = null;
+    }
+    __arkuiBindXComponent(el) { this.__arkuiXcEl = el; }
+    getXComponentSurfaceId() {
+      return 'XComponent-' + (this.__arkuiXcEl ? this.__arkuiXcEl.__arkuiXcId : '');
+    }
+    getXComponentContext() { return { surfaceId: this.getXComponentSurfaceId() }; }
+    setXComponentSurfaceRect(rect) { this.__arkuiXcRect = rect; }
+    getXComponentSurfaceRect() {
+      if (this.__arkuiXcRect) return Object.assign({}, this.__arkuiXcRect);
+      // JSDoc 原文：不调用 set 时返回组件实际尺寸
+      return {
+        offsetX: 0,
+        offsetY: 0,
+        surfaceWidth: this.__arkuiXcEl ? this.__arkuiXcEl.offsetWidth : 0,
+        surfaceHeight: this.__arkuiXcEl ? this.__arkuiXcEl.offsetHeight : 0,
+      };
+    }
+  };
+  const XComponent = ensureComponent('XComponent', (args) => {
+    const o = (args && typeof args[0] === 'object' && args[0] !== null) ? args[0] : {};
+    const el = document.createElement('div');
+    el.__arkuiXComponentFlag = true;
+    el.dataset.xcomponent = '';
+    el.dataset.xcType = String(o.type === undefined ? 0 : o.type);
+    el.__arkuiXcId = o.id === undefined ? '' : String(o.id);
+    const ctl = o.controller;
+    if (ctl && typeof ctl.__arkuiBindXComponent === 'function') ctl.__arkuiBindXComponent(el);
+    return el;
+  });
+  const XC_ATTRS = {
+    onLoad: (n, v) => {
+      n.__arkuiXcOnLoad = v;
+      if (n.__arkuiXcScheduled) return;      // 覆盖语义：cb 替换，调度只排一次
+      n.__arkuiXcScheduled = true;
+      // onLoad 在 surface 就绪后触发（setTimeout(0)，坑 ⑧——此时尺寸属性已应用）
+      setTimeout(() => {
+        if (typeof n.__arkuiXcOnLoad === 'function') {
+          try { n.__arkuiXcOnLoad(); }
+          catch (e) { layoutWarnings.push(`XComponent.onLoad 抛错：${e && e.message}`); }
+        }
+      }, 0);
+    },
+    onDestroy: (n, v) => {
+      n.__arkuiXcOnDestroy = v;
+      // DOM 里的销毁时机：元素被摘除时（运行时挂卸钩子成本高）——只登记，触发时机已写进 docs
+    },
+  };

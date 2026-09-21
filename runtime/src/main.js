@@ -1678,6 +1678,8 @@
     Select, Menu, MenuItem,
     // R31：表层类。ctx 的两个类在产物里是 `new CanvasRenderingContext2D(...)` 自由变量引用
     Canvas, CanvasRenderingContext2D, RenderingContextSettings,
+    // R32：表层类另一半。XComponentType 同为产物里的自由变量枚举
+    XComponent, XComponentController, XComponentType,
     __Common__: _CommonWrapper,
     FontWeight, VerticalAlign, HorizontalAlign, FlexAlign, TextAlign, ItemAlign, Color,
     TextOverflow, Alignment, Scroller, Axis,

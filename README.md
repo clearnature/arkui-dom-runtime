@@ -940,6 +940,47 @@ md5 与基准一致。
 `fixtures/pages/CanvasDemo.ts`、`harmony-proj/`（CanvasDemo.ets + main_pages.json）、
 `test/canvasedemo.html`、`run.sh`、`electron/run.sh`
 
+**触及**：`runtime/src/canvas.js`（新分片，第 14 个）、`runtime/src/area.js`（CANVAS 分支）、
+`runtime/src/main.js`（@include + 安装全局 3 个名字）、`tools/stats.mjs`（手写 35 → 36）、
+`fixtures/pages/CanvasDemo.ts`、`harmony-proj/`（CanvasDemo.ets + main_pages.json）、
+`test/canvasedemo.html`、`run.sh`、`electron/run.sh`
+
+## R32：表层类另一半 `XComponent` ✅
+
+**测量**（新增 `pages/XCompDemo.ets` → 官方构建）实测形态：`XComponent.create({id, type,
+controller}, "bundle/module")`——**create 有第二参**（bundle/module 字符串，记录）；
+`XComponentType = { SURFACE = 0, COMPONENT, NODE }`（enums.d.ts 声明顺序）；
+`onLoad(cb)` 在 surface 创建后触发；`XComponentController` 的 rect —— JSDoc 原文：
+**"不调用 set 则返回组件实际尺寸"**。
+
+**实现**（接在 `runtime/src/canvas.js` 表层类分片，无新文件）：真机的 surface 由原生图形栈持有，
+DOM 里**如实降级为占位容器**（`data-xcomponent` + type 记录）；`surfaceId` 生成
+`XComponent-<id>`（DOM 化选择）；`onLoad` 经 `setTimeout(0)` 派发（与 Canvas.onReady 同思想）；
+`XComponentController` 的 rect：默认取组件实际 `offsetWidth/Height`（JSDoc 原文语义），`set`
+只记录（真机改 surface 缓冲尺寸，DOM 无对应物）；`onDestroy` 只登记——DOM 里的销毁时机是
+元素摘除，触发时机已写进 docs（不测）。
+
+```
+$ bash run.sh xcompdemo
+=== ALL PASS ===                    （7 条断言，双端同数）
+PASS 占位容器（data-xcomponent，type=SURFACE）／onLoad 触发且 surfaceId 非空／组件尺寸 300×200
+PASS 不调用 set → rect = 组件实际尺寸（DEF300x200，JSDoc 原文语义）
+PASS set 后 get 返回记录值（RECT320x240）
+```
+
+**破坏验证**（3 处，各被恰好 1 条红抓住）：① `surfaceId` 返回空串 → 1 红（fixture 的
+`LOAD` + surfaceId 非空计数正是这颗牙）；② rect 默认分支硬编码 0×0 → 1 红（JSDoc 原文语义）；
+③ `setXComponentSurfaceRect` 记录断 → 1 红。还原后 md5 与基准一致。
+
+**已知限制**（写进 CAPABILITY）：surface 是**占位**（原生图形栈无对应物，如实降级）；
+`surfaceId` 格式是 DOM 化选择（真机格式来自图形栈）；`onDestroy` 的触发时机（元素摘除）
+未挂卸载钩子；`XComponentType.COMPONENT/NODE` 的差异语义未建模。
+
+**触及**：`runtime/src/canvas.js`（表层类分片扩展）、`runtime/src/area.js`（XC 分支）、
+`runtime/src/main.js`（安装全局 3 个名字）、`tools/stats.mjs`（手写 36 → 37）、
+`fixtures/pages/XCompDemo.ts`、`harmony-proj/`（XCompDemo.ets + main_pages.json）、
+`test/xcompdemo.html`、`run.sh`、`electron/run.sh`
+
 ## R14：多层锚链 + `Guideline` + `bias` ✅
 
 ```
@@ -1532,15 +1573,15 @@ PASS starStyle 的图片 URI 不可用已记警告
 | 文档数字守门 | `npm run stats:check-doc` | `ARCHITECTURE.md` §6 的整块实测数字逐行比对，漂移即非 0 退出；`stats:write-doc` 就地重写 |
 | 覆盖统计 | `npm run stats` | 文档里的所有数字都由它产出（`--json` 机器可读） |
 
-`npm run check` 当前：**6 步全绿（preflight + 生成物一致 + 产物/源一致 + 文档数字 + 浏览器 39 用例 + Electron 38 用例）**。
+`npm run check` 当前：**6 步全绿（preflight + 生成物一致 + 产物/源一致 + 文档数字 + 浏览器 40 用例 + Electron 39 用例）**。
 
 ## 下一步
 
 **权威清单在 `docs/ROADMAP.md`**（每项带可复现的验收命令）。当前优先：
 
 1. 其余骨架组件的视觉语义——**按家族推进**：已收形状族 8（R26）、输入类 4（R27）、
-   信息展示类 4（R28）、弹出类 3（R29）、表层类 1（R31：Canvas）；剩余候选：
-   `XComponent`、`QRCode`（需 QR 编码器，单列）。`UIContext` 已收（R30），`@ohos:media` 待办
+   信息展示类 4（R28）、弹出类 3（R29）、表层类 2（R31 Canvas / R32 XComponent）；
+   剩余候选：`QRCode`（需 QR 编码器，单列）。`UIContext` 已收（R30），`@ohos:media` 待办
 2. ~~**继续把 `runtime/src/main.js` 拆细**~~ **已拆到位（2026-09-21，源拆分第三步）**：9 个分片，
    `main.js` 剩 **1869 行 / 86,452 B**（基础设施 / 状态 v1 / ViewPU / 属性映射 / Tabs / Swiper /
    组件注册表 / 具体组件 / LazyForEach / 枚举路由 / 安装全局），已拆出

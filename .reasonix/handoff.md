@@ -8,13 +8,12 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R31**（表层类 Canvas：真实 2D context + 像素断言）— **PASS**
-  （canvasedemo 10 条双端，一次通过；破坏 2/1/1 红——③首轮 0 红，fixture 字符串边界收紧后现形；
-  手写实现 35→36）
+- 上次切片：**R32**（表层类另一半 XComponent：surface 占位/onLoad/Controller rect）— **PASS**
+  （xcompdemo 7 条双端，一次通过；破坏 1/1/1 红；手写实现 36→37）
 - 下一步（README「下一步」原文）：
   1. 其余骨架组件的视觉语义——**按家族推进**（形状族 8 + 输入类 4 + 信息展示类 4 已收）；
-     已收：形状族 8 + 输入类 4 + 信息展示类 4 + 弹出类 3 + UIContext + Canvas；剩余候选：
-     `XComponent`、`QRCode`（需 QR 编码器，单列）。另有 `@ohos:media` 待办
+     已收：形状族 8 + 输入类 4 + 信息展示类 4 + 弹出类 3 + UIContext + 表层类 2；剩余候选：
+     `QRCode`（需 QR 编码器，单列）。另有 `@ohos:media` 待办
   2. ~~继续拆 `main.js`~~ **已拆到位**（12 分片）；机制随时可用
 
 ## 项目目标
@@ -88,4 +87,5 @@ bash electron/run.sh <用例>   # 单用例·Electron
 | 2026-09-21 | R28 信息展示类 | ecec6f3 | 双端 26 条 PASS + 破坏 8/1/1 红 | Badge count/value 双重载 + style 必填在 create（编译期抓到）；Marquee 定时器收口（headless 动画事件被节流）；坑 89（轮询上限吃虚拟时间预算）；新分片 show.js（第 12 个） |
 | 2026-09-21 | R29 弹出类 | f22a161 | 双端 16 条 PASS + 破坏 7/3/5 红 | Select.create 单参数（selected 是属性方法）；onSelect 双参 (index, value)；MenuItem 多选语义；value() 记 data-value-text（原生 select 不可覆盖，取舍记录）；新分片 popup.js（第 13 个） |
 | 2026-09-21 | R30 UIContext | 1f07f77 | 双端 8 条 PASS + 破坏 4/1 红 | getRouter 返回经典 Router 面（pushUrl，编译期实测）；animateTo 委派显式动画管道（history.api 断言把"真动画"与"裸赋值"区分开）；无新分片（本体 8 行） |
-| 2026-09-21 | R31 Canvas | （本次提交） | 双端 10 条 PASS（一次通过）+ 破坏 2/1/1 红 | 原生 <canvas> 转发 + onReady 尺寸同步；像素断言天然有牙齿；fixture 的 toDataURL 断言边界太松（0 红）当场收紧；新分片 canvas.js（第 14 个） |
+| 2026-09-21 | R31 Canvas | 497fa17 | 双端 10 条 PASS（一次通过）+ 破坏 2/1/1 红 | 原生 <canvas> 转发 + onReady 尺寸同步；像素断言天然有牙齿；fixture 的 toDataURL 断言边界太松（0 红）当场收紧；新分片 canvas.js（第 14 个） |
+| 2026-09-21 | R32 XComponent | （本次提交） | 双端 7 条 PASS（一次通过）+ 破坏 1/1/1 红 | surface 如实降级为占位容器；create 二参 bundle 串实测；接在表层类分片（无新文件） |

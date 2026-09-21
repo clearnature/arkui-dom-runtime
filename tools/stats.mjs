@@ -35,7 +35,9 @@ const HANDWRITTEN = ['Text', 'Button', 'Column', 'Row', 'Stack', 'List', 'ListIt
   // R29：弹出类（Select/Menu/MenuItem）
   'Select', 'Menu', 'MenuItem',
   // R31：表层类（Canvas；XComponent 单列）
-  'Canvas'];
+  'Canvas',
+  // R32：表层类另一半（XComponent）
+  'XComponent'];
 const CONTROL_FLOW = ['If', 'ForEach', 'LazyForEach'];   // 不在 149 注册表内，单独实现
 
 const gen = read('runtime/generated-components.js');
