@@ -121,14 +121,18 @@
     return el;
   });
 
-  // Marquee：overflow 容器 + 内层文本跑 CSS 动画。时长按 step（默认 6vp/帧）× 16ms/帧算 ——
-  // "逐帧步进"到 CSS 动画是本实现的 DOM 化映射（推断，已写进 docs）。事件走 animation
-  // 生命周期：animationstart → onStart、animationend → onFinish（loop 次数 = 迭代次数）。
-  // fromStart 默认 true（JSDoc）：从头开始。
+  // Marquee：overflow 容器 + 内层文本跑 CSS 动画。时长照真机公式（R40，marquee_pattern.cpp
+  // PlayMarqueeAnimation）：duration = |end−start| × 85 / step（DEFAULT_MARQUEE_SCROLL_DELAY
+  // = 85.0ms，LINEAR；step 默认 6vp（.d.ts @default 6），step > 文本宽时按 6 兜底，step≤0
+  // 不除）。LEFT 方向的距离 = 容器宽 + 文本宽（右缘外进场 → 完全滚出）——用 CSS 变量把
+  // 每例的真实起止像素喂给 keyframes。真机在布局后才算时长，所以动画在 setTimeout(0)
+  // 启动（不变量 18）。事件走 animation 生命周期：animationstart → onStart、
+  // animationend → onFinish（loop 次数 = 迭代次数）；fromStart 默认 true（JSDoc）。
   if (!document.getElementById('arkui-marquee-keyframes')) {
     const kf = document.createElement('style');
     kf.id = 'arkui-marquee-keyframes';
-    kf.textContent = '@keyframes arkuiMarquee{from{transform:translateX(200%)}to{transform:translateX(-100%)}}';
+    kf.textContent = '@keyframes arkuiMarquee{from{transform:translateX(var(--mq-from,200%))}'
+      + 'to{transform:translateX(var(--mq-to,-100%))}}';
     document.head.appendChild(kf);
   }
   const Marquee = ensureComponent('Marquee', (args) => {
@@ -136,7 +140,7 @@
     const root = document.createElement('div');
     root.__arkuiShow = 'Marquee';
     root.dataset.marquee = '';
-    root.style.display = 'inline-block';
+    root.style.display = 'block';            // 真机占满行宽（marqueeSize.Width() = 容器宽，R40）
     root.style.overflow = 'hidden';
     root.style.whiteSpace = 'nowrap';
     const inner = document.createElement('span');
@@ -150,38 +154,46 @@
     root.dataset.fromStart = String(o.fromStart === undefined ? true : !!o.fromStart);
     root.dataset.step = String(o.step === undefined ? 6 : o.step);       // JSDoc：step 默认 6
     if (root.dataset.start === 'true') {
-      // step=6vp/帧 × 16ms/帧（60fps）→ 时长 ms = 文本字数 × 默认字号16 / step × 16
-      //（"逐帧步进"→ CSS 动画是 DOM 化映射，时长公式是实现选择，非 .d.ts 数字）
-      const ms = Math.max(1000, Math.ceil(inner.textContent.length * 16 / 6) * 16);
-      const loops = root.dataset.loop === '-1' ? Infinity : Number(root.dataset.loop);
-      root.style.animation = `arkuiMarquee ${ms}ms linear ${loops === Infinity ? 'infinite' : loops}`;
-      // 收口与 animation.js 同约定（坑 ⑧）：headless 里 CSS 动画事件不可靠（不可见页面被节流，
-      // animationend 实测会丢）—— MS 用短定时器兜底、MF 用"时长×圈数"定时器兜底，
-      // 动画事件只当见证，once 守卫保证只发一次
-      let startFired = false;
-      const fireStart = () => {
-        if (startFired) return;
-        startFired = true;
-        if (root.__marqueeCbs && typeof root.__marqueeCbs.start === 'function') {
-          try { root.__marqueeCbs.start(); }
-          catch (e) { layoutWarnings.push(`Marquee.onStart 抛错：${e && e.message}`); }
-        }
-      };
-      root.addEventListener('animationstart', fireStart, { once: true });
-      setTimeout(fireStart, 60);
-      if (loops !== Infinity) {
-        let finishFired = false;
-        const fireFinish = () => {
-          if (finishFired) return;
-          finishFired = true;
-          if (root.__marqueeCbs && typeof root.__marqueeCbs.finish === 'function') {
-            try { root.__marqueeCbs.finish(); }
-            catch (e) { layoutWarnings.push(`Marquee.onFinish 抛错：${e && e.message}`); }
+      // 真机在布局后用真实宽高算时长 → 这里也等挂载后（同步阶段，不变量 18）再启动
+      setTimeout(() => {
+        const textW = Math.max(1, inner.offsetWidth);
+        const rootW = Math.max(0, root.clientWidth);
+        let stepPx = Number(root.dataset.step);
+        if (!Number.isFinite(stepPx) || stepPx <= 0) stepPx = 6;
+        if (stepPx > textW) stepPx = 6;                    // 真机兜底：step 大于文本宽按默认 6
+        const ms = Math.max(1, Math.round((rootW + textW) * 85 / stepPx));
+        inner.style.setProperty('--mq-from', `${rootW}px`);   // 起点右缘外
+        inner.style.setProperty('--mq-to', `${-textW}px`);    // 终点完全滚出
+        const loops = root.dataset.loop === '-1' ? Infinity : Number(root.dataset.loop);
+        root.style.animation = `arkuiMarquee ${ms}ms linear ${loops === Infinity ? 'infinite' : loops}`;
+        // 收口与 animation.js 同约定（坑 ⑧）：headless 里 CSS 动画事件不可靠（不可见页面被节流，
+        // animationend 实测会丢）—— MS 用短定时器兜底、MF 用"时长×圈数"定时器兜底，
+        // 动画事件只当见证，once 守卫保证只发一次
+        let startFired = false;
+        const fireStart = () => {
+          if (startFired) return;
+          startFired = true;
+          if (root.__marqueeCbs && typeof root.__marqueeCbs.start === 'function') {
+            try { root.__marqueeCbs.start(); }
+            catch (e) { layoutWarnings.push(`Marquee.onStart 抛错：${e && e.message}`); }
           }
         };
-        root.addEventListener('animationend', fireFinish, { once: true });
-        setTimeout(fireFinish, ms * loops + 80);
-      }
+        root.addEventListener('animationstart', fireStart, { once: true });
+        setTimeout(fireStart, 60);
+        if (loops !== Infinity) {
+          let finishFired = false;
+          const fireFinish = () => {
+            if (finishFired) return;
+            finishFired = true;
+            if (root.__marqueeCbs && typeof root.__marqueeCbs.finish === 'function') {
+              try { root.__marqueeCbs.finish(); }
+              catch (e) { layoutWarnings.push(`Marquee.onFinish 抛错：${e && e.message}`); }
+            }
+          };
+          root.addEventListener('animationend', fireFinish, { once: true });
+          setTimeout(fireFinish, ms * loops + 80);
+        }
+      }, 0);
     }
     return root;
   });
@@ -257,7 +269,11 @@
       const value = el.__arkuiQrValue.slice(0, 512);           // JSDoc：取前 512
       if (!value) return;                                     // 空串 → 无效 QR（JSDoc 原文）
       const native = el.getContext('2d');
-      const matrix = global.ArkuiVendorQrcode.create(value).modules;
+      // ECC 级别照真机（R40 确证）：ace_engine qrcode_modifier.cpp 硬编码
+      // QrcodeImageEncodeString(value, QRCODE_ECC::QRCODE_ECC_MEDIUM)——真机枚举只有
+      // MEDIUM=0 / HIGH=1，组件恒用 MEDIUM。node-qrcode 的 'M' 与之对应（.d.ts 未写 ECC，
+      // 此前按移植库默认 L 跑，属推断——已纠正）。
+      const matrix = global.ArkuiVendorQrcode.create(value, { errorCorrectionLevel: 'M' }).modules;
       const quiet = 4;                                        // quiet zone 4 模块（node-qrcode 默认）
       const total = matrix.size + quiet * 2;
       const cell = Math.max(1, Math.floor(Math.min(w, h) / total));

@@ -53,8 +53,10 @@ struct ShowDemo {
         .vertical(true)
         .strokeWidth(5)
 
-      // ⑤ Marquee：跑马灯。⚠️ MarqueeOptions 的 start 是【必填】（编译期实测）
-      Marquee({ src: 'Hello marquee', start: true, loop: 2 })
+      // ⑤ Marquee：跑马灯。⚠️ MarqueeOptions 的 start 是【必填】（编译期实测）。
+      // step 30：真机时长公式（marquee_pattern.cpp：距离×85/step）下默认 6 一圈要 4 秒级，
+      // 两圈 8.5s 会超出测试的虚拟时间预算（8000ms）——step 30 让两圈 ≈2.3s 可观测（R40）
+      Marquee({ src: 'Hello marquee', start: true, loop: 2, step: 30 })
         .id('mq1')
         .fontColor('#0066cc')
         .fontSize(16)

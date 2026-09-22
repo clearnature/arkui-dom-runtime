@@ -603,8 +603,11 @@ R12 收口后 `Navigation` 还剩两块**可见差异**：push/pop 是瞬时切�
 时 a3 不是函数，解析必须看 a4（首版就栽在这，断言当场抓住）；
 ③ `disableAnimation(true)` 进产物后，后续 push/pop 都不再带动画。
 
-**转场动画**（DOM 化选择，**推断**——`.d.ts` 只说"有系统默认转场"没给数字）：目的地 **300ms
-ease-out 族曲线从右滑入/滑出**（`cubic-bezier(0.2,0,0,1)`）；push 时上一个栈顶**垫底可见**、滑完才藏；
+**转场动画**（~~DOM 化选择，推断~~ **R40 照真机源码确证**，出处 `navigation_group_node.cpp` /
+`navdestination_node_base.cpp`）：目的地从 **+50%** 滑入（`width×HALF`）、被盖页**视差滑到 -20%**
+（`CONTENT_OFFSET_PERCENT=0.2`）、弹出页滑向 **+50%**；时长 **450ms**（`InterpolatingSpring(0,1,342,37)`
+的上界；CSS 无弹簧，用 `cubic-bezier(0.2,0,0,1)` 近似临界阻尼形态）；push 时上一个栈顶**垫底可见**、
+滑完才藏；
 pop 时**状态层回调照旧立刻发**（`willHide → hidden → willDisappear`，顺序与立即版一致），DOM 摘除
 推迟到滑出结束；弹到空栈时目标区在滑出期间撑住、结束后按当下栈显隐。收口与 `animation.js` 同一
 约定：先提交起始值（强制重排，坑 ⑧）、`transitionend` 只当见证、定时器兜底。范围弹栈
@@ -621,7 +624,7 @@ pop 时**状态层回调照旧立刻发**（`willHide → hidden → willDisappe
 
 ```
 $ bash run.sh navtransdemo
-=== ALL PASS ===                    （48 条断言，双端同数）
+=== ALL PASS ===                    （52 条断言，双端同数；R40 +4 真机数字）
 PASS Free 滚 28px（半程）→ 84vp／触底 → Mini 56vp 且回调收到 Mini(2)／回顶 → 112vp 且收到 Full(1)
 PASS 中途回滚不抖动（模式停在端点）／titleMode(Full) 对照组滚 200px 高度不变、回调不触发
 PASS {main,sub}：副标题淡出（opacity 0.7→0）、主标题缩小（scale=高度比，实现选择）；回顶复位
@@ -791,7 +794,7 @@ DOM 化映射，推断）；`animationstart/end → onStart/onFinish`，但收�
 
 ```
 $ bash run.sh showdemo
-=== ALL PASS ===                    （26 条断言，双端同数）
+=== ALL PASS ===                    （27 条断言，双端同数；R40 +时长公式断言）
 PASS Badge：count→'9'／badgeColor 默认 Color.Red→'red'／color 白字／fontSize 10→10px／
      position RightTop、Right／子内容真的挂进容器／style 定制（#1234ff→rgb(18,52,255)）
 PASS Counter：内置 +/− 元素存在／点 + → onInc、点 − → onDec（事件归属真实）
@@ -1007,7 +1010,7 @@ canvas 内容尺寸 1:1、quiet zone 4 模块（node-qrcode 默认）、颜色�
 
 ```
 $ bash run.sh qrdemo
-=== ALL PASS ===                    （11 条断言，双端同数）
+=== ALL PASS ===                    （12 条断言，双端同数；R40 +ECC 采样断言）
 PASS 三 canvas 渲染落位（总模块数含 quiet zone 37）／沿用原生 <canvas>
 PASS 独立解码：qr1/qr2/qr3 全部解码回原文（jsQR 独立实现）
 PASS 像素断言：默认背景 #ffffffff 不透明白／定制背景 '#eeeeff' → rgb(238,238,255)
@@ -1020,7 +1023,10 @@ PASS 像素断言：默认背景 #ffffffff 不透明白／定制背景 '#eeeeff'
 **过程里抓到的一个真问题**：**ArkUI 的 8 位颜色字面量是 ARGB**（'#ff000000' = 不透明黑，JSDoc
 原文默认），CSS 是 RRGGBBAA——位数歧义必须归一，否则默认前景画成全透明（首跑解码 null）。
 
-**已知限制**（写进 CAPABILITY）：ECC 级别 `.d.ts` 未写、移植库按其默认（L 级，**推断**——
+**已知限制**（写进 CAPABILITY）：~~ECC 级别按移植库默认（L 级，推断）~~ **R40 确证 M 级**
+（真机 `qrcode_modifier.cpp:44` 硬编码 `QRCODE_ECC_MEDIUM`，且 node-qrcode 默认本就是 M——
+R33 的"L 级"注记是误判，实渲染从未变过；显式传参后语义对齐有据）。qrdemo 新增 ECC 采样断言
+（渲染矩阵与 vendor-M 100 格逐格一致，L 级 25 模块对不上 29）。
 真机可能不同）；`contentOpacity` 作用于内容层（真机语义待核对）；512 截断未测（fixture 未覆盖）。
 
 **触及**：`runtime/vendor/`（新目录：qrcode bundle + LICENSE）、`test/vendor/`（jsQR + LICENSE）、

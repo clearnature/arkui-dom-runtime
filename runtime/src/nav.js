@@ -41,11 +41,18 @@
   const TITLE_HEIGHT_VALUE = { 0: NAV_TITLE_H.main, 1: NAV_TITLE_H.mainSub };
   const NAV_DIVIDER_PX = 1;               // 分栏时的分割线宽度
   const NAV_DEFAULT_BAR_W = 240;          // navBarWidth 默认 240vp（.d.ts JSDoc 原文）
-  // push/pop 的系统转场（R25）。.d.ts 对默认转场只说"有"（pop 的 JSDoc："Whether to enable the
-  // transition animation ... Default value: true"），没给时长与曲线 —— 目的地从右滑入/滑出、
-  // 300ms、ease-out 族曲线是本实现的 DOM 化选择（**推断**，已写进 docs 已知限制）。
-  const NAV_TRANS_MS = 300;
+  // push/pop 的系统转场（R25，R40 照真机源码纠偏）。权威出处：ace_engine
+  // navigation_group_node.cpp——push/pop 动画 = InterpolatingSpring(0,1,342,37)、
+  // 时长上界 DEFAULT_ANIMATION_DURATION=450ms；入页起点 +50%（navdestination_node_base.cpp
+  // CalcTranslateForTransitionPushStart: width×HALF）；被盖页视差滑到 -20%
+  //（CONTENT_OFFSET_PERCENT=0.2，其标题栏再 -2%：TITLE_OFFSET_PERCENT）；pop 弹出页滑到
+  // +50%、露出页从 -20% 回 0。CSS transition 没有弹簧曲线——cubic-bezier(0.2,0,0,1) 是
+  // 该弹簧（damping 37 ≈ 临界阻尼，无过冲）的近似，时长取 450ms 上界。
+  const NAV_TRANS_MS = 450;
   const NAV_TRANS_CURVE = 'cubic-bezier(0.2, 0.0, 0.0, 1.0)';
+  const NAV_PUSH_FROM = 50;             // 入页起点%（width×HALF）
+  const NAV_POP_TO = 50;                // 弹出页终点%（width×HALF）
+  const NAV_PARALLAX = 20;              // 被盖/露出页的视差%（CONTENT_OFFSET_PERCENT×100）
   // 转场运行记录（测试轮询"挂着的转场"用，与 animation.js 的 transitionRuns 同思想）
   const navTransRuns = [];
   let navTransRunSeq = 0;
@@ -685,7 +692,16 @@
     navTransRuns.push(run);
     if (navTransRuns.length > 50) navTransRuns.shift();
     el.dataset.arkuiNavTrans = 'push';
-    el.style.transform = 'translateX(100%)';
+    // 入页 +50% → 0；被盖页同一段弹簧里视差 0 → -20%（真机 push 编舞）
+    el.style.transform = `translateX(${NAV_PUSH_FROM}%)`;
+    if (showPrev) {
+      prev.el.style.transform = 'translateX(0%)';
+      void prev.el.offsetHeight;
+      prev.el.style.transitionProperty = 'transform';
+      prev.el.style.transitionDuration = `${NAV_TRANS_MS}ms`;
+      prev.el.style.transitionTimingFunction = NAV_TRANS_CURVE;
+      prev.el.style.transform = `translateX(-${NAV_PARALLAX}%)`;
+    }
     void el.offsetHeight;
     const stopWitness = navWitness(el, run);
     el.style.transitionProperty = 'transform';
@@ -697,8 +713,13 @@
       navEndTransStyle(el);
       stopWitness();
       run.done = true;
-      // 期间若有新栈操作，可见性已由那次的 sync 接管：只藏"现在仍然不是栈顶"的前任
-      if (showPrev && prev !== st.visible) prev.el.style.display = 'none';
+      // 被盖页收口：清视差 transform 后藏掉（期间若有新栈操作，可见性已由那次的 sync 接管：
+      // 只藏"现在仍然不是栈顶"的前任）
+      if (showPrev) {
+        navEndTransStyle(prev.el);
+        prev.el.style.transform = '';
+        if (prev !== st.visible) prev.el.style.display = 'none';
+      }
     }, NAV_TRANS_MS + 30);
   }
 
@@ -816,13 +837,24 @@
     el.dataset.arkuiNavTrans = 'pop';
     el.style.display = 'block';
     el.style.zIndex = '3';                 // DOM 顺序上新栈顶在后面（盖住它），滑出期间要反超
+    // 露出页从视差位 -20% 回 0（真机 pop 编舞：PopStart(true) = -20% → PopEnd(true) = 0）
+    const shown = st.paths.length ? st.paths[st.paths.length - 1] : null;
+    const shownEl = (shown && shown.el) ? shown.el : null;
+    if (shownEl) {
+      shownEl.style.transform = `translateX(-${NAV_PARALLAX}%)`;
+      void shownEl.offsetHeight;
+      shownEl.style.transitionProperty = 'transform';
+      shownEl.style.transitionDuration = `${NAV_TRANS_MS}ms`;
+      shownEl.style.transitionTimingFunction = NAV_TRANS_CURVE;
+      shownEl.style.transform = '';
+    }
     el.style.transform = '';
     void el.offsetHeight;
     const stopWitness = navWitness(el, run);
     el.style.transitionProperty = 'transform';
     el.style.transitionDuration = `${NAV_TRANS_MS}ms`;
     el.style.transitionTimingFunction = NAV_TRANS_CURVE;
-    el.style.transform = 'translateX(100%)';
+    el.style.transform = `translateX(${NAV_POP_TO}%)`;
     const timer = setTimeout(() => {
       run.endedBy = 'timer';
       navEndTransStyle(el);
@@ -830,6 +862,10 @@
       run.done = true;
       el.style.zIndex = '';
       el.style.transform = '';
+      if (shownEl) {
+        navEndTransStyle(shownEl);
+        shownEl.style.transform = '';
+      }
       navDestroyDest(rec);
       purgeDetachedRecords();
       // 目标区的显隐以【当下】的栈为准（滑出期间可能有新 push）

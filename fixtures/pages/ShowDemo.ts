@@ -125,17 +125,29 @@ class ShowDemo extends ViewPU {
             Divider.strokeWidth(5);
         }, Divider);
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            // ⑤ Marquee：跑马灯。⚠️ MarqueeOptions 的 start 是【必填】（编译期实测）
-            Marquee.create({ src: 'Hello marquee', start: true, loop: 2 });
-            // ⑤ Marquee：跑马灯。⚠️ MarqueeOptions 的 start 是【必填】（编译期实测）
+            // ⑤ Marquee：跑马灯。⚠️ MarqueeOptions 的 start 是【必填】（编译期实测）。
+            // step 30：真机时长公式（marquee_pattern.cpp：距离×85/step）下默认 6 一圈要 4 秒级，
+            // 两圈 8.5s 会超出测试的虚拟时间预算（8000ms）——step 30 让两圈 ≈2.3s 可观测（R40）
+            Marquee.create({ src: 'Hello marquee', start: true, loop: 2, step: 30 });
+            // ⑤ Marquee：跑马灯。⚠️ MarqueeOptions 的 start 是【必填】（编译期实测）。
+            // step 30：真机时长公式（marquee_pattern.cpp：距离×85/step）下默认 6 一圈要 4 秒级，
+            // 两圈 8.5s 会超出测试的虚拟时间预算（8000ms）——step 30 让两圈 ≈2.3s 可观测（R40）
             Marquee.id('mq1');
-            // ⑤ Marquee：跑马灯。⚠️ MarqueeOptions 的 start 是【必填】（编译期实测）
+            // ⑤ Marquee：跑马灯。⚠️ MarqueeOptions 的 start 是【必填】（编译期实测）。
+            // step 30：真机时长公式（marquee_pattern.cpp：距离×85/step）下默认 6 一圈要 4 秒级，
+            // 两圈 8.5s 会超出测试的虚拟时间预算（8000ms）——step 30 让两圈 ≈2.3s 可观测（R40）
             Marquee.fontColor('#0066cc');
-            // ⑤ Marquee：跑马灯。⚠️ MarqueeOptions 的 start 是【必填】（编译期实测）
+            // ⑤ Marquee：跑马灯。⚠️ MarqueeOptions 的 start 是【必填】（编译期实测）。
+            // step 30：真机时长公式（marquee_pattern.cpp：距离×85/step）下默认 6 一圈要 4 秒级，
+            // 两圈 8.5s 会超出测试的虚拟时间预算（8000ms）——step 30 让两圈 ≈2.3s 可观测（R40）
             Marquee.fontSize(16);
-            // ⑤ Marquee：跑马灯。⚠️ MarqueeOptions 的 start 是【必填】（编译期实测）
+            // ⑤ Marquee：跑马灯。⚠️ MarqueeOptions 的 start 是【必填】（编译期实测）。
+            // step 30：真机时长公式（marquee_pattern.cpp：距离×85/step）下默认 6 一圈要 4 秒级，
+            // 两圈 8.5s 会超出测试的虚拟时间预算（8000ms）——step 30 让两圈 ≈2.3s 可观测（R40）
             Marquee.onStart(() => { this.log = this.log + 'MS;'; });
-            // ⑤ Marquee：跑马灯。⚠️ MarqueeOptions 的 start 是【必填】（编译期实测）
+            // ⑤ Marquee：跑马灯。⚠️ MarqueeOptions 的 start 是【必填】（编译期实测）。
+            // step 30：真机时长公式（marquee_pattern.cpp：距离×85/step）下默认 6 一圈要 4 秒级，
+            // 两圈 8.5s 会超出测试的虚拟时间预算（8000ms）——step 30 让两圈 ≈2.3s 可观测（R40）
             Marquee.onFinish(() => { this.log = this.log + 'MF;'; });
         }, Marquee);
         this.observeComponentCreation2((elmtId, isInitialRender) => {

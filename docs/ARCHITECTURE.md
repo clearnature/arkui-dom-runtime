@@ -990,7 +990,7 @@ node-qrcode@1.5.4（`global.ArkuiVendorQrcode`，bun 打包为单文件经典脚
 两库互为独立实现，编码错误过不了。渲染在渲染后同步阶段（redrawQr 挂 syncDrawings，不变量 18），
 1:1 内容尺寸 + quiet zone 4。
 
-**已知限制**：ECC 级别未写（移植库按默认 L 级，推断）；512 截断未测。
+**已知限制**：ECC 级别未写（~~按移植库默认 L 级，推断~~ R40 确证：真机硬编码 MEDIUM、node-qrcode 默认即 M，现显式传参对齐 + qrdemo ECC 采样断言守卫）；512 截断未测。
 
 ### 4.10 文本测量
 
@@ -1483,8 +1483,10 @@ minContentWidth 360，`.d.ts` 原文；用组件宽度而不是窗口宽度，�
 `(name, param, undefined, false)` 的 a3 不是函数，解析要看 a4；③ `disableAnimation(true)` 进产物。
 
 **转场**：`navWantAnim`（`animated` 未给默认 true × `disableAnimation` 压制）→ `navSlidePush` /
-`navPopAnimated`。目的地元素 `transform: translateX` 300ms、`cubic-bezier(0.2,0,0,1)`（**推断**，
-`.d.ts` 只说"有系统默认转场"）。push：`navSyncVisibility` 之后把**上一个栈顶临时点亮垫底**，新栈顶
+`navPopAnimated`。~~300ms 贝塞尔是推断~~ **R40 照真机确证**（`navigation_group_node.cpp` /
+`navdestination_node_base.cpp`）：入页 `+50% → 0`（`width×HALF`）、被盖页 `0 → -20%` 视差（标题栏
+再 -2%）、弹出页 `0 → +50%`、露出页 `-20% → 0`，同一根 `InterpolatingSpring(0,1,342,37)`、时长
+上界 450ms；CSS 无弹簧，取 `cubic-bezier(0.2,0,0,1)` 近似临界阻尼形态 + 450ms。push：`navSyncVisibility` 之后把**上一个栈顶临时点亮垫底**，新栈顶
 从 `translateX(100%)` 归零，收口时只藏"当下仍不是栈顶"的前任；pop：**状态层回调照旧立刻发**
 （`willHide → hidden → willDisappear → onPop`，与立即版同序），`splice → purge → sync` 后元素
 `zIndex:3` 滑出、**DOM 摘除推迟到滑出结束**，弹到空栈时目标区滑出期间撑住、结束后按【当下】栈显隐
@@ -1675,16 +1677,16 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   fixtures 转换产物  43 个：AnimDemo AsyncIO Callee CanvasDemo Detail DrawDemo GestureDemo GestureGroupDemo Home Index InputDemo Layout Lazy LazyVar MeasArea MeasImage MeasNotify Measure MediaDemo NavBarDemo NavDemo NavTransDemo NetFile Observe PopDemo PromptAct Provide QrDemo RelDemo Rich ShapeDemo ShowDemo SmallDemo StepDemo SwiperDemo TabsGrid TextDemo TextMeasure TransitionDemo UiContextDemo V2 Widgets XCompDemo
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          507.7 KB
-  runtime(src)     332.1 KB
-  test             604.1 KB
+  runtime          510.9 KB
+  runtime(src)     335.3 KB
+  test             607.4 KB
   tools            56.5 KB
   electron(src)    22.1 KB
-  docs             425.3 KB
-  fixtures         338.8 KB
+  docs             428.8 KB
+  fixtures         340.2 KB
 
 == 逐文件（文档"文件职责"表的来源）==
-  runtime/arkui-dom-runtime.js        334754 B  326.9 KB
+  runtime/arkui-dom-runtime.js        338001 B  330.1 KB
   runtime/generated-components.js      57617 B  56.3 KB
   runtime/ohos-shims.js                61848 B  60.4 KB
   tools/extract.mjs                     6563 B  6.4 KB
@@ -1701,12 +1703,12 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   electron/preload.js                   1961 B  1.9 KB
   package.json                          1366 B  1.3 KB
   .gitignore                             757 B  0.7 KB
-  README.md                           134605 B  131.5 KB
+  README.md                           135232 B  132.1 KB
   THIRD-PARTY-NOTICES.md                9672 B  9.4 KB
-  docs/ARCHITECTURE.md                144446 B  141.1 KB
-  docs/CAPABILITY.md                   48428 B  47.3 KB
+  docs/ARCHITECTURE.md                144851 B  141.5 KB
+  docs/CAPABILITY.md                   48984 B  47.8 KB
   docs/DEVELOPING.md                   64310 B  62.8 KB
-  docs/ROADMAP.md                     111223 B  108.6 KB
+  docs/ROADMAP.md                     113852 B  111.2 KB
   docs/surface-measurement.md           6496 B  6.3 KB
   docs/SESSION-2026-09-20.md           12842 B  12.5 KB
   runtime/src/ability.js                9225 B  9.0 KB
@@ -1718,11 +1720,11 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   runtime/src/input.js                 10336 B  10.1 KB
   runtime/src/layout.js                14213 B  13.9 KB
   runtime/src/main.js                  91236 B  89.1 KB
-  runtime/src/nav.js                   50765 B  49.6 KB
+  runtime/src/nav.js                   52666 B  51.4 KB
   runtime/src/popup.js                  4905 B  4.8 KB
   runtime/src/runtime.d.ts              5042 B  4.9 KB
   runtime/src/shape.js                  7206 B  7.0 KB
-  runtime/src/show.js                  16091 B  15.7 KB
+  runtime/src/show.js                  17437 B  17.0 KB
   runtime/src/small.js                 11646 B  11.4 KB
   runtime/src/v2.js                    12577 B  12.3 KB
   fixtures/pages/AnimDemo.ts            6451 B  6.3 KB
@@ -1756,7 +1758,7 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   fixtures/pages/RelDemo.ts             9702 B  9.5 KB
   fixtures/pages/Rich.ts                9256 B  9.0 KB
   fixtures/pages/ShapeDemo.ts           8081 B  7.9 KB
-  fixtures/pages/ShowDemo.ts            7113 B  6.9 KB
+  fixtures/pages/ShowDemo.ts            8617 B  8.4 KB
   fixtures/pages/SmallDemo.ts           3688 B  3.6 KB
   fixtures/pages/StepDemo.ts            4857 B  4.7 KB
   fixtures/pages/SwiperDemo.ts          7876 B  7.7 KB
@@ -1789,20 +1791,20 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   test/mediademo.html                   3877 B  3.8 KB
   test/navbardemo.html                 12670 B  12.4 KB
   test/navdemo.html                    14837 B  14.5 KB
-  test/navtransdemo.html               14780 B  14.4 KB
+  test/navtransdemo.html               15741 B  15.4 KB
   test/netfile.html                     5302 B  5.2 KB
   test/observe.html                     6232 B  6.1 KB
   test/opfs-probe.html                  1620 B  1.6 KB
   test/popdemo.html                     5709 B  5.6 KB
   test/promptaction.html               12719 B  12.4 KB
   test/provide.html                     4238 B  4.1 KB
-  test/qrdemo.html                      5092 B  5.0 KB
+  test/qrdemo.html                      6525 B  6.4 KB
   test/realfs.html                     10788 B  10.5 KB
   test/reldemo.html                     7328 B  7.2 KB
   test/rich.html                        3794 B  3.7 KB
   test/router.html                      4288 B  4.2 KB
   test/shapedemo.html                   9951 B  9.7 KB
-  test/showdemo.html                    8019 B  7.8 KB
+  test/showdemo.html                    8924 B  8.7 KB
   test/smalldemo.html                   5299 B  5.2 KB
   test/stepdemo.html                    9752 B  9.5 KB
   test/swiper.html                      9177 B  9.0 KB

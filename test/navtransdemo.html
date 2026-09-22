@@ -141,16 +141,23 @@
         check(d1.style.display === 'block', '新栈顶立即可见');
         check(d1.dataset.arkuiNavTrans === 'push' && d1.style.transitionProperty === 'transform',
           `滑入中（data-arkui-nav-trans='${d1.dataset.arkuiNavTrans}' transition=${d1.style.transitionProperty}）`);
+        // R40 真机数字：时长上界 450ms（DEFAULT_ANIMATION_DURATION）；入页起点 +50%（width×HALF）
+        check(d1.style.transitionDuration === '450ms',
+          `转场时长 = 真机 450ms（InterpolatingSpring(0,1,342,37) 时长上界，实际 '${d1.style.transitionDuration}'）`);
+        check(d1.style.transform === '' && dests('nt-n1').length === 1,
+          `入页目标位 = 0（起点在 push 起始帧已提交为 +50%）`);
         check(runCount() === runsBefore + 1 && navTrans().runs[navTrans().runs.length - 1].kind === 'push',
           `转场运行记录 +1（kind=push，共 ${runCount()} 条）`);
         await settleNav();
         check(navTrans().pending === 0, '滑入收口（pending=0）');
         check(!d1.dataset.arkuiNavTrans && d1.style.transitionProperty === '', '滑入后转场样式清干净');
 
-        // 第二次 push：上一个栈顶在滑入期间垫底可见，结束才藏
+        // 第二次 push：上一个栈顶在滑入期间垫底可见 + 视差滑到 -20%（CONTENT_OFFSET_PERCENT）
         await click('push1');
         const below = dests('nt-n1')[0];
         check(below.style.display === 'block', '滑入期间上一个栈顶垫底可见');
+        check(below.style.transform === 'translateX(-20%)',
+          `被盖页视差滑到 -20%（实际 '${below.style.transform}'，真机 CONTENT_OFFSET_PERCENT=0.2）`);
         await settleNav();
         check(below.style.display === 'none' && navState('nt-n1').names.join(',') === 'd1,d1',
           `滑入完成后前任藏掉（display='${below.style.display}'，栈=[${navState('nt-n1').names.join(',')}]）`);
@@ -163,6 +170,9 @@
         check(navState('nt-n1').names.join(',') === 'd1', `pop 后栈立即 = [${navState('nt-n1').names.join(',')}]`);
         check(dests('nt-n1').length === 2 && top.dataset.arkuiNavTrans === 'pop' && top.style.zIndex === '3',
           `滑出中目的地还在（${dests('nt-n1').length} 个，trans='${top.dataset.arkuiNavTrans}'，zIndex=${top.style.zIndex}）`);
+        // R40 真机数字：弹出页滑向 +50%（width×HALF）；露出页从 -20% 视差位回 0
+        check(top.style.transform === 'translateX(50%)',
+          `弹出页目标位 = +50%（实际 '${top.style.transform}'，真机 CalcTranslateForTransitionPopEnd: width×HALF）`);
         check(chrome('nt-n1').barHeight === 112, `滑出期间回到根内容，标题栏恢复 112（实际 ${chrome('nt-n1').barHeight}）`);
         await settleNav();
         check(dests('nt-n1').length === 1, `滑出结束后目的地才摘掉（剩 ${dests('nt-n1').length} 个）`);

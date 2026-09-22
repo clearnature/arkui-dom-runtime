@@ -536,7 +536,7 @@ Divider = div 背景色画线（默认 `#33182431`/1px，JSDoc 原文，纵向�
 （时长 = 文本长度×16px/step(6)×16ms，**推断**），事件收口**定时器兜底**（坑 ⑧：headless 对
 不可见页面的动画事件会节流，animationend 实测会丢）。
 
-**验收**：`bash run.sh showdemo`（**26 条断言**）双端通过。**破坏验证（3 处）**：分派短路 →
+**验收**：`bash run.sh showdemo`（**27 条断言**；R40 +时长公式断言）双端通过。**破坏验证（3 处）**：分派短路 →
 **8 红**（Badge 全绿——语义全在 create 参数，各断言管各的面）；位置映射恒 RightTop → **1 红**；
 strokeWidth 方向分支摘除 → **1 红**。还原后 md5 一致。
 
@@ -649,7 +649,7 @@ jsQR@1.4.0（test/vendor，Apache-2.0，原样拷贝）——"画出来的码能
 （ASCII/UTF-8/定制色三块）是交叉验证的牙齿。**入向合规**：两件第三方源码首次入库，登记
 THIRD-PARTY-NOTICES 新增 §3b。
 
-**验收**：`bash run.sh qrdemo`（**11 条断言**）双端通过。**破坏验证（3 处）**：vendor 缺席不警告
+**验收**：`bash run.sh qrdemo`（**12 条断言**；R40 +ECC 采样断言）双端通过。**破坏验证（3 处）**：vendor 缺席不警告
 → 3+ 红；前景色未经 ARGB 归一 → **2 红**（解码 null，定制色 qr3 仍绿）；quiet zone 摘除 →
 **1 红**。还原后 md5 一致。
 
@@ -776,6 +776,37 @@ textdemo onSubmit 断言升级端到端。**破坏验证（3 处）**：越界�
 **触及**：`runtime/src/runtime.d.ts`（新）、`tsconfig.check.json`（新）、`tools/typecheck.mjs`（新）、
 `tools/check-all.sh`（+1 步）、`package.json`、12 个源分片（JSDoc 注解）、
 `test/{stepdemo,inputdemo,textdemo}.html`、五文档
+
+### R40 — 语义清账：真机源码对照三连（Navigation 转场 / Marquee 时长 / QRCode ECC）✅（2026-09-21）
+
+**① Navigation push/pop**（原 R25 推断）：真机编舞 = 入页 `+50% → 0`（`width×HALF`）、被盖页
+`0 → -20%` 视差（`CONTENT_OFFSET_PERCENT=0.2`，标题栏再 -2%）、弹出页 `0 → +50%`、露出页
+`-20% → 0`；同一根 `InterpolatingSpring(0,1,342,37)`、时长上界 450ms。CSS 无弹簧曲线，取
+`cubic-bezier(0.2,0,0,1)` 作临界阻尼近似 + 450ms。navtransdemo 新增 4 断言（450ms / 入页目标位 /
+被盖页 -20% / 弹出页 +50%）。
+
+**② Marquee 时长**（原 R28 推断 step×16ms/帧）：真机公式 `duration = |end−start| × 85 / step`
+（`DEFAULT_MARQUEE_SCROLL_DELAY=85.0`，LINEAR，step 默认 6vp、大于文本宽按 6 兜底、≤0 不除），
+LEFT 方向距离 = 容器宽 + 文本宽。CSS 变量喂真实起止像素；动画在布局后启动（不变量 18）；基座改
+block（真机占满行宽）。夹具 mq1 加 `step: 30`（默认 6 一圈 4 秒级，两圈超虚拟预算）——走了完整
+重测流程（.ets → hvigorw → 固化产物）。showdemo 新增公式断言 + step 参数断言；用户点击与 MS/MF
+的交错不再定序（真实定时器抖动，属时序巧合非语义）。
+
+**③ QRCode ECC**（原 R33 推断"L 级"）：真机 `qrcode_modifier.cpp:44` 硬编码
+`QRCODE_ECC_MEDIUM`；且 node-qrcode 默认本就是 M——R33 从未真渲染过 L，"L 级"注记是误判。
+现在显式传 `'M'`（碰巧对 → 显式对齐）。qrdemo 新增 ECC 采样断言（渲染矩阵 vs vendor-M 全格
+一致，内容在 L/M 下版本 25/29 可区分）。教训：node-qrcode `modules.get(row, col)` 是**行优先**，
+按 (x,y) 读会得到转置矩阵、暗格数相同但 43% 位置错——第一次采样 72/100 一致就是这么来的。
+
+**验收**：navtransdemo 52 / showdemo 27 / qrdemo 12 条双端通过。**破坏验证（3 处，各 1 红）**：
+转场时长回 300ms → 时长断言红；Marquee 换回旧近似公式 → 公式断言红；QRCode 显式打回 L →
+采样断言红（44/100）。还原后 md5 一致。
+
+**触及**：`runtime/src/nav.js`（转场编舞重写）、`runtime/src/show.js`（Marquee 公式 + block 基座 +
+QRCode ECC 显式 M）、`harmony-proj/.../ShowDemo.ets` + `fixtures/pages/ShowDemo.ts`（step 30 重测）、
+`test/{navtransdemo,showdemo,qrdemo}.html`、五文档
+
+---
 
 ### R39 — 语义纠偏：对照 OpenHarmony 真机源码 ✅（2026-09-21）
 
@@ -1460,14 +1491,15 @@ R12 收口的已知限制里点名的两块**可见差异**，本轮收掉。
 JSDoc 原文），四参 `(name, param, undefined, false)` 的解析要看 a4；③ `disableAnimation(true)`
 进产物、全局关动画。
 
-**实现**：目的地 300ms ease-out 从右滑入/滑出（**推断**，`.d.ts` 只说"有系统默认转场"没给数字）；
+**实现**：目的地 300ms ease-out 从右滑入/滑出（~~推断~~ **R40 照真机确证并修正**：450ms 弹簧
+上界 + 入页 +50% + 被盖页视差 -20%，出处 `navigation_group_node.cpp`；详见 R40 节）；
 push 时上一栈顶垫底可见、滑完才藏；pop 时状态层回调照旧立刻发、DOM 摘除推迟到滑出结束、弹到空栈
 目标区滑出期间撑住；范围弹栈仍立即销毁。联动只在 `titleMode=Free`（且无 `NavigationCustomTitle.
 height`、未 `hideTitleBar`）生效：高度随滚动在 Full↔Mini 间线性插值、主标题缩小（scale=高度比）、
 副标题淡出（尺寸不变，仅 string/common 形态）；**模式通知只在端点**（收到底→Mini、回顶→Full），
 中途不抖动。
 
-**验收**：`bash run.sh navtransdemo`（**48 条断言**）—— Free 联动的三个插值点与端点通知、
+**验收**：`bash run.sh navtransdemo`（**52 条断言**；R40 +4 真机数字）—— Free 联动的三个插值点与端点通知、
 Full 对照组不触发、common 的淡出/缩小数值、builder 只收高度、push/pop 转场的运行记录与样式标记、
 animated=false 与 disableAnimation 的"不滑"对照。双端通过。
 

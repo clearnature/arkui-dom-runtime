@@ -78,11 +78,13 @@
           && !!el('ct1').querySelector('[data-arkui-counter-dec]'), '内置 +/- 元素存在');
         el('ct1').querySelector('[data-arkui-counter-inc]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
         await tick(40);
-        // MS（animationstart）在页面加载后就触发，先于 Counter 点击
-        check(txt('show-log') === 'MS;INC;', `点 + → onInc（log='${txt('show-log')}'）`);
+        // MS（动画事件）与用户点击是两条异步线，相对顺序有真定时器抖动（R40 起动画在
+        // setTimeout(0) 后启动）——断言"点击产生了 INC"，不钉它与 MS 的交错
+        check(txt('show-log').includes('INC;'), `点 + → onInc（log='${txt('show-log')}'）`);
         el('ct1').querySelector('[data-arkui-counter-dec]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
         await tick(40);
-        check(txt('show-log') === 'MS;INC;DEC;', `点 − → onDec（log='${txt('show-log')}'）`);
+        check(txt('show-log').includes('INC;') && txt('show-log').includes('DEC;'),
+          `点 − → onDec（log='${txt('show-log')}'）`);
       });
 
       // ══════════ ④ Divider：横向默认 / 纵向 + 颜色粗细 ══════════
@@ -99,18 +101,28 @@
         check(inner.textContent === 'Hello marquee', `src 进内层文本（'${inner.textContent}'）`);
         check(inner.style.color === 'rgb(0, 102, 204)' && inner.style.fontSize === '16px',
           `fontColor/fontSize 落内层（'${inner.style.color}'/${inner.style.fontSize}）`);
-        check(el('mq1').dataset.loop === '2' && el('mq1').dataset.start === 'true',
-          `create 参数记录（loop='${el('mq1').dataset.loop}' start='${el('mq1').dataset.start}'）`);
+        check(el('mq1').dataset.loop === '2' && el('mq1').dataset.start === 'true' && el('mq1').dataset.step === '30',
+          `create 参数记录（loop='${el('mq1').dataset.loop}' start='${el('mq1').dataset.start}' step='${el('mq1').dataset.step}'）`);
         check((el('mq1').style.animation || '').includes('arkuiMarquee'), `CSS 动画已启动（animation='${el('mq1').style.animation}'）`);
+        // R40 真机公式（marquee_pattern.cpp）：duration = |end−start| × 85 / step，
+        // LEFT 方向 |end−start| = 容器宽 + 文本宽（右缘外进场 → 完全滚出）
+        {
+          const mq = el('mq1');
+          const ms = parseFloat(mq.style.animation) || 0;
+          const expect = Math.round((mq.clientWidth + inner.offsetWidth) * 85 / 30);
+          check(Math.abs(ms - expect) <= Math.max(2, expect * 0.02),
+            `时长 = 真机公式（容器宽+文本宽)×85/step（${ms}ms ≈ ${expect}ms）`);
+        }
         await waitLog('MS;');
         check(txt('show-log').includes('MS;'), `动画开跑 → onStart（log='${txt('show-log')}'）`);
       });
 
-      // ══════════ ⑥ 全程 log：MS 先于 Counter 点击；MF 在两圈动画结束后 ══════════
+      // ══════════ ⑥ 全程 log：四个事件都发、MF 收尾（与用户点击的交错不定序，见 ③）══════════
       await group('log 全程', async () => {
         await waitLog('MF;');
-        check(txt('show-log') === 'MS;INC;DEC;MF;',
-          `Marquee 前后 + Counter 中间（log='${txt('show-log')}'）`);
+        const lg = txt('show-log');
+        check(lg.includes('MS;') && lg.includes('INC;') && lg.includes('DEC;') && lg.endsWith('MF;'),
+          `Marquee 前后 + Counter 中间（log='${lg}'）`);
         const bad = __arkui_dom_layout_warnings.filter((w) =>
           /Badge\.|Counter\.|Divider\.|Marquee\./.test(String(w)));
         check(bad.length === 0, `信息展示类属性不再记"未实现"警告（剩 ${bad.length} 条：${bad.slice(0, 2).join('|')}）`);
