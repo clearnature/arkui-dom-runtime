@@ -83,7 +83,7 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 | **`Navigation` 分栏**：`mode(Split)` + `navBarWidth`（默认 240vp）+ `navBarPosition(Start/End)` + 1px 分割线；`mode(Auto)` 按**组件自身宽度 ≥600vp** 判（600 = 240+360，`.d.ts` 原文） | ✅ | `bash run.sh navbardemo`（split/200/Start、split/180/End、Auto 700→split、Auto 400→stack） |
 | **`Navigation` push/pop 转场 + `onTitleModeChange` 滚动联动**（转场数字 R40 照真机确证，出处 `navigation_group_node.cpp`）：入页从 **+50%** 滑入（`width×HALF`）、被盖页视差 **-20%**（标题栏再 -2%）、弹出页滑向 **+50%**；时长 **450ms**（`InterpolatingSpring(0,1,342,37)` 上界；CSS 用 `cubic-bezier(0.2,0,0,1)` 近似临界阻尼形态）；`animated` 默认 true（JSDoc 原文），四参 `animated=false` 与 `disableAnimation` 不滑；pop 的生命周期回调立即发、DOM 摘除推迟到滑出结束。联动只在 `Free` 生效（`NavigationCustomTitle.height` 显式给过不生效，均 JSDoc 原文）：高度随滚动线性插值 Full↔Mini、主标题缩小、副标题淡出（仅 string/common 形态，builder 只收高度）；模式通知只在端点（触底 Mini / 回顶 Full） | ✅ | `bash run.sh navtransdemo`（52 条断言：三个插值点、端点通知、Full 对照、builder 对照、转场标记/记录、真机数字（450ms/±50%/20% 视差）、两个不滑对照组） |
 | **`onPop` 回调**（`pushPathByName(name, param, onPop)` → 弹出时收到 `{info:{name,param}, result}`） | ✅ | navdemo |
-| **`NavDestination` 生命周期**：首次挂载 `onWillAppear→onWillShow→onShown→onReady`；再显示只 `onWillShow→onShown`；隐藏 `onWillHide→onHidden`；销毁前 `onWillDisappear`（顺序**推断**自 `.d.ts` JSDoc，未在真机核对） | ✅ | navdemo |
+| **`NavDestination` 生命周期**：首次挂载 `onWillAppear→onWillShow→onShown→onReady`；再显示只 `onWillShow→onShown`；隐藏 `onWillHide→onHidden`；销毁前 `onWillDisappear`（~~顺序推断~~ R42 部分确证：真机 `navigation_pattern.cpp` 同为"先 will 后实"成对触发；`onWillAppear` 的绝对时机与真机不同——真机挂载前、本实现子树挂载后） | ✅ | navdemo |
 | **只有栈顶可见**：push 覆盖上一层，pop 露回下面那个且**实例复用**（`moveToTop` 也是复用不重建） | ✅ | navdemo |
 | **根内容（home）在 push/pop 间状态保留**（被覆盖但不销毁） | ✅ | navdemo |
 | **目标销毁后 elmtId 零泄漏**（3 层栈 + 替换/移除后 clear，记录数回到基线 25 → 25） | ✅ | navdemo |
@@ -234,18 +234,22 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
   **仍记警告的**：`menus`/`toolbarConfiguration` 的自定义 builder 形态、`navBarWidthRange`/`hideNavBar`/
   `enableDragBar`/`minNavBarWidth`、`customNavContentTransition`（自定义转场协议）与系统栏样式
   （`systemBarStyle`/`ignoreLayoutSafeArea`）。
-  两条**推断**（`.d.ts` 没写数字）：`NavDestination` 标题栏恒为紧凑 56vp；`TitleHeight` 枚举取
-  Full 的那两个文档数字（112/138）。`Auto` 用**组件自身宽度**判（`≥600vp` 走 Split），不是窗口宽度。
+  ~~两条推断（标题栏 56vp；TitleHeight 112/138）~~ **R42 照真机确证**：
+  `navigation_bar_theme.cpp` 主题默认 `SINGLE_LINE=56 / FULL_SINGLE=112 / FULL_DOUBLE=138`，
+  选择逻辑在 `nav_bar_layout_algorithm.cpp`；NavDestination 紧凑标题栏 = `TITLEBAR_HEIGHT_MINI=56vp`
+  （`navigation_declaration.h`）。`Auto` 用**组件自身宽度**判（`≥600vp` 走 Split），不是窗口宽度。
   `NavPathStack` 侧未实现：`setInterception`（路由拦截）、`getParent`（嵌套 Navigation 的父栈）、
   `removeByNavDestinationId`（没有 id 概念），三者都记警告并返回安全值。
 - **`onBackPressed` 登记即警告**：本运行时没有系统返回键（浏览器/Electron 不产生），
   所以这个回调**永远不会被触发**——登记时会立刻出声，而不是"存了不调"。请用 `NavPathStack.pop()`。
-- **生命周期顺序与两处语义是推断的**：调用顺序按 `.d.ts` 的 JSDoc 语义排出（"即将挂载/显示"早于"已显示"），
-  **未在真机核对**；`replacePath` 不派发 `onPop`、`moveToTop` 复用实例不重建——这两条 `.d.ts` 未写明，
-  是按语义推断的实现取舍。`onWillAppear` 的绝对时机也不同（真机在挂载前，本实现在子树挂载后）。
-- **`Navigation` 转场与滚动的数字全是推断**（R25 收口，语义照 JSDoc、数字 DOM 化）：转场 300ms、
-  `cubic-bezier(0.2,0,0,1)`（`.d.ts` 只说"有系统默认转场"）；联动收缩阈值 = 滚满 `Full−Mini` px、
-  主标题 scale = 高度比。范围弹栈（`popToName`/`popToIndex`/`clear`）**立即销毁不动画**（真机也只动画
+- **生命周期顺序**：~~推断~~ **R42 部分确证**——真机 `navigation_pattern.cpp` 同为"先 will 后实"
+  成对触发（`ON_WILL_HIDE → ON_HIDDEN`、`ON_WILL_SHOW → ON_SHOW`），与实现一致；
+  `replacePath` 不派发 `onPop`、`moveToTop` 复用实例不重建——这两条 `.d.ts` 未写明，
+  仍是按语义推断的实现取舍。`onWillAppear` 的绝对时机也不同（真机在挂载前，本实现在子树挂载后）。
+- **`Navigation` 转场与滚动的数字**：~~全是推断~~ **转场 R40 照真机确证**（450ms 弹簧上界 +
+  入页 +50%/视差 20%/弹出 +50%，`navigation_group_node.cpp`；CSS 曲线为临界阻尼近似）；
+  联动收缩阈值 = 滚满 `Full−Mini` px、主标题 scale = 高度比——这两条仍是实现选择（真机对应
+  `title_bar_pattern.cpp` 滚动收缩，未逐项对照）。范围弹栈（`popToName`/`popToIndex`/`clear`）**立即销毁不动画**（真机也只动画
   栈顶）；`edgeEffect` 弹性不模拟（内容不足一屏滚不动 → 联动无从发生，JSDoc 主场景就是"超过一屏"）。
 - 滚动：`LazyForEach` **有虚拟滚动**（1000 项只渲染 11 项，spacer 撑总高）；但普通 `ForEach` 仍是**全量渲染**，
   `LazyForEach` 的数据变更也是**整窗重建**（未做按 key 的增量 diff），且无 `onDataAdd/Delete` 的精确索引更新。

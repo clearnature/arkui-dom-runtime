@@ -530,8 +530,10 @@ builder 真产出了 `NavDestination`（`if/else` 可能没覆盖该 name）—�
 
 **生命周期是照 `.d.ts` 的 JSDoc 语义排的**（"about to be mounted/displayed" 早于 "displayed"）：
 首次挂载 `onWillAppear→onWillShow→onShown→onReady`；再显示只走 `onWillShow→onShown`；
-隐藏 `onWillHide→onHidden`；销毁前 `onWillDisappear`。**顺序是我推断的，未在真机核对**——
-`onWillAppear` 的绝对时机也不同（真机在挂载前，本实现在子树挂载后）。这条已写进 CAPABILITY。
+隐藏 `onWillHide→onHidden`；销毁前 `onWillDisappear`。~~顺序是推断~~ **R42 部分确证**：真机
+`navigation_pattern.cpp` 同为"先 will 后实"的成对触发（`ON_WILL_HIDE → ON_HIDDEN`、
+`ON_WILL_SHOW → ON_SHOW`），与我们的顺序一致；`onWillAppear` 的绝对时机仍不同（真机在挂载前，
+本实现在子树挂载后）——这条已写进 CAPABILITY。
 
 **一处刻意的"出声"**：`onBackPressed` 在本运行时**没有触发源**（没有系统返回键），
 所以登记它时**立刻记一条警告**，而不是"存了不调" —— 后者是最坏的一种静默。
@@ -552,7 +554,11 @@ R12 留下的是**可见差异**：无标题栏/工具栏/返回按钮，`Split`
 **高度全部照 `.d.ts` 原文**：`Full` = 112vp（只有主标题）/ 138vp（主+副）、`Mini` = 56vp、
 `Free`（默认）不滚动时等同 `Full`；`NavigationCustomTitle.height` **优先于 titleMode**
 （原文："When the NavigationCustomTitle type is used to set the height, titleMode does not take effect"）。
-`TitleHeight` 的数值 `.d.ts` 没给 → 按它自己的 JSDoc 措辞对应到 112/138（**推断**）。
+`TitleHeight` 的数值 ~~`.d.ts` 没给 → 推断~~ **R42 照真机确证**：112/138/56 就是
+`navigation_bar_theme.cpp` 的主题默认值（`FULL_SINGLE_LINE_TITLEBAR_HEIGHT=112.0_vp` /
+`FULL_DOUBLE_LINE_TITLEBAR_HEIGHT=138.0_vp` / `SINGLE_LINE_TITLEBAR_HEIGHT=56.0_vp`），
+选择逻辑在 `nav_bar_layout_algorithm.cpp`（FULL 有 subtitle → 138、无 → 112）；FREE 初始高度
+也取 FULL_*（与我们"Free 非滚动态等同 Full"一致）。
 `navBarWidth` 默认 240vp、`Auto` 的判据是**宽度 ≥ 600vp 走 Split**（600 = minNavBarWidth 240 + minContentWidth 360），
 两条都是原文。
 
@@ -651,7 +657,9 @@ PASS disableAnimation(true)：push 无转场、pop 立即销毁
 （轮询 `__arkui_dom_navTrans().pending`，与 transitiondemo 的 settle 同思想），断言本体一条没动，
 74 条恢复全绿。
 
-**已知限制**（都写进 CAPABILITY）：转场的时长/曲线与收缩阈值、缩放比是**推断**（`.d.ts` 没给数字）；
+**已知限制**（都写进 CAPABILITY）：~~转场的时长/曲线是推断~~（R40 已照 `navigation_group_node.cpp`
+确证：450ms 弹簧上界 + ±50%/20% 视差）；**滚动联动的收缩阈值与缩放比仍是实现选择**（真机对应
+`title_bar_pattern.cpp` 的滚动收缩逻辑，未逐项对照）；
 `customNavContentTransition`（自定义转场协议）/`enableModeChangeAnimation`（单栏↔分栏切换动画，
 API 15）/`onNavBarStateChange` 仍未实现（记警告）；`edgeEffect` 弹性不模拟——内容不足一屏的 List
 滚不动，联动也就无从发生（`.d.ts` 的主场景是"超过一屏"）。
@@ -787,8 +795,8 @@ change 是用户交互事件，`.d.ts` 没写死编程改态是否触发，取"�
 内容还没挂进来），点击派发 `onInc`/`onDec`（函数值属性，拦在通用 `on*` 规则之前——否则变成
 `'inc'/'dec'` DOM 监听，坑 86 的又一变体）。**Divider** = div + 背景色画线（hr 样式可控性差），
 默认色 `#33182431`、粗细 1px（JSDoc 原文），纵向把 strokeWidth 转成宽。**Marquee** = overflow 容器
-+ 内层文本跑 CSS 动画；时长 = 文本长度 × 16px / step(默认 6) × 16ms（"逐帧步进"→CSS 动画的
-DOM 化映射，推断）；`animationstart/end → onStart/onFinish`，但收口与 animation.js 同约定
++ 内层文本跑 CSS 动画；~~时长 = 文本长度×16px/step×16ms（推断）~~ **R40 照真机公式确证**：
+`时长 = (容器宽+文本宽) × 85 / step`（`marquee_pattern.cpp`，LINEAR）；`animationstart/end → onStart/onFinish`，但收口与 animation.js 同约定
 （坑 ⑧）：headless 里不可见页面的 CSS 动画事件会被节流（animationend 实测会丢），**定时器兜底**、
 动画事件只当见证、once 守卫只发一次。
 
@@ -814,7 +822,8 @@ Marquee 2 + log 全程 1；**Badge 全绿**——它的语义全在 create 参�
 
 **已知限制**（写进 CAPABILITY）：`Badge` 的 `Position` 对象形态（精确 x/y）未实现（记警告）；
 `Counter` 的 `onStateChange`、`Marquee` 的 `onBounce`（无 bounce 动画）、`marqueeUpdateStrategy`
-只记录；`fromStart: false`（从尾部开始）不改变动画方向；时长公式是推断。
+只记录；`fromStart: false`（从尾部开始）不改变动画方向；~~时长公式是推断~~ R40 已照真机确证
+（`距离×85/step`）。
 
 **触及**：`runtime/src/show.js`（新分片，第 12 个）、`runtime/src/area.js`（SHOW 分支）、
 `runtime/src/main.js`（@include + 安装全局 5 个名字）、`tools/stats.mjs`（手写 29 → 33）、

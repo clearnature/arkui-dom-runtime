@@ -406,7 +406,8 @@ bash run.sh observe && bash electron/run.sh observe   # 19 条断言双通过
 
 **已知限制（写进 CAPABILITY）**：~~**无标题栏/工具栏/返回按钮**~~、~~只有 Stack 语义~~ —— 两者已由
 **R12 收口**（见下）实现；无转场动画；`setInterception`/`getParent`/`removeByNavDestinationId` 未实现；
-**生命周期顺序与两处语义是推断的**（`.d.ts` JSDoc 未写全序，未在真机核对）。
+**生命周期顺序**：~~推断~~ **R42 部分确证**——真机 `navigation_pattern.cpp` 同为"先 will 后实"
+成对触发（`ON_WILL_HIDE → ON_HIDDEN` 等），与实现一致；全序仍以 `.d.ts` JSDoc 语义为准。
 
 **触及**：`runtime/arkui-dom-runtime.js`、`fixtures/pages/NavDemo.ts`、`test/navdemo.html`、
 `run.sh`、`electron/run.sh`
@@ -448,8 +449,9 @@ bash run.sh observe && bash electron/run.sh observe   # 19 条断言双通过
 一直没暴露；本轮的 `PageMap` 有 3 个分支，断言当场抓住。改成按"本次新建的节点"认领
 （`__arkuiNavNew` 标记），"在目标区内"也从"直接父节点"改成**向上找祖先**（记坑 85）。
 
-**已知限制**：`NavDestination` 标题栏恒为紧凑 56vp（`.d.ts` 没写，**推断**）；`TitleHeight` 枚举的数值
-`.d.ts` 没给，按其 JSDoc 措辞对应 Full 的 112/138（**推断**）；`menus`/`toolbarConfiguration` 只支持
+**已知限制**：~~`NavDestination` 标题栏恒为紧凑 56vp、`TitleHeight` 数值 112/138 是推断~~
+**R42 照真机确证**（`navigation_bar_theme.cpp` 主题默认 112/138/56 + `nav_bar_layout_algorithm.cpp`
+选择逻辑；NavDestination 紧凑标题栏 = `TITLEBAR_HEIGHT_MINI=56vp`）；`menus`/`toolbarConfiguration` 只支持
 数组形态（builder 形态记警告）；`onTitleModeChange`/`navBarWidthRange`/`hideNavBar`/`enableDragBar`/
 `minNavBarWidth`/转场动画/系统栏样式未实现（记警告）；`Auto` 用**组件自身宽度**判而不是窗口宽度。
 
@@ -533,7 +535,8 @@ RD 对）。还原后 md5 一致，navdemo/tabgrid 回归绿。
 **实现**：新分片 `runtime/src/show.js`（第 12 个）。Badge = 容器 + 绝对定位角标；Counter =
 inline-flex + 内置可点元素（flex order 摆位，create 时内容未挂）+ onInc/onDec 拦在通用 on* 规则前；
 Divider = div 背景色画线（默认 `#33182431`/1px，JSDoc 原文，纵向转宽）；Marquee = CSS 动画
-（时长 = 文本长度×16px/step(6)×16ms，**推断**），事件收口**定时器兜底**（坑 ⑧：headless 对
+（~~时长 = 文本长度×16px/step×16ms，推断~~ R40 起照真机公式：`(容器宽+文本宽)×85/step`），
+事件收口**定时器兜底**（坑 ⑧：headless 对
 不可见页面的动画事件会节流，animationend 实测会丢）。
 
 **验收**：`bash run.sh showdemo`（**27 条断言**；R40 +时长公式断言）双端通过。**破坏验证（3 处）**：分派短路 →
@@ -1532,7 +1535,8 @@ animated=false 与 disableAnimation 的"不滑"对照。双端通过。
 **破坏验证（3 处）**：联动入口 return → **13 红**；动画全关 → **6 红**；端点 `p>=1`→`p>1` → **5 红**
 （全是通知、插值一条不红——几何与通知两条链互相独立）。还原后 md5 一致。
 
-**已知限制**：时长/曲线/阈值/缩放比是**推断**；`customNavContentTransition`、
+**已知限制**：~~时长/曲线是推断~~（R40 确证 450ms 弹簧 + ±50%/20% 视差）；**阈值/缩放比仍是
+实现选择**（真机对应 `title_bar_pattern.cpp` 滚动收缩，未逐项对照）；`customNavContentTransition`、
 `enableModeChangeAnimation`（单↔分栏切换动画，API 15）、`onNavBarStateChange` 未实现（记警告）；
 `edgeEffect` 弹性不模拟（不足一屏滚不动，联动无从发生——`.d.ts` 主场景就是超一屏）。
 

@@ -511,8 +511,9 @@ NavDestination.pop();
   - 首次挂载：`willAppear → willShow → shown → ready`；再次显示只走 `willShow → shown`
   - 隐藏：`willHide → hidden`（先隐藏后 `display:none`）；销毁：`willDisappear` → 移出 DOM
   - 弹出多个时**从栈顶向下**处理，保证顺序
-  - ⚠️ 顺序是按 `.d.ts` 的 JSDoc 语义（"about to be mounted/displayed" 早于 "displayed"）**推断**的，
-    **未在真机上核对**；`onWillAppear` 的绝对时机也不同（真机在挂载前，本实现在子树挂载后）。
+  - ⚠️ 顺序~~按 JSDoc 语义推断~~ **R42 部分确证**：真机 `navigation_pattern.cpp` 同为
+    "先 will 后实"成对触发（`ON_WILL_HIDE → ON_HIDDEN` 等）；`onWillAppear` 的绝对时机
+    仍不同（真机在挂载前，本实现在子树挂载后）。
   - ⚠️ `onBackPressed` **没有触发源**：本运行时没有系统返回键（浏览器/Electron 不产生）。
     登记它会立刻记一条 `layoutWarnings` 而不是"存了不调"（静默失效）。
 - **可见性 = 只有栈顶**：`navSyncVisibility(st)` 统一处理"隐藏旧的、显示新的"，
@@ -873,7 +874,8 @@ fixture 的 Circle 是 80×80 正方形，min=max。改成 80×60 后恰好 1 �
 内置可点元素，**flex order 摆位**（create 时内容还没挂进来，DOM 顺序无关）；Divider = div +
 背景色画线（hr 的样式可控性差；默认 `#33182431`/1px/横向，JSDoc 原文，`vertical` 时
 strokeWidth 转宽度）；Marquee = overflow 容器 + 内层文本跑 CSS keyframes（时长 =
-文本长度×16px/step(6)×16ms —— "逐帧步进"到 CSS 动画是推断的 DOM 化映射）。
+~~文本长度×16px/step×16ms（推断）~~ R40 起照真机公式：`(容器宽+文本宽)×85/step`
+（`marquee_pattern.cpp`，LINEAR）。
 
 **事件收口**：`onInc/onDec/onStart/onFinish` 都是函数值属性，拦在通用 `on*` 规则之前（坑 86 同族）；
 Marquee 的收口走**定时器兜底**（坑 ⑧ 家族：headless 对不可见页面的 CSS 动画事件会节流，
@@ -1455,7 +1457,7 @@ globalThis.Gesture.pop();                         // ③ 关作用域 → 挂到
   <div data-arkui-nav-destinations>       ← Stack: inset:0 铺满；Split: 只占内容列
 ```
 
-目的地侧：`[data-arkui-dest-titlebar]`（恒为紧凑 56vp，**推断**）+ `[data-arkui-dest-toolbar]`
+目的地侧：`[data-arkui-dest-titlebar]`（恒为紧凑 56vp，~~推断~~ R42 确证：`TITLEBAR_HEIGHT_MINI=56.0_vp`）+ `[data-arkui-dest-toolbar]`
 （`ToolbarItem[]`，`hideToolBar` 或空数组时不显示）。返回键在**栈非空**且未被 `hideBackButton` 时才渲染，
 点击走真 `NavPathStack.pop()`；`menus` / 工具栏项的 `action` 是真实回调。
 
@@ -1465,7 +1467,9 @@ minContentWidth 360，`.d.ts` 原文；用组件宽度而不是窗口宽度，�
 另外 `navSyncVisibility` 里也同步一次：**push/pop 不一定伴随重渲染**，首版漏了这条，目的地的标题栏
 画不出来，断言当场抓住。
 
-**已知限制**：`NavDestination` 标题栏高度（56vp）与 `TitleHeight` 的数值（112/138）都是**推断**
+**已知限制**：~~`NavDestination` 标题栏高度（56vp）与 `TitleHeight` 的数值（112/138）都是推断~~
+**R42 照真机确证**（`navigation_bar_theme.cpp`：112/138/56 三常量 + `nav_bar_layout_algorithm.cpp`
+选择逻辑；NavDestination 紧凑标题栏 = `TITLEBAR_HEIGHT_MINI=56vp`）
 （`.d.ts` 没写数字，后者按其 JSDoc 措辞对应 Full 的那两个数字）；`menus`/`toolbarConfiguration` 只支持
 数组形态；`navBarWidthRange`/`hideNavBar`/`enableDragBar`/系统栏样式未实现（记警告）。
 （`onTitleModeChange` 与转场动画已由 §4.18b 实现。）
@@ -1505,7 +1509,9 @@ minContentWidth 360，`.d.ts` 原文；用组件宽度而不是窗口宽度，�
 （JSDoc："changes in mere location"）。**模式通知只在端点**：`p≥1` → `Mini`、`p=0` → `Full`，
 中途往返不重发。
 
-**已知限制**：转场时长/曲线、收缩阈值、缩放比都是**推断**；`customNavContentTransition`（自定义转场
+**已知限制**：~~转场时长/曲线是推断~~（R40 确证：450ms 弹簧上界 + ±50%/20% 视差）；**收缩阈值、
+缩放比仍是实现选择**（真机对应 `title_bar_pattern.cpp` 滚动收缩，未逐项对照）；
+`customNavContentTransition`（自定义转场
 协议）、`enableModeChangeAnimation`（单↔分栏切换动画，API 15）未实现（记警告）；`edgeEffect` 弹性
 不模拟（不足一屏滚不动 → 联动无从发生，JSDoc 主场景就是超一屏）。
 
@@ -1682,7 +1688,7 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   test             607.6 KB
   tools            56.5 KB
   electron(src)    22.1 KB
-  docs             431.1 KB
+  docs             432.5 KB
   fixtures         340.2 KB
 
 == 逐文件（文档"文件职责"表的来源）==
@@ -1703,12 +1709,12 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   electron/preload.js                   1961 B  1.9 KB
   package.json                          1366 B  1.3 KB
   .gitignore                             757 B  0.7 KB
-  README.md                           139178 B  135.9 KB
+  README.md                           139981 B  136.7 KB
   THIRD-PARTY-NOTICES.md               10718 B  10.5 KB
-  docs/ARCHITECTURE.md                144980 B  141.6 KB
-  docs/CAPABILITY.md                   49279 B  48.1 KB
+  docs/ARCHITECTURE.md                145437 B  142.0 KB
+  docs/CAPABILITY.md                   49777 B  48.6 KB
   docs/DEVELOPING.md                   64310 B  62.8 KB
-  docs/ROADMAP.md                     115797 B  113.1 KB
+  docs/ROADMAP.md                     116218 B  113.5 KB
   docs/surface-measurement.md           6496 B  6.3 KB
   docs/SESSION-2026-09-20.md           12842 B  12.5 KB
   runtime/src/ability.js                9225 B  9.0 KB
