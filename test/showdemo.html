@@ -115,6 +115,20 @@
         }
         await waitLog('MS;');
         check(txt('show-log').includes('MS;'), `动画开跑 → onStart（log='${txt('show-log')}'）`);
+        // R44 回归：step≤0 真机"不除"（marquee_pattern.cpp 只在 step>0 时除以 step）——
+        // duration = 距离×85 本身（不替换成默认 6）
+        {
+          Marquee.create({ src: 'slow', start: true, loop: 1, step: 0 });
+          Marquee.id('mq0');
+          Marquee.pop();
+          await tick(60);
+          const mq0 = el('mq0');
+          const inner0 = mq0.querySelector('[data-arkui-marquee-text]');
+          const ms0 = parseFloat(mq0.style.animation) || 0;
+          const expect0 = Math.round((mq0.clientWidth + inner0.offsetWidth) * 85);
+          check(Math.abs(ms0 - expect0) <= Math.max(2, expect0 * 0.02),
+            `step=0 → 不除以 step（${ms0}ms ≈ 距离×85 = ${expect0}ms，真机 GreatNotEqual(step,0) 才除）`);
+        }
       });
 
       // ══════════ ⑥ 全程 log：四个事件都发、MF 收尾（与用户点击的交错不定序，见 ③）══════════

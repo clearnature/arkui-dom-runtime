@@ -158,10 +158,13 @@
       setTimeout(() => {
         const textW = Math.max(1, inner.offsetWidth);
         const rootW = Math.max(0, root.clientWidth);
+        const dist = rootW + textW;
+        // R44 照真机分支（marquee_pattern.cpp）：step>文本宽 → 按默认 6 兜底；
+        // step≤0 → 【不除】（duration = 距离×85，一圈会非常慢——真机如此，不替它"修正"）
         let stepPx = Number(root.dataset.step);
-        if (!Number.isFinite(stepPx) || stepPx <= 0) stepPx = 6;
-        if (stepPx > textW) stepPx = 6;                    // 真机兜底：step 大于文本宽按默认 6
-        const ms = Math.max(1, Math.round((rootW + textW) * 85 / stepPx));
+        const divide = Number.isFinite(stepPx) && stepPx > 0;
+        if (divide && stepPx > textW) stepPx = 6;
+        const ms = Math.max(1, divide ? Math.round(dist * 85 / stepPx) : Math.round(dist * 85));
         inner.style.setProperty('--mq-from', `${rootW}px`);   // 起点右缘外
         inner.style.setProperty('--mq-to', `${-textW}px`);    // 终点完全滚出
         const loops = root.dataset.loop === '-1' ? Infinity : Number(root.dataset.loop);
@@ -277,8 +280,17 @@
       //（qrcode_modifier.cpp:44 硬编码）。返回 {version,width,data}，data[i]&1 = 暗格。
       const matrix = global.ArkuiQrcodegen.encode(value, 0);
       if (!matrix) return;                                    // 编码失败（内容非法）
+      // R44 照真机守卫（qrcode_modifier.cpp:55）：组件尺寸小于矩阵模块数 → 拒绝绘制
+      //（真机：LessNotEqual(qrCodeSize, qrWidth) 即记错误返回；我们含 quiet zone，
+      // 需要的空间 = 矩阵宽 + 8，故按 total 比较——真机无 quiet，其 total 即 qrWidth）
       const quiet = 4;                                        // quiet zone 4 模块（渲染差异已记录）
       const total = matrix.size + quiet * 2;
+      if (Math.min(w, h) < total) {
+        layoutWarnings.push(`QRCode 组件尺寸 ${Math.min(w, h)}px 小于矩阵所需 ${total}px`
+          + `（矩阵 ${matrix.size}+quiet 8）——照真机拒绝绘制`);
+        delete el.__arkuiQrPending;   // 只尝试一次（与成功路径一致；颜色变化会显式重画）
+        return;
+      }
       const cell = Math.max(1, Math.floor(Math.min(w, h) / total));
       const offX = Math.floor((w - cell * total) / 2);
       const offY = Math.floor((h - cell * total) / 2);

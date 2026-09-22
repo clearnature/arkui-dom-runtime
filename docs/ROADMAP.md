@@ -539,7 +539,7 @@ Divider = div 背景色画线（默认 `#33182431`/1px，JSDoc 原文，纵向�
 事件收口**定时器兜底**（坑 ⑧：headless 对
 不可见页面的动画事件会节流，animationend 实测会丢）。
 
-**验收**：`bash run.sh showdemo`（**27 条断言**；R40 +时长公式断言）双端通过。**破坏验证（3 处）**：分派短路 →
+**验收**：`bash run.sh showdemo`（**28 条断言**；R40 +时长公式，R44 +step=0 回归）双端通过。**破坏验证（3 处）**：分派短路 →
 **8 红**（Badge 全绿——语义全在 create 参数，各断言管各的面）；位置映射恒 RightTop → **1 红**；
 strokeWidth 方向分支摘除 → **1 红**。还原后 md5 一致。
 
@@ -653,7 +653,7 @@ jsQR@1.4.0（test/vendor，Apache-2.0，原样拷贝）——"画出来的码能
 （ASCII/UTF-8/定制色三块）是交叉验证的牙齿。**入向合规**：两件第三方源码首次入库，登记
 THIRD-PARTY-NOTICES 新增 §3b。
 
-**验收**：`bash run.sh qrdemo`（**12 条断言**；R40 +ECC 采样断言）双端通过。**破坏验证（3 处）**：vendor 缺席不警告
+**验收**：`bash run.sh qrdemo`（**15 条断言**；R40 +采样，R41 编码器对照，R44 +过小拒绝×3）双端通过。**破坏验证（3 处）**：vendor 缺席不警告
 → 3+ 红；前景色未经 ARGB 归一 → **2 红**（解码 null，定制色 qr3 仍绿）；quiet zone 摘除 →
 **1 红**。还原后 md5 一致。
 
@@ -809,6 +809,32 @@ block（真机占满行宽）。夹具 mq1 加 `step: 30`（默认 6 一圈 4 �
 **触及**：`runtime/src/nav.js`（转场编舞重写）、`runtime/src/show.js`（Marquee 公式 + block 基座 +
 QRCode ECC 显式 M）、`harmony-proj/.../ShowDemo.ets` + `fixtures/pages/ShowDemo.ts`（step 30 重测）、
 `test/{navtransdemo,showdemo,qrdemo}.html`、五文档
+
+### R44 — 已确证组件的语义回归扫描 ✅（2026-09-21）
+
+逐项重读真机源码找首轮漏掉的边界行为。**扫出两处分歧并修正**：
+① Marquee `step≤0`：真机只在 `step>0` 时除（`GreatNotEqual(step, 0.0)`），step≤0 时
+duration = 距离×85 不除——原实现错替换成默认 6（已修，showdemo DSL 断言 3400ms 精确）；
+② QRCode 组件尺寸 < 矩阵模块数：真机记错误拒绝绘制（`qrcode_modifier.cpp:55`）——原实现
+cell 兜底 1px 硬画溢出（已修，qrdemo DSL 断言：20px 组件拒绝 + 出声 + 只尝试一次）。
+**一处一致转确证**：onTitleModeChange 端点触发（`UpdateTitleModeChange()`：高度≥max→Full、
+==56→Mini）——R25 的"端点判定是本实现的选择"升级为确证。Stepper 的
+`IsSwiperAnimationStopped`（动画中点击忽略）对我们不适用（无转场动画），记 CAPABILITY。
+
+新增 `__arkui_dom_syncDrawings` 钩子（DSL 建的绘制类组件不经过渲染管线，测试手动触发补画）。
+
+**过程教训**：破坏/恢复脚本两次 old/new 颠倒，靠 `grep BROKEN` 回读抓到——**破坏脚本必须
+回读验证**，不能只看打印。
+
+**③ widgets 旧契约升级**：Widgets 页的 QRCode 没给尺寸（DOM 里 clientWidth=0）——真机对
+`qrCodeSize≤0` 也拒绝（`LessOrEqual(qrCodeSize, 0)` 分支），原实现"cell 兜底 1px 硬画"是产物
+假象。components.html 断言升级为"无尺寸 → 拒绝 + 出声"（渲染落位由 qrdemo 承担）。
+
+**验收**：qrdemo 15 / showdemo 28 / widgets 双端通过；破坏验证 2 处（1 红 / 3 红），还原后
+md5 一致。
+
+**触及**：`runtime/src/show.js`、`runtime/src/main.js`（syncDrawings 钩子）、
+`test/{qrdemo,showdemo,components}.html`、五文档
 
 ### R43 — 语义确证第三轮：滚动联动 + SLIDE_SWITCH 照真机修正 ✅（2026-09-21）
 

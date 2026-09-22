@@ -804,7 +804,7 @@ change 是用户交互事件，`.d.ts` 没写死编程改态是否触发，取"�
 
 ```
 $ bash run.sh showdemo
-=== ALL PASS ===                    （27 条断言，双端同数；R40 +时长公式断言）
+=== ALL PASS ===                    （28 条断言，双端同数；R40 +时长公式，R44 +step=0 回归）
 PASS Badge：count→'9'／badgeColor 默认 Color.Red→'red'／color 白字／fontSize 10→10px／
      position RightTop、Right／子内容真的挂进容器／style 定制（#1234ff→rgb(18,52,255)）
 PASS Counter：内置 +/− 元素存在／点 + → onInc、点 − → onDec（事件归属真实）
@@ -1022,7 +1022,7 @@ canvas 内容尺寸 1:1、quiet zone 4 模块（渲染差异：真机组件 API1
 
 ```
 $ bash run.sh qrdemo
-=== ALL PASS ===                    （12 条断言，双端同数；R40 +ECC 采样断言）
+=== ALL PASS ===                    （15 条断言，双端同数；R40 +采样，R44 +过小拒绝×3）
 PASS 三 canvas 渲染落位（总模块数含 quiet zone 37）／沿用原生 <canvas>
 PASS 独立解码：qr1/qr2/qr3 全部解码回原文（jsQR 独立实现）
 PASS 像素断言：默认背景 #ffffffff 不透明白／定制背景 '#eeeeff' → rgb(238,238,255)
@@ -1282,6 +1282,31 @@ enterKeyType 处理器摘除 → **2 红**（失败信息恰好演示回退 Done
 `tools/check-all.sh`（+1 步）、`package.json`（typecheck script）、`runtime/src/{input,v2,small,
 main,nav,ability,draw,animation,gesture,show,popup,area}.js`（JSDoc 类型注解 + EventDeco 改名 +
 onSubmit 修复 + enterKeyType 补全）、`test/{stepdemo,inputdemo,textdemo}.html`、五文档
+
+## R44：已确证组件的语义回归扫描 ✅
+
+对 R39–R43 确证过的语义逐项**重读真机源码找首轮漏掉的边界行为**——扫出两处分歧并修正、
+一处一致转确证，全部补上守卫断言：
+
+| 组件 | 扫描点 | 真机行为 | 结果 |
+|---|---|---|---|
+| Stepper | `maxIndex_ = TotalCount()`、动画中点击忽略 | 前者与我们等价；后者我们无转场动画不适用 | 一致/记录 |
+| Navigation 联动 | `UpdateTitleModeChange()`：高度≥max→Full、==56→Mini | 端点触发 | **一致转确证**（原"端点判定是本实现的选择"） |
+| Marquee | `step≤0`：真机只在 `step>0` 时除以 step | step≤0 → duration = 距离×85 **不除、不替换 6** | **分歧已修正**（原错替换成 6） |
+| QRCode | 组件尺寸 < 矩阵模块数：真机记错误**拒绝绘制** | `qrcode_modifier.cpp:55` | **分歧已修正**（原 cell 兜底 1px 硬画溢出） |
+
+**新守卫断言**：showdemo——DSL 建 `step:0` 跑马灯，时长 = 距离×85 精确（3400ms）；
+qrdemo——DSL 建 20px QRCode（内容 'tiny' 矩阵 V1=21 模块 + quiet 8 = 29px 需求）：拒绝绘制 +
+出声 + **只尝试一次**（后续补画不重试不出声）。为此把 `syncDrawings` 暴露为
+`__arkui_dom_syncDrawings` 钩子（DSL 建的绘制类组件不经过渲染管线，测试需要手动触发）。
+
+**过程教训**：破坏/恢复脚本两次把方向写反（old/new 颠倒），靠 `grep BROKEN` 回读才抓到——
+破坏脚本必须**回读验证**（恢复后 assert 无 BROKEN 残留），不能只看脚本打印。
+
+**验收**：qrdemo 15 / showdemo 28 条双端通过；破坏验证 2 处（1 红 / 3 红），还原后 md5 一致。
+
+**触及**：`runtime/src/show.js`（Marquee step≤0 分支 + QRCode 尺寸守卫）、`runtime/src/main.js`
+（syncDrawings 钩子）、`test/{qrdemo,showdemo}.html`（回归断言）、五文档
 
 ## R43：语义确证第三轮——滚动联动 + SLIDE_SWITCH 照真机修正 ✅
 

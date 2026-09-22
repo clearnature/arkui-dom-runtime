@@ -105,6 +105,31 @@
           `渲染矩阵 = 真机编码器 MEDIUM 输出（采样 ${ok}/${n} 一致；MEDIUM/HIGH 矩阵可区分）`);
       });
 
+      // ══════════ ③c 组件过小拒绝绘制（R44 照真机 qrcode_modifier.cpp:55 的尺寸守卫）══════════
+      await group('过小拒绝', async () => {
+        const before = (__arkui_dom_layout_warnings || []).length;
+        // 路由外 DSL 建一个 20px 的 QRCode：矩阵 29 + quiet 8 = 37px 需求 > 20 → 真机会拒绝
+        QRCode.create('tiny');
+        QRCode.width(20);
+        QRCode.height(20);
+        QRCode.id('qr-tiny');
+        QRCode.pop();
+        __arkui_dom_syncDrawings(root);        // DSL 建的元素不经过渲染管线，手动触发补画
+        await tick(60);
+        const tiny = el('qr-tiny');
+        check(!!tiny && tiny.dataset.qrRendered === undefined,
+          `过小组件拒绝绘制（qrRendered='${tiny && tiny.dataset.qrRendered}'，真机 qrCodeSize<qrWidth 即返回）`);
+        const w = (__arkui_dom_layout_warnings || []).slice(before).map(String);
+        check(w.some((m) => /拒绝绘制/.test(m) && /小于矩阵所需/.test(m)),
+          `拒绝时出声（'${(w.find((m) => /拒绝绘制/.test(m)) || '(无)').slice(0, 70)}'）`);
+        const before2 = (__arkui_dom_layout_warnings || []).length;
+        __arkui_dom_syncDrawings(root);        // 再触发：pending 已清 → 不重复尝试/不出声
+        await tick(60);
+        check(tiny.dataset.qrRendered === undefined
+          && (__arkui_dom_layout_warnings || []).length === before2,
+          `不会在后续补画里悄悄重试（只尝试一次，qrRendered='${tiny.dataset.qrRendered}'）`);
+      });
+
       // ══════════ ④ 回归：没有"未实现"假警告 ══════════
       await group('回归', async () => {
         const bad = __arkui_dom_layout_warnings.filter((w) => /QRCode\./.test(String(w)));

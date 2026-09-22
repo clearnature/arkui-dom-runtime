@@ -86,11 +86,14 @@
       check(!![...root.querySelectorAll('*')].find((e) => e.__arkuiComp === 'Scroll'), 'Scroll 已创建');
       check(!![...root.querySelectorAll('*')].find((e) => e.__arkuiComp === 'LoadingProgress'), 'LoadingProgress 已创建');
       check(!![...root.querySelectorAll('*')].find((e) => e.__arkuiComp === 'Blank'), 'Blank 已创建');
-      // R33 起 QRCode 手写实现为真实编码器（canvas 渲染），旧契约的 data-content 落点
-      // 升级为更强的"画出来 + 可被独立解码器读回"（qrdemo 有三块交叉验证；这里只断言渲染落位）
+      // R44 照真机语义升级：fixture 的 QRCode 没给尺寸（DOM 里 clientWidth=0），真机对
+      // qrCodeSize≤0 / < 矩阵宽都拒绝绘制（qrcode_modifier.cpp:55）——本页断言"拒绝 + 出声"，
+      // 渲染落位与像素/解码验证由 qrdemo（有尺寸的组件）承担
       const qr = [...root.querySelectorAll('*')].find((e) => e.__arkuiComp === 'QRCode');
-      check(!!qr && qr.tagName === 'CANVAS' && (qr.dataset.qrRendered || '') !== '',
-        `QRCode 手写渲染落位（canvas + 矩阵模块数 ${qr && qr.dataset.qrRendered}）`);
+      const refused = (__arkui_dom_layout_warnings || []).some((w) =>
+        /QRCode 组件尺寸/.test(String(w)) && /拒绝绘制/.test(String(w)));
+      check(!!qr && qr.tagName === 'CANVAS' && (qr.dataset.qrRendered || '') === '' && refused,
+        `QRCode 无尺寸 → 照真机拒绝绘制（qrRendered='${qr && qr.dataset.qrRendered}'，出声=${refused}）`);
 
       lines.push(`ELMT ${__arkui_dom_elmtRecords.size}`);
     } catch (e) {

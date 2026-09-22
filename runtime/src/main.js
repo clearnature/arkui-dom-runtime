@@ -1784,6 +1784,7 @@
       return m ? JSON.parse(JSON.stringify(m)) : null;
     },
     __arkui_dom_syncAlignRules: syncAlignRules,
+    __arkui_dom_syncDrawings: syncDrawings,   // R44：测试侧触发补画（DSL 建的绘制类组件不经过渲染管线）
     __arkui_dom_layout_warnings: layoutWarnings,
     __arkui_dom_loadRoute: loadRoute,
     __arkui_dom_elmtRecords: elmtRecords,
