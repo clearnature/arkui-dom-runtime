@@ -810,6 +810,23 @@ block（真机占满行宽）。夹具 mq1 加 `step: 30`（默认 6 一圈 4 �
 QRCode ECC 显式 M）、`harmony-proj/.../ShowDemo.ets` + `fixtures/pages/ShowDemo.ts`（step 30 重测）、
 `test/{navtransdemo,showdemo,qrdemo}.html`、五文档
 
+### R43 — 语义确证第三轮：滚动联动 + SLIDE_SWITCH 照真机修正 ✅（2026-09-21）
+
+**① 滚动联动**（`title_bar_pattern.cpp`）：确证收缩模型 = `高度 clamp(default+scroll, 56, Full)`
+（阈值 = 滚满 `Full−Mini` px，与实现一致）；**修正副标题透明度** = `(H−56)/(max−56)`（原
+0.7×(1−col)）；**修正主标题** = 字号插值 L=30fp↔M=26fp 经 `Curves::SHARP`
+（cubic-bezier(0.4,0,0.6,1)），DOM 等价 `scale = (26+SHARP(p)×4)/30`（原线性高度比）。
+
+**② SLIDE_SWITCH**（原 scale(0.8) 推断）：照 `rosen_transition_effect.cpp` 确证
+`SLIDE_SWITCH_SCALE=0.85`；真机自带动效 curve(0.24,0,0.5,1)/600ms 属渲染层，DOM 时长仍走外层
+窗口。transitiondemo ⑪ 断言升级为确证参数。
+
+**验收**：navtransdemo + transitiondemo 双端通过。**破坏验证（3 处，各 1 红）**：副标题公式回
+0.7；SHARP 换线性（scale 0.899≠0.884）；SLIDE_SWITCH 回 0.8。还原后 md5 一致。
+
+**触及**：`runtime/src/nav.js`（副标题/主标题公式 + SHARP 求值器）、`runtime/src/animation.js`
+（SLIDE_SWITCH 参数）、`test/{navtransdemo,transitiondemo}.html`（公式化断言）、五文档
+
 ### R41 — QRCode 编码器换成真机源码：`arkui-qrcodegen` → WASM ✅（2026-09-21）
 
 **做法**：OHOS `arkui_qrcodegen` 的 C++ 源码（7 cpp + 8 h，88.5KB）**逐字复制**进
@@ -1535,8 +1552,9 @@ animated=false 与 disableAnimation 的"不滑"对照。双端通过。
 **破坏验证（3 处）**：联动入口 return → **13 红**；动画全关 → **6 红**；端点 `p>=1`→`p>1` → **5 红**
 （全是通知、插值一条不红——几何与通知两条链互相独立）。还原后 md5 一致。
 
-**已知限制**：~~时长/曲线是推断~~（R40 确证 450ms 弹簧 + ±50%/20% 视差）；**阈值/缩放比仍是
-实现选择**（真机对应 `title_bar_pattern.cpp` 滚动收缩，未逐项对照）；`customNavContentTransition`、
+**已知限制**：~~时长/曲线/阈值/缩放比是推断~~（R40 确证转场 450ms 弹簧 + ±50%/20% 视差；
+R43 确证联动——阈值 = 滚满 `Full−Mini` px、副标题透明度 = `(H−56)/(max−56)`、主标题字号插值
+L=30fp↔M=26fp 经 SHARP，出处 `title_bar_pattern.cpp`）；`customNavContentTransition`、
 `enableModeChangeAnimation`（单↔分栏切换动画，API 15）、`onNavBarStateChange` 未实现（记警告）；
 `edgeEffect` 弹性不模拟（不足一屏滚不动，联动无从发生——`.d.ts` 主场景就是超一屏）。
 

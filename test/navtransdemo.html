@@ -102,17 +102,30 @@
       });
 
       // ══════════ ④ CommonTitle 内部视觉（n3）：主标题缩小 / 副标题淡出 ══════════
-      // Free JSDoc：主标题随滚动缩小、副标题淡出但尺寸不变。缩放比取高度比（实现选择）。
+      // Free JSDoc：主标题随滚动缩小、副标题淡出但尺寸不变。R43 照真机公式：
+      // 副标题 opacity = (H−56)/(max−56) = 1−col；主标题 = 字号插值比 (26+SHARP(p)×4)/30
+      //（字号 L=30fp/M=26fp，映射 Curves::SHARP=cubic-bezier(0.4,0,0.6,1)，title_bar_pattern.cpp）。
       await group('Free 联动·common', async () => {
         const bar3 = titlebarOf('nt-n3');
         const main3 = () => bar3.querySelector('[data-arkui-nav-title-main]');
         const sub3 = () => bar3.querySelector('[data-arkui-nav-title-sub]');
+        const sharp = (p) => {                       // 测试侧独立实现同公式（期望值来源）
+          let lo = 0, hi = 1, t = p;
+          for (let i = 0; i < 24; i++) {
+            const x = 3 * (1 - t) * (1 - t) * t * 0.4 + 3 * (1 - t) * t * t * 0.6 + t * t * t;
+            if (x < p) lo = t; else hi = t;
+            t = (lo + hi) / 2;
+          }
+          return 3 * (1 - t) * t * t + t * t * t;
+        };
         scroll(el('list3'), 20);                       // p=20/82，H=138-82*20/82=118
         const op = parseFloat(sub3().style.opacity);
         check(chrome('nt-n3').barHeight === 118, `滚 20px → 118vp（实际 ${chrome('nt-n3').barHeight}）`);
-        check(op > 0.4 && op < 0.6, `副标题淡出中（opacity=${sub3().style.opacity}）`);
+        const opExp = 1 - 20 / 82;
+        check(Math.abs(op - opExp) <= 0.01, `副标题淡出中 = 真机公式 (H−56)/(max−56)（opacity=${op}，期望 ${opExp.toFixed(3)}）`);
         const sc = parseFloat((main3().style.transform.match(/scale\(([\d.]+)/) || [])[1]);
-        check(sc > 0.84 && sc < 0.86, `主标题缩小中（scale=${main3().style.transform}）`);
+        const scExp = (26 + sharp(20 / 82) * (30 - 26)) / 30;
+        check(Math.abs(sc - scExp) <= 0.01, `主标题缩小 = 字号插值比 (26+SHARP(p)×4)/30（scale=${main3().style.transform}，期望 ${scExp.toFixed(3)}）`);
         scroll(el('list3'), 82);
         check(chrome('nt-n3').barHeight === 56, `滚满 82px → Mini 56vp（实际 ${chrome('nt-n3').barHeight}）`);
         check(sub3().style.opacity === '0', `副标题完全淡出（opacity='${sub3().style.opacity}'）`);

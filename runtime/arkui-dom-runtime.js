@@ -420,10 +420,14 @@
         continue;
       }
       if (kind === 'slide') { out.transforms.push('translate(-100%, 0)'); continue; }        // 推断：从左滑入
-      if (kind === 'slideSwitch') {                                                          // 推断：缩小+淡出
-        out.transforms.push('scale(0.8)');
+      if (kind === 'slide') { out.transforms.push('translate(-100%, 0)'); continue; }        // 推断：从左滑入
+      if (kind === 'slideSwitch') {
+        // R43 照真机参数（rosen_transition_effect.cpp：SLIDE_SWITCH_SCALE=0.85；真机自带动效
+        // curve(0.24,0,0.5,1)/600ms 是渲染层参数，DOM 侧透明度仍取 0、时长走外层窗口）
+        out.transforms.push('scale(0.85)');
         if (out.opacity === undefined) out.opacity = 0;
-        out.warnings.push('TransitionEffect.SLIDE_SWITCH 的具体参数 .d.ts 未给出 → 按 scale(0.8)+opacity 0 近似（推断）');
+        out.warnings.push('TransitionEffect.SLIDE_SWITCH 参数照真机近似：scale(0.85)+opacity 0'
+          + '（rosen_transition_effect.cpp SLIDE_SWITCH_SCALE=0.85；.d.ts 未给参数）');
         continue;
       }
       out.warnings.push(`TransitionEffect 的 ${kind} 未实现（本次不动这一项）`);
@@ -2841,15 +2845,29 @@
     // Free 收缩的标题内部视觉（Free JSDoc）：主标题随滚动缩小、副标题淡出但尺寸不变 ——
     // 只对 text/common 形态生效（"effective only when title is set to ResourceStr or
     // NavigationCommonTitle"）；builder 等其他形态只随高度变小（"changes in mere location"）。
-    // 缩放比取高度比（Full 112→Mini 56 即缩到一半），是 DOM 化映射的选择。
+    // R43 照真机公式（title_bar_pattern.cpp GetSubtitleOpacity/GetFontSize + 
+    // navigation_bar_theme.cpp 字号默认 title_primary=30fp / title_secondary=26fp）：
+    // · 副标题透明度 = (H − 56) / (max − 56)，随收缩从 1 线性到 0
+    // · 主标题 = 字号插值（L=30fp ↔ M=26fp），映射经 Curves::SHARP（cubic-bezier(0.4,0,0.6,1)，
+    //   GetMappedOffset）；DOM 侧等价实现为 transform scale = (26 + SHARP(p)×4) / 30
+    const sharp = (p) => {                       // Curves::SHARP = cubic-bezier(0.4, 0, 0.6, 1)
+      let lo = 0, hi = 1, t = p;
+      for (let i = 0; i < 24; i++) {             // 解 x(t)=p 的 t（x(t) 单调），再取 y(t)
+        const x = 3 * (1 - t) * (1 - t) * t * 0.4 + 3 * (1 - t) * t * t * 0.6 + t * t * t;
+        if (x < p) lo = t; else hi = t;
+        t = (lo + hi) / 2;
+      }
+      return 3 * (1 - t) * t * t + t * t * t;    // y(t)：P1y=0、P2y=1
+    };
+    const p = col;
     const shrinkEl = st.titleEl.querySelector('[data-arkui-nav-title-main],[data-arkui-nav-title-text]');
     if (shrinkEl) {
-      const k = H0 > 0 ? H / H0 : 1;
+      const k = H0 > 0 ? (26 + sharp(p) * (30 - 26)) / 30 : 1;   // 字号比（真机 L=30fp / M=26fp）
       shrinkEl.style.transformOrigin = 'left center';
       shrinkEl.style.transform = col > 0 && k < 1 ? `scale(${k})` : '';
     }
     const subEl = st.titleEl.querySelector('[data-arkui-nav-title-sub]');
-    if (subEl) subEl.style.opacity = col > 0 ? String(0.7 * (1 - col)) : '';
+    if (subEl) subEl.style.opacity = col > 0 ? String(1 - col) : '';
     // ③ 目标区：Split 时只占内容列（右侧/左侧），Stack 时铺满整个 Navigation
     if (st.areaEl) {
       if (split) {

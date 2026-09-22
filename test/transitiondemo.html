@@ -251,13 +251,13 @@
         Text.pop();
         await tick(20);
         const w = (__arkui_dom_layout_warnings || []).slice(before).map(String);
-        check(w.some((m) => /SLIDE_SWITCH/.test(m) && /推断/.test(m)),
-          `SLIDE_SWITCH 的参数是推断的 → 出声：'${(w.find((m) => /SLIDE_SWITCH/.test(m)) || '(无)').slice(0, 60)}'`);
+        check(w.some((m) => /SLIDE_SWITCH/.test(m) && /0\.85/.test(m)),
+          `SLIDE_SWITCH 参数照真机出声：'${(w.find((m) => /SLIDE_SWITCH/.test(m)) || '(无)').slice(0, 60)}'`);
         const r = newRunsSince(n0);
         check(r.length === 1 && r[0].dir === 'enter' && r[0].id === 'sw',
           `挂上就立刻走了出现过渡：${JSON.stringify(r.map((x) => `${x.dir}:${x.id}`))}`);
-        check(/scale\(0\.8\)/.test(r[0] && r[0].offText) && /opacity=0/.test(r[0] && r[0].offText),
-          `SLIDE_SWITCH 的近似偏离态算出来了：'${r[0] && r[0].offText}'`);
+        check(/scale\(0\.85\)/.test(r[0] && r[0].offText) && /opacity=0/.test(r[0] && r[0].offText),
+          `SLIDE_SWITCH 的真机偏离态算出来了：'${r[0] && r[0].offText}'`);
         await settle();
         check(el('sw') !== null && mark('sw') === '', 'sw 节点留下且标记清干净');
       });

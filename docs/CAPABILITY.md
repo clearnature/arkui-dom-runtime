@@ -248,8 +248,7 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
   仍是按语义推断的实现取舍。`onWillAppear` 的绝对时机也不同（真机在挂载前，本实现在子树挂载后）。
 - **`Navigation` 转场与滚动的数字**：~~全是推断~~ **转场 R40 照真机确证**（450ms 弹簧上界 +
   入页 +50%/视差 20%/弹出 +50%，`navigation_group_node.cpp`；CSS 曲线为临界阻尼近似）；
-  联动收缩阈值 = 滚满 `Full−Mini` px、主标题 scale = 高度比——这两条仍是实现选择（真机对应
-  `title_bar_pattern.cpp` 滚动收缩，未逐项对照）。范围弹栈（`popToName`/`popToIndex`/`clear`）**立即销毁不动画**（真机也只动画
+  联动收缩阈值 = 滚满 `Full−Mini` px、高度 clamp [56, Full]；副标题透明度 = `(H−56)/(max−56)`；主标题 = 字号插值 L=30fp↔M=26fp 经 `Curves::SHARP`（DOM 等价 scale=(26+SHARP(p)×4)/30）——R43 照 `title_bar_pattern.cpp` 确证。范围弹栈（`popToName`/`popToIndex`/`clear`）**立即销毁不动画**（真机也只动画
   栈顶）；`edgeEffect` 弹性不模拟（内容不足一屏滚不动 → 联动无从发生，JSDoc 主场景就是"超过一屏"）。
 - 滚动：`LazyForEach` **有虚拟滚动**（1000 项只渲染 11 项，spacer 撑总高）；但普通 `ForEach` 仍是**全量渲染**，
   `LazyForEach` 的数据变更也是**整窗重建**（未做按 key 的增量 diff），且无 `onDataAdd/Delete` 的精确索引更新。

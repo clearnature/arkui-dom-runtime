@@ -658,8 +658,10 @@ PASS disableAnimation(true)：push 无转场、pop 立即销毁
 74 条恢复全绿。
 
 **已知限制**（都写进 CAPABILITY）：~~转场的时长/曲线是推断~~（R40 已照 `navigation_group_node.cpp`
-确证：450ms 弹簧上界 + ±50%/20% 视差）；**滚动联动的收缩阈值与缩放比仍是实现选择**（真机对应
-`title_bar_pattern.cpp` 的滚动收缩逻辑，未逐项对照）；
+确证：450ms 弹簧上界 + ±50%/20% 视差）；~~滚动联动的收缩阈值与缩放比是实现选择~~ **R43 照
+`title_bar_pattern.cpp` 确证**：收缩阈值 = 滚满 `Full−Mini` px、高度 clamp [56, Full]（一致）；
+副标题透明度 = `(H−56)/(max−56)`（原 0.7 系数已修正）；主标题 = 字号插值 L=30fp ↔ M=26fp、
+映射 `Curves::SHARP`（DOM 侧等价 scale = (26+SHARP(p)×4)/30，原线性高度比已修正）；
 `customNavContentTransition`（自定义转场协议）/`enableModeChangeAnimation`（单栏↔分栏切换动画，
 API 15）/`onNavBarStateChange` 仍未实现（记警告）；`edgeEffect` 弹性不模拟——内容不足一屏的 List
 滚不动，联动也就无从发生（`.d.ts` 的主场景是"超过一屏"）。
@@ -1280,6 +1282,26 @@ enterKeyType 处理器摘除 → **2 红**（失败信息恰好演示回退 Done
 `tools/check-all.sh`（+1 步）、`package.json`（typecheck script）、`runtime/src/{input,v2,small,
 main,nav,ability,draw,animation,gesture,show,popup,area}.js`（JSDoc 类型注解 + EventDeco 改名 +
 onSubmit 修复 + enterKeyType 补全）、`test/{stepdemo,inputdemo,textdemo}.html`、五文档
+
+## R43：语义确证第三轮——滚动联动 + SLIDE_SWITCH 照真机修正 ✅
+
+**① 滚动联动**（`title_bar_pattern.cpp`，原"阈值/缩放比是实现选择"）：确证 + 两处修正——
+收缩模型真机 = `高度 clamp(default+scroll, 56, Full)`，**阈值 = 滚满 Full−Mini px 与实现一致**；
+**副标题透明度 = (H−56)/(max−56)**（1 线性到 0；原实现 0.7×(1−col)，已修正）；主标题真机是
+**字号插值**（主题 `title_primary=30fp` ↔ `title_secondary=26fp`，映射 `Curves::SHARP`
+= cubic-bezier(0.4,0,0.6,1)），DOM 侧等价实现 scale = (26+SHARP(p)×4)/30（原线性高度比，
+已修正；SHARP 关于中心对称，p=0.5 时同为 0.5）。
+
+**② SLIDE_SWITCH**（原 scale(0.8) 推断）：照 `rosen_transition_effect.cpp` 确证
+`SLIDE_SWITCH_SCALE=0.85`（真机自带动效 curve(0.24,0,0.5,1)/600ms 属渲染层，DOM 侧时长仍走
+外层窗口）。transitiondemo ⑪ 断言从"出声说推断"升级为"确证参数 0.85"。
+
+**验收**：navtransdemo + transitiondemo 双端通过。**破坏验证（3 处，各 1 红）**：副标题公式回
+0.7 → 公式断言红（0.529≠0.756）；SHARP 换线性 → scale 断言红（0.899≠0.884）；SLIDE_SWITCH 回
+0.8 → offText 断言红。还原后 md5 一致。
+
+**触及**：`runtime/src/nav.js`（副标题/主标题公式 + SHARP 求值器）、`runtime/src/animation.js`
+（SLIDE_SWITCH 参数）、`test/{navtransdemo,transitiondemo}.html`（公式化断言）、五文档
 
 ## R40：语义清账——真机源码对照三连 ✅
 

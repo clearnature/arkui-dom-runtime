@@ -8,9 +8,11 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R42**（语义确证第二轮，无实现改动：标题栏高度 56/112/138 照
-  `navigation_bar_theme.cpp` + `nav_bar_layout_algorithm.cpp` 确证；生命周期"先 will 后实"照
-  `navigation_pattern.cpp` 部分确证；Marquee/转场的文档滞留行清理）— **PASS**（7 步门禁，无新破坏面）
+- 上次切片：**R43**（语义确证第三轮，两处实现修正：滚动联动副标题透明度 = (H−56)/(max−56)、
+  主标题字号插值 L=30fp↔M=26fp 经 SHARP；SLIDE_SWITCH scale 0.8→0.85 照
+  `rosen_transition_effect.cpp`）— **PASS**（navtransdemo + transitiondemo 双端；破坏 1/1/1 红）
+- 上一轮：**R42**（语义确证第二轮，无实现改动：标题栏高度 56/112/138 确证——注意
+  `navigation_declaration.h` 的 137 是未使用常量，险些误改；生命周期"先 will 后实"部分确证）
 - 上一轮：**R41**（QRCode 编码器换成真机源码：OHOS arkui_qrcodegen 的 C++ 源码逐字复制
   → emscripten 编独立 WASM 单文件加载器，替换 node-qrcode vendor）— **PASS**
   （qrdemo 12 + widgets 双端；破坏 1 红（ECC 换 HIGH 采样 55/100）；jsQR 交叉验证保留）
@@ -107,4 +109,5 @@ bash electron/run.sh <用例>   # 单用例·Electron
 | 2026-09-21 | R39 语义纠偏 | e854fc2 | stepdemo 26 条双端；破坏 1/1/1 红 | 用户指了真机源码库 /data/work/compiler/Ark；Stepper 三处分歧照 stepper_pattern.cpp 对齐（先 CHG 后 NEXT／Skip 不切页／Waiting 忽略）；编程跳页静默（swiper 桥不转发）；新坑 94（.d.ts 给签名不给时序）；后续可用 pattern/ 目录逐组件清"推断"账 |
 | 2026-09-21 | R40 语义清账 | c624b68 | navtransdemo 52 / showdemo 27 / qrdemo 12 双端；破坏 1/1/1 红 | ①Nav 转场：450ms 弹簧 + 入页 50%/视差 20%/弹出 50%（原 300ms 全页推断）；②Marquee：距离×85/step（原 step×16ms/帧），基座改 block，夹具 step 30 走完整重测；③QRCode ECC 确证 M（真机硬编码；node-qrcode 默认即 M——R33 的 L 注记是误判，从未真渲染过 L）；modules.get(row,col) 行优先，读反得转置（暗格数同、位置 43% 错） |
 | 2026-09-21 | R41 编码器真机化 | 373e619 | qrdemo 12 + widgets 双端；破坏 1 红 | 用户要求"直接复用真机代码不要单独实现"：arkui_qrcodegen C++ 源码逐字复制（md5 校验）→ emcc STANDALONE_WASM（emscripten 6 工厂是 async 的，同步首绘等不起）→ base64 内嵌单文件加载器；data[i]&1=暗格、ECC 恒 MEDIUM(0)；node-qrcode vendor 删除、jsQR 保留；THIRD-PARTY-NOTICES §3b 重写 |
-| 2026-09-21 | R42 语义确证二轮 | （本次提交） | 7 步门禁全绿（无实现改动） | 标题栏 56/112/138 确证（theme 默认值，138 正确——navigation_declaration.h 的 137 是未使用常量，险些误改）；生命周期"先 will 后实"部分确证；Marquee/转场文档滞留清理；FREE 初始高度同取 FULL_*（与我们一致） |
+| 2026-09-21 | R42 语义确证二轮 | 241bb47 | 7 步门禁全绿（无实现改动） | 标题栏 56/112/138 确证（theme 默认值，138 正确——navigation_declaration.h 的 137 是未使用常量，险些误改）；生命周期"先 will 后实"部分确证；Marquee/转场文档滞留清理；FREE 初始高度同取 FULL_*（与我们一致） |
+| 2026-09-21 | R43 语义确证三轮 | （本次提交） | navtransdemo + transitiondemo 双端；破坏 1/1/1 红 | 滚动联动确证 + 两处修正：副标题透明度 = (H−56)/(max−56)（原 0.7 系数错）、主标题字号插值 L=30fp↔M=26fp 经 SHARP 曲线（DOM 等价 scale=(26+SHARP(p)×4)/30，SHARP 对称故中点断言不变）；SLIDE_SWITCH 确证 scale 0.85（原 0.8 推断）；SHARP 求值器 = 二分解 x(t)=p |

@@ -1509,9 +1509,10 @@ minContentWidth 360，`.d.ts` 原文；用组件宽度而不是窗口宽度，�
 （JSDoc："changes in mere location"）。**模式通知只在端点**：`p≥1` → `Mini`、`p=0` → `Full`，
 中途往返不重发。
 
-**已知限制**：~~转场时长/曲线是推断~~（R40 确证：450ms 弹簧上界 + ±50%/20% 视差）；**收缩阈值、
-缩放比仍是实现选择**（真机对应 `title_bar_pattern.cpp` 滚动收缩，未逐项对照）；
-`customNavContentTransition`（自定义转场
+**已知限制**：~~转场时长/曲线、收缩阈值、缩放比是推断~~（R40 确证转场 450ms 弹簧 + ±50%/20%
+视差；R43 确证联动——阈值 = 滚满 `Full−Mini` px、高度 clamp [56, Full]，副标题透明度 =
+`(H−56)/(max−56)`，主标题字号插值 L=30fp↔M=26fp 经 `Curves::SHARP`，DOM 等价 scale =
+`(26+SHARP(p)×4)/30`；出处 `title_bar_pattern.cpp`）；`customNavContentTransition`（自定义转场
 协议）、`enableModeChangeAnimation`（单↔分栏切换动画，API 15）未实现（记警告）；`edgeEffect` 弹性
 不模拟（不足一屏滚不动 → 联动无从发生，JSDoc 主场景就是超一屏）。
 
@@ -1683,16 +1684,16 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   fixtures 转换产物  43 个：AnimDemo AsyncIO Callee CanvasDemo Detail DrawDemo GestureDemo GestureGroupDemo Home Index InputDemo Layout Lazy LazyVar MeasArea MeasImage MeasNotify Measure MediaDemo NavBarDemo NavDemo NavTransDemo NetFile Observe PopDemo PromptAct Provide QrDemo RelDemo Rich ShapeDemo ShowDemo SmallDemo StepDemo SwiperDemo TabsGrid TextDemo TextMeasure TransitionDemo UiContextDemo V2 Widgets XCompDemo
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          584.1 KB
-  runtime(src)     335.6 KB
-  test             607.6 KB
+  runtime          585.3 KB
+  runtime(src)     336.8 KB
+  test             608.4 KB
   tools            56.5 KB
   electron(src)    22.1 KB
-  docs             432.5 KB
+  docs             434.0 KB
   fixtures         340.2 KB
 
 == 逐文件（文档"文件职责"表的来源）==
-  runtime/arkui-dom-runtime.js        338304 B  330.4 KB
+  runtime/arkui-dom-runtime.js        339546 B  331.6 KB
   runtime/generated-components.js      57617 B  56.3 KB
   runtime/ohos-shims.js                61848 B  60.4 KB
   tools/extract.mjs                     6563 B  6.4 KB
@@ -1709,16 +1710,16 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   electron/preload.js                   1961 B  1.9 KB
   package.json                          1366 B  1.3 KB
   .gitignore                             757 B  0.7 KB
-  README.md                           139981 B  136.7 KB
+  README.md                           141759 B  138.4 KB
   THIRD-PARTY-NOTICES.md               10718 B  10.5 KB
-  docs/ARCHITECTURE.md                145437 B  142.0 KB
-  docs/CAPABILITY.md                   49777 B  48.6 KB
+  docs/ARCHITECTURE.md                145602 B  142.2 KB
+  docs/CAPABILITY.md                   49859 B  48.7 KB
   docs/DEVELOPING.md                   64310 B  62.8 KB
-  docs/ROADMAP.md                     116218 B  113.5 KB
+  docs/ROADMAP.md                     117533 B  114.8 KB
   docs/surface-measurement.md           6496 B  6.3 KB
   docs/SESSION-2026-09-20.md           12842 B  12.5 KB
   runtime/src/ability.js                9225 B  9.0 KB
-  runtime/src/animation.js             27711 B  27.1 KB
+  runtime/src/animation.js             28024 B  27.4 KB
   runtime/src/area.js                  21648 B  21.1 KB
   runtime/src/canvas.js                 9472 B  9.3 KB
   runtime/src/draw.js                  18208 B  17.8 KB
@@ -1726,7 +1727,7 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   runtime/src/input.js                 10336 B  10.1 KB
   runtime/src/layout.js                14213 B  13.9 KB
   runtime/src/main.js                  91269 B  89.1 KB
-  runtime/src/nav.js                   52666 B  51.4 KB
+  runtime/src/nav.js                   53595 B  52.3 KB
   runtime/src/popup.js                  4905 B  4.8 KB
   runtime/src/runtime.d.ts              5042 B  4.9 KB
   runtime/src/shape.js                  7206 B  7.0 KB
@@ -1797,7 +1798,7 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   test/mediademo.html                   3877 B  3.8 KB
   test/navbardemo.html                 12670 B  12.4 KB
   test/navdemo.html                    14837 B  14.5 KB
-  test/navtransdemo.html               15741 B  15.4 KB
+  test/navtransdemo.html               16591 B  16.2 KB
   test/netfile.html                     5302 B  5.2 KB
   test/observe.html                     6232 B  6.1 KB
   test/opfs-probe.html                  1620 B  1.6 KB
@@ -1817,7 +1818,7 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   test/tabgrid.html                    10096 B  9.9 KB
   test/textdemo.html                    5921 B  5.8 KB
   test/textmeasure.html                 9021 B  8.8 KB
-  test/transitiondemo.html             17007 B  16.6 KB
+  test/transitiondemo.html             16996 B  16.6 KB
   test/uictxdemo.html                   4532 B  4.4 KB
   test/v2.html                          7235 B  7.1 KB
   test/vendor                           4096 B  4.0 KB

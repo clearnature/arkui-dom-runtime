@@ -138,10 +138,14 @@
         continue;
       }
       if (kind === 'slide') { out.transforms.push('translate(-100%, 0)'); continue; }        // 推断：从左滑入
-      if (kind === 'slideSwitch') {                                                          // 推断：缩小+淡出
-        out.transforms.push('scale(0.8)');
+      if (kind === 'slide') { out.transforms.push('translate(-100%, 0)'); continue; }        // 推断：从左滑入
+      if (kind === 'slideSwitch') {
+        // R43 照真机参数（rosen_transition_effect.cpp：SLIDE_SWITCH_SCALE=0.85；真机自带动效
+        // curve(0.24,0,0.5,1)/600ms 是渲染层参数，DOM 侧透明度仍取 0、时长走外层窗口）
+        out.transforms.push('scale(0.85)');
         if (out.opacity === undefined) out.opacity = 0;
-        out.warnings.push('TransitionEffect.SLIDE_SWITCH 的具体参数 .d.ts 未给出 → 按 scale(0.8)+opacity 0 近似（推断）');
+        out.warnings.push('TransitionEffect.SLIDE_SWITCH 参数照真机近似：scale(0.85)+opacity 0'
+          + '（rosen_transition_effect.cpp SLIDE_SWITCH_SCALE=0.85；.d.ts 未给参数）');
         continue;
       }
       out.warnings.push(`TransitionEffect 的 ${kind} 未实现（本次不动这一项）`);
