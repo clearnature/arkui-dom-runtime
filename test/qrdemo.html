@@ -18,7 +18,7 @@
   <script src="../runtime/generated-components.js"></script>
   <script src="../runtime/arkui-dom-runtime.js"></script>
   <script src="../runtime/ohos-shims.js"></script>
-    <script src="../runtime/vendor/qrcode-1.5.4.js"></script>
+  <script src="../runtime/vendor/arkui-qrcodegen.js"></script>
   <script src="../test/vendor/jsqr-1.4.0.js"></script>
   <script src="../build/qrdemo-module.js"></script>
   <script>
@@ -79,35 +79,37 @@
           `定制背景 '#eeeeff'（rgb(238,238,255)，实际 ${n3.data[0]}/${n3.data[1]}/${n3.data[2]}）`);
       });
 
-      // ══════════ ③b ECC 级别（R40 确证 M）：渲染矩阵 = vendor M 级 ══════════
-      await group('ECC 级别', async () => {
+      // ══════════ ③b 编码器对照（R41）：渲染矩阵 = 真机编码器 MEDIUM 输出 ══════════
+      await group('编码器对照', async () => {
         const qr = el('qr1');
         const v = qr.__arkuiQrValue;
-        const M = window.ArkuiVendorQrcode.create(v, { errorCorrectionLevel: 'M' }).modules;
-        const Lm = window.ArkuiVendorQrcode.create(v, { errorCorrectionLevel: 'L' }).modules;
-        const cell = Math.max(1, Math.floor(Math.min(qr.width, qr.height) / (M.size + 8)));
-        const offX = Math.floor((qr.width - cell * (M.size + 8)) / 2);
-        const offY = Math.floor((qr.height - cell * (M.size + 8)) / 2);
+        const med = window.ArkuiQrcodegen.encode(v, 0).data;   // 真机 MEDIUM（组件硬编码档位）
+        const high = window.ArkuiQrcodegen.encode(v, 1).data;  // HIGH 档位：同一内容矩阵必不同
+        const size = window.ArkuiQrcodegen.encode(v, 0).width;
+        const cell = Math.max(1, Math.floor(Math.min(qr.width, qr.height) / (size + 8)));
+        const offX = Math.floor((qr.width - cell * (size + 8)) / 2);
+        const offY = Math.floor((qr.height - cell * (size + 8)) / 2);
         const ctx = qr.getContext('2d');
-        // 在 M 级矩阵上隔 3 格采样：渲染像素的暗/亮必须逐格一致（真机 qrcode_modifier.cpp
-        // 硬编码 QRCODE_ECC_MEDIUM；本内容 L=25 / M=29 / H=33 版本可区分，L 会对不上）
-        let ok = 0, n = 0;
-        for (let y = 0; y < M.size; y += 3) {
-          for (let x = 0; x < M.size; x += 3) {
+        // 在 MEDIUM 矩阵上隔 3 格采样：渲染像素的暗/亮必须逐格一致（渲染路径守卫；
+        // 独立性由 ② 的 jsQR 交叉验证承担——解码器与编码器来自不同实现）
+        let ok = 0, n = 0, medHighDiff = false;
+        for (let i = 0; i < med.length; i++) if (med[i] !== high[i]) medHighDiff = true;
+        for (let y = 0; y < size; y += 3) {
+          for (let x = 0; x < size; x += 3) {
             n++;
             const d = ctx.getImageData(offX + (4 + x) * cell + (cell >> 1), offY + (4 + y) * cell + (cell >> 1), 1, 1).data;
-            if ((d[0] < 128) === !!M.get(y, x)) ok++;
+            if ((d[0] < 128) === !!med[y * size + x]) ok++;
           }
         }
-        check(ok === n && M.size !== Lm.size,
-          `渲染矩阵 = M 级（采样 ${ok}/${n} 一致；版本 M=${M.size} ≠ L=${Lm.size}）`);
+        check(ok === n && medHighDiff,
+          `渲染矩阵 = 真机编码器 MEDIUM 输出（采样 ${ok}/${n} 一致；MEDIUM/HIGH 矩阵可区分）`);
       });
 
       // ══════════ ④ 回归：没有"未实现"假警告 ══════════
       await group('回归', async () => {
         const bad = __arkui_dom_layout_warnings.filter((w) => /QRCode\./.test(String(w)));
         check(bad.length === 0, `QRCode 属性不再记"未实现"警告（剩 ${bad.length} 条：${bad.slice(0, 2).join('|')}）`);
-        check(typeof window.ArkuiVendorQrcode.create === 'function', 'vendor 编码器已加载');
+        check(typeof window.ArkuiQrcodegen.encode === 'function', '真机编码器 vendor 已加载（arkui-qrcodegen WASM）');
       });
 
       lines.push(`QR rendered=${el('qr1').dataset.qrRendered} dec='${decodeCanvas('qr1')}'`);

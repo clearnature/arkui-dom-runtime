@@ -642,7 +642,8 @@ backgroundColor 默认 '#ffffffff'（API 11+）／contentOpacity 默认 1 [0,1]�
 最多 512 字符（超出取前 512）。
 
 **实现**：QRCode 组件接在信息展示家族（show.js）。**不自己实现编码器**——移植第三方库
-node-qrcode@1.5.4（`global.ArkuiVendorQrcode`，bun 打包单文件经典脚本，库代码零修改，只加
+~~node-qrcode@1.5.4~~ **R41 起换真机 arkui-qrcodegen 的 WASM**（`global.ArkuiQrcodegen`，
+单文件内嵌、file:// 可用，源码逐字复制零修改，
 ESM 胶水入口）；vendor 缺席记警告并降级（不静默）。渲染在渲染后同步阶段（redrawQr 挂
 syncDrawings——不变量 18）；1:1、quiet zone 4、颜色变化重画。**解码器**来自另一个独立第三方
 jsQR@1.4.0（test/vendor，Apache-2.0，原样拷贝）——"画出来的码能被独立解码器读回原文"
@@ -805,6 +806,31 @@ block（真机占满行宽）。夹具 mq1 加 `step: 30`（默认 6 一圈 4 �
 **触及**：`runtime/src/nav.js`（转场编舞重写）、`runtime/src/show.js`（Marquee 公式 + block 基座 +
 QRCode ECC 显式 M）、`harmony-proj/.../ShowDemo.ets` + `fixtures/pages/ShowDemo.ts`（step 30 重测）、
 `test/{navtransdemo,showdemo,qrdemo}.html`、五文档
+
+### R41 — QRCode 编码器换成真机源码：`arkui-qrcodegen` → WASM ✅（2026-09-21）
+
+**做法**：OHOS `arkui_qrcodegen` 的 C++ 源码（7 cpp + 8 h，88.5KB）**逐字复制**进
+`runtime/vendor/arkui-qrcodegen/src/`（md5 对源校验零修改）；本地附加物仅 securec 三函数
+兼容 glue + emcc 构建脚本 + 同步加载器。产物 = 单文件 WASM 脚本（24KB wasm base64 内嵌，
+file:// 与 http:// 同一份）——编码器与真机设备**字面上同一份代码**。
+
+**关键语义**：`QrcodeImageEncodeString(text, ecc)` → `{version, width, data}`，`data[i] & 0x1`
+为暗格（`0x80` 为函数图案标记）；ECC 恒 MEDIUM(0)（真机组件硬编码）；矩阵拷出后立即
+`QrcodeImageFree`。**STANDALONE_WASM** 的原因：emscripten 6 的 JS 工厂是 async 的，QRCode
+首绘在同步阶段等不起——独立产物用同步的 `new WebAssembly.Module` 自行实例化。
+
+**替换面**：show.js 编码调用（+降级路径补警告，顺手清一处 BROKEN-1 残留注释）、qrdemo
+（编码器对照断言：渲染矩阵 vs 真机编码器 MEDIUM 输出 100 格采样一致 + MEDIUM/HIGH 可区分）、
+widgets vendor 引用、node-qrcode vendor 删除（NOTICES §3b 重写）。jsQR 保留（独立解码交叉
+验证的独立性更纯）。渲染差异记录：真机 API12+ 满幅无 quiet zone，本实现保留 4 模块 quiet
+（规范 + jsQR 依赖）。
+
+**验收**：qrdemo 12 条 + widgets 双端通过。**破坏验证（1 处，1 红）**：ECC 换 HIGH(1) →
+编码器对照断言红（采样 55/100）。还原后 md5 一致。
+
+**触及**：`runtime/vendor/arkui-qrcodegen/`（新）、`runtime/vendor/arkui-qrcodegen.js`（新）、
+`runtime/vendor/qrcode-1.5.4.*`（删）、`runtime/src/show.js`、`runtime/src/main.js`（注释）、
+`test/{qrdemo,components}.html`、THIRD-PARTY-NOTICES §3b、五文档
 
 ---
 

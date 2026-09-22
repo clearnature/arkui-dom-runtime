@@ -996,10 +996,11 @@ PASS set 后 get 返回记录值（RECT320x240）
 默认 1 范围 [0,1]（全部 JSDoc 原文）；最多 512 字符（超出取前 512）。
 
 **实现**（QRCode 组件接在 `runtime/src/show.js` 信息展示家族）：**不自己实现编码器**——
-编码器是移植的第三方库 node-qrcode@1.5.4（`global.ArkuiVendorQrcode`，bun 打包为单文件经典脚本，
+编码器是真机源码直接复用（~~R33 移植的 node-qrcode~~ **R41 换成 arkui_qrcodegen 的 WASM**，
+`global.ArkuiQrcodegen`，单文件内嵌、file:// 可用，
 **库代码零修改**，只加我们自己的 ESM 胶水入口）；未加载 vendor 时**记警告并降级**（不静默、
 不假画）。渲染在渲染后同步阶段（`redrawQr`，挂在 `syncDrawings`——不变量 18：等真实尺寸）；
-canvas 内容尺寸 1:1、quiet zone 4 模块（node-qrcode 默认）、颜色变化整幅重画。
+canvas 内容尺寸 1:1、quiet zone 4 模块（渲染差异：真机组件 API12+ 满幅绘制无 quiet，已记录）、颜色变化整幅重画。
 
 **交叉验证的牙齿**：解码器来自**另一个独立第三方** jsQR@1.4.0（test/vendor，Apache-2.0，
 原样拷贝）——"画出来的码能被独立解码器读回原文"（qr1 ASCII / qr2 UTF-8 多字节 / qr3 定制色
@@ -1194,7 +1195,7 @@ PASS 回归：Stepper.* 不再记"未实现"警告
 **参考仓库**：`/data/work/compiler/Ark`（完整 OpenHarmony 树，54 个子系统，5.4G）。对本项目
 最有价值的三个：`arkui_ace_engine`（真机 ArkUI 框架，`frameworks/core/components_ng/pattern/`
 下每个组件的 C++ pattern 是**语义与事件时序的权威**）、`arkui_qrcodegen`（真机 QRCode 组件的
-编码器源码，R33 我们移植的是 node-qrcode，可对照）、`arkcompiler_ets_runtime`（R24 ArkVM
+编码器源码——**R41 已直接复用**（见上文「R41」）、`arkcompiler_ets_runtime`（R24 ArkVM
 调研的对象本体）。
 
 **纠偏内容（Stepper）**：R37 按 `.d.ts` JSDoc 实现的派发时序与真机源码有**三处分歧**，本轮全部
@@ -1270,6 +1271,57 @@ enterKeyType 处理器摘除 → **2 红**（失败信息恰好演示回退 Done
 `tools/check-all.sh`（+1 步）、`package.json`（typecheck script）、`runtime/src/{input,v2,small,
 main,nav,ability,draw,animation,gesture,show,popup,area}.js`（JSDoc 类型注解 + EventDeco 改名 +
 onSubmit 修复 + enterKeyType 补全）、`test/{stepdemo,inputdemo,textdemo}.html`、五文档
+
+## R40：语义清账——真机源码对照三连 ✅
+
+**① Navigation push/pop**（原 R25 推断 300ms 全页滑）：照 `navigation_group_node.cpp` 确证——
+入页 `+50% → 0`（`width×HALF`）、被盖页视差 `0 → -20%`（标题栏再 -2%）、弹出页 `0 → +50%`、
+露出页 `-20% → 0`，同一根 `InterpolatingSpring(0,1,342,37)`、时长上界 450ms；CSS 用
+`cubic-bezier(0.2,0,0,1)` 作临界阻尼近似。
+
+**② Marquee 时长**（原 R28 推断 step×16ms/帧）：照 `marquee_pattern.cpp` 确证——
+`duration = 距离 × 85 / step`（`DEFAULT_MARQUEE_SCROLL_DELAY=85`，LINEAR，step 默认 6vp、
+大于文本宽按 6 兜底），LEFT 方向距离 = 容器宽 + 文本宽；CSS 变量喂真实起止像素，动画布局后
+启动，基座改 block（真机占满行宽）。夹具 mq1 加 `step: 30`（默认 6 两圈 8.5s 超虚拟预算）——
+走完整重测流程（.ets → hvigorw → 产物固化）。
+
+**③ QRCode ECC**（原 R33 注记 L 级系误判）：真机 `qrcode_modifier.cpp:44` 硬编码
+`QRCODE_ECC_MEDIUM`，且 node-qrcode 默认本就是 M——从未真渲染过 L。显式传参对齐 +
+qrdemo 采样断言。
+
+**验收**：navtransdemo **52** / showdemo **27** / qrdemo **12** 条双端通过。**破坏验证（3 处，
+各 1 红）**：转场时长回 300ms／Marquee 换回旧公式／QRCode 显式打回 L。还原后 md5 一致。
+
+## R41：QRCode 编码器换成真机源码 `arkui-qrcodegen`（WASM）✅
+
+**做法**：不写一行业务代码——把 OHOS `arkui_qrcodegen` 的 C++ 源码（7 个 .cpp + 8 个 .h，
+88.5KB）**逐字复制**进 `runtime/vendor/arkui-qrcodegen/src/`（md5 对源校验），本地附加物只有
+三样：securec 三函数兼容 glue、emcc 构建脚本、同步加载器。产物是**单文件 WASM 脚本**（24KB
+wasm base64 内嵌，`file://` 与 `http://` 同一份）——浏览器与 Electron 天然同源同行为，这就是
+"最大兼容性和稳定性"的落点：编码器与真机设备**字面上同一份代码**。
+
+**关键语义**（读真机源码拿到）：`QrcodeImageEncodeString(text, ecc)` 返回
+`{version, width, data}`，`data[i] & 0x1` 为暗格（`0x80` 是函数图案标记位）；ECC 用组件硬编码的
+MEDIUM(0)。加载器把矩阵拷成 `Uint8Array` 后立即 `QrcodeImageFree`，无跨调用状态。
+
+**为什么 STANDALONE_WASM**：emscripten 6 的 JS 工厂是 async 的，而 QRCode 首绘在渲染后同步
+阶段（不变量 18）等不起——STANDALONE 产物不带 emscripten 运行时，加载器用同步的
+`new WebAssembly.Module` 自己实例化 + `__wasm_call_ctors` 初始化 dlmalloc。
+
+**替换面**：show.js 编码调用、qrdemo（vendor script + 编码器对照断言改为"渲染矩阵 = 真机编码器
+MEDIUM 输出，100 格采样一致；MEDIUM/HIGH 可区分"）、widgets 页 vendor 引用、node-qrcode vendor
+删除（THIRD-PARTY-NOTICES §3b 重写）。jsQR 保留——它与编码器来自独立实现，交叉验证的独立性
+反而更纯了。渲染差异如实记录：真机组件 API12+ 满幅绘制无 quiet zone，本实现保留 4 模块 quiet
+（QR 规范 + jsQR 解码依赖）。
+
+**验收**：`bash run.sh qrdemo`（12 条）+ `bash run.sh widgets` 双端通过。**破坏验证（1 处，
+1 红）**：编码 ECC 换 HIGH(1) → 编码器对照断言红（采样 55/100）。还原后 md5 一致。
+
+**触及**：`runtime/vendor/arkui-qrcodegen/`（新：src + glue + build.sh + LICENSE）、
+`runtime/vendor/arkui-qrcodegen.js`（新产物）、`runtime/vendor/qrcode-1.5.4.*`（删除）、
+`runtime/src/show.js`（编码调用 + 降级路径补警告——顺手清掉一处 BROKEN-1 残留注释）、
+`runtime/src/main.js`（注释）、`test/{qrdemo,components}.html`（vendor 引用）、
+THIRD-PARTY-NOTICES §3b、五文档
 
 ## R14：多层锚链 + `Guideline` + `bias` ✅
 

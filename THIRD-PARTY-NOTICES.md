@@ -98,24 +98,36 @@ grep -c "Huawei Device" /tmp/hmtest/app/entry/src/main/ets/pages/{Index,Provide,
 
 ---
 
-## 3b. R33 轮入库的第三方源码（QRCode 组件的真实编码器 + 测试侧独立解码器）
+## 3b. 入库的第三方源码（QRCode 组件的编码器 + 测试侧独立解码器）
 
-入库文件与出处（**均零修改**，只打包/拷贝/附加来源说明）：
+### 3b.1 真机 QR 编码器 `arkui-qrcodegen`（R41 起，替换 R33 的 node-qrcode）
 
 | 入库文件 | 出处 | 许可 | 用途 |
 |---|---|---|---|
-| `runtime/vendor/qrcode-1.5.4.js` | npm `qrcode@1.5.4`（node-qrcode，Ryan Day），入口 `lib/browser.js`，bun 打包为单文件经典脚本 | MIT（原文：`runtime/vendor/qrcode-1.5.4.LICENSE`） | `QRCode` 组件的**真实编码器**（矩阵生成）；未加载 vendor 时组件记警告并降级（不静默） |
+| `runtime/vendor/arkui-qrcodegen/src/*.cpp,*.h`（7 cpp + 8 h，88.5KB） | OpenHarmony `arkui_qrcodegen` 仓库 `frameworks/` + `interfaces/`（本机参考树 `/data/work/compiler/Ark/arkui_qrcodegen`），**逐字复制零修改**（md5 对源校验） | Apache-2.0（原文：`runtime/vendor/arkui-qrcodegen/LICENSE`） | `QRCode` 组件的**真实编码器**——与真机设备同一份 C++ 实现 |
+| `runtime/vendor/arkui-qrcodegen/glue/securec.h` + `securec_glue.cpp` | 本地附加（非 Huawei 原件） | 本项目 | securec 的 `memset_s`/`memcpy_s`/`memmove_s` 最小兼容层（3 个标准函数签名搬运，算法零涉及） |
+| `runtime/vendor/arkui-qrcodegen.js` | `src/` + `glue/` 经 emscripten 编译的独立 WASM（24KB，base64 内嵌）+ 同步加载器 | 见上（WASM 由 Apache-2.0 源码产出） | 页面加载入口：`globalThis.ArkuiQrcodegen.encode(text, ecc)`；未加载时组件记警告并降级（不静默） |
+
+- **复现**：`bash runtime/vendor/arkui-qrcodegen/build.sh`（需要 emsdk，缺省找
+  `/data/training/cli/emsdk`；`EMSDK_DIR` 可覆盖）。
+- **ECC**：真机组件硬编码 `QRCODE_ECC_MEDIUM`（`qrcode_modifier.cpp:44`），加载器第二参
+  0=MEDIUM / 1=HIGH（真机枚举只有这两档）。
+- **历史**：R33~R40 用的是 node-qrcode@1.5.4（MIT）——当时"ECC L 级"的注记是误判
+  （node-qrcode 默认即 M，恰与真机一致）；R41 换成真机同源实现后已删除该 vendor。
+
+### 3b.2 测试侧独立解码器 jsQR（R33 起）
+
+| 入库文件 | 出处 | 许可 | 用途 |
+|---|---|---|---|
 | `test/vendor/jsqr-1.4.0.js` | npm `jsqr@1.4.0`（jsQR，cozmo），`dist/jsQR.js` webpack UMD，**原样拷贝** | Apache-2.0（原文：`test/vendor/jsqr-1.4.0.LICENSE`） | **测试侧独立解码器**——与编码器互为独立实现，qrdemo 用例的交叉验证（画出来的码能被独立解码器读回） |
 
-- **移植形式**：库代码**零修改**——编码器仅附加了我们自己的 ESM 胶水入口
-  （re-export + `globalThis.ArkuiVendorQrcode = qrcode` 一行，负责暴露全局）。
-- **复现**（bun 缓存 → 仓库）：
+- **复现**：
 
 ```bash
 B=/home/yanli/.bun/install/cache
 cp "$B/jsqr@1.4.0@@@1/dist/jsQR.js" test/vendor/jsqr-1.4.0.js
 cp "$B/jsqr@1.4.0@@@1/LICENSE" test/vendor/jsqr-1.4.0.LICENSE
-# 编码器：见 tools 内一次性脚本 /tmp/qr-port.cjs（bun bundle lib/browser.js → iife）
+# 编码器（R41 起）：见 runtime/vendor/arkui-qrcodegen/build.sh（emscripten 编译真机 C++ 源码）
 ```
 
 ---

@@ -1693,7 +1693,7 @@
     Canvas, CanvasRenderingContext2D, RenderingContextSettings,
     // R32：表层类另一半。XComponentType 同为产物里的自由变量枚举
     XComponent, XComponentController, XComponentType,
-    // R33：信息展示收官（QRCode 组件；其编码器由 runtime/vendor/qrcode-1.5.4.js 提供）
+    // R33：信息展示收官（QRCode 组件；R41 起编码器为真机 arkui-qrcodegen 的 WASM，runtime/vendor/arkui-qrcodegen.js）
     QRCode,
     // R34：输入收官。EnterKeyType 是产物里的自由变量枚举
     TextInput, TextArea, Search, Hyperlink, TextInputController, TextInputControllerBase, EnterKeyType,

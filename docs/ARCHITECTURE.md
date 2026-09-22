@@ -978,7 +978,7 @@ surface 缓冲对应物）；onDestroy 只登记（触发时机=元素摘除，�
 ### 4.9i 信息展示收官：QRCode（R33）
 
 `QRCode` 组件接在信息展示家族（show.js）。**不自己实现编码器**——移植第三方库
-node-qrcode@1.5.4（`global.ArkuiVendorQrcode`，bun 打包为单文件经典脚本，库代码零修改，
+~~node-qrcode@1.5.4~~（R41 起）OHOS arkui_qrcodegen 真机 C++ 源码 → 独立 WASM（`global.ArkuiQrcodegen`，源码逐字复制零修改 + securec 兼容 glue，
 只加我们自己的 ESM 胶水入口）；未加载 vendor 时记警告并降级（不静默、不假画）。
 
 **产物形态**（实测 `fixtures/pages/QrDemo.ts`）：`QRCode.create(value)` 单参数；color 默认
@@ -990,7 +990,7 @@ node-qrcode@1.5.4（`global.ArkuiVendorQrcode`，bun 打包为单文件经典脚
 两库互为独立实现，编码错误过不了。渲染在渲染后同步阶段（redrawQr 挂 syncDrawings，不变量 18），
 1:1 内容尺寸 + quiet zone 4。
 
-**已知限制**：ECC 级别未写（~~按移植库默认 L 级，推断~~ R40 确证：真机硬编码 MEDIUM、node-qrcode 默认即 M，现显式传参对齐 + qrdemo ECC 采样断言守卫）；512 截断未测。
+**已知限制**：ECC 级别未写（R40 确证真机恒用 MEDIUM；R41 起编码器即真机源码，加载器第二参 0=MEDIUM/1=HIGH + qrdemo 编码器对照断言守卫）；quiet zone 与真机不同（本实现 4 模块，真机 API12+ 满幅，渲染差异已记录）；512 截断未测。
 
 ### 4.10 文本测量
 
@@ -1677,16 +1677,16 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   fixtures 转换产物  43 个：AnimDemo AsyncIO Callee CanvasDemo Detail DrawDemo GestureDemo GestureGroupDemo Home Index InputDemo Layout Lazy LazyVar MeasArea MeasImage MeasNotify Measure MediaDemo NavBarDemo NavDemo NavTransDemo NetFile Observe PopDemo PromptAct Provide QrDemo RelDemo Rich ShapeDemo ShowDemo SmallDemo StepDemo SwiperDemo TabsGrid TextDemo TextMeasure TransitionDemo UiContextDemo V2 Widgets XCompDemo
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          510.9 KB
-  runtime(src)     335.3 KB
-  test             607.4 KB
+  runtime          584.1 KB
+  runtime(src)     335.6 KB
+  test             607.6 KB
   tools            56.5 KB
   electron(src)    22.1 KB
-  docs             428.8 KB
+  docs             431.1 KB
   fixtures         340.2 KB
 
 == 逐文件（文档"文件职责"表的来源）==
-  runtime/arkui-dom-runtime.js        338001 B  330.1 KB
+  runtime/arkui-dom-runtime.js        338304 B  330.4 KB
   runtime/generated-components.js      57617 B  56.3 KB
   runtime/ohos-shims.js                61848 B  60.4 KB
   tools/extract.mjs                     6563 B  6.4 KB
@@ -1703,12 +1703,12 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   electron/preload.js                   1961 B  1.9 KB
   package.json                          1366 B  1.3 KB
   .gitignore                             757 B  0.7 KB
-  README.md                           135232 B  132.1 KB
-  THIRD-PARTY-NOTICES.md                9672 B  9.4 KB
-  docs/ARCHITECTURE.md                144851 B  141.5 KB
-  docs/CAPABILITY.md                   48984 B  47.8 KB
+  README.md                           139178 B  135.9 KB
+  THIRD-PARTY-NOTICES.md               10718 B  10.5 KB
+  docs/ARCHITECTURE.md                144980 B  141.6 KB
+  docs/CAPABILITY.md                   49279 B  48.1 KB
   docs/DEVELOPING.md                   64310 B  62.8 KB
-  docs/ROADMAP.md                     113852 B  111.2 KB
+  docs/ROADMAP.md                     115797 B  113.1 KB
   docs/surface-measurement.md           6496 B  6.3 KB
   docs/SESSION-2026-09-20.md           12842 B  12.5 KB
   runtime/src/ability.js                9225 B  9.0 KB
@@ -1719,12 +1719,12 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   runtime/src/gesture.js               29797 B  29.1 KB
   runtime/src/input.js                 10336 B  10.1 KB
   runtime/src/layout.js                14213 B  13.9 KB
-  runtime/src/main.js                  91236 B  89.1 KB
+  runtime/src/main.js                  91269 B  89.1 KB
   runtime/src/nav.js                   52666 B  51.4 KB
   runtime/src/popup.js                  4905 B  4.8 KB
   runtime/src/runtime.d.ts              5042 B  4.9 KB
   runtime/src/shape.js                  7206 B  7.0 KB
-  runtime/src/show.js                  17437 B  17.0 KB
+  runtime/src/show.js                  17707 B  17.3 KB
   runtime/src/small.js                 11646 B  11.4 KB
   runtime/src/v2.js                    12577 B  12.3 KB
   fixtures/pages/AnimDemo.ts            6451 B  6.3 KB
@@ -1774,7 +1774,7 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   test/animdemo.html                   11498 B  11.2 KB
   test/async.html                       5977 B  5.8 KB
   test/canvasedemo.html                 4301 B  4.2 KB
-  test/components.html                  6529 B  6.4 KB
+  test/components.html                  6532 B  6.4 KB
   test/drawdemo.html                   12765 B  12.5 KB
   test/gesturedemo.html                 9875 B  9.6 KB
   test/gesturegroupdemo.html           14791 B  14.4 KB
@@ -1798,7 +1798,7 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   test/popdemo.html                     5709 B  5.6 KB
   test/promptaction.html               12719 B  12.4 KB
   test/provide.html                     4238 B  4.1 KB
-  test/qrdemo.html                      6525 B  6.4 KB
+  test/qrdemo.html                      6775 B  6.6 KB
   test/realfs.html                     10788 B  10.5 KB
   test/reldemo.html                     7328 B  7.2 KB
   test/rich.html                        3794 B  3.7 KB
@@ -1900,7 +1900,7 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
 
 - **OpenHarmony 真机源码树**：`/data/work/compiler/Ark`（只读参考，不构建）。语义与事件时序的
   权威是 `arkui_ace_engine/frameworks/core/components_ng/pattern/<组件>/`（C++ pattern）；
-  `arkui_qrcodegen` 是真机 QRCode 的编码器（R33 我们移植 node-qrcode，可对照）；
+  `arkui_qrcodegen` 的编码器 R41 已直接复用（WASM，见 QRCode 节）；
   `arkcompiler_ets_runtime` 是 R24 ArkVM 调研的对象本体。R39 起，凡标"推断"的组件语义，
   优先到这里对照清账。
 

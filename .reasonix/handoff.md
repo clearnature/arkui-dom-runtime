@@ -8,9 +8,11 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R40**（语义清账三连：Navigation 转场 450ms 弹簧 + ±50%/20% 视差、Marquee
-  时长公式 距离×85/step、QRCode ECC 显式 M——三处原推断两处修正一处破误案）— **PASS**
-  （navtransdemo 52 / showdemo 27 / qrdemo 12 双端；破坏 1/1/1 红；夹具重测 ShowDemo step 30）
+- 上次切片：**R41**（QRCode 编码器换成真机源码：OHOS arkui_qrcodegen 的 C++ 源码逐字复制
+  → emscripten 编独立 WASM 单文件加载器，替换 node-qrcode vendor）— **PASS**
+  （qrdemo 12 + widgets 双端；破坏 1 红（ECC 换 HIGH 采样 55/100）；jsQR 交叉验证保留）
+- 上一轮：**R40**（语义清账三连：Navigation 转场 450ms 弹簧 + ±50%/20% 视差、Marquee
+  时长公式 距离×85/step、QRCode ECC 确证 M）— navtransdemo 52 / showdemo 27 双端
 - **真机源码参考库**：`/data/work/compiler/Ark`（OHOS 全树）。组件语义权威 =
   `arkui_ace_engine/frameworks/core/components_ng/pattern/<组件>/`。后续逐组件对照可清一批
   "推断"标注（Navigation 转场时长/曲线、Marquee 时长公式等）。
@@ -100,4 +102,5 @@ bash electron/run.sh <用例>   # 单用例·Electron
 | 2026-09-21 | R37 分步器 | bf06354 | 双端 16 条 PASS + 破坏 9/1/1 红 | **破坏验证残留 BROKEN-1 跨轮持有 → 派发断言误删**（新坑 90）；分派分支嵌兄弟条件块=静默死分支（新坑 91）；ItemState 枚举值必须按声明顺序（坑 83 再现）；README R35 重复「触及」块顺手清理 |
 | 2026-09-21 | R38 质量切片 | 93dd70c | 门禁 7 步全绿（+typecheck）；stepdemo 25 / inputdemo 29 双端；破坏 4/3/2 红 | **检查单元=拼接产物不是分片**（假阳性 153 全消）；runtime.d.ts Element 合并固化 123 个挂载字段；**真 bug×2**：onSubmit `value` 未定义被 try/catch 吞（R34 之谜破案）、v2 `Event` 遮蔽 Scroller new Event（flush 兜底掩盖）；enterKeyType 处理器补全；Mimosa deep 审计封印 0 findings（dependencySummary partial：零 npm 依赖无可扫包，如实记录） |
 | 2026-09-21 | R39 语义纠偏 | e854fc2 | stepdemo 26 条双端；破坏 1/1/1 红 | 用户指了真机源码库 /data/work/compiler/Ark；Stepper 三处分歧照 stepper_pattern.cpp 对齐（先 CHG 后 NEXT／Skip 不切页／Waiting 忽略）；编程跳页静默（swiper 桥不转发）；新坑 94（.d.ts 给签名不给时序）；后续可用 pattern/ 目录逐组件清"推断"账 |
-| 2026-09-21 | R40 语义清账 | （本次提交） | navtransdemo 52 / showdemo 27 / qrdemo 12 双端；破坏 1/1/1 红 | ①Nav 转场：450ms 弹簧 + 入页 50%/视差 20%/弹出 50%（原 300ms 全页推断）；②Marquee：距离×85/step（原 step×16ms/帧），基座改 block，夹具 step 30 走完整重测；③QRCode ECC 确证 M（真机硬编码；node-qrcode 默认即 M——R33 的 L 注记是误判，从未真渲染过 L）；modules.get(row,col) 行优先，读反得转置（暗格数同、位置 43% 错） |
+| 2026-09-21 | R40 语义清账 | c624b68 | navtransdemo 52 / showdemo 27 / qrdemo 12 双端；破坏 1/1/1 红 | ①Nav 转场：450ms 弹簧 + 入页 50%/视差 20%/弹出 50%（原 300ms 全页推断）；②Marquee：距离×85/step（原 step×16ms/帧），基座改 block，夹具 step 30 走完整重测；③QRCode ECC 确证 M（真机硬编码；node-qrcode 默认即 M——R33 的 L 注记是误判，从未真渲染过 L）；modules.get(row,col) 行优先，读反得转置（暗格数同、位置 43% 错） |
+| 2026-09-21 | R41 编码器真机化 | （本次提交） | qrdemo 12 + widgets 双端；破坏 1 红 | 用户要求"直接复用真机代码不要单独实现"：arkui_qrcodegen C++ 源码逐字复制（md5 校验）→ emcc STANDALONE_WASM（emscripten 6 工厂是 async 的，同步首绘等不起）→ base64 内嵌单文件加载器；data[i]&1=暗格、ECC 恒 MEDIUM(0)；node-qrcode vendor 删除、jsQR 保留；THIRD-PARTY-NOTICES §3b 重写 |

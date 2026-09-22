@@ -243,12 +243,15 @@
   // 语义锚点（qrcode.d.ts JSDoc 原文）：color 默认 '#ff000000'、backgroundColor 默认
   // '#ffffffff'（API 11+）、contentOpacity 默认 1 范围 [0,1]；空串 → 无效 QR。
   //
-  // 编码器是**移植的第三方库**（global.ArkuiVendorQrcode = node-qrcode@1.5.4 的浏览器 bundle，
-  // 见 THIRD-PARTY-NOTICES §3b，库代码零修改）——不自己实现。未加载 vendor 时记警告并降级
-  // 为占位（不静默、不假画）。
+  // 编码器是**真机源码直接复用**（R41：global.ArkuiQrcodegen = OHOS arkui_qrcodegen 的
+  // C++ 源码 → WASM 单文件加载器，src/ 逐字复制零修改 + securec 兼容 glue，见
+  // THIRD-PARTY-NOTICES §3b 与 vendor 内 build.sh）。ECC 照真机组件硬编码 MEDIUM
+  //（qrcode_modifier.cpp:44，枚举仅 MEDIUM=0/HIGH=1）。未加载 vendor 时记警告并降级
+  // 为不渲染（不静默、不假画）。
   // 渲染走渲染后同步阶段（redrawQr，由 syncDrawings 调用——绘制要等尺寸生效，不变量 18）：
-  // canvas 内容尺寸 = 组件尺寸（1:1），模块边长 = floor(尺寸/总模块数)，quiet zone 4 模块
-  // （node-qrcode 默认）计入矩阵。颜色变化 → 整幅重画。
+  // canvas 内容尺寸 = 组件尺寸（1:1），模块边长 = floor(尺寸/总模块数)。quiet zone 保留
+  // 4 模块（QR 规范 + jsQR 解码依赖）——已知渲染差异：真机组件 API12+ 满幅绘制无 quiet。
+  // 颜色变化 → 整幅重画。
   // ArkUI 的 8 位颜色字面量是【ARGB】（'#ff000000' = 不透明黑，JSDoc 原文默认），CSS 是 RRGGBBAA
   // ——位数歧义必须归一，否则默认前景画成全透明（首跑当场抓住：解码 null）。
   const qrColor = (c) => {
@@ -256,8 +259,9 @@
     return s[0] === '#' && s.length === 9 ? '#' + s.slice(3) + s.slice(1, 3) : s;
   };
   function redrawQr(el) {
-    if (!global.ArkuiVendorQrcode) {
-      delete el.__arkuiQrPending; // BROKEN-1：应记警告（不静默降级）
+    if (!global.ArkuiQrcodegen || typeof global.ArkuiQrcodegen.encode !== 'function') {
+      layoutWarnings.push('QRCode 编码器 vendor 未加载（runtime/vendor/arkui-qrcodegen.js）——降级为不渲染');
+      delete el.__arkuiQrPending;
       return;
     }
     el.__arkuiQrPending = false;
@@ -269,12 +273,11 @@
       const value = el.__arkuiQrValue.slice(0, 512);           // JSDoc：取前 512
       if (!value) return;                                     // 空串 → 无效 QR（JSDoc 原文）
       const native = el.getContext('2d');
-      // ECC 级别照真机（R40 确证）：ace_engine qrcode_modifier.cpp 硬编码
-      // QrcodeImageEncodeString(value, QRCODE_ECC::QRCODE_ECC_MEDIUM)——真机枚举只有
-      // MEDIUM=0 / HIGH=1，组件恒用 MEDIUM。node-qrcode 的 'M' 与之对应（.d.ts 未写 ECC，
-      // 此前按移植库默认 L 跑，属推断——已纠正）。
-      const matrix = global.ArkuiVendorQrcode.create(value, { errorCorrectionLevel: 'M' }).modules;
-      const quiet = 4;                                        // quiet zone 4 模块（node-qrcode 默认）
+      // 真机编码器：arkui_qrcodegen 的 QrcodeImageEncodeString，ECC 恒 MEDIUM(0)
+      //（qrcode_modifier.cpp:44 硬编码）。返回 {version,width,data}，data[i]&1 = 暗格。
+      const matrix = global.ArkuiQrcodegen.encode(value, 0);
+      if (!matrix) return;                                    // 编码失败（内容非法）
+      const quiet = 4;                                        // quiet zone 4 模块（渲染差异已记录）
       const total = matrix.size + quiet * 2;
       const cell = Math.max(1, Math.floor(Math.min(w, h) / total));
       const offX = Math.floor((w - cell * total) / 2);
