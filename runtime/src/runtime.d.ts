@@ -51,6 +51,14 @@ interface Element {
   __arkuiXcOnDestroy?: any;
   __arkuiXcScheduled?: boolean;
   __arkuiGestureState?: any;
+  // Image（R45）：回调袋用 `x = x || {}` 惯用法 → any（坑 92）
+  __arkuiImage?: boolean;
+  __imgCbs?: any;
+  __arkuiImgTryAlt?: () => void;
+  __arkuiImgEnsureAlt?: () => HTMLImageElement;
+  __arkuiImgFireIfDone?: () => void;
+  __arkuiImgLoaded?: boolean;
+  __arkuiImgFailed?: boolean;
   __arkuiTransition?: any;
   __arkuiFreshMount?: boolean;
   __arkuiSettings?: any;

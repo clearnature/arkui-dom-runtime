@@ -1491,6 +1491,8 @@
 
   // @include canvas
 
+  // @include image
+
   // @include small
 
   // ── 由 tools/gen-components.mjs 生成的 149 个组件骨架 ──
@@ -1706,6 +1708,12 @@
     TextDecorationType: { None: 'none', Underline: 'underline', Overline: 'overline', LineThrough: 'line-through' },
     // R37：分步器。ItemState 同为产物里的自由变量枚举
     Stepper, StepperItem, ItemState,
+    // R45：Image。ImageFit 枚举值照 .d.ts 声明顺序（Contain=0..None=5，对齐族 7..15，MATRIX=16）
+    Image, ImageFit: {
+      Contain: 0, Cover: 1, Auto: 2, Fill: 3, ScaleDown: 4, None: 5,
+      TOP_START: 7, TOP: 8, TOP_END: 9, START: 10, CENTER: 11, END: 12,
+      BOTTOM_START: 13, BOTTOM: 14, BOTTOM_END: 15, MATRIX: 16,
+    },
     __Common__: _CommonWrapper,
     FontWeight, VerticalAlign, HorizontalAlign, FlexAlign, TextAlign, ItemAlign, Color,
     TextOverflow, Alignment, Scroller, Axis,

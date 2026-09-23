@@ -810,6 +810,28 @@ block（真机占满行宽）。夹具 mq1 加 `step: 30`（默认 6 一圈 4 �
 QRCode ECC 显式 M）、`harmony-proj/.../ShowDemo.ets` + `fixtures/pages/ShowDemo.ts`（step 30 重测）、
 `test/{navtransdemo,showdemo,qrdemo}.html`、五文档
 
+### R45 — Image：真实 `<img>` 基座 ✅（2026-09-24）
+
+剩余骨架里最常用的组件。**测量**（新增 `pages/ImageDemo.ets`，声明式 ArkTS——页面源不是产物
+里的 ViewPU 类，两个流程坑：ArkTS 禁内联对象字面量类型、回调参数需非空收窄）：`Image.create(src)`
+单参、`objectFit(ImageFit)` 自由变量枚举（Contain=0/Cover=1/Auto=2/Fill=3/ScaleDown=4/None=5/
+对齐族 7..15/MATRIX=16，照 `.d.ts` 声明顺序）、`alt`/`onError`/`onComplete`/`onLoad`/`syncLoad`。
+
+**实现**（新分片 `image.js`，第 17 个）：根 = div 包装 + 主 `<img>` + alt 占位 `<img>`（主图未
+加载/失败时顶上）；`objectFit` → CSS `object-fit`（五枚举与 CSS 关键字同名对齐；Auto/对齐族/
+MATRIX 记 data-* 或警告）；`onComplete` 载荷带真实解码尺寸；回调经 `__imgCbs` + **同步认领**
+（load 与补派发双触发只跑一次，首跑抓到双发抛错）。图片 URL 用绝对路径 `/test-assets/`
+（MeasImage 同约定；相对路径在 /test/ 页面下 404）。
+
+**验收**：`bash run.sh imagedemo`（15 条断言）双端通过。**破坏验证（3 处）**：objectFit CSS
+映射短路 **2 红**；alt error 顶上摘除 **0 红**（TryAlt 路径已覆盖，无观察面，如实记录）；
+fire 同步认领撤销 **3 红**。还原后 md5 一致。
+
+**触及**：`runtime/src/image.js`（新，第 17 个分片）、`runtime/src/area.js`（IMAGE 分派分支）、
+`runtime/src/main.js`（@include + Image/ImageFit global + syncDrawings 钩子）、
+`runtime/src/runtime.d.ts`、`tools/stats.mjs`（手写 44→45）、`fixtures/pages/ImageDemo.ts`、
+`test/imagedemo.html`、`run.sh`、`electron/run.sh`
+
 ### R44 — 已确证组件的语义回归扫描 ✅（2026-09-21）
 
 逐项重读真机源码找首轮漏掉的边界行为。**扫出两处分歧并修正**：

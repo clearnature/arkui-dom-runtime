@@ -8,7 +8,8 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R44**（已确证组件语义回归扫描：重读真机源码找边界行为——扫出两处分歧已修
+- 上次切片：**R45**（Image 组件真 <img> 基座上线，新分片 image.js 第 17 个：objectFit 五枚举→CSS object-fit、alt 占位惰性创建、onComplete 载荷带真实解码尺寸）— **PASS**（imagedemo 15 条双端；手写 45）
+- 上一轮：**R44**（已确证组件语义回归扫描：重读真机源码找边界行为——扫出两处分歧已修
   [Marquee step≤0 不除、QRCode 过小拒绝绘制] + onTitleModeChange 端点转确证；新增
   `__arkui_dom_syncDrawings` 钩子；qrdemo 15 / showdemo 28 双端；破坏 1 红/3 红）
 - 上一轮：**R43**（语义确证第三轮，两处实现修正：滚动联动副标题透明度 = (H−56)/(max−56)、
@@ -114,4 +115,5 @@ bash electron/run.sh <用例>   # 单用例·Electron
 | 2026-09-21 | R41 编码器真机化 | 373e619 | qrdemo 12 + widgets 双端；破坏 1 红 | 用户要求"直接复用真机代码不要单独实现"：arkui_qrcodegen C++ 源码逐字复制（md5 校验）→ emcc STANDALONE_WASM（emscripten 6 工厂是 async 的，同步首绘等不起）→ base64 内嵌单文件加载器；data[i]&1=暗格、ECC 恒 MEDIUM(0)；node-qrcode vendor 删除、jsQR 保留；THIRD-PARTY-NOTICES §3b 重写 |
 | 2026-09-21 | R42 语义确证二轮 | 241bb47 | 7 步门禁全绿（无实现改动） | 标题栏 56/112/138 确证（theme 默认值，138 正确——navigation_declaration.h 的 137 是未使用常量，险些误改）；生命周期"先 will 后实"部分确证；Marquee/转场文档滞留清理；FREE 初始高度同取 FULL_*（与我们一致） |
 | 2026-09-21 | R43 语义确证三轮 | dfdadfb | navtransdemo + transitiondemo 双端；破坏 1/1/1 红 | 滚动联动确证 + 两处修正：副标题透明度 = (H−56)/(max−56)（原 0.7 系数错）、主标题字号插值 L=30fp↔M=26fp 经 SHARP 曲线（DOM 等价 scale=(26+SHARP(p)×4)/30，SHARP 对称故中点断言不变）；SLIDE_SWITCH 确证 scale 0.85（原 0.8 推断）；SHARP 求值器 = 二分解 x(t)=p |
-| 2026-09-21 | R44 语义回归扫描 | （本次提交） | qrdemo 15 / showdemo 28 / widgets 双端；破坏 1 红/3 红 | 重读真机源码扫边界：Marquee step≤0 真机不除（原错替换 6，已修）；QRCode 过小组件真机拒绝绘制（原硬画溢出，已修 + 只尝试一次）；**widgets 无尺寸 QRCode 的旧断言编码了硬画假象 → 升级为拒绝语义**（真机 qrCodeSize≤0 分支）；onTitleModeChange 端点转确证；`__arkui_dom_syncDrawings` 钩子；破坏/恢复脚本两次 old/new 颠倒靠 grep BROKEN 回读抓到——破坏脚本必须回读验证 |
+| 2026-09-21 | R44 语义回归扫描 | 234ff77 | qrdemo 15 / showdemo 28 / widgets 双端；破坏 1 红/3 红 | 重读真机源码扫边界：Marquee step≤0 真机不除（原错替换 6，已修）；QRCode 过小组件真机拒绝绘制（原硬画溢出，已修 + 只尝试一次）；**widgets 无尺寸 QRCode 的旧断言编码了硬画假象 → 升级为拒绝语义**（真机 qrCodeSize≤0 分支）；onTitleModeChange 端点转确证；`__arkui_dom_syncDrawings` 钩子；破坏/恢复脚本两次 old/new 颠倒靠 grep BROKEN 回读抓到——破坏脚本必须回读验证 |
+| 2026-09-24 | R45 Image | （本次提交） | imagedemo 15 条双端 + widgets 恢复；破坏 2/0/3 红 | 页面源是**声明式 ArkTS**（@Component struct），产物才是 ViewPU 类——按产物形态写源被 linter 拦（no-in/any/obj-literal）；ArkTS 禁内联对象字面量类型；alt 占位图必须惰性创建（预插空 src <img> 被 querySelector('img') 命中）；图片 URL 绝对路径 /test-assets/（MeasImage 同约定）；fire 同步认领防双发（首跑抓到 load+补派发双触发抛错） |

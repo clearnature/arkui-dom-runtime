@@ -1283,6 +1283,38 @@ enterKeyType 处理器摘除 → **2 红**（失败信息恰好演示回退 Done
 main,nav,ability,draw,animation,gesture,show,popup,area}.js`（JSDoc 类型注解 + EventDeco 改名 +
 onSubmit 修复 + enterKeyType 补全）、`test/{stepdemo,inputdemo,textdemo}.html`、五文档
 
+## R45：`Image` 组件——真实 `<img>` 基座 ✅
+
+剩余骨架里最常用的组件落地上线。**测量**（新增 `pages/ImageDemo.ets` → 官方构建）：
+`Image.create(src)` 单参；`objectFit(ImageFit)` 的枚举是自由变量（ImageFit 数值照 `.d.ts`
+声明顺序 Contain=0/Cover=1/Auto=2/Fill=3/ScaleDown=4/None=5/对齐族 7..15/MATRIX=16）；
+`alt(src)` 占位、`onError`/`onComplete`/`onLoad`、`syncLoad`。测量时踩了两个流程坑：
+①harmony-proj 的页面源是**声明式 ArkTS**（`@Entry @Component struct`），不是产物里的 ViewPU
+类；②ArkTS 禁内联对象字面量类型/参数需非空收窄。
+
+**实现**（新分片 `runtime/src/image.js`，第 17 个）：根 = div 包装（`__arkuiImage`），内含
+主 `<img>` + alt 占位 `<img>`（绝对定位垫底，主图未加载/失败时顶上——真机 alt 的
+"placeholder during loading" 语义）；`objectFit` → CSS `object-fit`（五个枚举语义与 CSS
+关键字同名对齐：contain/cover/fill/scale-down/none；Auto 不映射记 data-*；对齐族与 MATRIX
+记警告）；`onComplete` 载荷带**真实解码尺寸**（naturalWidth/Height）+ 组件尺寸；回调经
+`__imgCbs` 闭包 + **同步认领**（load 事件与补派发双触发只跑一次——首跑当场抓住双发抛错）。
+图片 URL 用绝对路径 `/test-assets/...`（measimage 同约定；相对路径在 /test/ 页面下会 404）。
+
+**widgets 旧契约升级**：Widgets 页的 `Image('img.png')` 让全矩阵跑出 `querySelector('img')` 命中
+**预插的无 src alt 占位图**（getAttribute('src')=null）——修法：alt 占位图**惰性创建**（设了
+.alt() 才进 DOM），src 解析不出 URL 时记 data-src + 警告（不再伪造 src='null'）。
+
+**验收**：`bash run.sh imagedemo`（15 条断言：基座/objectFit 两档对照+枚举数值/alt 占位/
+onError/onComplete 载荷 13×5/syncLoad/回归）+ `bash run.sh widgets`（Image 断言恢复）双端通过。**破坏验证（3 处）**：objectFit CSS
+映射短路 → **2 红**；SLIDE_SWITCH... alt error 顶上摘除 → 0 红（TryAlt 路径已覆盖，无观察面
+——如实记录）；fire 同步认领撤销 → **3 红**（双发抛错回归）。还原后 md5 一致。
+
+**触及**：`runtime/src/image.js`（新，第 17 个分片）、`runtime/src/area.js`（IMAGE 分派分支）、
+`runtime/src/main.js`（@include + Image/ImageFit 挂 global + syncDrawings 钩子）、
+`runtime/src/runtime.d.ts`（Image 词汇表）、`tools/stats.mjs`（手写 44→45）、
+`harmony-proj/.../ImageDemo.ets` + `fixtures/pages/ImageDemo.ts`、`test/imagedemo.html`、
+`run.sh`、`electron/run.sh`
+
 ## R44：已确证组件的语义回归扫描 ✅
 
 对 R39–R43 确证过的语义逐项**重读真机源码找首轮漏掉的边界行为**——扫出两处分歧并修正、
@@ -1977,9 +2009,9 @@ PASS starStyle 的图片 URI 不可用已记警告
 
 **权威清单在 `docs/ROADMAP.md`**（每项带可复现的验收命令）。当前优先：
 
-1. 骨架组件的视觉语义——累计 30 个手写组件 + 分步器：形状族 8（R26）、输入类 4+3（R27/R34）、
+1. 骨架组件的视觉语义——手写 45 个：形状族 8（R26）、输入类 4+3（R27/R34）、
    信息展示类 4+1（R28/R33）、弹出类 3（R29）、表层类 2（R31/R32）、小件 4（R36）、
-   分步器 2（R37）；`UIContext` 已收（R30）、`@ohos.multimedia.media` 已收（R35）。
+   分步器 2（R37）、Image（R45）；`UIContext` 已收（R30）、`@ohos.multimedia.media` 已收（R35）。
    剩余候选以骨架清单（`node tools/stats.mjs` 的"骨架·仅 data-*"）为准
 2. ~~**继续把 `runtime/src/main.js` 拆细**~~ **已拆到位（2026-09-21，源拆分第三步）**：9 个分片，
    `main.js` 剩 **1869 行 / 86,452 B**（基础设施 / 状态 v1 / ViewPU / 属性映射 / Tabs / Swiper /

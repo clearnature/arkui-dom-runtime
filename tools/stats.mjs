@@ -41,7 +41,9 @@ const HANDWRITTEN = ['Text', 'Button', 'Column', 'Row', 'Stack', 'List', 'ListIt
   // R36：小件收官（Flex/Span/LoadingProgress/Blank）
   'Flex', 'Span', 'LoadingProgress', 'Blank',
   // R37：分步器（Stepper 内置导航条 + StepperItem label/status 汇入）
-  'Stepper', 'StepperItem'];
+  'Stepper', 'StepperItem',
+  // R45：Image（真实 <img> 基座 + objectFit→object-fit + alt 占位 + 加载回调）
+  'Image'];
 const CONTROL_FLOW = ['If', 'ForEach', 'LazyForEach'];   // 不在 149 注册表内，单独实现
 
 const gen = read('runtime/generated-components.js');
