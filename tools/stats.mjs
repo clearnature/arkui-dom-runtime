@@ -58,6 +58,8 @@ const HANDWRITTEN = ['Text', 'Button', 'Column', 'Row', 'Stack', 'List', 'ListIt
   'TimePicker',
   // R53：WaterFlow 瀑布流（JS 绝对定位复刻真机换列算法）+ 子项 FlowItem
   'WaterFlow', 'FlowItem',
+  // R54：CalendarPicker（入口三段 + 加减步进 + 月历弹层 + 静态 Dialog）
+  'CalendarPicker',
   // 补账：R33/R34 已手写实现但漏登记（QRCode 编码器为真机 WASM，R41）
   'TextInput', 'TextArea', 'Search', 'Hyperlink', 'QRCode'];
 const CONTROL_FLOW = ['If', 'ForEach', 'LazyForEach'];   // 不在 149 注册表内，单独实现

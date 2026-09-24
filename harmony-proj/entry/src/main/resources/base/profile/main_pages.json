@@ -29,6 +29,7 @@
         "pages/RefreshDemo",
         "pages/DatePickerDemo",
         "pages/TimePickerDemo",
-        "pages/WaterFlowDemo"
+        "pages/WaterFlowDemo",
+        "pages/CalendarPickerDemo"
     ]
 }

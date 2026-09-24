@@ -264,6 +264,12 @@
       WATERFLOW_ATTRS[prop](node, value);
       return;
     }
+    // CalendarPicker（R54）：edgeAlign/markToday/textStyle/onChange 是语义属性；onChange
+    // 与 DOM 原生 change 事件同名，必须拦在通用 on* 规则之前（坑 86）
+    if (node.__arkuiCalPick && CALPICK_ATTRS[prop]) {
+      CALPICK_ATTRS[prop](node, value);
+      return;
+    }
     // ImageAnimator（R47）：images/state/事件是语义属性，抢在通用落点之前
     if (node.__arkuiAnimator && ANIMATOR_ATTRS[prop]) {
       ANIMATOR_ATTRS[prop](node, value);

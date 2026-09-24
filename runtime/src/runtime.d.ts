@@ -74,6 +74,8 @@ interface Element {
   __wf?: any;
   __wfCbs?: any;
   __arkuiFlowItem?: boolean;
+  __arkuiCalPick?: boolean;
+  __calp?: any;
   __lig?: any;
   __an?: any;
   __anCbs?: any;

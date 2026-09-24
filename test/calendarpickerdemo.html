@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R54：CalendarPicker（入口三段/加减步进/月历弹层/静态 Dialog）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 360px; }
+  #root [data-arkui-comp="CalendarPicker"] { border: 1px solid #ddd; padding: 4px 6px; gap: 2px; }
+  #root [data-cal-seg] { margin-right: 2px; }
+  #root [data-cal-btn] { margin-left: 4px; }
+  #root [data-arkui-calpick-dlg], #root [data-arkui-calpick-static] { background: #fff; border: 1px solid #bbb; padding: 8px; font-size: 13px; }
+  #root [data-cal-day][data-cal-selected] { background: #0a59f7; color: #fff; border-radius: 50%; }
+  #root [data-cal-day][data-cal-disabled] { color: #bbb; }
+  #root button { margin: 2px; }
+  #root [data-cal-day] { margin: 0; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R54：CalendarPicker（入口 / 钳制 / 弹层几何 / onChange 时序 / 静态 Dialog）</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/calendarpickerdemo-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const el = (id) => root.querySelector('#' + id);
+    const txt = (id) => String(el(id) ? el(id).textContent : '<缺>');
+    const click = async (n) => {
+      n.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      await tick(30);
+    };
+    const group = async (name, fn) => {
+      try { await fn(); } catch (e) {
+        allPass = false;
+        lines.push(`FAIL [${name}] 抛出异常：${e && e.stack ? String(e.stack).split('\n')[0] : e}`);
+      }
+    };
+
+    // 锚点：cp1 selected 2024-10-08（10/1=周二 → 首列周日制前置 2 空格、31 天、10-12 禁用）
+    const segOf = (cp, k) => cp.querySelector(`[data-cal-seg="${k}"]`);
+    const dayCell = (scope, d) => scope.querySelector(`[data-cal-day="${d}"]`);
+
+    try {
+      __arkui_dom_requireModule('CalendarPickerDemo');
+      __arkui_dom_loadRoute('pages/CalendarPickerDemo', root);
+      await tick(120);
+      const cp1 = el('cp1');
+      const cp2 = el('cp2');
+
+      // ══════════ ① 入口（4 条） ══════════
+      await group('入口', async () => {
+        check(!!cp1 && !!segOf(cp1, 'year') && segOf(cp1, 'year').textContent === '2024年'
+          && segOf(cp1, 'month').textContent === '10月' && segOf(cp1, 'day').textContent === '8日',
+          `入口三段文本 2024年/10月/8日（真机 LayoutPicker 三段结构；实际 '${segOf(cp1, 'year') && segOf(cp1, 'year').textContent}/${segOf(cp1, 'month') && segOf(cp1, 'month').textContent}/${segOf(cp1, 'day') && segOf(cp1, 'day').textContent}'）`);
+        check(!!cp1.querySelector('[data-cal-btn="add"]') && !!cp1.querySelector('[data-cal-btn="sub"]'),
+          '入口含 +/- 两按钮（真机 CreateButtonChild）');
+        check(cp1.dataset.markToday === 'true' && cp1.dataset.align === '0',
+          `dataset markToday='${cp1.dataset.markToday}' align='${cp1.dataset.align}'（START=0 显式枚举）`);
+        check(segOf(cp2, 'day').textContent === '5日' && cp2.dataset.start === '2024-10-05' && cp2.dataset.end === '2024-10-20',
+          `cp2 selected 2024-9-25 被 AdjustDateToRange 夹到 start → 日段='${segOf(cp2, 'day').textContent}' start='${cp2.dataset.start}'`);
+      });
+
+      // ══════════ ② 弹层几何（6 条） ══════════
+      await group('弹层', async () => {
+        await click(cp1);
+        const dlg = cp1.querySelector('[data-arkui-calpick-dlg]');
+        check(!!dlg && dlg.getAttribute('data-open') === 'true', '点入口开弹层（data-open）');
+        const title = dlg.querySelector('[data-cal-title] span');
+        check(title.textContent === '2024年10月', `标题 '${title.textContent}'（selected 所在月）`);
+        const wks = [...dlg.querySelectorAll('[data-cal-wk]')].map((w) => w.textContent).join('');
+        check(wks === '日一二三四五六', `表头 '${wks}'（首列周日，calendar_paint_method.cpp:531）`);
+        const wk2 = dlg.querySelectorAll('[data-cal-wk]')[2];
+        check(dayCell(dlg, 1).offsetLeft === wk2.offsetLeft,
+          `10/1（周二）落在第 3 列：day1.offsetLeft === 表头第 3 格 offsetLeft（${dayCell(dlg, 1).offsetLeft} vs ${wk2.offsetLeft}）`);
+        check(dayCell(dlg, 8).hasAttribute('data-cal-selected'), 'day8 有选中标记（圆形高亮）');
+        check(dayCell(dlg, 10).hasAttribute('data-cal-disabled') && dayCell(dlg, 12).hasAttribute('data-cal-disabled')
+          && !dayCell(dlg, 9).hasAttribute('data-cal-disabled'),
+          'disabledDateRange 10-12 禁用、9 不禁用');
+      });
+
+      // ══════════ ③ 选择时序（4 条） ══════════
+      await group('时序', async () => {
+        const dlg = cp1.querySelector('[data-arkui-calpick-dlg]');
+        await click(dayCell(dlg, 15));
+        check(txt('cp-log') === 'CHG2024-10-15;' && dayCell(dlg, 15).hasAttribute('data-cal-selected'),
+          `点 day15 → onChange(Date)='CHG2024-10-15;' 且弹层不关（真机 changeId 只上报不关层；实际 '${txt('cp-log')}'）`);
+        await click(dayCell(dlg, 15));
+        check(txt('cp-log') === 'CHG2024-10-15;', `再点 day15 同值不重发（CanReportChangeEvent 去重；实际 '${txt('cp-log')}'）`);
+        await click(dayCell(dlg, 11));
+        check(txt('cp-log') === 'CHG2024-10-15;' && dayCell(dlg, 15).hasAttribute('data-cal-selected'),
+          '点禁用 day11：不发不发选中不迁移');
+        await click(root);
+        check(!cp1.querySelector('[data-arkui-calpick-dlg]'), '点外部关弹层（cancel 路径）');
+      });
+
+      // ══════════ ④ 加减步进（3 条） ══════════
+      await group('步进', async () => {
+        await click(cp1.querySelector('[data-cal-btn="add"]'));
+        check(segOf(cp1, 'day').textContent === '16日' && txt('cp-log') === 'CHG2024-10-15;CHG2024-10-16;',
+          `+ 步进 day：8→…→16 且【触发 onChange】（真机 FireChangeEvents；实际 '${txt('cp-log')}' 日段='${segOf(cp1, 'day').textContent}'）`);
+        await click(cp1.querySelector('[data-cal-btn="sub"]'));
+        check(segOf(cp1, 'day').textContent === '15日' && txt('cp-log').endsWith('CHG2024-10-15;'),
+          `- 步进 day 回 15（实际 '${segOf(cp1, 'day').textContent}'）`);
+        await click(segOf(cp2, 'day'));
+        await tick(30);
+        await click(cp2.querySelector('[data-cal-btn="add"]'));
+        await click(cp2.querySelector('[data-cal-btn="sub"]'));
+        await click(cp2.querySelector('[data-cal-btn="sub"]'));
+        check(segOf(cp2, 'day').textContent === '5日',
+          `cp2 边界：5→6→5→(4<start 拒绝仍 5)，无可到日不动不发（实际 '${segOf(cp2, 'day').textContent}'）`);
+      });
+
+      // ══════════ ⑤ 静态 Dialog（2 条） ══════════
+      await group('静态Dialog', async () => {
+        await click(el('btn-dlg'));
+        const st = document.body.querySelector('[data-arkui-calpick-static]');
+        check(!!st && !!st.querySelector('[data-cal-ok]') && !!st.querySelector('[data-cal-cancel]')
+          && st.querySelector('[data-cal-title] span').textContent === '2024年10月'
+          && dayCell(st, 15).hasAttribute('data-cal-selected'),
+          'CalendarPickerDialog.show：OK/Cancel + 标题 + day15 选中');
+        await click(st.querySelector('[data-cal-ok]'));
+        check(!document.body.querySelector('[data-arkui-calpick-static]') && txt('cp-log').endsWith('ACC15;'),
+          `OK → 关层 + onAccept(Date)='ACC15;'（实际 '${txt('cp-log').slice(-10)}'）`);
+      });
+
+      lines.push(`LOG='${txt('cp-log')}'`);
+      lines.push(`ELMT ${__arkui_dom_elmtRecords.size}`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+
+  })();
+  </script>
+</body>
+</html>

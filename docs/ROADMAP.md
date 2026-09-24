@@ -931,6 +931,31 @@ md5 一致。
 `runtime/src/runtime.d.ts`、`tools/stats.mjs`（手写 49→50）、
 `fixtures/pages/DatePickerDemo.ts`、`test/datepickerdemo.html`、`run.sh`、`electron/run.sh`
 
+### R54 — CalendarPicker 日期选择入口 ✅（2026-09-25）
+
+可行队列选型（ContainerReader 靠 ResizeObserver 在 headless 虚拟时间不可靠、WithTheme 断言弱、
+Calendar 要农历数据，均缓）。**真机结构逐条确证后实现**（calendarpicker.js，第 24 个分片）：
+**入口 = 年/月/日三段文本 + 加/减两按钮**（calendar_picker_model_ng.cpp LayoutPicker:89-113）；
+点日期段 → 开弹层 + 记活动段；点 +/- → 步进活动段 → GetAvailableNextDay 跳过 disabledDateRange
+且夹 [start,end]（无可到日 year<=0 哨兵 → 不动不发）→ **同样触发 onChange**
+（HandleAddButtonClick:561-584 的 FireChangeEvents）；非年月段步进后回贴 DAY。
+**弹层**：点日期 → onChange 由 CanReportChangeEvent **同值不重发**（:1615）、弹层不因点日期关闭
+（OK/外点才关）；月历**首列周日**（calendar_paint_method.cpp:531，startOfWeek_ 默认 64→log2=6
+→首列=weekNumbers_[0]=SUN）；标题 `${y}年${m}月`。selected 缺省=系统今天；AdjustDateToRange
+夹入 [start,end]。**静态 CalendarPickerDialog.show**：OK/Cancel → onAccept/onCancel。
+DOM：入口 inline-flex；弹层为入口内绝对定位面板（edgeAlign START/CENTER/END，缺省 END）；
+7 列 grid，前置空格=首日 getDay()；语言取 zh（夹具环境，标注）。
+
+**验收**：`bash run.sh calendarpickerdemo`（19 条断言：入口 4/弹层 6/时序 4/步进 3/静态 Dialog 2）
+双端通过。**破坏验证（3 处）**：前置空格改周一制（列位错位）**1 红**；摘 +/- 的 FireChangeEvents
+**1 红**；摘同值去重 **1 红**（B+C 合并跑 3 红）。还原后 grep BROKEN 无残留、门禁复跑全绿。
+本切片被预算闸硬拦两次（研究后/首跑后各一次），断点落 todo 无损续做。
+
+**触及**：`runtime/src/calendarpicker.js`（新，第 24 个分片）、`runtime/src/area.js`、
+`runtime/src/main.js`（@include + CalendarPicker/CalendarPickerDialog/CalendarAlign 挂 global）、
+`runtime/src/runtime.d.ts`、`tools/stats.mjs`（手写 58→59）、
+`fixtures/pages/CalendarPickerDemo.ts`、`test/calendarpickerdemo.html`、`run.sh`、`electron/run.sh`
+
 ### R53 — WaterFlow 瀑布流 ✅（2026-09-25）
 
 CSS 无原生瀑布流 → **JS 绝对定位排布逐行复刻真机 top_down 算法**（`water_flow_layout_info.cpp`）：

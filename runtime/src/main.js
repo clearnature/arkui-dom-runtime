@@ -1600,6 +1600,8 @@
 
   // @include waterflow
 
+  // @include calendarpicker
+
   // @include small
 
   // ── 由 tools/gen-components.mjs 生成的 149 个组件骨架 ──
@@ -1832,6 +1834,9 @@
     // R53：WaterFlow 瀑布流 + 枚举/shim。WaterFlowLayoutMode 是【显式】=0/=1（water_flow.d.ts:258,295）
     WaterFlow, FlowItem, WaterFlowSections,
     WaterFlowLayoutMode: { ALWAYS_TOP_DOWN: 0, SLIDING_WINDOW: 1 },
+    // R54：CalendarPicker 日期选择入口 + 静态弹层 + 枚举（CalendarAlign 显式 =0/1/2）
+    CalendarPicker, CalendarPickerDialog,
+    CalendarAlign: { START: 0, CENTER: 1, END: 2 },
     // R46：Scroll 组件（手写接管骨架）+ 枚举。Edge：Top=0 Center=1 Bottom=2
     Scroll,
     // Baseline=3 Start=4 Middle=5 End=6
