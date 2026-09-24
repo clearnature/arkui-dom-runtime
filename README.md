@@ -1315,6 +1315,36 @@ onError/onComplete 载荷 13×5/syncLoad/回归）+ `bash run.sh widgets`（Imag
 `harmony-proj/.../ImageDemo.ets` + `fixtures/pages/ImageDemo.ts`、`test/imagedemo.html`、
 `run.sh`、`electron/run.sh`
 
+## R46：`Scroll` 滚动容器——真实 overflow 基座 ✅
+
+**测量**（新增 `pages/ScrollDemo.ets`，声明式）：`Scroll(scroller)` create 单参**直接是 Scroller
+实例**（不是 {scroller} 选项对象——首跑把它当选项对象解包，`_bind` 没跑、scrollBy 全哑，探针
+抓到 `未绑定容器`）；`scrollable(ScrollDirection)`（Vertical=0/Horizontal=1/Free=2/None=3）、
+`scrollBar(BarState)`（Off=0/Auto=1/On=2）、`edgeEffect(EdgeEffect)`（Spring=0/Fade=1/None=2）、
+`onScroll(x,y)`/`onScrollEdge(side)`/`onScrollStart/End/Stop`；Scroller 侧
+`scrollTo({xOffset,yOffset})`/`scrollBy`/`scrollEdge(Edge)`/`scrollPage({next})`/`currentOffset()`
+/`isAtEnd()`。
+
+**实现**（新分片 `runtime/src/scroll.js`，第 18 个）：根 = div，overflow 由 scrollable 决定；
+`scrollBar(Off)` → 注入 `scrollbar-width:none` + ::-webkit 规则；`scrollBarColor/Width` →
+`scrollbar-color/width`（Chromium 121+）；`edgeEffect` → overscroll-behavior（None→none）。
+**Scroller 扩面**（layout.js）：`scrollTo` 支持 `{xOffset,yOffset,animation}` 官方形参
+（animation=true → DOM smooth 近似）；新增 `scrollBy`/`scrollEdge`/`scrollPage`/`isAtEnd`；
+`currentOffset()` 按 `.d.ts` 返回 `{xOffset,yOffset}`（保留 x/y 键兼容旧用例）。主动滚动
+（scrollBy/scrollEdge/scrollPage）改 scrollTop 后**同步派发** scroll 事件（确定性）。
+事件收口：`onScrollEdge` 只在**到达沿**触发一次（lastEdge 记忆，离开再到才再发）；
+`onScrollStart/End` 是真机手势语义——DOM 化为"滚动静默 80ms 收口"（近似，标注）。
+
+**验收**：`bash run.sh scrolldemo`（16 条断言：基座/Scroller 五法/事件三族/回归）双端通过。
+**破坏验证（3 处，各 1 红）**：overflow 映射短路；滚动条隐藏选择器破坏；onScroll 派发删除。
+还原后 md5 一致。
+
+**触及**：`runtime/src/scroll.js`（新，第 18 个分片）、`runtime/src/layout.js`（Scroller 扩面）、
+`runtime/src/area.js`（SCROLL 分派分支）、`runtime/src/main.js`（@include + Scroll/枚举挂
+global）、`runtime/src/runtime.d.ts`、`tools/stats.mjs`（手写 45→46）、
+`harmony-proj/.../ScrollDemo.ets` + `fixtures/pages/ScrollDemo.ts`、`test/scrolldemo.html`、
+`run.sh`、`electron/run.sh`
+
 ## R44：已确证组件的语义回归扫描 ✅
 
 对 R39–R43 确证过的语义逐项**重读真机源码找首轮漏掉的边界行为**——扫出两处分歧并修正、
@@ -2009,9 +2039,9 @@ PASS starStyle 的图片 URI 不可用已记警告
 
 **权威清单在 `docs/ROADMAP.md`**（每项带可复现的验收命令）。当前优先：
 
-1. 骨架组件的视觉语义——手写 45 个：形状族 8（R26）、输入类 4+3（R27/R34）、
+1. 骨架组件的视觉语义——手写 46 个：形状族 8（R26）、输入类 4+3（R27/R34）、
    信息展示类 4+1（R28/R33）、弹出类 3（R29）、表层类 2（R31/R32）、小件 4（R36）、
-   分步器 2（R37）、Image（R45）；`UIContext` 已收（R30）、`@ohos.multimedia.media` 已收（R35）。
+   分步器 2（R37）、Image（R45）、Scroll（R46）；`UIContext` 已收（R30）、`@ohos.multimedia.media` 已收（R35）。
    剩余候选以骨架清单（`node tools/stats.mjs` 的"骨架·仅 data-*"）为准
 2. ~~**继续把 `runtime/src/main.js` 拆细**~~ **已拆到位（2026-09-21，源拆分第三步）**：9 个分片，
    `main.js` 剩 **1869 行 / 86,452 B**（基础设施 / 状态 v1 / ViewPU / 属性映射 / Tabs / Swiper /

@@ -238,12 +238,55 @@
     }
     scrollTo(opt) {
       if (!this._el || !opt) return;
-      if (opt.x !== undefined) this._el.scrollLeft = Number(resolveResource(opt.x));
-      if (opt.y !== undefined) this._el.scrollTop = Number(resolveResource(opt.y));
+      // R46：Scroll 的官方形参是 {xOffset, yOffset, animation?}（scroll.d.ts）；List 侧的
+      // opt.x/opt.y 旧路径保留兼容。animation 是真机弹簧滚动（DOM 用 smooth 近似，标注）
+      const x = opt.xOffset !== undefined ? opt.xOffset : opt.x;
+      const y = opt.yOffset !== undefined ? opt.yOffset : opt.y;
+      const smooth = opt.animation === true;
+      if (x !== undefined) this._el.scrollLeft = Number(resolveResource(x));
+      if (y !== undefined) {
+        if (smooth) this._el.scrollTo({ top: Number(resolveResource(y)), behavior: 'smooth' });
+        else this._el.scrollTop = Number(resolveResource(y));
+      }
     }
-    scrollEdge() { }
+    // R46：Scroll 族补面（scroll.d.ts Scroller）。滚动事件由基座 'scroll' 派发（见 scroll.js）
+    scrollBy(dx, dy) {
+      const el = this._el;
+      if (!el) { layoutWarnings.push('Scroller.scrollBy: 未绑定容器'); return; }
+      el.scrollLeft += Number(resolveResource(dx)) || 0;
+      el.scrollTop += Number(resolveResource(dy)) || 0;
+      el.dispatchEvent(new Event('scroll'));   // 同步派发（确定性；scrollTo 同理依赖它）
+    }
+    scrollEdge(edge) {
+      const el = this._el;
+      if (!el) { layoutWarnings.push('Scroller.scrollEdge: 未绑定容器'); return; }
+      // Edge: Top=0 Center=1 Bottom=2 Baseline=3 Start=4 Middle=5 End=6
+      const E = { 0: 'top', 2: 'bottom', 4: 'left', 6: 'right' };
+      const side = typeof edge === 'number' ? E[edge] : edge;
+      if (side === 'top') el.scrollTop = 0;
+      else if (side === 'bottom') el.scrollTop = el.scrollHeight;
+      else if (side === 'left') el.scrollLeft = 0;
+      else if (side === 'right') el.scrollLeft = el.scrollWidth;
+      else layoutWarnings.push(`Scroller.scrollEdge(${String(edge)}): 该档位未实现（记警告）`);
+      el.dispatchEvent(new Event('scroll'));
+    }
+    scrollPage(opt) {
+      const el = this._el;
+      if (!el) { layoutWarnings.push('Scroller.scrollPage: 未绑定容器'); return; }
+      const next = opt ? opt.next !== false : true;     // 默认下一页（.d.ts："Default value: true"）
+      el.scrollTop += (next ? 1 : -1) * el.clientHeight;
+      el.dispatchEvent(new Event('scroll'));
+    }
+    isAtEnd() {
+      const el = this._el;
+      if (!el) return false;
+      return Math.ceil(el.scrollTop) >= el.scrollHeight - el.clientHeight;
+    }
     currentOffset() {
-      return this._el ? { x: this._el.scrollLeft, y: this._el.scrollTop } : { x: 0, y: 0 };
+      // OffsetResult 官方形参是 {xOffset, yOffset}（scroll.d.ts）；x/y 键保留兼容旧用例
+      return this._el
+        ? { xOffset: this._el.scrollLeft, yOffset: this._el.scrollTop, x: this._el.scrollLeft, y: this._el.scrollTop }
+        : { xOffset: 0, yOffset: 0, x: 0, y: 0 };
     }
   }
 

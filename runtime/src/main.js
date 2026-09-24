@@ -1493,6 +1493,8 @@
 
   // @include image
 
+  // @include scroll
+
   // @include small
 
   // ── 由 tools/gen-components.mjs 生成的 149 个组件骨架 ──
@@ -1708,6 +1710,13 @@
     TextDecorationType: { None: 'none', Underline: 'underline', Overline: 'overline', LineThrough: 'line-through' },
     // R37：分步器。ItemState 同为产物里的自由变量枚举
     Stepper, StepperItem, ItemState,
+    // R46：Scroll 组件（手写接管骨架）+ 枚举。Edge：Top=0 Center=1 Bottom=2
+    Scroll,
+    // Baseline=3 Start=4 Middle=5 End=6
+    Edge: { Top: 0, Center: 1, Bottom: 2, Baseline: 3, Start: 4, Middle: 5, End: 6 },
+    ScrollDirection: { Vertical: 0, Horizontal: 1, Free: 2, None: 3 },
+    BarState: { Off: 0, Auto: 1, On: 2 },
+    EdgeEffect: { Spring: 0, Fade: 1, None: 2 },
     // R45：Image。ImageFit 枚举值照 .d.ts 声明顺序（Contain=0..None=5，对齐族 7..15，MATRIX=16）
     Image, ImageFit: {
       Contain: 0, Cover: 1, Auto: 2, Fill: 3, ScaleDown: 4, None: 5,

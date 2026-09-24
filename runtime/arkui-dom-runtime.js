@@ -1889,12 +1889,55 @@
     }
     scrollTo(opt) {
       if (!this._el || !opt) return;
-      if (opt.x !== undefined) this._el.scrollLeft = Number(resolveResource(opt.x));
-      if (opt.y !== undefined) this._el.scrollTop = Number(resolveResource(opt.y));
+      // R46：Scroll 的官方形参是 {xOffset, yOffset, animation?}（scroll.d.ts）；List 侧的
+      // opt.x/opt.y 旧路径保留兼容。animation 是真机弹簧滚动（DOM 用 smooth 近似，标注）
+      const x = opt.xOffset !== undefined ? opt.xOffset : opt.x;
+      const y = opt.yOffset !== undefined ? opt.yOffset : opt.y;
+      const smooth = opt.animation === true;
+      if (x !== undefined) this._el.scrollLeft = Number(resolveResource(x));
+      if (y !== undefined) {
+        if (smooth) this._el.scrollTo({ top: Number(resolveResource(y)), behavior: 'smooth' });
+        else this._el.scrollTop = Number(resolveResource(y));
+      }
     }
-    scrollEdge() { }
+    // R46：Scroll 族补面（scroll.d.ts Scroller）。滚动事件由基座 'scroll' 派发（见 scroll.js）
+    scrollBy(dx, dy) {
+      const el = this._el;
+      if (!el) { layoutWarnings.push('Scroller.scrollBy: 未绑定容器'); return; }
+      el.scrollLeft += Number(resolveResource(dx)) || 0;
+      el.scrollTop += Number(resolveResource(dy)) || 0;
+      el.dispatchEvent(new Event('scroll'));   // 同步派发（确定性；scrollTo 同理依赖它）
+    }
+    scrollEdge(edge) {
+      const el = this._el;
+      if (!el) { layoutWarnings.push('Scroller.scrollEdge: 未绑定容器'); return; }
+      // Edge: Top=0 Center=1 Bottom=2 Baseline=3 Start=4 Middle=5 End=6
+      const E = { 0: 'top', 2: 'bottom', 4: 'left', 6: 'right' };
+      const side = typeof edge === 'number' ? E[edge] : edge;
+      if (side === 'top') el.scrollTop = 0;
+      else if (side === 'bottom') el.scrollTop = el.scrollHeight;
+      else if (side === 'left') el.scrollLeft = 0;
+      else if (side === 'right') el.scrollLeft = el.scrollWidth;
+      else layoutWarnings.push(`Scroller.scrollEdge(${String(edge)}): 该档位未实现（记警告）`);
+      el.dispatchEvent(new Event('scroll'));
+    }
+    scrollPage(opt) {
+      const el = this._el;
+      if (!el) { layoutWarnings.push('Scroller.scrollPage: 未绑定容器'); return; }
+      const next = opt ? opt.next !== false : true;     // 默认下一页（.d.ts："Default value: true"）
+      el.scrollTop += (next ? 1 : -1) * el.clientHeight;
+      el.dispatchEvent(new Event('scroll'));
+    }
+    isAtEnd() {
+      const el = this._el;
+      if (!el) return false;
+      return Math.ceil(el.scrollTop) >= el.scrollHeight - el.clientHeight;
+    }
     currentOffset() {
-      return this._el ? { x: this._el.scrollLeft, y: this._el.scrollTop } : { x: 0, y: 0 };
+      // OffsetResult 官方形参是 {xOffset, yOffset}（scroll.d.ts）；x/y 键保留兼容旧用例
+      return this._el
+        ? { xOffset: this._el.scrollLeft, yOffset: this._el.scrollTop, x: this._el.scrollLeft, y: this._el.scrollTop }
+        : { xOffset: 0, yOffset: 0, x: 0, y: 0 };
     }
   }
 
@@ -4038,6 +4081,11 @@
       IMAGE_ATTRS[prop](node, value);
       return;
     }
+    // Scroll（R46）：scrollable/scrollBar/edgeEffect/事件是语义属性，抢在通用落点之前
+    if (node.__arkuiScroll && SCROLL_ATTRS[prop]) {
+      SCROLL_ATTRS[prop](node, value);
+      return;
+    }
     // 信息展示类（R28）：Counter 的 onInc/onDec 是函数值（必须拦在通用 on* 规则之前，否则
     // 会变成 'inc'/'dec' DOM 监听）；Divider/Marquee 的语义属性抢在通用 data-* 落点之前
     if (node.__arkuiShow && SHOW_ATTRS[prop]) {
@@ -5771,6 +5819,124 @@
     return el;
   });
 
+  // ────────────────── Scroll 滚动容器（R46）：真实 overflow 基座 ──────────────────
+  //
+  // 产物形态（实测 fixtures/pages/ScrollDemo.ts）：
+  //   Scroll.create(scroller);        ← create 单参（Scroller 实例，main.js 的 _bind 已接）
+  //   Scroll.scrollable(ScrollDirection.Vertical);   ← 枚举自由变量（Vertical=0..None=3）
+  //   Scroll.scrollBar(BarState.Off); Scroll.edgeEffect(EdgeEffect.None);
+  //   Scroll.onScroll((x,y)=>…); Scroll.onScrollEdge((side)=>…); Scroll.onScrollEnd(…);
+  //
+  // DOM 映射：根 = div，overflow 由 scrollable 决定（Vertical→overflow-y:auto）。子组件直接
+  // 挂进根（builder 的单一子容器）。scrollBar(Off) → scrollbar-width:none + ::-webkit 规则；
+  // scrollBarColor/Width → scrollbar-color/width（Chromium 121+）并记 data-*。edgeEffect 记
+  // data-*（DOM 无 spring/fade 回弹，edgeEffect None 时禁 over-scroll）。
+  // 事件：scroll → onScroll(xOffset,yOffset) + onScrollEdge（到顶/到底的【到达沿】触发一次，
+  // 离开后再到才再发）；onScrollStart/onScrollEnd 是真机手势语义——DOM 化为"滚动静默 80ms
+  // 收口"（近似，标注）；onScrollStop 与 onScrollEnd 同源（DOM 无 fling/停止之分）。
+  // Scroller 侧（scrollBy/scrollEdge/scrollPage）改 scrollTop 后同步派发 'scroll'（确定性）。
+  const SCROLLABLE_CSS = { 0: 'auto', 1: 'auto', 2: 'auto', 3: 'hidden' };  // Vertical/Horizontal/Free/None
+  if (!document.getElementById('arkui-scroll-style')) {
+    const st = document.createElement('style');
+    st.id = 'arkui-scroll-style';
+    st.textContent = '[data-scroll-bar="0"]{scrollbar-width:none;}'
+      + '[data-scroll-bar="0"]::-webkit-scrollbar{display:none;}';
+    document.head.appendChild(st);
+  }
+  const SCROLL_ATTRS = {
+    scrollable: (n, v) => {
+      const d = Number(resolveResource(v));
+      n.dataset.scrollable = String(d);
+      // Horizontal → overflow-x:auto（overflow-y:hidden）；Free → 双向
+      n.style.overflowX = d === 1 || d === 2 ? 'auto' : 'hidden';
+      n.style.overflowY = d === 0 || d === 2 ? 'auto' : 'hidden';
+      if (SCROLLABLE_CSS[d] === undefined) {
+        layoutWarnings.push(`Scroll.scrollable(${d}): 未知档位，已忽略`);
+      }
+    },
+    scrollBar: (n, v) => { n.dataset.scrollBar = String(Number(resolveResource(v))); },
+    scrollBarColor: (n, v) => {
+      const c = colorOf(v);
+      n.dataset.scrollBarColor = c;
+      n.style.scrollbarColor = `${c} transparent`;   // Chromium 121+；否则只记 data-*
+    },
+    scrollBarWidth: (n, v) => {
+      const w = toCssSize(v);
+      n.dataset.scrollBarWidth = String(w);
+      n.style.scrollbarWidth = String(w);            // thin/数值口径有限——如实记录
+    },
+    edgeEffect: (n, v) => {
+      const e = Number(resolveResource(v));
+      n.dataset.edgeEffect = String(e);              // Spring=0 Fade=1 None=2
+      n.style.overscrollBehavior = e === 2 ? 'none' : 'contain';
+    },
+    onScroll: (n, v) => {
+      (/** @type {any} */ (n.__scrollCbs = n.__scrollCbs || {})).scroll = v;
+    },
+    onScrollEdge: (n, v) => {
+      (/** @type {any} */ (n.__scrollCbs = n.__scrollCbs || {})).edge = v;
+    },
+    onScrollStart: (n, v) => {
+      (/** @type {any} */ (n.__scrollCbs = n.__scrollCbs || {})).start = v;
+    },
+    onScrollEnd: (n, v) => {
+      (/** @type {any} */ (n.__scrollCbs = n.__scrollCbs || {})).end = v;
+    },
+    onScrollStop: (n, v) => {
+      (/** @type {any} */ (n.__scrollCbs = n.__scrollCbs || {})).stop = v;
+    },
+    fling: (n, v) => {
+      n.dataset.fling = String(Number(resolveResource(v)));
+      layoutWarnings.push('Scroll.fling 的真机惯性滚动无 DOM 对应（velocity 记 data-*，不模拟）');
+    },
+  };
+  const Scroll = ensureComponent('Scroll', (args) => {
+    const el = document.createElement('div');
+    el.__arkuiScroll = true;
+    el.dataset.scroll = '';
+    // 默认档：Vertical + scrollBar(Auto) + edgeEffect(Spring)（.d.ts 各自的 @default）
+    el.style.overflowY = 'auto';
+    el.__scrollCbs = {};
+    let lastEdge = '';
+    let settleTimer = null;
+    let scrolling = false;
+    // create 单参：scroller 直接就是 Scroller 实例（.d.ts："(scroller?: Scroller)"——不是
+    // {scroller} 选项对象）。手写接管骨架后不走 applyCreateArgs 的通用绑定，必须在工厂里
+    // 自己 _bind——首跑 scrollBy 无效就是漏了这步（探针抓到 '未绑定容器'）
+    const a0 = args && args[0];
+    const scroller = a0 && typeof a0._bind === 'function' ? a0 : (a0 && a0.scroller) || null;
+    if (scroller && typeof scroller._bind === 'function') scroller._bind(el);
+    const fire = (name, a, b) => {
+      const cb = el.__scrollCbs && el.__scrollCbs[name];
+      if (typeof cb !== 'function') return;
+      try { cb(a, b); }
+      catch (e) { layoutWarnings.push(`Scroll.onScroll* 回调抛错：${e && e.message}`); }
+    };
+    const edgeOf = (top) => (top ? 'top' : 'bottom');
+    el.addEventListener('scroll', () => {
+      const atTop = el.scrollTop <= 0;
+      const atBottom = Math.ceil(el.scrollTop) >= el.scrollHeight - el.clientHeight;
+      const side = atTop ? (el.scrollLeft === 0 ? 'top' : 'top') : (atBottom ? 'bottom' : '');
+      // 到达沿触发：离开边缘后再到才再发（lastEdge 记忆）
+      if (side && side !== lastEdge) fire('edge', side);
+      lastEdge = side;
+      fire('scroll', el.scrollLeft, el.scrollTop);
+      if (!scrolling) {
+        scrolling = true;
+        fire('start');
+      }
+      if (settleTimer) clearTimeout(settleTimer);
+      settleTimer = setTimeout(() => {
+        scrolling = false;
+        fire('end');
+        fire('stop');
+      }, 80);
+    });
+    // Scroller 侧主动滚动（scrollBy/scrollEdge/scrollPage 改 scrollTop）也走同一 'scroll'
+    // 事件；scrollTo 走 el.scrollTo（同样派发）。真机 fling 动画无对应——不模拟（已标注）。
+    return el;
+  });
+
   // ────────────────── 小件收官（R36）：Flex / Span / LoadingProgress / Blank ──────────────────
   //
   // 产物形态（实测 fixtures/pages/SmallDemo.ts）：
@@ -6638,6 +6804,13 @@
     TextDecorationType: { None: 'none', Underline: 'underline', Overline: 'overline', LineThrough: 'line-through' },
     // R37：分步器。ItemState 同为产物里的自由变量枚举
     Stepper, StepperItem, ItemState,
+    // R46：Scroll 组件（手写接管骨架）+ 枚举。Edge：Top=0 Center=1 Bottom=2
+    Scroll,
+    // Baseline=3 Start=4 Middle=5 End=6
+    Edge: { Top: 0, Center: 1, Bottom: 2, Baseline: 3, Start: 4, Middle: 5, End: 6 },
+    ScrollDirection: { Vertical: 0, Horizontal: 1, Free: 2, None: 3 },
+    BarState: { Off: 0, Auto: 1, On: 2 },
+    EdgeEffect: { Spring: 0, Fade: 1, None: 2 },
     // R45：Image。ImageFit 枚举值照 .d.ts 声明顺序（Contain=0..None=5，对齐族 7..15，MATRIX=16）
     Image, ImageFit: {
       Contain: 0, Cover: 1, Auto: 2, Fill: 3, ScaleDown: 4, None: 5,

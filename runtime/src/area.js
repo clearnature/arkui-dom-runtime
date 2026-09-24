@@ -253,6 +253,11 @@
       IMAGE_ATTRS[prop](node, value);
       return;
     }
+    // Scroll（R46）：scrollable/scrollBar/edgeEffect/事件是语义属性，抢在通用落点之前
+    if (node.__arkuiScroll && SCROLL_ATTRS[prop]) {
+      SCROLL_ATTRS[prop](node, value);
+      return;
+    }
     // 信息展示类（R28）：Counter 的 onInc/onDec 是函数值（必须拦在通用 on* 规则之前，否则
     // 会变成 'inc'/'dec' DOM 监听）；Divider/Marquee 的语义属性抢在通用 data-* 落点之前
     if (node.__arkuiShow && SHOW_ATTRS[prop]) {

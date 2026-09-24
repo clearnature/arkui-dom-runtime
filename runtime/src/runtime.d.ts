@@ -53,6 +53,8 @@ interface Element {
   __arkuiGestureState?: any;
   // Image（R45）：回调袋用 `x = x || {}` 惯用法 → any（坑 92）
   __arkuiImage?: boolean;
+  __arkuiScroll?: boolean;
+  __scrollCbs?: any;
   __imgCbs?: any;
   __arkuiImgTryAlt?: () => void;
   __arkuiImgEnsureAlt?: () => HTMLImageElement;

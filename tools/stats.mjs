@@ -43,7 +43,9 @@ const HANDWRITTEN = ['Text', 'Button', 'Column', 'Row', 'Stack', 'List', 'ListIt
   // R37：分步器（Stepper 内置导航条 + StepperItem label/status 汇入）
   'Stepper', 'StepperItem',
   // R45：Image（真实 <img> 基座 + objectFit→object-fit + alt 占位 + 加载回调）
-  'Image'];
+  'Image',
+  // R46：Scroll（真实 overflow 基座 + Scroller 控制器 + 滚动条/事件）
+  'Scroll'];
 const CONTROL_FLOW = ['If', 'ForEach', 'LazyForEach'];   // 不在 149 注册表内，单独实现
 
 const gen = read('runtime/generated-components.js');

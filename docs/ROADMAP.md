@@ -832,6 +832,29 @@ fire 同步认领撤销 **3 红**。还原后 md5 一致。
 `runtime/src/runtime.d.ts`、`tools/stats.mjs`（手写 44→45）、`fixtures/pages/ImageDemo.ts`、
 `test/imagedemo.html`、`run.sh`、`electron/run.sh`
 
+### R46 — Scroll：真实 overflow 基座 ✅（2026-09-24）
+
+**测量**（新增 `pages/ScrollDemo.ets`）：`Scroll(scroller)` create 单参**直接是 Scroller 实例**
+（不是 {scroller} 选项对象——首跑解包错方向，`_bind` 没跑、scrollBy 全哑，探针抓到
+"未绑定容器"）；枚举自由变量 `ScrollDirection`（Vertical=0/Horizontal=1/Free=2/None=3）、
+`BarState`（Off=0/Auto=1/On=2）、`EdgeEffect`（Spring=0/Fade=1/None=2）、`Edge`（Top=0..End=6）。
+
+**实现**（新分片 `scroll.js`，第 18 个）：overflow 基座由 scrollable 决定；scrollBar(Off) →
+`scrollbar-width:none` + ::-webkit 注入规则；edgeEffect → overscroll-behavior。**Scroller 扩面**
+（layout.js）：`scrollTo({xOffset,yOffset,animation})` 官方形参（animation → DOM smooth 近似）+
+新增 `scrollBy`/`scrollEdge(Edge)`/`scrollPage`/`isAtEnd`；`currentOffset()` 返回
+`{xOffset,yOffset}`（保留 x/y 兼容）。主动滚动同步派发 scroll 事件。事件：onScrollEdge
+**到达沿**触发（离开再到才再发）；onScrollStart/End = 滚动静默 80ms 收口（DOM 化近似，标注）。
+测试侧：手动滚动后手动派发 scroll 事件（坑 ⑧ 同族，rAF 对齐事件在 headless 不可靠）。
+
+**验收**：`bash run.sh scrolldemo`（16 条断言）双端通过。**破坏验证（3 处，各 1 红）**：
+overflow 映射短路／滚动条隐藏选择器破坏／onScroll 派发删除。还原后 md5 一致。
+
+**触及**：`runtime/src/scroll.js`（新，第 18 个分片）、`runtime/src/layout.js`（Scroller 扩面）、
+`runtime/src/area.js`、`runtime/src/main.js`（@include + Scroll/枚举挂 global）、
+`runtime/src/runtime.d.ts`、`tools/stats.mjs`（手写 45→46）、`fixtures/pages/ScrollDemo.ts`、
+`test/scrolldemo.html`、`run.sh`、`electron/run.sh`
+
 ### R44 — 已确证组件的语义回归扫描 ✅（2026-09-21）
 
 逐项重读真机源码找首轮漏掉的边界行为。**扫出两处分歧并修正**：
