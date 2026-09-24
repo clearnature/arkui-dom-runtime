@@ -27,6 +27,7 @@
         "pages/AnimatorDemo",
         "pages/ListGroupDemo",
         "pages/RefreshDemo",
-        "pages/DatePickerDemo"
+        "pages/DatePickerDemo",
+        "pages/TimePickerDemo"
     ]
 }

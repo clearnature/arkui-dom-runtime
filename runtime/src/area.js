@@ -268,6 +268,11 @@
       DATEPICKER_ATTRS[prop](node, value);
       return;
     }
+    // TimePicker（R52）：useMilitaryTime/onChange 是语义属性
+    if (node.__arkuiTimePicker && TIMEPICKER_ATTRS[prop]) {
+      TIMEPICKER_ATTRS[prop](node, value);
+      return;
+    }
     // Refresh（R50）：refreshing/refreshOffset/事件是语义属性（函数值抢在通用 on* 前，坑 86）
     if (node.__arkuiRefresh && REFRESH_ATTRS[prop]) {
       REFRESH_ATTRS[prop](node, value);

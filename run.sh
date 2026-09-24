@@ -262,6 +262,10 @@ case "${1:-index}" in
     run_one datepickerdemo "$(src_of pages/DatePickerDemo.ts)" build/datepickerdemo-module.js test/datepickerdemo.html \
       "--cjs --register DatePickerDemo" || rc=1
     echo
+    # R52：TimePicker 时间选择器
+    run_one timepickerdemo "$(src_of pages/TimePickerDemo.ts)" build/timepickerdemo-module.js test/timepickerdemo.html \
+      "--cjs --register TimePickerDemo" || rc=1
+    echo
     run_one measure "$(src_of pages/Measure.ts)" build/measure.js test/measure.html || rc=1
     echo
     run_one lazy "$(src_of pages/Lazy.ts)" build/lazy.js test/lazy.html || rc=1
@@ -428,6 +432,10 @@ case "${1:-index}" in
     # R51：DatePicker
     run_one datepickerdemo "$(src_of pages/DatePickerDemo.ts)" build/datepickerdemo-module.js test/datepickerdemo.html \
       "--cjs --register DatePickerDemo" ;;
+  timepickerdemo)
+    # R52：TimePicker
+    run_one timepickerdemo "$(src_of pages/TimePickerDemo.ts)" build/timepickerdemo-module.js test/timepickerdemo.html \
+      "--cjs --register TimePickerDemo" ;;
   router)
     # 两个页面都要注册；Detail 先单独产出，Home 由 run_one 带 flags 产出
     "$NODE" tools/extract.mjs "$(src_of pages/Detail.ts)" build/detail-module.js --cjs --register Detail >/dev/null || exit 1
@@ -444,5 +452,5 @@ case "${1:-index}" in
     echo
     run_one netfile-2 "$(src_of pages/NetFile.ts)" build/netfile-module.js test/netfile.html \
       "--cjs --register NetFile" "?phase=2" "$PERSIST_PROFILE" "$PERSIST_PORT" ;;
-  *) echo "用法: bash run.sh [index|rich|leak|layout|widgets|tabgrid|swiper|navdemo|reldemo|drawdemo|textmeasure|lazyvh|measarea|measimage|measnotify|promptaction|realfs|animdemo|gesturedemo|transitiondemo|gesturegroupdemo|navbardemo|navtransdemo|shapedemo|inputdemo|showdemo|popdemo|uictxdemo|canvasedemo|xcompdemo|qrdemo|textdemo|mediademo|smalldemo|stepdemo|imagedemo|scrolldemo|animatordemo|listitemgroup|refreshdemo|datepickerdemo|measure|lazy|provide|async|ability|router|netfile|all]"; exit 2 ;;
+  *) echo "用法: bash run.sh [index|rich|leak|layout|widgets|tabgrid|swiper|navdemo|reldemo|drawdemo|textmeasure|lazyvh|measarea|measimage|measnotify|promptaction|realfs|animdemo|gesturedemo|transitiondemo|gesturegroupdemo|navbardemo|navtransdemo|shapedemo|inputdemo|showdemo|popdemo|uictxdemo|canvasedemo|xcompdemo|qrdemo|textdemo|mediademo|smalldemo|stepdemo|imagedemo|scrolldemo|animatordemo|listitemgroup|refreshdemo|datepickerdemo|timepickerdemo|measure|lazy|provide|async|ability|router|netfile|all]"; exit 2 ;;
 esac

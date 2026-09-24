@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R52：TimePicker 时间选择器（hour/minute/second 滚轮 + onChange + 12h/24h）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 360px; }
+  #root [data-arkui-comp="TimePicker"] { border: 1px solid #ddd; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R52：TimePicker（渲染 / wheel 步进 / onChange / 12h vs 24h / 无前导零）</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/timepickerdemo-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const el = (id) => root.querySelector('#' + id);
+    const txt = (id) => String(el(id) ? el(id).textContent : '<缺>');
+    const group = async (name, fn) => {
+      try { await fn(); } catch (e) {
+        allPass = false;
+        lines.push(`FAIL [${name}] 抛出异常：${e && e.stack ? String(e.stack).split('\n')[0] : e}`);
+      }
+    };
+    // 获取指定列的中行文本
+    const colMid = (dp, colIdx) => {
+      const cols = dp.querySelectorAll('[data-tp-col]');
+      const inner = cols[colIdx] && cols[colIdx].firstElementChild;
+      if (!inner) return '';
+      return inner.children[2] ? inner.children[2].textContent : '';
+    };
+
+    try {
+      __arkui_dom_requireModule('TimePickerDemo');
+      __arkui_dom_loadRoute('pages/TimePickerDemo', root);
+      await tick(120);
+      const tp1 = el('tp1'), tp2 = el('tp2'), tp3 = el('tp3');
+      check(!!tp1 && !!tp2 && !!tp3, 'TimePickerDemo 页面已渲染（3 个 TimePicker）');
+
+      // ══════════ ① tp1 渲染 + dataset ══════════
+      await group('tp1 渲染', async () => {
+        check(tp1.tagName === 'DIV' && tp1.querySelectorAll('[data-tp-col]').length === 3,
+          `三列（hour/minute/second）= ${tp1.querySelectorAll('[data-tp-col]').length}（HOUR_MINUTE_SECOND）`);
+        check(colMid(tp1, 0) === '14' && colMid(tp1, 1) === '05' && colMid(tp1, 2) === '03',
+          `中行 '14'/'05'/'03'（实际 '${colMid(tp1,0)}'/'${colMid(tp1,1)}'/'${colMid(tp1,2)}'）`);
+        check(tp1.dataset.tpHour === '14' && tp1.dataset.tpMinute === '5' && tp1.dataset.tpSecond === '3',
+          `dataset hour/minute/second = ${tp1.dataset.tpHour}/${tp1.dataset.tpMinute}/${tp1.dataset.tpSecond}`);
+      });
+
+      // ══════════ ② wheel 步进 + onChange ══════════
+      await group('wheel 步进', async () => {
+        const cols = tp1.querySelectorAll('[data-tp-col]');
+        const hourCol = cols[0];
+        const before = txt('tp-log');
+        hourCol.dispatchEvent(new WheelEvent('wheel', { deltaY: -10, bubbles: true, cancelable: true }));
+        await tick(20);
+        check(txt('tp-log').includes('C15:5;'), `hour 14→15 → onChange C15:5（log 增='${txt('tp-log').slice(before.length)}'）`);
+        check(colMid(tp1, 0) === '15', `hour 中行 '15'`);
+      });
+
+      // ══════════ ③ 12h 格式：tp2 useMilitaryTime(false) ══════════
+      await group('12h 格式', async () => {
+        check(tp2.dataset.military === 'false', `military 记录（'${tp2.dataset.military}'）`);
+        const hourMid = colMid(tp2, 0);
+        check(hourMid === '12 AM', `12h 零点显示 '12 AM'（实际 '${hourMid}'）`);
+      });
+
+      // ══════════ ④ 无前导零：tp3 selected 5:07 ══════════
+      await group('无前导零', async () => {
+        const hourMid = colMid(tp3, 0);
+        const minMid = colMid(tp3, 1);
+        check(hourMid === '5' && minMid === '07', `tp3 中行 '5'/'07'（24h 军事时间）`);
+      });
+
+      // ══════════ ⑤ 回归 ══════════
+      await group('回归', async () => {
+        const bad = __arkui_dom_layout_warnings.filter((w) => /TimePicker\./.test(String(w)) && /未实现/.test(String(w)));
+        check(bad.length === 0, `TimePicker 属性不记"未实现"警告（剩 ${bad.length} 条）`);
+      });
+
+      lines.push(`LOG='${txt('tp-log')}'`);
+      lines.push(`ELMT ${__arkui_dom_elmtRecords.size}`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

@@ -58,6 +58,12 @@ interface Element {
   __arkuiLig?: boolean;
   __arkuiRefresh?: boolean;
   __arkuiDatePicker?: boolean;
+  __arkuiTimePicker?: boolean;
+  __tp?: any;
+  __tpCbs?: any;
+  __tpRender?: () => void;
+  __tpFireChange?: () => void;
+  __tpStep?: (col: string, dir: number) => void;
   __dp?: any;
   __dpCbs?: any;
   __rf?: any;

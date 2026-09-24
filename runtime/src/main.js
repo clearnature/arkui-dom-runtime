@@ -1594,6 +1594,8 @@
 
   // @include datepicker
 
+  // @include timepicker
+
   // @include scroll
 
   // @include small
@@ -1820,6 +1822,7 @@
     ImageAnimator, AnimationStatus: { Initial: 0, Running: 1, Paused: 2, Stopped: 3 },
     // R51：DatePicker + 枚举（DatePickerMode 声明在 date_picker.d.ts 而非 enums.d.ts）
     DatePicker, DatePickerMode: { DATE: 0, YEAR_AND_MONTH: 1, MONTH_AND_DAY: 2 },
+    TimePicker, TimePickerFormat: { HOUR_MINUTE: 0, HOUR_MINUTE_SECOND: 1 },
     // R50：Refresh + RefreshStatus（声明顺序：Inactive=0/Drag=1/OverDrag=2/Refresh=3/Done=4，
     // refresh.d.ts 无显式数值）。注意：Refresh 内部 RefreshAnimationState(1..3) 是另一个
     // 数值空间，勿混用
