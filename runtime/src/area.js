@@ -263,6 +263,11 @@
       ANIMATOR_ATTRS[prop](node, value);
       return;
     }
+    // DatePicker（R51）：lunar/canLoop/事件是语义属性（函数值抢在通用 on* 前，坑 86）
+    if (node.__arkuiDatePicker && DATEPICKER_ATTRS[prop]) {
+      DATEPICKER_ATTRS[prop](node, value);
+      return;
+    }
     // Refresh（R50）：refreshing/refreshOffset/事件是语义属性（函数值抢在通用 on* 前，坑 86）
     if (node.__arkuiRefresh && REFRESH_ATTRS[prop]) {
       REFRESH_ATTRS[prop](node, value);

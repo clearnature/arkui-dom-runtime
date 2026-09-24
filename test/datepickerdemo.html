@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R51：DatePicker 三列滚轮选择器（跨列联动 / start-end 钳制 / 闰年 / 双事件）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 360px; }
+  #root [data-arkui-comp="DatePicker"] { border: 1px solid #ddd; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R51：DatePicker（渲染 / wheel 步进 / 跨列联动 / 非循环边界 / 闰年 / 双事件顺序）</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/datepickerdemo-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const el = (id) => root.querySelector('#' + id);
+    const txt = (id) => String(el(id) ? el(id).textContent : '<缺>');
+    const wheel = (col, dy) => col.dispatchEvent(new WheelEvent('wheel', { deltaY: dy, bubbles: true, cancelable: true }));
+    const mid = (col) => col.querySelectorAll('[data-dp-col]').length > 0
+      ? col.querySelectorAll('[data-dp-col]')[2] : null;
+    // 获取列的中行文本
+    const colMid = (dp, colIdx) => {
+      const cols = dp.querySelectorAll('[data-dp-col]');
+      const inner = cols[colIdx] && cols[colIdx].firstElementChild;
+      if (!inner) return '';
+      return inner.children[2] ? inner.children[2].textContent : '';
+    };
+    const group = async (name, fn) => {
+      try { await fn(); } catch (e) {
+        allPass = false;
+        lines.push(`FAIL [${name}] 抛出异常：${e && e.stack ? String(e.stack).split('\n')[0] : e}`);
+      }
+    };
+
+    try {
+      __arkui_dom_requireModule('DatePickerDemo');
+      __arkui_dom_loadRoute('pages/DatePickerDemo', root);
+      await tick(120);
+      const dp1 = el('dp1'), dp2 = el('dp2'), dp3 = el('dp3'),
+            dp4 = el('dp4'), dp5 = el('dp5'), dp6 = el('dp6');
+      check(!!dp1 && !!dp2 && !!dp3 && !!dp4 && !!dp5 && !!dp6, 'DatePickerDemo 页面已渲染（6 个 DatePicker）');
+
+      // ══════════ ① dp1 渲染 + dataset ══════════
+      await group('dp1 渲染', async () => {
+        check(dp1.tagName === 'DIV' && dp1.querySelectorAll('[data-dp-col]').length === 3,
+          `三列（year/month/day）= ${dp1.querySelectorAll('[data-dp-col]').length}`);
+        check(colMid(dp1, 0) === '2024' && colMid(dp1, 1) === '1' && colMid(dp1, 2) === '15',
+          `中行 '2024'/'1'/'15'（实际 '${colMid(dp1,0)}'/'${colMid(dp1,1)}'/'${colMid(dp1,2)}'）`);
+        check(dp1.dataset.dpYearCount === '5' && dp1.dataset.dpMonthCount === '12' && dp1.dataset.dpDayCount === '31',
+          `dataset 年/月/日选项数 = ${dp1.dataset.dpYearCount}/${dp1.dataset.dpMonthCount}/${dp1.dataset.dpDayCount}（期望 5/12/31）`);
+      });
+
+      // ══════════ ② wheel 步进 + 双事件 ══════════
+      await group('wheel 步进', async () => {
+        const cols = dp1.querySelectorAll('[data-dp-col]');
+        const dayCol = cols[2];
+        const before = txt('dp-log');
+        wheel(dayCol, -10);                          // deltaY<0 → 上一步（day 15→16）
+        await tick(20);
+        check(colMid(dp1, 2) === '16' && txt('dp-log').includes('CHG2024-0-16;') && txt('dp-log').includes('DCHG2024-0-16;'),
+          `day 15→16 → CHG+DCHG（log 增='${txt('dp-log').slice(before.length)}'）`);
+        const chgCount = (txt('dp-log').match(/(?<!D)CHG/g) || []).length;
+        const dchgCount = (txt('dp-log').match(/DCHG/g) || []).length;
+        check(chgCount === dchgCount && chgCount >= 1, `onChange 与 onDateChange 恰各 ${chgCount} 次`);
+      });
+
+      // ══════════ ③ 非循环边界：start/end 已设 → canLoop 强制 false ══════════
+      await group('非循环边界', async () => {
+        const cols = dp1.querySelectorAll('[data-dp-col]');
+        // 先滚 year 到 2020（最小）
+        for (let i = 0; i < 10; i++) wheel(cols[0], 10);   // deltaY>0 = 减
+        await tick(20);
+        check(colMid(dp1, 0) === '2020', `year 钳到下界 2020（实际 '${colMid(dp1, 0)}'）`);
+        const logLen = txt('dp-log').length;
+        wheel(cols[0], 10);                          // 再减 → 仍 2020（不循环）
+        await tick(20);
+        check(colMid(dp1, 0) === '2020', `越界再减 → 仍 2020（不循环）`);
+      });
+
+      // ══════════ ④ 闰年天数：dp2 平年 28 / dp3 闰年 29 ══════════
+      await group('闰年', async () => {
+        check(dp2.dataset.dpDayCount === '28', `dp2 (2023-02) 平年 28 天（实际 ${dp2.dataset.dpDayCount}）`);
+        check(dp3.dataset.dpDayCount === '29', `dp3 (2024-02) 闰年 29 天（实际 ${dp3.dataset.dpDayCount}）`);
+      });
+
+      // ══════════ ⑤ dp4 跨列联动：Jan 31 → 滚月到 Feb → day 夹到 29 ══════════
+      await group('跨列联动', async () => {
+        const cols4 = dp4.querySelectorAll('[data-dp-col]');
+        check(colMid(dp4, 2) === '31', `初始 day=31（'${colMid(dp4, 2)}'）`);
+        wheel(cols4[1], -10);                        // month 1→2
+        await tick(20);
+        check(colMid(dp4, 2) === '29', `month→2 月 → day 夹到 29（'${colMid(dp4, 2)}'，2024 闰年）`);
+      });
+
+      // ══════════ ⑥ mode：YEAR_AND_MONTH 隐藏 day 列 ══════════
+      await group('mode', async () => {
+        check(dp5.dataset.dpMode === '1', `dpMode 记录（'${dp5.dataset.dpMode}'）`);
+        const cols5 = dp5.querySelectorAll('[data-dp-col]');
+        const dayCol = cols5[2];
+        check(dayCol && dayCol.style.display === 'none', `YEAR_AND_MONTH → day 列隐藏`);
+        check(colMid(dp5, 0) === '2024', `year 中行 '2024'（'${colMid(dp5, 0)}'）`);
+      });
+
+      // ══════════ ⑦ 样式默认值 + lunar + 回归 ══════════
+      await group('样式与回归', async () => {
+        const rows1 = dp1.querySelectorAll('[data-dp-col]')[0].firstElementChild.children;
+        check(rows1[2] && getComputedStyle(rows1[2]).color === 'rgb(0, 125, 255)',
+          `中行选中色 rgb(0,125,255)（实际 ${getComputedStyle(rows1[2]).color}）`);
+        check(rows1[0] && getComputedStyle(rows1[0]).color === 'rgb(24, 36, 49)',
+          `边缘色 rgb(24,36,49)（实际 ${getComputedStyle(rows1[0]).color}）`);
+        check(dp6.dataset.dpLunar === 'true', `lunar(true) 记 data-*（'${dp6.dataset.dpLunar}'）`);
+        const lunarWarn = __arkui_dom_layout_warnings.filter((w) => /DatePicker\.lunar.*未实现/.test(String(w)));
+        check(lunarWarn.length >= 1, `lunar 出声（${lunarWarn.length} 条警告）`);
+        check(!dp1.dataset.dpLunar || dp1.dataset.dpLunar === 'false', `dp1 无 lunar 设置`);
+        const bad = __arkui_dom_layout_warnings.filter((w) =>
+          /DatePicker\.(canLoop|digitalCrownSensitivity|enableHapticFeedback).*未实现/.test(String(w)));
+        check(bad.length === 0, `canLoop/crown/haptic 不记"未实现"警告（剩 ${bad.length} 条）`);
+      });
+
+      lines.push(`LOG='${txt('dp-log').slice(-50)}'`);
+      lines.push(`ELMT ${__arkui_dom_elmtRecords.size}`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

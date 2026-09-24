@@ -1426,6 +1426,33 @@ mouse 拒绝/rf2 阈值与 clamp/rf3 禁触发）双端通过。**破坏验证�
 `harmony-proj/.../RefreshDemo.ets` + `fixtures/pages/RefreshDemo.ts`、`test/refreshdemo.html`、
 `run.sh`、`electron/run.sh`
 
+## R51：`DatePicker` 三列滚轮选择器 ✅
+
+**测量**（新增 `pages/DatePickerDemo.ets`，按 R48-A 摘要设计）：`DatePicker({start, end,
+selected, mode?})`——start/end 是 Date（默认 1970-01-01 / 2100-12-31）、selected 默认当前
+日期、mode 默认 DATE=0（YEAR_AND_MONTH=1/MONTH_AND_DAY=2，声明在 date_picker.d.ts 而非
+enums.d.ts）；`onChange({year, month(0 基), day})` + `onDateChange(Date)` 双事件；
+`lunar/canLoop/digitalCrownSensitivity/enableHapticFeedback`；三个 PickerTextStyle 属性。
+
+**实现**（新分片 `runtime/src/datepicker.js`，第 21 个）：根 = div + 三列（year/month/day）
+各 5 行可见（行高 40px），列内 translateY 定位；`wheel` 同步单步（真机 AXIS+MOUSE 每事件
+同步一步，picker_column_pattern.cpp:506-510——headless 确定性最好）；**跨列联动**：月变→
+重算当月天数→day 夹取（真机 HandleSolarMonthChange）；start/end 钳制（selected 夹入
+[start, end]）；**设了 start/end 则 canLoop 强制 false**（真机 OnModifyDone:486）；样式三
+套（选中蓝 #ff007dff / 候选与边缘 #ff182431）照 .d.ts 默认值；`lunar` 记警告不实现（无农历
+换算）。**month 0/1 基**：内部 1 基、出口 onChange 0 基（真机 GetSelectedObject month−1）。
+
+**验收**：`bash run.sh datepickerdemo`（21 条断言：渲染/dataset/wheel 步进+双事件/非循环
+边界/闰年 28·29/跨列联动 day 夹取/mode 隐藏 day 列/样式默认值/lunar 出声/回归）双端通过。
+**破坏验证（3 处）**：跨列联动 day 夹取摘除 → **1 红**；onChange/onDateChange 不派发 →
+**2 红**；lunar 警告摘除 → **1 红**。还原后 md5 一致。
+
+**触及**：`runtime/src/datepicker.js`（新，第 21 个分片）、`runtime/src/area.js`（DATEPICKER
+分派分支）、`runtime/src/main.js`（@include + DatePicker/DatePickerMode 挂 global）、
+`runtime/src/runtime.d.ts`、`tools/stats.mjs`（手写 49→50）、
+`harmony-proj/.../DatePickerDemo.ets` + `fixtures/pages/DatePickerDemo.ts`、
+`test/datepickerdemo.html`、`run.sh`、`electron/run.sh`
+
 ## R44：已确证组件的语义回归扫描 ✅
 
 对 R39–R43 确证过的语义逐项**重读真机源码找首轮漏掉的边界行为**——扫出两处分歧并修正、
@@ -2120,9 +2147,9 @@ PASS starStyle 的图片 URI 不可用已记警告
 
 **权威清单在 `docs/ROADMAP.md`**（每项带可复现的验收命令）。当前优先：
 
-1. 骨架组件的视觉语义——手写 49 个：形状族 8（R26）、输入类 4+3（R27/R34）、
+1. 骨架组件的视觉语义——手写 50 个：形状族 8（R26）、输入类 4+3（R27/R34）、
    信息展示类 4+1（R28/R33）、弹出类 3（R29）、表层类 2（R31/R32）、小件 4（R36）、
-   分步器 2（R37）、Image（R45）、Scroll（R46）、ImageAnimator（R47）、ListItemGroup（R49）、Refresh（R50）；`UIContext` 已收（R30）、`@ohos.multimedia.media` 已收（R35）。
+   分步器 2（R37）、Image（R45）、Scroll（R46）、ImageAnimator（R47）、ListItemGroup（R49）、Refresh（R50）、DatePicker（R51）；`UIContext` 已收（R30）、`@ohos.multimedia.media` 已收（R35）。
    剩余候选以骨架清单（`node tools/stats.mjs` 的"骨架·仅 data-*"）为准
 2. ~~**继续把 `runtime/src/main.js` 拆细**~~ **已拆到位（2026-09-21，源拆分第三步）**：9 个分片，
    `main.js` 剩 **1869 行 / 86,452 B**（基础设施 / 状态 v1 / ViewPU / 属性映射 / Tabs / Swiper /

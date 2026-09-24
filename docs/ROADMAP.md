@@ -912,6 +912,25 @@ Refresh 态回弹到 refreshOffset 并保持。**重渲染时 refreshing 选项�
 `runtime/src/runtime.d.ts`、`tools/stats.mjs`（手写 48→49）、`fixtures/pages/RefreshDemo.ts`、
 `test/refreshdemo.html`、`run.sh`、`electron/run.sh`
 
+### R51 — DatePicker：三列滚轮选择器 ✅（2026-09-24）
+
+按 R48-A 摘要实现。**create**：`{start, end, selected, mode?}`；**列结构**：year/month/day
+三列各 5 行（行高 40px），列内 translateY 定位；**wheel 同步单步**（真机 AXIS+MOUSE 每事件
+同步一步，headless 确定性最好——测试用 `__dp.step` 直调避免 wheel 事件不可靠，坑 ⑧ 同族）；
+**跨列联动**：月变→重算当月天数→day 夹取（HandleSolarMonthChange）；start/end 钳制；
+**设了 start/end 则 canLoop 强制 false**（OnModifyDone:486）；lunar 记警告（无农历换算）。
+样式三套照 .d.ts 默认（选中蓝/候选与边缘暗色）。**month 0/1 基**：内部 1 基、onChange 出口
+0 基（真机 GetSelectedObject month−1 同款）。
+
+**验收**：`bash run.sh datepickerdemo`（21 条断言）双端通过。**破坏验证（3 处）**：跨列联动
+摘除 **1 红**；onChange/onDateChange 不派发 **2 红**；lunar 警告摘除 **1 红**。还原后
+md5 一致。
+
+**触及**：`runtime/src/datepicker.js`（新，第 21 个分片）、`runtime/src/area.js`、
+`runtime/src/main.js`（@include + DatePicker/DatePickerMode 挂 global）、
+`runtime/src/runtime.d.ts`、`tools/stats.mjs`（手写 49→50）、
+`fixtures/pages/DatePickerDemo.ts`、`test/datepickerdemo.html`、`run.sh`、`electron/run.sh`
+
 ### R44 — 已确证组件的语义回归扫描 ✅（2026-09-21）
 
 逐项重读真机源码找首轮漏掉的边界行为。**扫出两处分歧并修正**：

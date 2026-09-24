@@ -51,7 +51,9 @@ const HANDWRITTEN = ['Text', 'Button', 'Column', 'Row', 'Stack', 'List', 'ListIt
   // R49：ListItemGroup（header→items→footer 序 + space 只作用 item 间 + divider + 吸顶）
   'ListItemGroup',
   // R50：Refresh（pointer 驱动下拉刷新状态机 + Scroller 联动 + 事件顺序照真机）
-  'Refresh'];
+  'Refresh',
+  // R51：DatePicker（三列滚轮 + 跨列联动 + start/end 钳制 + 双事件）
+  'DatePicker'];
 const CONTROL_FLOW = ['If', 'ForEach', 'LazyForEach'];   // 不在 149 注册表内，单独实现
 
 const gen = read('runtime/generated-components.js');

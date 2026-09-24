@@ -57,6 +57,9 @@ interface Element {
   __arkuiAnimator?: boolean;
   __arkuiLig?: boolean;
   __arkuiRefresh?: boolean;
+  __arkuiDatePicker?: boolean;
+  __dp?: any;
+  __dpCbs?: any;
   __rf?: any;
   __rfCbs?: any;
   __rfApplyRefreshing?: (on: boolean) => void;
