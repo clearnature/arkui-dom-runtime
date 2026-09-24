@@ -70,6 +70,10 @@ interface Element {
   __rfCbs?: any;
   __rfApplyRefreshing?: (on: boolean) => void;
   __rfEnterRefresh?: () => void;
+  __arkuiWaterFlow?: boolean;
+  __wf?: any;
+  __wfCbs?: any;
+  __arkuiFlowItem?: boolean;
   __lig?: any;
   __an?: any;
   __anCbs?: any;

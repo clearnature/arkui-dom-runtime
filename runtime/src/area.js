@@ -258,6 +258,12 @@
       SCROLL_ATTRS[prop](node, value);
       return;
     }
+    // WaterFlow（R53）：columnsTemplate/gap/layoutDirection/事件是语义属性（函数值抢在通用
+    // on* 前，坑 86；分支必须与兄弟条件块平级——嵌进去就是静默死分支，坑 91）
+    if (node.__arkuiWaterFlow && WATERFLOW_ATTRS[prop]) {
+      WATERFLOW_ATTRS[prop](node, value);
+      return;
+    }
     // ImageAnimator（R47）：images/state/事件是语义属性，抢在通用落点之前
     if (node.__arkuiAnimator && ANIMATOR_ATTRS[prop]) {
       ANIMATOR_ATTRS[prop](node, value);

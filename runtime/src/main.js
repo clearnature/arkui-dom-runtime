@@ -1598,6 +1598,8 @@
 
   // @include scroll
 
+  // @include waterflow
+
   // @include small
 
   // ── 由 tools/gen-components.mjs 生成的 149 个组件骨架 ──
@@ -1827,6 +1829,9 @@
     // refresh.d.ts 无显式数值）。注意：Refresh 内部 RefreshAnimationState(1..3) 是另一个
     // 数值空间，勿混用
     Refresh, RefreshStatus: { Inactive: 0, Drag: 1, OverDrag: 2, Refresh: 3, Done: 4 },
+    // R53：WaterFlow 瀑布流 + 枚举/shim。WaterFlowLayoutMode 是【显式】=0/=1（water_flow.d.ts:258,295）
+    WaterFlow, FlowItem, WaterFlowSections,
+    WaterFlowLayoutMode: { ALWAYS_TOP_DOWN: 0, SLIDING_WINDOW: 1 },
     // R46：Scroll 组件（手写接管骨架）+ 枚举。Edge：Top=0 Center=1 Bottom=2
     Scroll,
     // Baseline=3 Start=4 Middle=5 End=6

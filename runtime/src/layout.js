@@ -212,7 +212,9 @@
       if (!el) { layoutWarnings.push(`Scroller.scrollToIndex(${i}): 未绑定容器`); return; }
       // ForEach/If 的包裹层是 display:contents，ListItem 是【孙子】而非直接子节点；
       // 所以优先按组件标记查，再退回直接子节点。容器已设 position:relative → offsetTop 以它为基准。
-      const items = el.querySelectorAll('[data-arkui-comp="ListItem"]');
+      // R53：WaterFlow 的 FlowItem 同为合法目标（此前只查 ListItem → WaterFlow 下必走
+      // '目标不存在' 警告分支）
+      const items = el.querySelectorAll('[data-arkui-comp="ListItem"], [data-arkui-comp="FlowItem"]');
       // 虚拟列表的 `items` 是【当前窗口】的渲染项，不是全量列表：
       // 窗口内第 k 个渲染项对应的索引是 window[0]+k。第一版直接取 items[i]，
       // 于是 scrollToIndex(0) 会滚到"当前窗口第一个渲染项"（实测跳到了 100 段）。
@@ -223,7 +225,8 @@
       const target = (k >= 0 && k < items.length) ? items[k] : null;
       if (target) {
         el.scrollTop = target.offsetTop;
-      } else if (meta) {
+        el.dispatchEvent(new Event('scroll'));   // R53：与 scrollBy/scrollEdge 同款同步派发（确定性）；
+      } else if (meta) {                         // 真机 scrollToIndex 同样发滚动事件
         // 目标没渲染 → 用【累计偏移】换算（而不是"统一行高 × 序号"：变高列表下后者会偏出几十上百像素）
         const max = Math.max(0, el.scrollHeight - el.clientHeight);
         const want = typeof meta.offsetOf === 'function' ? meta.offsetOf(i) : meta.estItemH * i;

@@ -53,7 +53,13 @@ const HANDWRITTEN = ['Text', 'Button', 'Column', 'Row', 'Stack', 'List', 'ListIt
   // R50：Refresh（pointer 驱动下拉刷新状态机 + Scroller 联动 + 事件顺序照真机）
   'Refresh',
   // R51：DatePicker（三列滚轮 + 跨列联动 + start/end 钳制 + 双事件）
-  'DatePicker'];
+  'DatePicker',
+  // R52：TimePicker（hour/minute/second 三列滚轮 + 12h/24h）
+  'TimePicker',
+  // R53：WaterFlow 瀑布流（JS 绝对定位复刻真机换列算法）+ 子项 FlowItem
+  'WaterFlow', 'FlowItem',
+  // 补账：R33/R34 已手写实现但漏登记（QRCode 编码器为真机 WASM，R41）
+  'TextInput', 'TextArea', 'Search', 'Hyperlink', 'QRCode'];
 const CONTROL_FLOW = ['If', 'ForEach', 'LazyForEach'];   // 不在 149 注册表内，单独实现
 
 const gen = read('runtime/generated-components.js');

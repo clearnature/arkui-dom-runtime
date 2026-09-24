@@ -931,6 +931,42 @@ md5 一致。
 `runtime/src/runtime.d.ts`、`tools/stats.mjs`（手写 49→50）、
 `fixtures/pages/DatePickerDemo.ts`、`test/datepickerdemo.html`、`run.sh`、`electron/run.sh`
 
+### R53 — WaterFlow 瀑布流 ✅（2026-09-25）
+
+CSS 无原生瀑布流 → **JS 绝对定位排布逐行复刻真机 top_down 算法**（`water_flow_layout_info.cpp`）：
+换列 `GetCrossIndexForNextItem(:271-298)`=空列直接选 → 累计主轴**严格更小**才换（LessNotEqual
+容差 -0.001）→ **平高保左列**；轨道解析支持 `'1fr 1fr'`/`repeat(auto-fill,Npx)`/固定 px。
+**事件时序照真机 TriggerPostLayoutEvents(:354-393)**：onScroll(delta,state) → onScrollIndex(变才发)
+→ onReachStart/End（过境判定：prev 与 current 分居 minOffset=内容高−视口高 两侧才发）；
+onScrollIndex/onReachStart **首帧必发**（itemRange_={-1,-1}/firstLayout）→ setTimeout(0) 补发且
+**调度序必须排在布局 flush 之后**；首帧不发 onReachEnd（真机首帧只发 observer）。
+onScrollStart/Stop 为 DOM 近似（首个滚动事件 / 80ms 静默收口，scroll.js 同款）。
+**默认档 WaterFlow 专属**：scrollBar=Off（≠Scroll 的 Auto）、edgeEffect=None → overscrollBehavior:none。
+scrollToIndex 语义确证：落点恰为 max scroll 时 ReachEnd 过境成立发 RE（真机 ReachEnd
+`prev>minOffset && current≤minOffset` 负偏移空间）——修正 R48 摘要漏记的这次 RE。
+**WaterFlowSections shim**：itemsCount 非负校验，非法 push/splice/update 返 false；sections 启用时
+按段列数排布并忽略 columnsTemplate（.d.ts:350-353）。layout.js `scrollToIndex` 扩查 FlowItem +
+found-target 路径补同步派发（此前只查 ListItem、无派发）。
+
+**验收**：`bash run.sh waterflowdemo`（21 条断言：基座 5/几何 5/初始 2/滚动序列 5/收口 3，
+含最终全串按序全等）双端通过。**破坏验证（3 处）**：position:absolute 摘除 **14 红**；
+delta 符号反转 **6 红**；初始 reachStart 摘除 **7 红**。还原后 grep BROKEN 无残留、重跑全绿。
+
+**新增坑 95**（原生 scroll 事件与手动同步派发双发 → delta 幽灵 D0，监听器按 scrollTop 恒等去重）、
+**坑 96**（同延时定时器按插入序执行：初始事件调度必须排在布局 flush 之后，否则读到未排布几何）。
+
+**触及**：`runtime/src/waterflow.js`（新，第 23 个分片）、`runtime/src/area.js`、
+`runtime/src/main.js`（@include + WaterFlow/FlowItem/WaterFlowSections/WaterFlowLayoutMode 挂 global）、
+`runtime/src/layout.js`（scrollToIndex 扩 FlowItem + 派发）、`runtime/src/runtime.d.ts`、
+`tools/stats.mjs`（手写 50→58，补账 TextInput/TextArea/Search/Hyperlink/QRCode 漏登记）、
+`fixtures/pages/WaterFlowDemo.ts`、`test/waterflowdemo.html`、`run.sh`、`electron/run.sh`
+
+### R52 — TimePicker ✅（2026-09-24，本条为文档补记）
+
+hour/minute/second 三列滚轮；useMilitaryTime 12h/24h（军事时间 hour 不补零）；onChange 双参；
+枚举 `TimePickerFormat` 挂 global。验收 `bash run.sh timepickerdemo`（10 条断言）双端通过。
+详见 commit 6300416。
+
 ### R44 — 已确证组件的语义回归扫描 ✅（2026-09-21）
 
 逐项重读真机源码找首轮漏掉的边界行为。**扫出两处分歧并修正**：

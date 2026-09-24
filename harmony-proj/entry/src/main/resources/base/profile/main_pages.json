@@ -28,6 +28,7 @@
         "pages/ListGroupDemo",
         "pages/RefreshDemo",
         "pages/DatePickerDemo",
-        "pages/TimePickerDemo"
+        "pages/TimePickerDemo",
+        "pages/WaterFlowDemo"
     ]
 }

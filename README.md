@@ -2147,9 +2147,9 @@ PASS starStyle 的图片 URI 不可用已记警告
 
 **权威清单在 `docs/ROADMAP.md`**（每项带可复现的验收命令）。当前优先：
 
-1. 骨架组件的视觉语义——手写 50 个：形状族 8（R26）、输入类 4+3（R27/R34）、
+1. 骨架组件的视觉语义——手写 58 个：形状族 8（R26）、输入类 4+3（R27/R34）、
    信息展示类 4+1（R28/R33）、弹出类 3（R29）、表层类 2（R31/R32）、小件 4（R36）、
-   分步器 2（R37）、Image（R45）、Scroll（R46）、ImageAnimator（R47）、ListItemGroup（R49）、Refresh（R50）、DatePicker（R51）；`UIContext` 已收（R30）、`@ohos.multimedia.media` 已收（R35）。
+   分步器 2（R37）、Image（R45）、Scroll（R46）、ImageAnimator（R47）、ListItemGroup（R49）、Refresh（R50）、DatePicker（R51）、TimePicker（R52）、WaterFlow+FlowItem（R53）；`UIContext` 已收（R30）、`@ohos.multimedia.media` 已收（R35）。
    剩余候选以骨架清单（`node tools/stats.mjs` 的"骨架·仅 data-*"）为准
 2. ~~**继续把 `runtime/src/main.js` 拆细**~~ **已拆到位（2026-09-21，源拆分第三步）**：9 个分片，
    `main.js` 剩 **1869 行 / 86,452 B**（基础设施 / 状态 v1 / ViewPU / 属性映射 / Tabs / Swiper /

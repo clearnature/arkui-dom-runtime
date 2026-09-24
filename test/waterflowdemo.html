@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R53：WaterFlow 瀑布流（绝对定位排布复刻真机换列算法 + 滚动事件时序）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 360px; }
+  #root [data-arkui-comp="WaterFlow"] { border: 1px solid #ddd; }
+  #root [data-arkui-comp="FlowItem"] { background: #eef3f8; box-sizing: border-box; border: 1px solid #c5d5e5; }
+  #root button { margin-right: 6px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R53：WaterFlow（基座 / 换列算法 / scrollHeight / Scroller / 事件时序）</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/waterflowdemo-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const el = (id) => root.querySelector('#' + id);
+    const txt = (id) => String(el(id) ? el(id).textContent : '<缺>');
+    const click = async (sel) => {
+      const n = root.querySelector(sel);
+      if (!n) { check(false, '要点击的节点不存在：' + sel); return; }
+      n.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      await tick(30);
+    };
+    const group = async (name, fn) => {
+      try { await fn(); } catch (e) {
+        allPass = false;
+        lines.push(`FAIL [${name}] 抛出异常：${e && e.stack ? String(e.stack).split('\n')[0] : e}`);
+      }
+    };
+
+    // 推演基准（2 列×120px、gap 0、高 150、8 项 60/90/60/40/80/50/70/70）：
+    // 换列（空列优先→累计严格最小→平高保左）：
+    //   列0 = f0@0, f2@60, f4@120, f7@200 → end 270
+    //   列1 = f1@0, f3@90, f5@130, f6@180 → end 250
+    // 内容高 270、视口 150 → 可滚 120
+    const items = () => root.querySelectorAll('[data-arkui-comp="FlowItem"]');
+    const FIN = 'I0,5;RS;D60;I1,7;SS;D60;I3,7;RE;D-120;I0,5;RS;D120;I3,7;RE;SE;@120;';
+
+    try {
+      __arkui_dom_requireModule('WaterFlowDemo');
+      __arkui_dom_loadRoute('pages/WaterFlowDemo', root);
+      await tick(120);
+      const wf = el('wf');
+      check(!!wf && wf.tagName === 'DIV' && items().length === 8, 'WaterFlowDemo 页面已渲染（8 个 FlowItem）');
+
+      // ══════════ ① 基座（5 条） ══════════
+      await group('基座', async () => {
+        check(wf.style.overflowY === 'auto' && wf.style.overflowX === 'hidden'
+          && wf.style.position === 'relative',
+          `基座：relative + overflowY:auto（默认 Column，实际 '${wf.style.overflowY}'）`);
+        const d = wf.dataset;
+        check(d.columnsTemplate === '1fr 1fr' && d.layoutMode === '0' && d.layoutDirection === '1',
+          `dataset：columnsTemplate '${d.columnsTemplate}' / layoutMode '${d.layoutMode}' / layoutDirection '${d.layoutDirection}'`);
+        check(d.scrollBar === '0',
+          `scrollBar 默认 Off='0'（WaterFlow 专属默认，≠Scroll 的 Auto，common.d.ts:25192）`);
+        check(getComputedStyle(wf).scrollbarWidth === 'none',
+          `scrollBar Off → 滚动条隐藏（computed scrollbar-width '${getComputedStyle(wf).scrollbarWidth}'）`);
+        check(d.edgeEffect === '2' && wf.style.overscrollBehavior === 'none',
+          `edgeEffect 默认 None='2' → overscrollBehavior:none（common.d.ts:25291）`);
+      });
+
+      // ══════════ ② 瀑布几何（5 条） ══════════
+      await group('几何', async () => {
+        const it = items();
+        const g = (i) => ({ top: it[i].offsetTop, left: it[i].offsetLeft, h: it[i].offsetHeight });
+        check(g(4).top === 120 && g(4).left === 0 && it[4].style.width === '120px',
+          `f4 → 列0 第3项 top=120 left=0 width=120（实际 ${JSON.stringify(g(4))}）`);
+        check(g(5).top === 130 && g(5).left === 120,
+          `f5 → 列1 第3项 top=130 left=120（实际 ${JSON.stringify(g(5))}）`);
+        check(g(7).top === 200 && g(7).left === 0,
+          `f7 → 平高后落左列 top=200 left=0（严格最小才换列，实际 ${JSON.stringify(g(7))}）`);
+        check(g(6).top === 180 && g(6).left === 120,
+          `f6 → 列1 底部 top=180 left=120（实际 ${JSON.stringify(g(6))}）`);
+        check(wf.scrollHeight === 270 && wf.clientHeight === 150,
+          `scrollHeight=270（max 列高）clientHeight=150 → 可滚 120（实际 ${wf.scrollHeight}/${wf.clientHeight}）`);
+      });
+
+      // ══════════ ③ 初始事件（2 条）：I 先于 RS，首帧无 RE ══════════
+      await group('初始事件', async () => {
+        check(txt('wf-log') === 'I0,5;RS;',
+          `首帧 onScrollIndex(0,5) 先于 onReachStart（实际 '${txt('wf-log')}'）`);
+        check(!txt('wf-log').includes('RE'),
+          '首帧不发 onReachEnd（真机首帧特殊分支只发 observer 不发应用回调）');
+      });
+
+      // ══════════ ④ Scroller 驱动 + 事件序列（4 条，逐段全等） ══════════
+      await group('滚动序列', async () => {
+        await click('#btn-by');
+        check(txt('wf-log') === 'I0,5;RS;D60;I1,7;SS;',
+          `scrollBy(0,60)：onScroll(60) → I1,7 → SS（实际 '${txt('wf-log')}'）`);
+        await click('#btn-idx');
+        check(txt('wf-log') === 'I0,5;RS;D60;I1,7;SS;D60;I3,7;RE;',
+          `scrollToIndex(4)=120 恰为 max scroll → ReachEnd 过境成立发 RE（真机 ReachEnd：prev=-60>minOffset=-120 且 current=-120≤minOffset；实际 '${txt('wf-log')}'）`);
+        check(wf.scrollTop === 120, `scrollTop=120（f4.offsetTop，不被 clamp；实际 ${wf.scrollTop}）`);
+        await click('#btn-top');
+        check(txt('wf-log') === 'I0,5;RS;D60;I1,7;SS;D60;I3,7;RE;D-120;I0,5;RS;',
+          `scrollEdge(Top)：delta=-120 → I0,5 → RS（实际 '${txt('wf-log')}'）`);
+        await click('#btn-bot');
+        check(txt('wf-log') === 'I0,5;RS;D60;I1,7;SS;D60;I3,7;RE;D-120;I0,5;RS;D120;I3,7;RE;',
+          `scrollEdge(Bottom)：clamp 到 120 → delta=+120 → I3,7 → RE（实际 '${txt('wf-log')}'）`);
+      });
+
+      // ══════════ ⑤ 收口 + 回读 + 全串（3 条） ══════════
+      await group('收口', async () => {
+        await tick(220);                          // 80ms 静默收口 + 裕量（坑 89：单次等待，不轮询到上限）
+        check(txt('wf-log') === 'I0,5;RS;D60;I1,7;SS;D60;I3,7;RE;D-120;I0,5;RS;D120;I3,7;RE;SE;',
+          `静默 80ms 收口发一次 onScrollStop（实际 '${txt('wf-log')}'）`);
+        await click('#btn-w');
+        check(txt('wf-log').endsWith('@120;'),
+          `currentOffset().yOffset 回读真实 scrollTop=120（实际 '${txt('wf-log').slice(-8)}'）`);
+        check(txt('wf-log') === FIN, `最终全串按序全等（实际 '${txt('wf-log')}'）`);
+      });
+
+      lines.push(`LOG='${txt('wf-log')}'`);
+      lines.push(`ELMT ${__arkui_dom_elmtRecords.size}`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+
+  })();
+  </script>
+</body>
+</html>
