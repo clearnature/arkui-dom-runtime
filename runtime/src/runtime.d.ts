@@ -56,6 +56,11 @@ interface Element {
   __arkuiScroll?: boolean;
   __arkuiAnimator?: boolean;
   __arkuiLig?: boolean;
+  __arkuiRefresh?: boolean;
+  __rf?: any;
+  __rfCbs?: any;
+  __rfApplyRefreshing?: (on: boolean) => void;
+  __rfEnterRefresh?: () => void;
   __lig?: any;
   __an?: any;
   __anCbs?: any;

@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R50：Refresh 下拉刷新（pointer 状态机 / 事件顺序 / 阈值·上限·禁触发）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 340px; }
+  #root [data-arkui-comp="Refresh"] { border: 1px solid #ddd; background: #fafafa; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R50：Refresh（Drag/OverDrag/Refresh/Done / AR 先于 A3 / maxPullDownDistance / pullToRefresh=false）</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/refreshdemo-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const el = (id) => root.querySelector('#' + id);
+    const txt = (id) => String(el(id) ? el(id).textContent : '<缺>');
+    // pointer 拖拽（真机只收 touch——mouse 会被拒，见 refresh.d.ts:248）
+    const touch = (type, clientY, target) => target.dispatchEvent(
+      new PointerEvent(type, { pointerType: 'touch', clientY, bubbles: true, cancelable: true }));
+    const drag = async (rf, dy) => {
+      touch('pointerdown', 100, rf);
+      await tick(10);
+      touch('pointermove', 100 + dy, rf);
+      await tick(10);
+      touch('pointerup', 100 + dy, rf);
+      await tick(30);
+    };
+    const transY = (rf) => {
+      const c = rf.firstElementChild;
+      const tf = c ? getComputedStyle(c).transform : 'none';
+      if (!tf || tf === 'none') return '0';
+      const parts = tf.replace(/^matrix\(/, '').replace(/\)$/, '').split(',');
+      return parts[5] !== undefined ? String(parseFloat(parts[5])) : '0';
+    };
+    const group = async (name, fn) => {
+      try { await fn(); } catch (e) {
+        allPass = false;
+        lines.push(`FAIL [${name}] 抛出异常：${e && e.stack ? String(e.stack).split('\n')[0] : e}`);
+      }
+    };
+
+    try {
+      __arkui_dom_requireModule('RefreshDemo');
+      __arkui_dom_loadRoute('pages/RefreshDemo', root);
+      await tick(120);
+      const rf1 = el('rf1'), rf2 = el('rf2'), rf3 = el('rf3');
+      check(!!rf1 && !!rf2 && !!rf3, 'RefreshDemo 页面已渲染（3 个 Refresh）');
+      check(rf1.dataset.refreshState === '0', `初始 Inactive（refreshState='${rf1.dataset.refreshState}'）`);
+
+      // ══════════ ① 小拖回弹：<64 → Drag(1) → 松手回 Inactive(0)，无刷新 ══════════
+      await group('小拖回弹', async () => {
+        await drag(rf1, 30);
+        check(txt('rf-log').includes('A1;'), `Drag 派发（log 含 A1;）`);
+        check(!txt('rf-log').includes('A2;') && !txt('rf-log').includes('AR;'),
+          `30 < 64：无 OverDrag/无刷新（log='${txt('rf-log')}'）`);
+        await tick(500);
+        check(txt('rf-log').includes('A0;') && !txt('rf-log').includes('AR;'),
+          `松手回 Inactive（log='${txt('rf-log')}'）`);
+      });
+
+      // ══════════ ② 超阈值：AR 先于 A3；刷新中子组件回弹到 offset；再拖不重复 AR ══════════
+      await group('超阈值刷新', async () => {
+        await drag(rf1, 120);
+        check(txt('rf-log').includes('A2;'), `120 ≥ 64 → OverDrag（log 含 A2;）`);
+        check(txt('rf-log').includes('AR;'), `松手 → onRefreshing（log 含 AR;）`);
+        const ar = txt('rf-log').indexOf('AR;'), a3 = txt('rf-log').indexOf('A3;');
+        check(ar >= 0 && a3 > ar, `事件顺序：onRefreshing 先于 onStateChange(3)（真机 :704-710）`);
+        const ca = rf1.querySelector('#ca');
+        // 位移作用在子组件包装（ca 的父 Column）上，不在 ca 自身
+        const wrap = ca.parentElement;
+        check(wrap && getComputedStyle(wrap).transform !== 'none', '刷新期间子组件保持位移');
+        // 刷新中再拖：不重复 AR（真机 RECYCLE 分支）
+        const arCount = (txt('rf-log').match(/AR;/g) || []).length;
+        await drag(rf1, 30);
+        check((txt('rf-log').match(/AR;/g) || []).length === arCount, `刷新中拖拽不重复触发 onRefreshing`);
+      });
+
+      // ══════════ ③ 停止刷新：btn-stop → Done(4) → 内部归 Idle 可再拖 ══════════
+      await group('停止刷新', async () => {
+        await tick(500);                        // 回弹补间稳定（350ms）
+        const ca = rf1.querySelector('#ca');
+        check(Math.abs(parseFloat(transY(rf1)) - 64) <= 1,
+          `刷新态回弹到 refreshOffset=64（translateY=${transY(rf1)}）`);
+        await click('#btn-stop');
+        check(txt('rf-log').includes('A4;'), `refreshing=false → Done(4)（log 含 A4;）`);
+        check(transY(rf1) === '0', `Done → 回初始位（translateY=${transY(rf1)}）`);
+        await drag(rf1, 30);
+        check(txt('rf-log').includes('A1;'), `Done 后可再拖（内部归 Idle，Drag 照发）`);
+      });
+
+      // ══════════ ④ rf2：refreshOffset 50 / maxPullDownDistance 80 / ratio 1 ══════════
+      await group('rf2 阈值与上限', async () => {
+        check(rf2.dataset.refreshOffset === '50' && rf2.dataset.maxPullDownDistance === '80'
+          && rf2.dataset.pullDownRatio === '1',
+          `属性记录（offset='${rf2.dataset.refreshOffset}' max='${rf2.dataset.maxPullDownDistance}' ratio='${rf2.dataset.pullDownRatio}'）`);
+        await drag(rf2, 70);                    // 50 < 70 < 80
+        check(txt('rf-log').includes('B2;'), `70 ≥ 50 → OverDrag`);
+        check(txt('rf-log').includes('BR;') && txt('rf-log').includes('B3;'), `松手 → 刷新（B2→BR→B3）`);
+        const boVals = [...txt('rf-log').matchAll(/BO(\d+);/g)].map((m) => Number(m[1]));
+        check(Math.max(...boVals) === 70, `BO 峰值 = 70（未触 80 上限，log BO max=${Math.max(...boVals)}）`);
+        // 极限下拉：clamp 到 80
+        touch('pointerdown', 100, rf2);
+        touch('pointermove', 300, rf2);
+        const bo2 = [...txt('rf-log').matchAll(/BO(\d+);/g)].map((m) => Number(m[1]));
+        check(Math.max(...bo2) <= 80, `maxPullDownDistance=80 精确 clamp（BO max=${Math.max(...bo2)}，ratio 1 线性）`);
+        touch('pointerup', 300, rf2);
+        await tick(500);
+      });
+
+      // ══════════ ⑤ rf3：pullToRefresh(false)——状态照发、松手不刷新 ══════════
+      await group('rf3 禁触发', async () => {
+        check(rf3.dataset.pullToRefresh === 'false', `pullToRefresh 记录（'${rf3.dataset.pullToRefresh}'）`);
+        await drag(rf3, 100);
+        check(txt('rf-log').includes('C2;'), `拖拽中 OverDrag 状态照发（C2）`);
+        check(!txt('rf-log').includes('CR;'), `松手不触发刷新（恒无 CR;）`);
+        await tick(500);
+        check(txt('rf-log').includes('C0;'), `松手回 Inactive（C0）`);
+      });
+
+      // ══════════ ⑥ 回归 ══════════
+      await group('回归', async () => {
+        const bad = __arkui_dom_layout_warnings.filter((w) => /Refresh\./.test(String(w)) && /未实现/.test(String(w)));
+        check(bad.length === 0, `Refresh 属性不记"未实现"警告（剩 ${bad.length} 条）`);
+        // 鼠标拖拽被真机禁用：mouse 拖 rf1 不产生 Drag
+        const before = txt('rf-log');
+        const rf1v = el('rf1');
+        rf1v.dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'mouse', clientY: 100, bubbles: true }));
+        rf1v.dispatchEvent(new PointerEvent('pointermove', { pointerType: 'mouse', clientY: 160, bubbles: true }));
+        rf1v.dispatchEvent(new PointerEvent('pointerup', { pointerType: 'mouse', clientY: 160, bubbles: true }));
+        await tick(100);
+        check(txt('rf-log') === before, `mouse 拖拽被拒（真机 SetIsAllowMouse(false)，log 不变）`);
+      });
+
+      lines.push(`LOG='${txt('rf-log').slice(-60)}'`);
+      lines.push(`ELMT ${__arkui_dom_elmtRecords.size}`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+
+    async function click(sel) {
+      const n = root.querySelector(sel);
+      if (!n) { check(false, '要点击的节点不存在：' + sel); return; }
+      n.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      await tick(30);
+    }
+  })();
+  </script>
+</body>
+</html>

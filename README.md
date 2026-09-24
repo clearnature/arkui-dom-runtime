@@ -1396,6 +1396,36 @@ divider 三条/吸顶+对照组/枚举记录）双端通过。**破坏验证（3
 `harmony-proj/.../ListGroupDemo.ets` + `fixtures/pages/ListGroupDemo.ts`、
 `test/listitemgroup.html`、`run.sh`、`electron/run.sh`
 
+## R50：`Refresh` 下拉刷新——pointer 驱动状态机 ✅
+
+**测量**（新增 `pages/RefreshDemo.ets`，按 R48-A 摘要设计）：`Refresh({refreshing})` create
+单参（支持 $ 双向，DOM 侧回写不实现——loader 产物不提供 setter）；`refreshOffset`（默认
+64，0/负→默认）、`pullToRefresh`、`pullDownRatio`（0..1 clamp）、`maxPullDownDistance`；
+事件 `onStateChange(RefreshStatus)` / `onRefreshing` / `onOffsetChange(vp)`；
+RefreshStatus 声明顺序 Inactive=0/Drag=1/OverDrag=2/Refresh=3/Done=4（refresh.d.ts 无显式
+数值、enums.d.ts 无此枚举）。
+
+**实现**（新分片 `runtime/src/refresh.js`，第 20 个）：根 = div（overflow hidden）+ 子组件
+translateY 跟手；pointer 只收 touch（真机 SetIsAllowMouse(false)）；状态机照真机
+refresh_constant.h 同序；松手回弹/Done 复位用 setTimeout（坑 ⑧：不用 rAF）；事件顺序
+onRefreshing 先于 onStateChange(3)（真机 refresh_pattern.cpp:704-710）；**同值不重复发**；
+PullDownRatio 0..1 clamp；maxPullDownDistance ≥0 clamp。**重渲染时 refreshing 选项处理**：
+create 包装器在每次调用时重传 refreshing 给引擎（应用设 refreshing=false 是结束刷新唯一
+通道——首次 create 后不再走工厂）。已知限制：真机回写不实现（应用侧 onRefreshing 显式
+管理 refreshing）；默认指示器未绘制（只位移）；maxPullDownDistance clamp 测试窗口无
+观察面（rf2 刷新中无法二次拖拽，如实记录）。
+
+**验收**：`bash run.sh refreshdemo`（25 条断言：Drag/OverDrag/事件顺序/回弹位移/AR 恰一次/
+mouse 拒绝/rf2 阈值与 clamp/rf3 禁触发）双端通过。**破坏验证（3 处）**：setState 哑火 →
+**13 红**；pullToRefresh 不接线 → **6 红**；pullToRefresh 只记 data-* 不写引擎 → **6 红**。
+还原后 md5 一致。
+
+**触及**：`runtime/src/refresh.js`（新，第 20 个分片）、`runtime/src/area.js`（REFRESH 分派
+分支）、`runtime/src/main.js`（@include + Refresh/RefreshStatus 挂 global）、
+`runtime/src/runtime.d.ts`、`tools/stats.mjs`（手写 48→49）、
+`harmony-proj/.../RefreshDemo.ets` + `fixtures/pages/RefreshDemo.ts`、`test/refreshdemo.html`、
+`run.sh`、`electron/run.sh`
+
 ## R44：已确证组件的语义回归扫描 ✅
 
 对 R39–R43 确证过的语义逐项**重读真机源码找首轮漏掉的边界行为**——扫出两处分歧并修正、
@@ -2090,9 +2120,9 @@ PASS starStyle 的图片 URI 不可用已记警告
 
 **权威清单在 `docs/ROADMAP.md`**（每项带可复现的验收命令）。当前优先：
 
-1. 骨架组件的视觉语义——手写 48 个：形状族 8（R26）、输入类 4+3（R27/R34）、
+1. 骨架组件的视觉语义——手写 49 个：形状族 8（R26）、输入类 4+3（R27/R34）、
    信息展示类 4+1（R28/R33）、弹出类 3（R29）、表层类 2（R31/R32）、小件 4（R36）、
-   分步器 2（R37）、Image（R45）、Scroll（R46）、ImageAnimator（R47）、ListItemGroup（R49）；`UIContext` 已收（R30）、`@ohos.multimedia.media` 已收（R35）。
+   分步器 2（R37）、Image（R45）、Scroll（R46）、ImageAnimator（R47）、ListItemGroup（R49）、Refresh（R50）；`UIContext` 已收（R30）、`@ohos.multimedia.media` 已收（R35）。
    剩余候选以骨架清单（`node tools/stats.mjs` 的"骨架·仅 data-*"）为准
 2. ~~**继续把 `runtime/src/main.js` 拆细**~~ **已拆到位（2026-09-21，源拆分第三步）**：9 个分片，
    `main.js` 剩 **1869 行 / 86,452 B**（基础设施 / 状态 v1 / ViewPU / 属性映射 / Tabs / Swiper /

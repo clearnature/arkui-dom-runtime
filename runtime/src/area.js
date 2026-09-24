@@ -263,6 +263,11 @@
       ANIMATOR_ATTRS[prop](node, value);
       return;
     }
+    // Refresh（R50）：refreshing/refreshOffset/事件是语义属性（函数值抢在通用 on* 前，坑 86）
+    if (node.__arkuiRefresh && REFRESH_ATTRS[prop]) {
+      REFRESH_ATTRS[prop](node, value);
+      return;
+    }
     // List.sticky（R49）：StickyStyle（None=0/Header=1/Footer=2/BOTH=3）—— ListItemGroup
     // 的头/尾吸顶由该 List 级属性驱动（样式规则见 main.js arkui-list-style）
     if (node.__arkuiComp === 'List' && prop === 'sticky') {

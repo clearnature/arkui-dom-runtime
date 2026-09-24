@@ -895,6 +895,23 @@ AdjustMountTreeSequence 保证 header→items→footer 序）。
 `electron/run.sh`（调研依据：`docs/research/R48-platform-verdicts-and-digests.md`
 ListItemGroup 节）
 
+### R50 — Refresh：pointer 驱动下拉刷新 ✅（2026-09-24）
+
+按 R48-A 摘要实现。**create 单参** `{refreshing}` 支持 $ 双向（DOM 侧回写不实现，应用侧
+onRefreshing 显式管理）；**状态机**照 refresh_constant.h：Inactive=0→Drag=1→OverDrag=2→
+Refresh=3→Done=4；事件顺序 onRefreshing 先于 onStateChange(3)（真机 :704-710）；同值不发。
+pointer 只收 touch（真机禁鼠标）；子组件 translateY 跟手；松手回弹 setTimeout（坑 ⑧）；
+Refresh 态回弹到 refreshOffset 并保持。**重渲染时 refreshing 选项处理**：create 包装器每次
+调用重传 refreshing 给引擎（否则应用设 refreshing=false 无法触发 Done——首跑实测）。
+
+**验收**：`bash run.sh refreshdemo`（25 条断言）双端通过。**破坏验证（3 处）**：setState 哑火
+**13 红**；pullToRefresh 不接线 **6 红**；pullToRefresh 只记 data-* **6 红**。还原后 md5 一致。
+
+**触及**：`runtime/src/refresh.js`（新，第 20 个分片）、`runtime/src/area.js`、
+`runtime/src/main.js`（@include + Refresh/RefreshStatus 挂 global）、
+`runtime/src/runtime.d.ts`、`tools/stats.mjs`（手写 48→49）、`fixtures/pages/RefreshDemo.ts`、
+`test/refreshdemo.html`、`run.sh`、`electron/run.sh`
+
 ### R44 — 已确证组件的语义回归扫描 ✅（2026-09-21）
 
 逐项重读真机源码找首轮漏掉的边界行为。**扫出两处分歧并修正**：

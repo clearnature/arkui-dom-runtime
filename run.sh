@@ -254,6 +254,10 @@ case "${1:-index}" in
     run_one listitemgroup "$(src_of pages/ListGroupDemo.ts)" build/listitemgroup-module.js test/listitemgroup.html \
       "--cjs --register ListGroupDemo" || rc=1
     echo
+    # R50：Refresh 下拉刷新
+    run_one refreshdemo "$(src_of pages/RefreshDemo.ts)" build/refreshdemo-module.js test/refreshdemo.html \
+      "--cjs --register RefreshDemo" || rc=1
+    echo
     run_one measure "$(src_of pages/Measure.ts)" build/measure.js test/measure.html || rc=1
     echo
     run_one lazy "$(src_of pages/Lazy.ts)" build/lazy.js test/lazy.html || rc=1
@@ -412,6 +416,10 @@ case "${1:-index}" in
     # R49：ListItemGroup
     run_one listitemgroup "$(src_of pages/ListGroupDemo.ts)" build/listitemgroup-module.js test/listitemgroup.html \
       "--cjs --register ListGroupDemo" ;;
+  refreshdemo)
+    # R50：Refresh
+    run_one refreshdemo "$(src_of pages/RefreshDemo.ts)" build/refreshdemo-module.js test/refreshdemo.html \
+      "--cjs --register RefreshDemo" ;;
   router)
     # 两个页面都要注册；Detail 先单独产出，Home 由 run_one 带 flags 产出
     "$NODE" tools/extract.mjs "$(src_of pages/Detail.ts)" build/detail-module.js --cjs --register Detail >/dev/null || exit 1
@@ -428,5 +436,5 @@ case "${1:-index}" in
     echo
     run_one netfile-2 "$(src_of pages/NetFile.ts)" build/netfile-module.js test/netfile.html \
       "--cjs --register NetFile" "?phase=2" "$PERSIST_PROFILE" "$PERSIST_PORT" ;;
-  *) echo "用法: bash run.sh [index|rich|leak|layout|widgets|tabgrid|swiper|navdemo|reldemo|drawdemo|textmeasure|lazyvh|measarea|measimage|measnotify|promptaction|realfs|animdemo|gesturedemo|transitiondemo|gesturegroupdemo|navbardemo|navtransdemo|shapedemo|inputdemo|showdemo|popdemo|uictxdemo|canvasedemo|xcompdemo|qrdemo|textdemo|mediademo|smalldemo|stepdemo|imagedemo|scrolldemo|animatordemo|listitemgroup|measure|lazy|provide|async|ability|router|netfile|all]"; exit 2 ;;
+  *) echo "用法: bash run.sh [index|rich|leak|layout|widgets|tabgrid|swiper|navdemo|reldemo|drawdemo|textmeasure|lazyvh|measarea|measimage|measnotify|promptaction|realfs|animdemo|gesturedemo|transitiondemo|gesturegroupdemo|navbardemo|navtransdemo|shapedemo|inputdemo|showdemo|popdemo|uictxdemo|canvasedemo|xcompdemo|qrdemo|textdemo|mediademo|smalldemo|stepdemo|imagedemo|scrolldemo|animatordemo|listitemgroup|refreshdemo|measure|lazy|provide|async|ability|router|netfile|all]"; exit 2 ;;
 esac

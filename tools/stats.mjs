@@ -49,7 +49,9 @@ const HANDWRITTEN = ['Text', 'Button', 'Column', 'Row', 'Stack', 'List', 'ListIt
   // R47：ImageAnimator（逐帧定时器 + AnimationStatus 状态机 + 五生命周期回调）
   'ImageAnimator',
   // R49：ListItemGroup（header→items→footer 序 + space 只作用 item 间 + divider + 吸顶）
-  'ListItemGroup'];
+  'ListItemGroup',
+  // R50：Refresh（pointer 驱动下拉刷新状态机 + Scroller 联动 + 事件顺序照真机）
+  'Refresh'];
 const CONTROL_FLOW = ['If', 'ForEach', 'LazyForEach'];   // 不在 149 注册表内，单独实现
 
 const gen = read('runtime/generated-components.js');
