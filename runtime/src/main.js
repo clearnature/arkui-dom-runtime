@@ -1493,6 +1493,8 @@
 
   // @include image
 
+  // @include animator
+
   // @include scroll
 
   // @include small
@@ -1710,6 +1712,8 @@
     TextDecorationType: { None: 'none', Underline: 'underline', Overline: 'overline', LineThrough: 'line-through' },
     // R37：分步器。ItemState 同为产物里的自由变量枚举
     Stepper, StepperItem, ItemState,
+    // R47：ImageAnimator + AnimationStatus（值照 .d.ts：Initial=0/Running=1/Paused=2/Stopped=3）
+    ImageAnimator, AnimationStatus: { Initial: 0, Running: 1, Paused: 2, Stopped: 3 },
     // R46：Scroll 组件（手写接管骨架）+ 枚举。Edge：Top=0 Center=1 Bottom=2
     Scroll,
     // Baseline=3 Start=4 Middle=5 End=6

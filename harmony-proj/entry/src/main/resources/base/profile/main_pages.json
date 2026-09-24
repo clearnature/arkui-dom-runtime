@@ -23,6 +23,7 @@
         "pages/SmallDemo",
         "pages/StepDemo",
         "pages/ImageDemo",
-        "pages/ScrollDemo"
+        "pages/ScrollDemo",
+        "pages/AnimatorDemo"
     ]
 }

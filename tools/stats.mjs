@@ -45,7 +45,9 @@ const HANDWRITTEN = ['Text', 'Button', 'Column', 'Row', 'Stack', 'List', 'ListIt
   // R45：Image（真实 <img> 基座 + objectFit→object-fit + alt 占位 + 加载回调）
   'Image',
   // R46：Scroll（真实 overflow 基座 + Scroller 控制器 + 滚动条/事件）
-  'Scroll'];
+  'Scroll',
+  // R47：ImageAnimator（逐帧定时器 + AnimationStatus 状态机 + 五生命周期回调）
+  'ImageAnimator'];
 const CONTROL_FLOW = ['If', 'ForEach', 'LazyForEach'];   // 不在 149 注册表内，单独实现
 
 const gen = read('runtime/generated-components.js');

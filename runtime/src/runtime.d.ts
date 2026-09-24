@@ -54,6 +54,10 @@ interface Element {
   // Image（R45）：回调袋用 `x = x || {}` 惯用法 → any（坑 92）
   __arkuiImage?: boolean;
   __arkuiScroll?: boolean;
+  __arkuiAnimator?: boolean;
+  __an?: any;
+  __anCbs?: any;
+  __anApplyState?: (v: number) => void;
   __scrollCbs?: any;
   __imgCbs?: any;
   __arkuiImgTryAlt?: () => void;

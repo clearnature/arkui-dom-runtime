@@ -1,0 +1,55 @@
+# ── 产物 ──
+# build/ 里是 extract.mjs 的输出、Electron 截图、check-all.sh 的日志、以及
+# 持久化用例的 Chrome profile（为了跨进程保持同一 origin 而刻意保留的目录）。
+build/
+
+# ── Electron 运行时（283 MB，不要提交）──
+# 来源: ~/.cache/electron/electron-v44.2.0-linux-x64.zip 解包到这里。
+# 缺失时 tools/preflight.mjs 会明确报错并给出这条路径。
+electron/runtime/
+
+# ── Electron 的"真实落盘"根目录（测试产物，每次用例前会被 rm -rf 重建）──
+electron/data/
+
+# ── Node ──
+node_modules/
+npm-debug.log*
+
+# ── 杂项 ──
+*.log
+*.tmp
+.DS_Store
+
+# ── 安全扫描插件的产物（mimosa，非项目文件）──
+.mimosa/
+
+# ===== ↑ 以上同步自 .gitignore（「从 .gitignore 同步」只重写以上部分）=====
+.git/
+.hg/
+.svn/
+bower_components/
+jspm_packages/
+__pycache__/
+site-packages/
+venv/
+coverage/
+htmlcov/
+lcov-report/
+cmakefiles/
+cmake-build-*/
+bazel-*/
+pods/
+deriveddata/
+storybook-static/
+playwright-report/
+test-results/
+allure-results/
+allure-report/
+cdk.out/
+*.egg-info/
+*.dist-info/
+eggs/
+pip-wheel-metadata/
+wheels/
+# ----- ↑ 以上为 ZCode 默认排除规则（自定义规则请写在本行下方，不会被同步/恢复改动）-----
+# 自定义规则写在下方（本行提示可删除）

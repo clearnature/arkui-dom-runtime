@@ -855,6 +855,27 @@ overflow 映射短路／滚动条隐藏选择器破坏／onScroll 派发删除�
 `runtime/src/runtime.d.ts`、`tools/stats.mjs`（手写 45→46）、`fixtures/pages/ScrollDemo.ts`、
 `test/scrolldemo.html`、`run.sh`、`electron/run.sh`
 
+### R47 — ImageAnimator：逐帧定时器 + 状态机 ✅（2026-09-24）
+
+**测量**（新增 `pages/AnimatorDemo.ets`）：`images([{src},…])` 单帧 duration 优先于全局；
+`duration` = 每帧 ms（默认 1000）；`iterations` 默认 1/-1 无限；`AnimationStatus`
+（Initial=0/Running=1/Paused=2/Stopped=3）；**本 SDK d.ts 无 onFrame 属性**，事件仅
+onStart/onPause/onRepeat/onCancel/onFinish。
+
+**实现**（新分片 `animator.js`，第 19 个）：逐帧 setTimeout 引擎 + 迭代计数；Running 推进/
+Paused 停表保持/Stopped 回第一帧/播完落 Stopped + onFinish（保持末帧）。两个必踩点：
+①产物顺序 `state` 先于 `onStart` 应用 → 回调**延时派发**（同步发会丢，实测）；
+②`images` 字面量每次重渲染重建 → **深 diff** 防重置帧序。
+
+**验收**：`bash run.sh animatordemo`（13 条断言）双端通过。**破坏验证（3 处）**：state 同值
+守卫摘除 **0 红**（无观察面，如实记录）；引擎不推进 **6 红**；Paused 不清定时器 **2 红**
+（帧 1 被越过）。还原后 md5 一致。
+
+**触及**：`runtime/src/animator.js`（新，第 19 个分片）、`runtime/src/area.js`、
+`runtime/src/main.js`（@include + ImageAnimator/AnimationStatus 挂 global）、
+`runtime/src/runtime.d.ts`、`tools/stats.mjs`（手写 46→47）、`fixtures/pages/AnimatorDemo.ts`、
+`test/animatordemo.html`、`run.sh`、`electron/run.sh`
+
 ### R44 — 已确证组件的语义回归扫描 ✅（2026-09-21）
 
 逐项重读真机源码找首轮漏掉的边界行为。**扫出两处分歧并修正**：

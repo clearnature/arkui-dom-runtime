@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R47：ImageAnimator 帧动画（逐帧定时器 + 状态机 + 生命周期回调）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 360px; }
+  #root [data-arkui-comp="ImageAnimator"] { border: 1px solid #ddd; width: 60px; height: 60px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R47：ImageAnimator（逐帧推进 / Paused 保持 / 迭代完成 onFinish）</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/animatordemo-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const el = (id) => root.querySelector('#' + id);
+    const txt = (id) => String(el(id) ? el(id).textContent : '<缺>');
+    const mainSrc = () => String((el('an1').querySelector('[data-arkui-animator-main]') || {}).src || '').split('/').pop();
+    const frame = () => el('an1').dataset.frame;
+    const click = async (sel) => {
+      const n = root.querySelector(sel);
+      if (!n) { check(false, '要点击的节点不存在：' + sel); return; }
+      n.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      await tick(30);
+    };
+    const group = async (name, fn) => {
+      try { await fn(); } catch (e) {
+        allPass = false;
+        lines.push(`FAIL [${name}] 抛出异常：${e && e.stack ? String(e.stack).split('\n')[0] : e}`);
+      }
+    };
+
+    try {
+      __arkui_dom_requireModule('AnimatorDemo');
+      __arkui_dom_loadRoute('pages/AnimatorDemo', root);
+      await tick(60);                       // 回调延时派发（一拍）+ 第一帧起播
+      check(!!el('an1') && el('an1').tagName === 'DIV' && !!el('an1').querySelector('[data-arkui-animator-main]'),
+        'ImageAnimator 页面已渲染（div + 主 <img>）');
+
+      // ══════════ ① 初始与逐帧推进（3 帧 × 200ms，tick 对齐定时器）══════════
+      await group('逐帧推进', async () => {
+        check(frame() === '0' || frame() === '1', `起播（frame=${frame()}，data-state=${el('an1').dataset.state}）`);
+        await tick(250);
+        check(frame() === '1' && mainSrc().endsWith('known-7x3.png'),
+          `200ms → 帧 1（frame=${frame()}，src='${mainSrc()}'）`);
+        check(el('an1').dataset.state === '1', `state Running 记录（'${el('an1').dataset.state}'）`);
+      });
+
+      // ══════════ ② Paused：在帧 1 停表保持（下一帧推进可见，破坏才红）；恢复推进到帧 2 ══════════
+      await group('Paused 保持', async () => {
+        await click('#btn-p');
+        const held = mainSrc();
+        check(el('an1').dataset.state === '2', `Paused 状态（'${el('an1').dataset.state}'）`);
+        await tick(300);
+        check(mainSrc() === held, `停表保持帧 1（src='${mainSrc()}' 300ms 未变）`);
+        await click('#btn-r');
+        await tick(220);
+        check(frame() === '2' && mainSrc().endsWith('known-13x5.png'),
+          `恢复 → 推进到帧 2（frame=${frame()}，src='${mainSrc()}'）`);
+      });
+
+      // ══════════ ③ 迭代完成：onFinish 恰一次、状态落 Stopped、保持末帧 ══════════
+      await group('迭代完成', async () => {
+        let fin = txt('an-log').includes('FIN;');
+        for (let k = 0; k < 40 && !fin; k++) { fin = txt('an-log').includes('FIN;'); if (!fin) await tick(50); }
+        await tick(120);                    // onFinish 是延时派发，多等一拍
+        check(txt('an-log').includes('FIN;'), `iterations(2)×3 帧×200ms = 1200ms 后 onFinish（log='${txt('an-log')}'）`);
+        check((txt('an-log').match(/FIN;/g) || []).length === 1, 'onFinish 恰一次');
+        check(el('an1').dataset.state === '3', `状态落 Stopped（'${el('an1').dataset.state}'）`);
+        check(frame() === '2', `保持末帧（frame=${frame()}）`);
+      });
+
+      // ══════════ ④ onStart 恰一次 + 回归 ══════════
+      await group('回归', async () => {
+        check((txt('an-log').match(/START;/g) || []).length === 1, `onStart 恰一次（log='${txt('an-log')}'）`);
+        const bad = __arkui_dom_layout_warnings.filter((w) => /ImageAnimator\./.test(String(w)) && /未实现/.test(String(w)));
+        check(bad.length === 0, `ImageAnimator 属性不记"未实现"警告（剩 ${bad.length} 条）`);
+      });
+
+      lines.push(`LOG='${txt('an-log')}' FRAME=${frame()} STATE=${el('an1').dataset.state}`);
+      lines.push(`ELMT ${__arkui_dom_elmtRecords.size}`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

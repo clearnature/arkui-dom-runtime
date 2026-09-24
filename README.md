@@ -1345,6 +1345,31 @@ global）、`runtime/src/runtime.d.ts`、`tools/stats.mjs`（手写 45→46）�
 `harmony-proj/.../ScrollDemo.ets` + `fixtures/pages/ScrollDemo.ts`、`test/scrolldemo.html`、
 `run.sh`、`electron/run.sh`
 
+## R47：`ImageAnimator` 帧动画——逐帧定时器 + 状态机 ✅
+
+剩余骨架里确定性最高的组件（纯 setTimeout 驱动，headless 虚拟时间下完全确定）。**测量**
+（新增 `pages/AnimatorDemo.ets`）：`ImageAnimator.create()` 无参；`images([{src},…])` 的
+ImageFrameInfo 单帧可带 duration（优先于全局）；`duration` = **每帧** ms（默认 1000）；
+`iterations` 默认 1、-1 无限；`state(AnimationStatus)`（Initial=0/Running=1/Paused=2/
+Stopped=3）；事件只有 **onStart/onPause/onRepeat/onCancel/onFinish 五枚——本 SDK 的 d.ts
+没有 onFrame 属性**（不要照旧文档实现）。产物顺序 `state` 先于 `onStart` 应用 → 回调必须
+**延时派发**（同步发会丢，实测）；`images` 字面量每次重渲染重建 → **深 diff 防重置帧序**。
+
+**实现**（新分片 `runtime/src/animator.js`，第 19 个）：根 = div + 主 `<img>`；引擎 = 逐帧
+setTimeout + 迭代计数：Running 推进、Paused 停表保持当前帧、Stopped 停表回第一帧、播完
+iterations → 状态落 Stopped + onFinish（保持末帧）。
+
+**验收**：`bash run.sh animatordemo`（13 条断言：逐帧推进到帧 1/Paused 停表保持/恢复推进/
+onFinish 恰一次/状态落 Stopped/保持末帧）双端通过。**破坏验证（3 处）**：state 同值守卫摘除
+→ **0 红**（重渲染窗口恰无断言，如实记录）；引擎不推进 → **6 红**；Paused 不清已挂定时器 →
+**2 红**（帧 1 被越过）。还原后 md5 一致。
+
+**触及**：`runtime/src/animator.js`（新，第 19 个分片）、`runtime/src/area.js`（ANIMATOR 分派
+分支）、`runtime/src/main.js`（@include + ImageAnimator/AnimationStatus 挂 global）、
+`runtime/src/runtime.d.ts`、`tools/stats.mjs`（手写 46→47）、
+`harmony-proj/.../AnimatorDemo.ets` + `fixtures/pages/AnimatorDemo.ts`、`test/animatordemo.html`、
+`run.sh`、`electron/run.sh`
+
 ## R44：已确证组件的语义回归扫描 ✅
 
 对 R39–R43 确证过的语义逐项**重读真机源码找首轮漏掉的边界行为**——扫出两处分歧并修正、
@@ -2039,9 +2064,9 @@ PASS starStyle 的图片 URI 不可用已记警告
 
 **权威清单在 `docs/ROADMAP.md`**（每项带可复现的验收命令）。当前优先：
 
-1. 骨架组件的视觉语义——手写 46 个：形状族 8（R26）、输入类 4+3（R27/R34）、
+1. 骨架组件的视觉语义——手写 47 个：形状族 8（R26）、输入类 4+3（R27/R34）、
    信息展示类 4+1（R28/R33）、弹出类 3（R29）、表层类 2（R31/R32）、小件 4（R36）、
-   分步器 2（R37）、Image（R45）、Scroll（R46）；`UIContext` 已收（R30）、`@ohos.multimedia.media` 已收（R35）。
+   分步器 2（R37）、Image（R45）、Scroll（R46）、ImageAnimator（R47）；`UIContext` 已收（R30）、`@ohos.multimedia.media` 已收（R35）。
    剩余候选以骨架清单（`node tools/stats.mjs` 的"骨架·仅 data-*"）为准
 2. ~~**继续把 `runtime/src/main.js` 拆细**~~ **已拆到位（2026-09-21，源拆分第三步）**：9 个分片，
    `main.js` 剩 **1869 行 / 86,452 B**（基础设施 / 状态 v1 / ViewPU / 属性映射 / Tabs / Swiper /

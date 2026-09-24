@@ -8,7 +8,12 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R46**（Scroll 滚动容器真 overflow 基座上线，新分片 scroll.js 第 18 个 + Scroller
+- 上次切片：**R47**（ImageAnimator 帧动画上线，新分片 animator.js 第 19 个：逐帧 setTimeout
+  引擎 + AnimationStatus 状态机 [Running 推进/Paused 停表保持/Stopped 回首帧/播完落 Stopped]；
+  回调延时派发 + images 深 diff——state 先于 onStart 应用、images 字面量重渲染重建，同步发/直接
+  重置都会坏）— **PASS**（animatordemo 13 条双端；破坏 0/6/2 红——0 红一条无观察面如实记录；
+  手写 47）
+- 上一轮：**R46**（Scroll 滚动容器真 overflow 基座上线，新分片 scroll.js 第 18 个 + Scroller
   扩面：scrollTo 官方形参 {xOffset,yOffset,animation}/scrollBy/scrollEdge/scrollPage/isAtEnd、
   currentOffset 返回 {xOffset,yOffset}；onScrollEdge 到达沿触发；onScrollEnd 80ms 静默收口
   [DOM 化近似]）— **PASS**（scrolldemo 16 条双端；破坏 1/1/1 红；手写 46）
@@ -121,4 +126,5 @@ bash electron/run.sh <用例>   # 单用例·Electron
 | 2026-09-21 | R43 语义确证三轮 | dfdadfb | navtransdemo + transitiondemo 双端；破坏 1/1/1 红 | 滚动联动确证 + 两处修正：副标题透明度 = (H−56)/(max−56)（原 0.7 系数错）、主标题字号插值 L=30fp↔M=26fp 经 SHARP 曲线（DOM 等价 scale=(26+SHARP(p)×4)/30，SHARP 对称故中点断言不变）；SLIDE_SWITCH 确证 scale 0.85（原 0.8 推断）；SHARP 求值器 = 二分解 x(t)=p |
 | 2026-09-21 | R44 语义回归扫描 | 234ff77 | qrdemo 15 / showdemo 28 / widgets 双端；破坏 1 红/3 红 | 重读真机源码扫边界：Marquee step≤0 真机不除（原错替换 6，已修）；QRCode 过小组件真机拒绝绘制（原硬画溢出，已修 + 只尝试一次）；**widgets 无尺寸 QRCode 的旧断言编码了硬画假象 → 升级为拒绝语义**（真机 qrCodeSize≤0 分支）；onTitleModeChange 端点转确证；`__arkui_dom_syncDrawings` 钩子；破坏/恢复脚本两次 old/new 颠倒靠 grep BROKEN 回读抓到——破坏脚本必须回读验证 |
 | 2026-09-24 | R45 Image | 71eec3f | imagedemo 15 条双端 + widgets 恢复；破坏 2/0/3 红 | 页面源是**声明式 ArkTS**（@Component struct），产物才是 ViewPU 类——按产物形态写源被 linter 拦（no-in/any/obj-literal）；ArkTS 禁内联对象字面量类型；alt 占位图必须惰性创建（预插空 src <img> 被 querySelector('img') 命中）；图片 URL 绝对路径 /test-assets/（MeasImage 同约定）；fire 同步认领防双发（首跑抓到 load+补派发双触发抛错） |
-| 2026-09-24 | R46 Scroll | （本次提交） | scrolldemo 16 条双端；破坏 1/1/1 红 | **Scroll.create 单参直接是 Scroller 实例**（不是 {scroller} 选项对象，解包错方向 _bind 没跑、scrollBy 全哑，探针抓到）；Scroller 扩面（layout.js）：官方形参 {xOffset,yOffset,animation} + scrollBy/scrollEdge/scrollPage/isAtEnd；onScrollEdge 到达沿（lastEdge 记忆）；onScrollStart/End = 滚动静默 80ms 收口（近似标注）；测试侧手动滚动后手动派发 scroll（坑 ⑧ rAF 对齐事件 headless 不可靠） |
+| 2026-09-24 | R46 Scroll | a6a209b | scrolldemo 16 条双端；破坏 1/1/1 红 | **Scroll.create 单参直接是 Scroller 实例**（不是 {scroller} 选项对象，解包错方向 _bind 没跑、scrollBy 全哑，探针抓到）；Scroller 扩面（layout.js）：官方形参 {xOffset,yOffset,animation} + scrollBy/scrollEdge/scrollPage/isAtEnd；onScrollEdge 到达沿（lastEdge 记忆）；onScrollStart/End = 滚动静默 80ms 收口（近似标注）；测试侧手动滚动后手动派发 scroll（坑 ⑧ rAF 对齐事件 headless 不可靠） |
+| 2026-09-24 | R47 ImageAnimator | （本次提交） | animatordemo 13 条双端；破坏 0/6/2 红 | **本 SDK d.ts 无 onFrame 属性**（事件仅 Start/Pause/Repeat/Cancel/Finish 五枚，勿照旧文档实现）；duration=每帧 ms（默认 1000）、iterations=-1 无限；两个必踩点：产物顺序 state 先于 onStart 应用 → 回调延时派发（同步发会丢）、images 字面量重渲染重建 → 深 diff 防重置帧序；破坏脚本缩进层级照抄实际文件（工厂内 6 空格）——两次 AssertionError 都是这原因 |
