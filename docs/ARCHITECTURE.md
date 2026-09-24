@@ -1689,7 +1689,7 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   test             628.9 KB
   tools            56.9 KB
   electron(src)    22.7 KB
-  docs             443.9 KB
+  docs             619.0 KB
   fixtures         355.9 KB
 
 == 逐文件（文档"文件职责"表的来源）==
@@ -1713,7 +1713,7 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   README.md                           150716 B  147.2 KB
   THIRD-PARTY-NOTICES.md               10718 B  10.5 KB
   docs/ARCHITECTURE.md                146225 B  142.8 KB
-  docs/CAPABILITY.md                   52549 B  51.3 KB
+  docs/CAPABILITY.md                   55013 B  53.7 KB
   docs/DEVELOPING.md                   64310 B  62.8 KB
   docs/ROADMAP.md                     124409 B  121.5 KB
   docs/surface-measurement.md           6496 B  6.3 KB

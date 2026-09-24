@@ -316,3 +316,36 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
   与官方 `AbilityManagerService`/窗口管理的语义必然有偏差。
 | **media 垫片的限制**（R35）：`currentTime` 来自真实挂钟（不来自音频解码——data URI 解码时长 0）；`duration` 对 data URI 恒 -1；**Electron 的时钟推进未打通**（浏览器已通——断言分端）；`SubmitEvent` 类语义无 DOM 对应；`AVRecorder` 未实现 | ⚠️ | 限制清单，非缺陷 |
 | **`@ohos.multimedia.media`**（R35）：AVPlayer → HTMLAudioElement 状态机垫片（第 15 个平台模块）——`createAVPlayer()` Promise 面；url 赋值 → 'initialized' → prepare → 'prepared' → play → 'playing' → pause → 'paused'；`on('stateChange')` **订阅先行**（必须在 url 前，否则 initialized 丢）；`duration/currentTime/seek/stop/release` 全挂；`autoplay-policy` 放行（muted+catch 降级） | ✅ | `bash run.sh mediademo`（状态机全链路 + 时钟推进；时钟断言分端——Electron 未打通已记录） |
+
+
+## 平台特定组件批量判定（R48，真机源码对照）
+
+> 2026-09-24 多代理并行调研产出：23 个平台组件逐个对照真机源码（`arkui_ace_engine` 的
+> pattern 实现 + SDK 声明），逐个给出"浏览器/DOM 有无真实对应语义"的判定。证据全部带
+> `file:line` 级引用（每个组件 3-50 万 token 的只读深读），全文见
+> `docs/research/R48-platform-verdicts-and-digests.md`。
+
+**platform-only（14 个）——浏览器无对应语义，不再列入实现清单**：
+`AbilityComponent`（跨进程窗口嵌入 WindowExtension）、`EmbeddedComponent`（跨进程
+EmbeddedUIExtensionAbility 合成）、`UIExtensionComponent`（同上通用形态）、
+`SecurityUIExtensionComponent`（安全进程渲染）、`FormComponent`/`FormLink`（系统卡片管理
+服务 + 跨进程卡片渲染）、`PluginComponent`（BMS 包解析 + 跨应用组件树 + IPC 通道）、
+`RemoteWindow`（外部窗口 Surface 锚入）、`WindowScene`/`RootScene`（WMS 会话/窗口场景）、
+`DepthComponent`（系统合成器 RSDepthNode 深度渲染 + Kit-3D）、`NodeContainer`（命令式
+FrameNode/BuilderNode + surfaceId 纹理导出）、`XComponentNode`（原生 Surface 供 .so 直绘，
+XComponent 本体已覆盖 DOM 语义）。
+
+**partial（3 个）——有部分可映射，映射要点已记录**：`ContentSlot`（槽=占位容器 +
+挂/摘映射，缺原生 C API 节点图）、`UIPickerComponent`（3D 轮盘可 CSS 近似，缺原生触觉
+反馈）、`WithEnv`（作用域 env 注入可 context/CSS 变量复刻，原生窗口键降级近似）。
+
+**feasible（4 个）——可直接实现，进入实现队列**：`ContainerReader`（ResizeObserver +
+断点分桶）、`Calendar`（月历网格 + Swiper 翻页，农历文本来自应用供数）、`CalendarPicker`
+（input[type=date] / popover 月历）、`WithTheme`（CSS 自定义属性作用域 + color-scheme）。
+
+**not-found（2 个）——声明与真机源码双缺失**：`ColorPicker`、`ColorPickerDialog`
+（ets-loader 元数据存在但 SDK .d.ts 与真机 pattern 均不存在，留待工具链升级后复核）。
+
+**方法与可信度**：28 个只读调研代理并行执行（23 判定 + 5 高价值摘要 + 1 复核员），复核
+更正 0 条；`ColorPicker`/`ColorPickerDialog` 两条 not-found 标注 **unconfirmed**（双侧源码
+缺失，无法交叉验证）。本轮为纯只读调研，未实现任何组件。
