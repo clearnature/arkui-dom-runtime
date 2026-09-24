@@ -24,6 +24,7 @@
         "pages/StepDemo",
         "pages/ImageDemo",
         "pages/ScrollDemo",
-        "pages/AnimatorDemo"
+        "pages/AnimatorDemo",
+        "pages/ListGroupDemo"
     ]
 }

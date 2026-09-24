@@ -876,6 +876,25 @@ Paused 停表保持/Stopped 回第一帧/播完落 Stopped + onFinish（保持�
 `runtime/src/runtime.d.ts`、`tools/stats.mjs`（手写 46→47）、`fixtures/pages/AnimatorDemo.ts`、
 `test/animatordemo.html`、`run.sh`、`electron/run.sh`
 
+### R49 — ListItemGroup：List 分组容器 ✅（2026-09-24）
+
+按 R48-A 摘要实现。**create 选项**：header/footer 是 CustomBuilder（ArkTS 需 @Builder
+方法）；space 只作用 item 间（d.ts："not spacing between the header and list items"）；
+`spaceWidth` 压过 `space`；style=CARD 记录 + 圆角近似。**属性方法仅两个**：`divider`
+（strokeWidth/color/startMargin/endMargin，非首 item 才画、画在 item 顶缘外 ::before 槽不占
+高度）与 `childrenMainSize`（只记 data-*，服务于真机懒加载估算）。`List.sticky(StickyStyle)`
+注入 position:sticky 规则（组头吸顶、对照组不吸）。footer 推迟到 pop 渲染（真机
+AdjustMountTreeSequence 保证 header→items→footer 序）。
+
+**验收**：`bash run.sh listitemgroup`（19 条断言）双端通过。**破坏验证（3 处）**：间距实现
+摘除 **5 红**；divider 摘除 **3 红**；sticky 规则选择器破坏 **1 红**。还原后 md5 一致。
+
+**触及**：`runtime/src/main.js`（ListItemGroup 工厂 + ensureComponent 特例 + sticky 样式 +
+枚举挂 global）、`runtime/src/area.js`、`runtime/src/runtime.d.ts`、`tools/stats.mjs`
+（手写 47→48）、`fixtures/pages/ListGroupDemo.ts`、`test/listitemgroup.html`、`run.sh`、
+`electron/run.sh`（调研依据：`docs/research/R48-platform-verdicts-and-digests.md`
+ListItemGroup 节）
+
 ### R44 — 已确证组件的语义回归扫描 ✅（2026-09-21）
 
 逐项重读真机源码找首轮漏掉的边界行为。**扫出两处分歧并修正**：

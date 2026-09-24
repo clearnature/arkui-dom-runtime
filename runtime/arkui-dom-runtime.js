@@ -4091,6 +4091,22 @@
       ANIMATOR_ATTRS[prop](node, value);
       return;
     }
+    // List.sticky（R49）：StickyStyle（None=0/Header=1/Footer=2/BOTH=3）—— ListItemGroup
+    // 的头/尾吸顶由该 List 级属性驱动（样式规则见 main.js arkui-list-style）
+    if (node.__arkuiComp === 'List' && prop === 'sticky') {
+      node.dataset.sticky = String(Number(resolveResource(value)));
+      return;
+    }
+    // ListItemGroup（R49）：divider/childrenMainSize 两个属性方法（其余是 create 选项）
+    if (node.__arkuiLig && prop === 'divider') {
+      node.__lig.divider = value && typeof value === 'object' ? value : null;
+      return;
+    }
+    if (node.__arkuiLig && prop === 'childrenMainSize') {
+      node.dataset.childrenMainSize = 'recorded';
+      layoutWarnings.push('ListItemGroup.childrenMainSize 只记 data-*（服务于真机懒加载估算，DOM 布局无需）');
+      return;
+    }
     // 信息展示类（R28）：Counter 的 onInc/onDec 是函数值（必须拦在通用 on* 规则之前，否则
     // 会变成 'inc'/'dec' DOM 监听）；Divider/Marquee 的语义属性抢在通用 data-* 落点之前
     if (node.__arkuiShow && SHOW_ATTRS[prop]) {
@@ -4328,6 +4344,83 @@
         ViewStackProcessor.pop();
         const st = top && top.__tabsState;
         if (st) finalizeTabs(st);
+      };
+    }
+
+    // ListItemGroup（R49）：create 选项含 header/footer 两个 CustomBuilder——header 在
+    // create 时展开进头槽；footer 推迟到 pop（真机 AdjustMountTreeSequence 保证
+    // header→items→footer 序，list_item_group_pattern.cpp:1134）。space 不走通用 gap
+    // （gap 会连 header/首项也拉开，违反 d.ts"not spacing between the header and list
+    // items"）——间距/divider 在 pop 时按 item 间 margin+::before 落。
+    if (name === 'ListItemGroup') {
+      C.create = function (...args) {
+        const rec = elmtRecords.get(currentNodeElmtId);
+        let node;
+        if (rec && rec.node && rec.node.__arkuiComp === 'ListItemGroup') {
+          node = rec.node;
+        } else {
+          node = document.createElement('div');
+          node.__arkuiComp = 'ListItemGroup';
+          node.__arkuiLig = true;
+          node.dataset.lig = '';
+          node.style.display = 'flex';
+          node.style.flexDirection = 'column';
+          node.style.alignItems = 'stretch';
+          const headerWrap = document.createElement('div');
+          headerWrap.setAttribute('data-arkui-lig-header', '');
+          node.appendChild(headerWrap);
+          node.__lig = { space: 0, spaceWidth: null, divider: null, headerB: null, footerB: null };
+          mountNode(node, rec);
+        }
+        const st = node.__lig;
+        const o = args && args[0] && typeof args[0] === 'object' ? args[0] : {};
+        if (typeof o.header === 'function') st.headerB = o.header;
+        if (typeof o.footer === 'function') st.footerB = o.footer;
+        if (o.space !== undefined) st.space = Number(o.space) || 0;
+        if (o.spaceWidth !== undefined) {
+          st.spaceWidth = Number(o.spaceWidth);
+          node.dataset.spaceWidth = String(st.spaceWidth);
+        }
+        if (o.style !== undefined) {
+          node.dataset.style = String(Number(resolveResource(o.style)));
+          if (Number(resolveResource(o.style)) === 1) node.style.borderRadius = '12px';   // CARD 视觉近似
+        }
+        const headerWrap = node.querySelector('[data-arkui-lig-header]');
+        if (st.headerB && headerWrap && !headerWrap.hasChildNodes()) {
+          runBuilderInto(headerWrap, st.headerB, 'ListItemGroup.header');
+        }
+        ViewStackProcessor.push(node);
+        return node;
+      };
+      // 到 pop 才渲染 footer（保证 header→items→footer 序），并落 item 间距/divider
+      C.pop = function () {
+        const top = ViewStackProcessor.top();
+        ViewStackProcessor.pop();
+        if (!top || !top.__arkuiLig) return;
+        const st = top.__lig;
+        if (st.footerB) {
+          const footerWrap = document.createElement('div');
+          footerWrap.setAttribute('data-arkui-lig-footer', '');
+          top.appendChild(footerWrap);
+          runBuilderInto(footerWrap, st.footerB, 'ListItemGroup.footer');
+        }
+        // 间距 = spaceWidth ?? max(space, divider.strokeWidth)（真机 algorithm:106-119 口径）；
+        // divider 画在 item 顶缘外 1px 槽（::before 绝对定位，不占 item 高度）
+        const items = top.querySelectorAll('[data-arkui-comp="ListItem"]');
+        const bw = st.divider ? Math.max(0, Number(st.divider.strokeWidth) || 0) : 0;
+        const gap = st.spaceWidth != null ? Math.max(0, Number(st.spaceWidth) || 0)
+          : Math.max(st.space, bw);
+        items.forEach((item, k) => {
+          if (k > 0) item.style.marginTop = `${gap}px`;
+          if (st.divider && k > 0) {
+            item.setAttribute('data-arkui-lig-div', '');
+            item.style.setProperty('--dw', `-${bw}px`);   // 线画在 item 顶缘之外的间距槽里
+            item.style.setProperty('--dh', `${bw}px`);
+            item.style.setProperty('--dc', colorOf(st.divider.color == null ? '#08000000' : st.divider.color));
+            item.style.setProperty('--dml', `${Number(st.divider.startMargin) || 0}px`);
+            item.style.setProperty('--dmr', `${Number(st.divider.endMargin) || 0}px`);
+          }
+        });
       };
     }
 
@@ -4570,6 +4663,24 @@
   const List = ensureComponent('List',
     defaultDom('div', { display: 'flex', flexDirection: 'column', overflow: 'auto', position: 'relative' }));
   const ListItem = ensureComponent('ListItem', defaultDom('div', { display: 'block' }));
+
+  // ListItemGroup（R49）：List 分组容器——header/items/footer 三段 + item 间距 + divider。
+  // 三个不做通用映射的点（.d.ts 原文）：space 只作用于 item 间（header/footer 不参与）；
+  // spaceWidth 压过 space；divider 实际间距 = max(space, strokeWidth)。sticky 见下条样式。
+  if (!document.getElementById('arkui-list-style')) {
+    const lst = document.createElement('style');
+    lst.id = 'arkui-list-style';
+    lst.textContent = ''
+      + '[data-arkui-comp="List"][data-sticky="1"] [data-arkui-lig-header]{position:sticky;top:0;z-index:1;background:inherit;}'
+      + '[data-arkui-comp="List"][data-sticky="2"] [data-arkui-lig-footer]{position:sticky;bottom:0;z-index:1;background:inherit;}'
+      + '[data-arkui-comp="List"][data-sticky="3"] [data-arkui-lig-header]{position:sticky;top:0;z-index:1;background:inherit;}'
+      + '[data-arkui-comp="List"][data-sticky="3"] [data-arkui-lig-footer]{position:sticky;bottom:0;z-index:1;background:inherit;}'
+      + '[data-arkui-lig-div]{position:relative;}'
+      + '[data-arkui-lig-div]::before{content:"";position:absolute;top:var(--dw,0);left:var(--dml,0);right:var(--dmr,0);height:var(--dh,0);background:var(--dc,transparent);}';
+    document.head.appendChild(lst);
+  }
+  const ListItemGroup = ensureComponent('ListItemGroup',
+    defaultDom('div', { display: 'flex', flexDirection: 'column', alignItems: 'stretch' }));
 
   // Tabs/TabContent 必须手写：生成的骨架只会建一个 <div>，既没有切换语义也没有 TabsController。
   // 它们各自的 create/pop 在 ensureComponent 里按组件名分派（见 name === 'Tabs' / 'TabContent'）。
@@ -6938,6 +7049,11 @@
     TextDecorationType: { None: 'none', Underline: 'underline', Overline: 'overline', LineThrough: 'line-through' },
     // R37：分步器。ItemState 同为产物里的自由变量枚举
     Stepper, StepperItem, ItemState,
+    // R49：ListItemGroup + 三个枚举（值照 .d.ts 声明顺序/显式数值）
+    ListItemGroup,
+    ListItemGroupStyle: { NONE: 0, CARD: 1 },
+    ListItemGroupHeaderFooterStyle: { NONE: 0, FLOATING: 1 },
+    StickyStyle: { None: 0, Header: 1, Footer: 2, BOTH: 3 },
     // R47：ImageAnimator + AnimationStatus（值照 .d.ts：Initial=0/Running=1/Paused=2/Stopped=3）
     ImageAnimator, AnimationStatus: { Initial: 0, Running: 1, Paused: 2, Stopped: 3 },
     // R46：Scroll 组件（手写接管骨架）+ 枚举。Edge：Top=0 Center=1 Bottom=2

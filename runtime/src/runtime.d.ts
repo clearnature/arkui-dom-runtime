@@ -55,6 +55,8 @@ interface Element {
   __arkuiImage?: boolean;
   __arkuiScroll?: boolean;
   __arkuiAnimator?: boolean;
+  __arkuiLig?: boolean;
+  __lig?: any;
   __an?: any;
   __anCbs?: any;
   __anApplyState?: (v: number) => void;

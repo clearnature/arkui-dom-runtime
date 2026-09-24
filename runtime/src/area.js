@@ -263,6 +263,22 @@
       ANIMATOR_ATTRS[prop](node, value);
       return;
     }
+    // List.sticky（R49）：StickyStyle（None=0/Header=1/Footer=2/BOTH=3）—— ListItemGroup
+    // 的头/尾吸顶由该 List 级属性驱动（样式规则见 main.js arkui-list-style）
+    if (node.__arkuiComp === 'List' && prop === 'sticky') {
+      node.dataset.sticky = String(Number(resolveResource(value)));
+      return;
+    }
+    // ListItemGroup（R49）：divider/childrenMainSize 两个属性方法（其余是 create 选项）
+    if (node.__arkuiLig && prop === 'divider') {
+      node.__lig.divider = value && typeof value === 'object' ? value : null;
+      return;
+    }
+    if (node.__arkuiLig && prop === 'childrenMainSize') {
+      node.dataset.childrenMainSize = 'recorded';
+      layoutWarnings.push('ListItemGroup.childrenMainSize 只记 data-*（服务于真机懒加载估算，DOM 布局无需）');
+      return;
+    }
     // 信息展示类（R28）：Counter 的 onInc/onDec 是函数值（必须拦在通用 on* 规则之前，否则
     // 会变成 'inc'/'dec' DOM 监听）；Divider/Marquee 的语义属性抢在通用 data-* 落点之前
     if (node.__arkuiShow && SHOW_ATTRS[prop]) {

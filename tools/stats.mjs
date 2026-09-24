@@ -47,7 +47,9 @@ const HANDWRITTEN = ['Text', 'Button', 'Column', 'Row', 'Stack', 'List', 'ListIt
   // R46：Scroll（真实 overflow 基座 + Scroller 控制器 + 滚动条/事件）
   'Scroll',
   // R47：ImageAnimator（逐帧定时器 + AnimationStatus 状态机 + 五生命周期回调）
-  'ImageAnimator'];
+  'ImageAnimator',
+  // R49：ListItemGroup（header→items→footer 序 + space 只作用 item 间 + divider + 吸顶）
+  'ListItemGroup'];
 const CONTROL_FLOW = ['If', 'ForEach', 'LazyForEach'];   // 不在 149 注册表内，单独实现
 
 const gen = read('runtime/generated-components.js');

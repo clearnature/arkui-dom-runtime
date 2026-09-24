@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R49：ListItemGroup 分组容器（header/items/footer 序 + space/spaceWidth + divider + 吸顶）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 380px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R49：ListItemGroup（header→items→footer 序 / space 不作用头尾 / spaceWidth 压过 space / divider 内缩 / 吸顶）</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/listitemgroup-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const el = (id) => root.querySelector('#' + id);
+    const group = async (name, fn) => {
+      try { await fn(); } catch (e) {
+        allPass = false;
+        lines.push(`FAIL [${name}] 抛出异常：${e && e.stack ? String(e.stack).split('\n')[0] : e}`);
+      }
+    };
+
+    try {
+      __arkui_dom_requireModule('ListGroupDemo');
+      __arkui_dom_loadRoute('pages/ListGroupDemo', root);
+      await tick(120);
+      const ls1 = el('ls1');
+      const ga = el('ga');
+      const gb = el('gb');
+      check(!!ls1 && !!ga && !!gb, 'ListGroupDemo 页面已渲染（List + 两组）');
+
+      // ══════════ ① 结构：两组 + 组A 子序 header→items→footer ══════════
+      await group('结构', async () => {
+        const groups = root.querySelectorAll('[data-arkui-comp="ListItemGroup"]');
+        check(groups.length === 2, `ListItemGroup 数 == 2（实际 ${groups.length}）`);
+        const gaKids = [...ga.children].map((k) => k.textContent || k.getAttribute('data-arkui-comp'));
+        const want = ['GA头', 'ga0', 'ga1', 'ga2', 'GA尾'];
+        const same = gaKids.length === want.length && want.every((w, i) => String(gaKids[i]).includes(w));
+        check(same, `组A 子序 = [${gaKids.join(', ')}]（真机 header→items→footer）`);
+        check(ga.querySelector('[data-arkui-lig-header]') !== null
+          && ga.querySelector('[data-arkui-lig-footer]') !== null, '头/尾槽标记存在');
+      });
+
+      // ══════════ ② 组A高度与间距：space 只夹 item 间 ══════════
+      await group('组A 高度与间距', async () => {
+        const h = Math.round(ga.getBoundingClientRect().height);
+        check(h === 340, `组A高度 = 40+240+20+40 = 340（实际 ${h}）`);
+        const r0 = el('ga0'), r1 = el('ga1');
+        const gap = r1.offsetTop - (r0.offsetTop + r0.offsetHeight);
+        check(gap === 10, `item 间距 = space 10（实际 ${gap}）`);
+        const gah = ga.querySelector('[data-arkui-lig-header]');
+        const headToFirst = r0.offsetTop - (gah.offsetTop + gah.offsetHeight);
+        check(headToFirst === 0, `space 不作用于 header↔首项（间距 ${headToFirst}，d.ts 原文）`);
+      });
+
+      // ══════════ ③ divider：非首 item 顶部 1px 红线、内缩 4/4、首项无线 ══════════
+      await group('divider', async () => {
+        const items = [el('ga0'), el('ga1'), el('ga2')];
+        const hasDiv = items.map((i) => i.hasAttribute('data-arkui-lig-div'));
+        check(hasDiv[0] === false && hasDiv[1] && hasDiv[2],
+          `divider 只画在非首 item（[${hasDiv.join(',')}], 真机首项无线）`);
+        const cs1 = getComputedStyle(el('ga1'), '::before');
+        check(cs1.height === '1px' && cs1.backgroundColor === 'rgb(255, 0, 0)',
+          `divider 高 1px 红（${cs1.height}/${cs1.backgroundColor}）`);
+        // headless 经典滚动条占位 15px（List 未隐藏滚动条）——线长 = 组内容宽 - 4 - 4
+        check(cs1.width === `${ga.clientWidth - 8}px`,
+          `线长 = 组宽-4-4（${cs1.width}；组内容宽 ${ga.clientWidth} 含 15px 滚动条占位）`);
+      });
+
+      // ══════════ ④ 枚举与 spaceWidth 优先级 ══════════
+      await group('枚举与优先级', async () => {
+        check(ga.dataset.style === '1', `style(CARD=1) 记录（'${ga.dataset.style}'）`);
+        check(gb.dataset.spaceWidth === '4', `spaceWidth 记录（'${gb.dataset.spaceWidth}'）`);
+        const b0 = el('gb0'), b1 = el('gb1');
+        const gapB = b1.offsetTop - (b0.offsetTop + b0.offsetHeight);
+        check(gapB === 4, `spaceWidth=4 压过 space=99（间距 ${gapB}，d.ts precedence）`);
+        const hb = Math.round(gb.getBoundingClientRect().height);
+        check(hb === 98, `组B高度 = 90+8 = 98（实际 ${hb}）`);
+      });
+
+      // ══════════ ⑤ 吸顶：List.sticky(Header)，滚 120 后组A头吸顶、对照组不吸 ══════════
+      await group('吸顶', async () => {
+        check(ls1.dataset.sticky === '1', `List.sticky 记录（'${ls1.dataset.sticky}'）`);
+        ls1.scrollTop = 120;
+        const listTop = ls1.getBoundingClientRect().top;
+        const gahTop = ga.querySelector('[data-arkui-lig-header]').getBoundingClientRect().top;
+        check(Math.abs(gahTop - listTop) <= 1,
+          `滚 120 → 组A头吸顶（header.top-list.top=${(gahTop - listTop).toFixed(1)}）`);
+        const gb0Top = el('gb0').getBoundingClientRect().top - listTop;
+        check(Math.abs(gb0Top - 220) <= 1,
+          `对照组 gb0 不吸（${gb0Top.toFixed(1)} = 340-120，真机同款只有组头吸）`);
+        ls1.scrollTop = 0;
+      });
+
+      // ══════════ ⑥ 回归 ══════════
+      await group('回归', async () => {
+        check(ls1.scrollHeight > ls1.clientHeight, `List 仍可滚（${ls1.scrollHeight}/${ls1.clientHeight}）`);
+        const bad = __arkui_dom_layout_warnings.filter((w) => /ListItemGroup\./.test(String(w)) && /未实现/.test(String(w)));
+        check(bad.length === 0, `ListItemGroup 属性不记"未实现"警告（剩 ${bad.length} 条）`);
+      });
+
+      lines.push(`ELMT ${__arkui_dom_elmtRecords.size}`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

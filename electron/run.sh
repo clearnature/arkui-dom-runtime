@@ -96,6 +96,7 @@ prepare() {
     imagedemo) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/ImageDemo.ts" "$ROOT/build/imagedemo-module.js" --cjs --register ImageDemo >/dev/null || return 1 ;;
     scrolldemo) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/ScrollDemo.ts" "$ROOT/build/scrolldemo-module.js" --cjs --register ScrollDemo >/dev/null || return 1 ;;
     animatordemo) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/AnimatorDemo.ts" "$ROOT/build/animatordemo-module.js" --cjs --register AnimatorDemo >/dev/null || return 1 ;;
+    listitemgroup) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/ListGroupDemo.ts" "$ROOT/build/listitemgroup-module.js" --cjs --register ListGroupDemo >/dev/null || return 1 ;;
     stepdemo) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/StepDemo.ts" "$ROOT/build/stepdemo-module.js" --cjs --register StepDemo >/dev/null || return 1 ;;
   esac
   return 0
@@ -165,7 +166,7 @@ case "${1:-layout}" in
   all)
     rc=0
     # 全矩阵：每个用例都是独立 Electron 进程
-    for t in index rich layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo mediademo smalldemo stepdemo imagedemo scrolldemo animatordemo measure lazy provide v2 observe ability router async; do
+    for t in index rich layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo mediademo smalldemo stepdemo imagedemo scrolldemo animatordemo listitemgroup measure lazy provide v2 observe ability router async; do
       run_one "$t" || rc=1
       echo
     done
@@ -185,6 +186,6 @@ case "${1:-layout}" in
     run_one netfile "?phase=2" netfile-2 || exit 1
     echo
     verify_disk ;;
-  layout|rich|index|leak|ability|router|widgets|tabgrid|swiper|navdemo|reldemo|drawdemo|textmeasure|lazyvh|measarea|measimage|measnotify|promptaction|realfs|animdemo|gesturedemo|transitiondemo|gesturegroupdemo|navbardemo|navtransdemo|shapedemo|inputdemo|showdemo|popdemo|uictxdemo|canvasedemo|xcompdemo|qrdemo|textdemo|mediademo|smalldemo|stepdemo|imagedemo|scrolldemo|animatordemo|measure|lazy|provide|async|v2|observe) run_one "$1" ;;
-  *) echo "用法: bash electron/run.sh [layout|rich|index|leak|ability|router|widgets|tabgrid|swiper|navdemo|reldemo|drawdemo|textmeasure|lazyvh|measarea|measimage|measnotify|promptaction|realfs|animdemo|gesturedemo|transitiondemo|gesturegroupdemo|navbardemo|navtransdemo|shapedemo|inputdemo|showdemo|popdemo|uictxdemo|canvasedemo|xcompdemo|qrdemo|textdemo|mediademo|smalldemo|stepdemo|imagedemo|scrolldemo|animatordemo|measure|lazy|provide|async|v2|observe|netfile|all]"; exit 2 ;;
+  layout|rich|index|leak|ability|router|widgets|tabgrid|swiper|navdemo|reldemo|drawdemo|textmeasure|lazyvh|measarea|measimage|measnotify|promptaction|realfs|animdemo|gesturedemo|transitiondemo|gesturegroupdemo|navbardemo|navtransdemo|shapedemo|inputdemo|showdemo|popdemo|uictxdemo|canvasedemo|xcompdemo|qrdemo|textdemo|mediademo|smalldemo|stepdemo|imagedemo|scrolldemo|animatordemo|listitemgroup|measure|lazy|provide|async|v2|observe) run_one "$1" ;;
+  *) echo "用法: bash electron/run.sh [layout|rich|index|leak|ability|router|widgets|tabgrid|swiper|navdemo|reldemo|drawdemo|textmeasure|lazyvh|measarea|measimage|measnotify|promptaction|realfs|animdemo|gesturedemo|transitiondemo|gesturegroupdemo|navbardemo|navtransdemo|shapedemo|inputdemo|showdemo|popdemo|uictxdemo|canvasedemo|xcompdemo|qrdemo|textdemo|mediademo|smalldemo|stepdemo|imagedemo|scrolldemo|animatordemo|listitemgroup|measure|lazy|provide|async|v2|observe|netfile|all]"; exit 2 ;;
 esac

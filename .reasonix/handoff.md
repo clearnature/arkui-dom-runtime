@@ -8,7 +8,10 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R48**（多代理验证轮：28 个只读调研代理并行完成 23 个平台组件批量判定
+- 上次切片：**R49**（ListItemGroup 分组容器上线：header→items→footer 子序、space 只作用
+  item 间、spaceWidth 压过 space、divider ::before 槽、List.sticky 组头吸顶）— **PASS**
+  （listitemgroup 19 条双端；破坏 5/3/1 红；手写 48）
+- 上一轮：**R48**（多代理验证轮：28 个只读调研代理并行完成 23 个平台组件批量判定
   [platform-only 14/partial 3/feasible 4/not-found 2] + 5 个高价值组件实现级摘要；产物入库
   `docs/research/`；CAPABILITY 增"平台特定组件批量判定"章节——清单 23 项一次性处置完毕）
   — **PASS**（纯只读调研，无实现改动）
@@ -132,4 +135,5 @@ bash electron/run.sh <用例>   # 单用例·Electron
 | 2026-09-24 | R45 Image | 71eec3f | imagedemo 15 条双端 + widgets 恢复；破坏 2/0/3 红 | 页面源是**声明式 ArkTS**（@Component struct），产物才是 ViewPU 类——按产物形态写源被 linter 拦（no-in/any/obj-literal）；ArkTS 禁内联对象字面量类型；alt 占位图必须惰性创建（预插空 src <img> 被 querySelector('img') 命中）；图片 URL 绝对路径 /test-assets/（MeasImage 同约定）；fire 同步认领防双发（首跑抓到 load+补派发双触发抛错） |
 | 2026-09-24 | R46 Scroll | a6a209b | scrolldemo 16 条双端；破坏 1/1/1 红 | **Scroll.create 单参直接是 Scroller 实例**（不是 {scroller} 选项对象，解包错方向 _bind 没跑、scrollBy 全哑，探针抓到）；Scroller 扩面（layout.js）：官方形参 {xOffset,yOffset,animation} + scrollBy/scrollEdge/scrollPage/isAtEnd；onScrollEdge 到达沿（lastEdge 记忆）；onScrollStart/End = 滚动静默 80ms 收口（近似标注）；测试侧手动滚动后手动派发 scroll（坑 ⑧ rAF 对齐事件 headless 不可靠） |
 | 2026-09-24 | R47 ImageAnimator | e32cb1d | animatordemo 13 条双端；破坏 0/6/2 红 | **本 SDK d.ts 无 onFrame 属性**（事件仅 Start/Pause/Repeat/Cancel/Finish 五枚，勿照旧文档实现）；duration=每帧 ms（默认 1000）、iterations=-1 无限；两个必踩点：产物顺序 state 先于 onStart 应用 → 回调延时派发（同步发会丢）、images 字面量重渲染重建 → 深 diff 防重置帧序；破坏脚本缩进层级照抄实际文件（工厂内 6 空格）——两次 AssertionError 都是这原因 |
-| 2026-09-24 | R48 多代理验证轮 | （本次提交） | 28 只读代理并行（53.5 分钟/54 步全 settled）；无实现改动 | **多代理加速实测**：一轮清账 23 个平台组件判定 + 5 份实现级摘要（用户原估 3-4 轮会话的调研量）；platform-only 14/partial 3/feasible 4/not-found 2；复核更正 0 条、ColorPicker×2 not-found 如实标 unconfirmed；中途配额耗尽换 provider 续跑（new-provider/mimo-v2.6-flash），结果全量到手；产物入库 docs/research/；可行队列新增 ContainerReader/Calendar/CalendarPicker/WithTheme |
+| 2026-09-24 | R48 多代理验证轮 | 8da24d7 | 28 只读代理并行（53.5 分钟/54 步全 settled）；无实现改动 | **多代理加速实测**：一轮清账 23 个平台组件判定 + 5 份实现级摘要（用户原估 3-4 轮会话的调研量）；platform-only 14/partial 3/feasible 4/not-found 2；复核更正 0 条、ColorPicker×2 not-found 如实标 unconfirmed；中途配额耗尽换 provider 续跑（new-provider/mimo-v2.6-flash），结果全量到手；产物入库 docs/research/；可行队列新增 ContainerReader/Calendar/CalendarPicker/WithTheme |
+| 2026-09-24 | R49 ListItemGroup | （本次提交） | listitemgroup 19 条双端；破坏 5/3/1 红 | 按 R48-A 摘要实现（调研零返工）；**space 只作用 item 间**（margin 实现，通用 gap 是陷阱⑤）；spaceWidth 压过 space；divider = item 顶缘外 ::before 槽（不占高度，真机首项无线同款）；footer 推迟到 pop（真机 AdjustMountTreeSequence 序）；List.sticky → position:sticky 规则；headless 经典滚动条占 15px（List 未隐藏滚动条时组宽=360-15，divider 线宽断言按内容宽算） |

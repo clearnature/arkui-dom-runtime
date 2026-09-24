@@ -250,6 +250,10 @@ case "${1:-index}" in
     run_one animatordemo "$(src_of pages/AnimatorDemo.ts)" build/animatordemo-module.js test/animatordemo.html \
       "--cjs --register AnimatorDemo" || rc=1
     echo
+    # R49：ListItemGroup 分组容器
+    run_one listitemgroup "$(src_of pages/ListGroupDemo.ts)" build/listitemgroup-module.js test/listitemgroup.html \
+      "--cjs --register ListGroupDemo" || rc=1
+    echo
     run_one measure "$(src_of pages/Measure.ts)" build/measure.js test/measure.html || rc=1
     echo
     run_one lazy "$(src_of pages/Lazy.ts)" build/lazy.js test/lazy.html || rc=1
@@ -404,6 +408,10 @@ case "${1:-index}" in
     # R47：ImageAnimator
     run_one animatordemo "$(src_of pages/AnimatorDemo.ts)" build/animatordemo-module.js test/animatordemo.html \
       "--cjs --register AnimatorDemo" ;;
+  listitemgroup)
+    # R49：ListItemGroup
+    run_one listitemgroup "$(src_of pages/ListGroupDemo.ts)" build/listitemgroup-module.js test/listitemgroup.html \
+      "--cjs --register ListGroupDemo" ;;
   router)
     # 两个页面都要注册；Detail 先单独产出，Home 由 run_one 带 flags 产出
     "$NODE" tools/extract.mjs "$(src_of pages/Detail.ts)" build/detail-module.js --cjs --register Detail >/dev/null || exit 1
@@ -420,5 +428,5 @@ case "${1:-index}" in
     echo
     run_one netfile-2 "$(src_of pages/NetFile.ts)" build/netfile-module.js test/netfile.html \
       "--cjs --register NetFile" "?phase=2" "$PERSIST_PROFILE" "$PERSIST_PORT" ;;
-  *) echo "用法: bash run.sh [index|rich|leak|layout|widgets|tabgrid|swiper|navdemo|reldemo|drawdemo|textmeasure|lazyvh|measarea|measimage|measnotify|promptaction|realfs|animdemo|gesturedemo|transitiondemo|gesturegroupdemo|navbardemo|navtransdemo|shapedemo|inputdemo|showdemo|popdemo|uictxdemo|canvasedemo|xcompdemo|qrdemo|textdemo|mediademo|smalldemo|stepdemo|imagedemo|scrolldemo|animatordemo|measure|lazy|provide|async|ability|router|netfile|all]"; exit 2 ;;
+  *) echo "用法: bash run.sh [index|rich|leak|layout|widgets|tabgrid|swiper|navdemo|reldemo|drawdemo|textmeasure|lazyvh|measarea|measimage|measnotify|promptaction|realfs|animdemo|gesturedemo|transitiondemo|gesturegroupdemo|navbardemo|navtransdemo|shapedemo|inputdemo|showdemo|popdemo|uictxdemo|canvasedemo|xcompdemo|qrdemo|textdemo|mediademo|smalldemo|stepdemo|imagedemo|scrolldemo|animatordemo|listitemgroup|measure|lazy|provide|async|ability|router|netfile|all]"; exit 2 ;;
 esac

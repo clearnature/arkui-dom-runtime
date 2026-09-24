@@ -1370,6 +1370,32 @@ onFinish 恰一次/状态落 Stopped/保持末帧）双端通过。**破坏验�
 `harmony-proj/.../AnimatorDemo.ets` + `fixtures/pages/AnimatorDemo.ts`、`test/animatordemo.html`、
 `run.sh`、`electron/run.sh`
 
+## R49：`ListItemGroup` 分组容器 ✅
+
+**测量**（新增 `pages/ListGroupDemo.ets`，按 R48-A 的 ListItemGroup 摘要设计，断言数字全部
+预先推导）：`ListItemGroup({header?, footer?, space?, spaceWidth?, style?})`——header/footer
+是 CustomBuilder（ArkTS 需 @Builder 方法）；`divider({strokeWidth,color,startMargin,endMargin})`
+与 `childrenMainSize` 是仅有的两个属性方法；四个枚举全是**显式数值**（ListItemGroupStyle
+NONE=0/CARD=1、HeaderFooterStyle NONE=0/FLOATING=1、StickyStyle None=0..BOTH=3）。
+
+**实现**（main.js List 旁 + ensureComponent 特例）：根 = flex column（**显式 column**——
+骨架 baseStyle 是 row，陷阱⑧）+ 头槽；**footer 推迟到 pop 渲染**（真机
+AdjustMountTreeSequence 保证 header→items→footer 序）；**space 只作用 item 间**
+（margin 实现，header/footer 不参与——d.ts 原文）；`spaceWidth` 压过 `space`；divider =
+item 顶缘外 ::before 槽（不占 item 高度），非首 item 才画（真机首项无线）；
+`List.sticky(StickyStyle)` → 注入 position:sticky 规则（组头吸顶，对照组不吸）。
+`childrenMainSize` 只记 data-*（服务于真机懒加载估算，DOM 布局无需）。
+
+**验收**：`bash run.sh listitemgroup`（19 条断言：子序/组高 340 与 98/间距 10 与 4/
+divider 三条/吸顶+对照组/枚举记录）双端通过。**破坏验证（3 处）**：间距实现摘除 →
+**5 红**；divider 摘除 → **3 红**；sticky 规则选择器破坏 → **1 红**。还原后 md5 一致。
+
+**触及**：`runtime/src/main.js`（ListItemGroup 工厂 + ensureComponent 特例 + sticky 样式 +
+枚举挂 global）、`runtime/src/area.js`（sticky/divider/childrenMainSize 分派）、
+`runtime/src/runtime.d.ts`、`tools/stats.mjs`（手写 47→48）、
+`harmony-proj/.../ListGroupDemo.ets` + `fixtures/pages/ListGroupDemo.ts`、
+`test/listitemgroup.html`、`run.sh`、`electron/run.sh`
+
 ## R44：已确证组件的语义回归扫描 ✅
 
 对 R39–R43 确证过的语义逐项**重读真机源码找首轮漏掉的边界行为**——扫出两处分歧并修正、
@@ -2064,9 +2090,9 @@ PASS starStyle 的图片 URI 不可用已记警告
 
 **权威清单在 `docs/ROADMAP.md`**（每项带可复现的验收命令）。当前优先：
 
-1. 骨架组件的视觉语义——手写 47 个：形状族 8（R26）、输入类 4+3（R27/R34）、
+1. 骨架组件的视觉语义——手写 48 个：形状族 8（R26）、输入类 4+3（R27/R34）、
    信息展示类 4+1（R28/R33）、弹出类 3（R29）、表层类 2（R31/R32）、小件 4（R36）、
-   分步器 2（R37）、Image（R45）、Scroll（R46）、ImageAnimator（R47）；`UIContext` 已收（R30）、`@ohos.multimedia.media` 已收（R35）。
+   分步器 2（R37）、Image（R45）、Scroll（R46）、ImageAnimator（R47）、ListItemGroup（R49）；`UIContext` 已收（R30）、`@ohos.multimedia.media` 已收（R35）。
    剩余候选以骨架清单（`node tools/stats.mjs` 的"骨架·仅 data-*"）为准
 2. ~~**继续把 `runtime/src/main.js` 拆细**~~ **已拆到位（2026-09-21，源拆分第三步）**：9 个分片，
    `main.js` 剩 **1869 行 / 86,452 B**（基础设施 / 状态 v1 / ViewPU / 属性映射 / Tabs / Swiper /
