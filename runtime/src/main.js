@@ -1714,6 +1714,8 @@
 
   // @include sidebar
 
+  // @include gridrow
+
   // @include split
 
   // @include scroll
@@ -1974,6 +1976,8 @@
     SideBarContainer, SideBarContainerType: { Embed: 0, Overlay: 1 },
     // R62：RowSplit/ColumnSplit（分隔容器）
     RowSplit, ColumnSplit,
+    // R64：GridRow/GridCol（响应式网格）
+    GridRow, GridCol,
     // R63：Panel（底部滑出面板）+ PanelMode
     Panel, PanelMode: { Mini: 0, Half: 1, Full: 2 },
     // R57：Grid/GridItem（CSS grid 同构基座 + 滚动事件族）

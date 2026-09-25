@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R64：GridRow/GridCol 响应式网格（12 列 + span/offset）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 360px; }
+  #root [data-arkui-comp="GridRow"] { border: 1px solid #ddd; }
+  #root [data-arkui-comp="GridCol"] {
+    background: #eef3f8; border: 1px solid #c5d5e5; padding: 4px;
+    font-size: 14px; text-align: center;
+  }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R64：GridRow（12 列）/ GridCol（span 6/4/12）</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/gridrowdemo-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const el = (id) => root.querySelector('#' + id);
+    const group = async (name, fn) => {
+      try { await fn(); } catch (e) {
+        allPass = false;
+        lines.push(`FAIL [${name}] 抛出异常：${e && e.stack ? String(e.stack).split('\n')[0] : e}`);
+      }
+    };
+
+    try {
+      __arkui_dom_requireModule('GridRowDemo');
+      __arkui_dom_loadRoute('pages/GridRowDemo', root);
+      await tick(120);
+      const gr = el('gr');
+      const cols = gr.querySelectorAll('[data-arkui-comp="GridCol"]');
+      const gcA = cols[0];                              // span=6 的 GridCol 容器
+      const gcB = cols[1];
+      const gcC = cols[2];                              // span=4
+      const gcF = cols[5];                              // span=12
+
+      // ══════════ ① 基座（3 条） ══════════
+      await group('基座', async () => {
+        check(!!gr && gr.dataset.gridRow === '' && gr.style.display === 'grid',
+          `display:grid 基座（实际 '${gr && gr.style.display}'）`);
+        check(gr.style.gridTemplateColumns === 'repeat(12, 1fr)',
+          `12 列模板（实际 '${gr.style.gridTemplateColumns}'）`);
+        check(gr.style.gap === '8px' && gr.dataset.columns === '12' && gr.dataset.gutter === '8',
+          `gutter(8) → gap:8px + columns:12（实际 gap '${gr.style.gap}' cols '${gr.dataset.columns}'）`);
+      });
+
+      // ══════════ ② GridCol span 几何（3 条） ══════════
+      await group('span', async () => {
+        check(gcA.offsetWidth === gcB.offsetWidth && gcA.offsetWidth > 0,
+          `span=6 → 半宽同行（a=${gcA.offsetWidth} b=${gcB.offsetWidth}）`);
+        check(gcC.offsetWidth < gcA.offsetWidth,
+          `span=4 < span=6（c=${gcC.offsetWidth} < a=${gcA.offsetWidth}）`);
+        check(gcF.offsetWidth >= gcA.offsetWidth + gcB.offsetWidth,
+          `span=12 → 全宽（f=${gcF.offsetWidth} ≥ a+b=${gcA.offsetWidth + gcB.offsetWidth}）`);
+      });
+
+      // ══════════ ③ 六个 GridCol 已挂载（1 条） ══════════
+      check(cols.length === 6, `GridCol 数量 = 6（实际 ${cols.length}）`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+
+  })();
+  </script>
+</body>
+</html>

@@ -37,6 +37,7 @@
         "pages/AlphabetIndexerDemo",
         "pages/SideBarDemo",
         "pages/SplitDemo",
-        "pages/PanelDemo"
+        "pages/PanelDemo",
+        "pages/GridRowDemo"
     ]
 }

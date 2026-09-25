@@ -98,6 +98,10 @@ interface Element {
   __arkuiColumnSplit?: boolean;
   __arkuiPanel?: boolean;
   __panel?: any;
+  __arkuiGridRow?: boolean;
+  __gridrow?: any;
+  __arkuiGridCol?: boolean;
+  __gridcol?: any;
   __lig?: any;
   __an?: any;
   __anCbs?: any;

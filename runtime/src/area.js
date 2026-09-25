@@ -316,6 +316,15 @@
       SIDEBAR_ATTRS[prop](node, value);
       return;
     }
+    // GridRow/GridCol（R64）：columns/gutter/span/offset 是语义属性
+    if (node.__arkuiGridRow && GRIDROW_ATTRS[prop]) {
+      GRIDROW_ATTRS[prop](node, value);
+      return;
+    }
+    if (node.__arkuiGridCol && GRIDCOL_ATTRS[prop]) {
+      GRIDCOL_ATTRS[prop](node, value);
+      return;
+    }
     // Grid（R57）/ GridItem（R57）：columnsTemplate/事件族与跨行跨列是语义属性
     if (node.__arkuiGrid && GRID_ATTRS[prop]) {
       GRID_ATTRS[prop](node, value);
