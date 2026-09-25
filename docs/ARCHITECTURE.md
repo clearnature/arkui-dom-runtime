@@ -1684,8 +1684,8 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   fixtures 转换产物  52 个：AnimDemo AnimatorDemo AsyncIO CalendarPickerDemo Callee CanvasDemo DatePickerDemo Detail DrawDemo GestureDemo GestureGroupDemo Home ImageDemo Index InputDemo Layout Lazy LazyVar ListGroupDemo MeasArea MeasImage MeasNotify Measure MediaDemo NavBarDemo NavDemo NavTransDemo NetFile Observe PopDemo PromptAct Provide QrDemo RefreshDemo RelDemo Rich ScrollDemo ShapeDemo ShowDemo SmallDemo StepDemo SwiperDemo TabsGrid TextDemo TextMeasure TimePickerDemo TransitionDemo UiContextDemo V2 WaterFlowDemo Widgets XCompDemo
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          672.3 KB
-  runtime(src)     425.0 KB
+  runtime          673.3 KB
+  runtime(src)     425.9 KB
   test             674.1 KB
   tools            57.6 KB
   electron(src)    24.0 KB
@@ -1693,7 +1693,7 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   fixtures         392.2 KB
 
 == 逐文件（文档"文件职责"表的来源）==
-  runtime/arkui-dom-runtime.js          428653 B  418.6 KB
+  runtime/arkui-dom-runtime.js          429663 B  419.6 KB
   runtime/generated-components.js        57617 B  56.3 KB
   runtime/ohos-shims.js                  61848 B  60.4 KB
   tools/extract.mjs                       6563 B  6.4 KB
@@ -1741,7 +1741,7 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   runtime/src/small.js                   11646 B  11.4 KB
   runtime/src/timepicker.js               4774 B  4.7 KB
   runtime/src/v2.js                      12577 B  12.3 KB
-  runtime/src/waterflow.js               18552 B  18.1 KB
+  runtime/src/waterflow.js               19562 B  19.1 KB
   fixtures/pages/AnimDemo.ts              6451 B  6.3 KB
   fixtures/pages/AnimatorDemo.ts          4050 B  4.0 KB
   fixtures/pages/AsyncIO.ts               6206 B  6.1 KB

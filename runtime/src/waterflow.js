@@ -26,8 +26,15 @@
   //   ReachEnd 过境成立发 RE（夹具已按真机语义修正 R48 摘要漏记的这次 RE）。
   // 默认档（.d.ts 专属默认，≠Scroll）：scrollBar=Off(0)（common.d.ts:25192）、
   //   edgeEffect=None(2)（:25291）→ overscrollBehavior:none。
+  /** @type {Record<number, string|null>} */
   const WFD_LAYOUT_MODE = { 1: null, 3: null, 0: 'row', 2: 'row' };  // Column/ColumnReverse/Row/RowReverse
   // 轨道解析：'1fr 1fr' / 'repeat(auto-fill, 120px)' / '120px 1fr' → [{px}]（内容宽 cross、gap px）
+  /**
+   * @param {any} tpl
+   * @param {number} cross
+   * @param {number} gap
+   * @returns {{px: number}[]}
+   */
   const wfdParseTracks = (tpl, cross, gap) => {
     const s = String(tpl === undefined || tpl === null ? '' : tpl).trim();
     if (!s) return [{ px: cross }];
@@ -41,18 +48,26 @@
     }
     return wfdShareTracks(s.split(/\s+/), cross, gap, null);
   };
+  /**
+   * @param {string[]} defs
+   * @param {number} cross
+   * @param {number} gap
+   * @param {Record<number, number>|null} fixedOverride
+   * @returns {{px: number}[]}
+   */
   const wfdShareTracks = (defs, cross, gap, fixedOverride) => {
     let fr = 0;
     let fixed = 0;
     const fixedPx = {};
     defs.forEach((d, i) => {
       const f = fixedOverride && fixedOverride[i] !== undefined ? fixedOverride[i]
-        : (d.match(/^([\d.]+)px$/) ? Number(d.match(/^([\d.]+)px$/)[1]) : null);
+        : (d.match(/^([\d.]+)px$/) ? Number((/** @type {RegExpMatchArray} */ (d.match(/^([\d.]+)px$/)))[1]) : null);
       if (f !== null) { fixedPx[i] = f; fixed += f; } else { fr += Number(d) || 1; }
     });
     const unit = defs.length > 1 ? (cross - fixed - gap * (defs.length - 1)) / fr : (cross - fixed);
     return defs.map((d, i) => ({ px: fixedPx[i] !== undefined ? fixedPx[i] : Math.max(0, (Number(d) || 1) * unit) }));
   };
+  /** @type {Record<string, (n: HTMLDivElement, v: any) => void>} */
   const WATERFLOW_ATTRS = {
     columnsTemplate: (n, v) => {
       n.dataset.columnsTemplate = String(v);          // 原样记（断言要 '1fr 1fr'），换算在排布里
@@ -121,12 +136,14 @@
     },
   };
   // 排布调度：同一轮多个属性变更合并成一次 flush（坑 ⑥ 同值守卫的重排 counterpart）
+  /** @param {HTMLDivElement} n */
   const wfdSchedule = (n) => {
     const w = /** @type {any} */ (n).__wf;
     if (!w) return;
     if (w.pending) return;
     w.pending = setTimeout(() => { w.pending = null; wfdLayout(n); }, 0);
   };
+  /** @param {HTMLDivElement} root */
   const wfdLayout = (root) => {
     const w = /** @type {any} */ (root).__wf;
     if (!w) return;
@@ -140,11 +157,12 @@
     // 段列数 = crossCount（缺省 1，water_flow_segmented_layout.cpp:303 的 max(crossCount,1)）
     const secs = w.sections && typeof w.sections.values === 'function' ? w.sections.values() : null;
     const items = wfdItems(root);
+    /** @type {{items: any[], crossCount: number, gap: number, tracks?: {px: number}[]}[]} */
     let segs;
     if (secs && secs.length) {
       segs = [];
       let cursor = 0;
-      secs.forEach((s) => {
+      secs.forEach((/** @type {any} */ s) => {
         const count = Math.max(0, Math.floor(Number(s.itemsCount) || 0));
         segs.push({ items: items.slice(cursor, cursor + count), crossCount: Math.max(1, Math.floor(Number(s.crossCount) || 1)), gap: s.columnsGap !== undefined && s.columnsGap !== null ? Number(resolveResource(s.columnsGap)) : colGap });
         cursor += count;
@@ -168,7 +186,7 @@
       const colH = new Array(tracks.length).fill(0);
       const used = new Array(tracks.length).fill(false);
       const segStart = crossCursor;                   // 段沿主轴续排（section 混列不换行）
-      seg.items.forEach((item) => {
+      seg.items.forEach((/** @type {HTMLElement} */ item) => {
         if (item.style.display === 'none') {           // display:none 不参与（visibility 语义未分档）
           return;
         }
@@ -196,6 +214,7 @@
       crossCursor += Math.max.apply(null, colH.concat([0]));
     });
   };
+  /** @param {any[]} args */
   const WaterFlow = ensureComponent('WaterFlow', (args) => {
     const el = document.createElement('div');
     el.__arkuiWaterFlow = true;
@@ -219,6 +238,11 @@
         layoutWarnings.push('WaterFlow footer/footerContent 未渲染（CustomBuilder 产物形态未接，记 data-*）');
       }
     }
+    /**
+     * @param {string} name
+     * @param {any=} [a]
+     * @param {any=} [b]
+     */
     const fire = (name, a, b) => {
       const cb = /** @type {any} */ (el).__wfCbs[name];
       if (typeof cb !== 'function') return;
@@ -285,6 +309,7 @@
   });
   // 参与排布的 FlowItem：直接子项 + ForEach 包裹层（display:contents）里的孙子都算，
   // 但嵌套 WaterFlow 的不算（closest 归属守卫）
+  /** @param {HTMLElement} root @returns {HTMLElement[]} */
   const wfdItems = (root) => /** @type {HTMLElement[]} */ (Array.prototype.filter.call(
     root.querySelectorAll('[data-arkui-comp="FlowItem"]'),
     (c) => { const w = c.closest('[data-arkui-comp="WaterFlow"]'); return !w || w === root; }));
@@ -299,14 +324,21 @@
   // WaterFlowSections shim（water_flow.d.ts:148-236）：itemsCount 必须非负，非法 push/splice 返 false
   class WaterFlowSections {
     constructor() { this._secs = []; }
+    /** @param {any} s */
     _valid(s) { return !!s && typeof s.itemsCount === 'number' && s.itemsCount >= 0; }
+    /** @param {any} section */
     push(section) { if (!this._valid(section)) return false; this._secs.push(Object.assign({}, section)); return true; }
+    /** @returns {boolean} */
     splice(start, deleteCount) {
       const add = Array.prototype.slice.call(arguments, 2);
       for (let i = 0; i < add.length; i++) { if (!this._valid(add[i])) return false; }
       this._secs.splice.apply(this._secs, [start, deleteCount].concat(add.map((s) => Object.assign({}, s))));
       return true;
     }
+    /**
+     * @param {number} sectionIndex
+     * @param {any} section
+     */
     update(sectionIndex, section) {
       if (!this._valid(section) || sectionIndex < 0 || sectionIndex >= this._secs.length) return false;
       this._secs[sectionIndex] = Object.assign({}, section);

@@ -1,0 +1,9 @@
+{
+  "//": "noImplicitAny 类型化专项的试验档位（R55 起）：extends 门禁档 + noImplicitAny。",
+  "//红线": "本档位【不进门禁】——tsconfig.check.json 的 noImplicitAny 仍为 false；本文件只用于",
+  "//度量": "专项进度（npm run check 不受影响）。隐式 any 清零后才把门禁档翻 true。",
+  "extends": "./tsconfig.check.json",
+  "compilerOptions": {
+    "noImplicitAny": true
+  }
+}
