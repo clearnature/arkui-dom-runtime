@@ -87,6 +87,7 @@
     el.style.display = 'none';          // 挂进 Stepper 的 pages 区（由导航逻辑控制显隐）
     return el;
   });
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
   const XC_ITEM_ATTRS = {
     prevLabel: (n, v) => {
       n.dataset.prevLabel = String(resolveResource(v));
@@ -100,6 +101,7 @@
     },
     status: (n, v) => { n.dataset.status = String(Number(resolveResource(v))); },   // ItemState
   };
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
   const STEP_ATTRS = {
     onChange: (n, v) => { (/** @type {any} */ (n.__stepCbs = n.__stepCbs || {})).change = v; },
     onNext: (n, v) => { (/** @type {any} */ (n.__stepCbs = n.__stepCbs || {})).next = v; },

@@ -759,17 +759,23 @@
 
   let swiperSeq = 0;
   class SwiperController {
-    constructor() { this._id = ++swiperSeq; this._state = null; }
+    constructor() {
+      /** @type {number} */ this._id = ++swiperSeq;
+      /** @type {any} */ this._state = null;
+    }
     showNext() { return stepSwiper(this._state, +1); }
     showPrevious() { return stepSwiper(this._state, -1); }
+    /** @param {number} i @param {boolean=} [useAnimation] */
     changeIndex(i, useAnimation) {
       if (useAnimation === true) layoutWarnings.push('SwiperController.changeIndex(useAnimation=true)：无动画实现，已忽略动画');
       return this._state ? setActiveSwiper(this._state, Number(i), true) : false;
     }
+    /** @param {any=} [cb] */
     finishAnimation(cb) { if (typeof cb === 'function') cb(); }   // 无动画 → 立即完成
     preloadItems() { return Promise.resolve(); }                  // 所有页都是即时构建的，语义等价
   }
 
+  /** @param {any} st @param {any} ctl */
   function bindSwiperController(st, ctl) {
     if (!ctl || typeof ctl !== 'object') return;
     if (typeof ctl.changeIndex !== 'function') {
@@ -783,6 +789,7 @@
     st.controller = ctl;
   }
 
+  /** @param {HTMLElement} node @param {any=} [args] */
   function createSwiperState(node, args) {
     const st = {
       node, index: 0, count: 0, entries: [],
@@ -898,6 +905,7 @@
   }
 
   // Swiper 的语义属性：值要进 state 而不是 DOM
+  /** @type {Record<string, (st: any, v: any, opts?: any) => void>} */
   const SWIPER_ATTRS = {
     index: (st, v) => { st.index = Number(resolveResource(v)) || 0; },
     loop: (st, v) => { st.loop = !!v; },

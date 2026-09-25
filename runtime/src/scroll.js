@@ -22,6 +22,7 @@
       + '[data-scroll-bar="0"]::-webkit-scrollbar{display:none;}';
     document.head.appendChild(st);
   }
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
   const SCROLL_ATTRS = {
     scrollable: (n, v) => {
       const d = Number(resolveResource(v));
@@ -69,6 +70,7 @@
       layoutWarnings.push('Scroll.fling 的真机惯性滚动无 DOM 对应（velocity 记 data-*，不模拟）');
     },
   };
+  /** @param {any[]} args */
   const Scroll = ensureComponent('Scroll', (args) => {
     const el = document.createElement('div');
     el.__arkuiScroll = true;
@@ -85,12 +87,14 @@
     const a0 = args && args[0];
     const scroller = a0 && typeof a0._bind === 'function' ? a0 : (a0 && a0.scroller) || null;
     if (scroller && typeof scroller._bind === 'function') scroller._bind(el);
+    /** @param {string} name @param {any=} [a] @param {any=} [b] */
     const fire = (name, a, b) => {
       const cb = el.__scrollCbs && el.__scrollCbs[name];
       if (typeof cb !== 'function') return;
       try { cb(a, b); }
       catch (e) { layoutWarnings.push(`Scroll.onScroll* 回调抛错：${e && e.message}`); }
     };
+    /** @param {boolean} top */
     const edgeOf = (top) => (top ? 'top' : 'bottom');
     el.addEventListener('scroll', () => {
       const atTop = el.scrollTop <= 0;

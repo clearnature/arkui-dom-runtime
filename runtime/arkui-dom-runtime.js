@@ -2242,17 +2242,23 @@
 
   let swiperSeq = 0;
   class SwiperController {
-    constructor() { this._id = ++swiperSeq; this._state = null; }
+    constructor() {
+      /** @type {number} */ this._id = ++swiperSeq;
+      /** @type {any} */ this._state = null;
+    }
     showNext() { return stepSwiper(this._state, +1); }
     showPrevious() { return stepSwiper(this._state, -1); }
+    /** @param {number} i @param {boolean=} [useAnimation] */
     changeIndex(i, useAnimation) {
       if (useAnimation === true) layoutWarnings.push('SwiperController.changeIndex(useAnimation=true)：无动画实现，已忽略动画');
       return this._state ? setActiveSwiper(this._state, Number(i), true) : false;
     }
+    /** @param {any=} [cb] */
     finishAnimation(cb) { if (typeof cb === 'function') cb(); }   // 无动画 → 立即完成
     preloadItems() { return Promise.resolve(); }                  // 所有页都是即时构建的，语义等价
   }
 
+  /** @param {any} st @param {any} ctl */
   function bindSwiperController(st, ctl) {
     if (!ctl || typeof ctl !== 'object') return;
     if (typeof ctl.changeIndex !== 'function') {
@@ -2266,6 +2272,7 @@
     st.controller = ctl;
   }
 
+  /** @param {HTMLElement} node @param {any=} [args] */
   function createSwiperState(node, args) {
     const st = {
       node, index: 0, count: 0, entries: [],
@@ -2381,6 +2388,7 @@
   }
 
   // Swiper 的语义属性：值要进 state 而不是 DOM
+  /** @type {Record<string, (st: any, v: any, opts?: any) => void>} */
   const SWIPER_ATTRS = {
     index: (st, v) => { st.index = Number(resolveResource(v)) || 0; },
     loop: (st, v) => { st.loop = !!v; },
@@ -6670,6 +6678,7 @@
       + '[data-scroll-bar="0"]::-webkit-scrollbar{display:none;}';
     document.head.appendChild(st);
   }
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
   const SCROLL_ATTRS = {
     scrollable: (n, v) => {
       const d = Number(resolveResource(v));
@@ -6717,6 +6726,7 @@
       layoutWarnings.push('Scroll.fling 的真机惯性滚动无 DOM 对应（velocity 记 data-*，不模拟）');
     },
   };
+  /** @param {any[]} args */
   const Scroll = ensureComponent('Scroll', (args) => {
     const el = document.createElement('div');
     el.__arkuiScroll = true;
@@ -6733,12 +6743,14 @@
     const a0 = args && args[0];
     const scroller = a0 && typeof a0._bind === 'function' ? a0 : (a0 && a0.scroller) || null;
     if (scroller && typeof scroller._bind === 'function') scroller._bind(el);
+    /** @param {string} name @param {any=} [a] @param {any=} [b] */
     const fire = (name, a, b) => {
       const cb = el.__scrollCbs && el.__scrollCbs[name];
       if (typeof cb !== 'function') return;
       try { cb(a, b); }
       catch (e) { layoutWarnings.push(`Scroll.onScroll* 回调抛错：${e && e.message}`); }
     };
+    /** @param {boolean} top */
     const edgeOf = (top) => (top ? 'top' : 'bottom');
     el.addEventListener('scroll', () => {
       const atTop = el.scrollTop <= 0;
@@ -7547,6 +7559,7 @@
     el.style.display = 'none';          // 挂进 Stepper 的 pages 区（由导航逻辑控制显隐）
     return el;
   });
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
   const XC_ITEM_ATTRS = {
     prevLabel: (n, v) => {
       n.dataset.prevLabel = String(resolveResource(v));
@@ -7560,6 +7573,7 @@
     },
     status: (n, v) => { n.dataset.status = String(Number(resolveResource(v))); },   // ItemState
   };
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
   const STEP_ATTRS = {
     onChange: (n, v) => { (/** @type {any} */ (n.__stepCbs = n.__stepCbs || {})).change = v; },
     onNext: (n, v) => { (/** @type {any} */ (n.__stepCbs = n.__stepCbs || {})).next = v; },
