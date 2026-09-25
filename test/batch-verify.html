@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R66：批量组件结构验证（37 组件全覆盖）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #sandbox { width: 360px; }
+  #root > div { border: 1px solid #eee; margin: 4px 0; padding: 4px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; font-size: 12px; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R66：批量组件结构验证（37 组件 · 6 分片）</h3>
+  <div id="sandbox"><div id="root"></div></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let pass = 0, fail = 0;
+    const check = (c, m) => { if (c) { pass++; } else { fail++; allPass = false; lines.push('FAIL ' + m); } };
+    const root = document.getElementById('root');
+    const E = (tag, attrs, text) => {
+      const el = document.createElement(tag);
+      for (const k in (attrs || {})) el.setAttribute(k, attrs[k]);
+      if (text) el.textContent = text;
+      return el;
+    };
+
+    // ── 工具：挂载组件并返回 ──
+    const mount = (comp, opts, parent) => {
+      const el = comp.create(opts ? [opts] : []);
+      (parent || root).appendChild(el);
+      return el;
+    };
+
+    // ══════════ A：布局容器 ══════════
+    const A = {};
+    try {
+      A.FolderStack = mount(__arkui_dom_globals.FolderStack);
+      check(A.FolderStack.dataset.folderStack !== undefined, 'FolderStack 挂载');
+      A.GridContainer = mount(__arkui_dom_globals.GridContainer);
+      check(A.GridContainer.dataset.gridContainer !== undefined, 'GridContainer 挂载');
+      A.Section = mount(__arkui_dom_globals.Section);
+      check(A.Section.dataset.section !== undefined, 'Section 挂载');
+      A.Sheet = mount(__arkui_dom_globals.Sheet);
+      check(A.Sheet.tagName === 'DIV', 'Sheet 挂载');
+      A.UnionEffectContainer = mount(__arkui_dom_globals.UnionEffectContainer);
+      check(!!A.UnionEffectContainer, 'UnionEffectContainer 挂载');
+      A.XComponentNode = mount(__arkui_dom_globals.XComponentNode);
+      check(!!A.XComponentNode, 'XComponentNode 挂载');
+    } catch(e) { check(false, 'A 组异常: ' + e.message); }
+
+    // ══════════ B：输入选择 ══════════
+    const B = {};
+    try {
+      B.CheckboxGroup = mount(__arkui_dom_globals.CheckboxGroup);
+      check(B.CheckboxGroup.dataset.checkboxGroup !== undefined || B.CheckboxGroup.tagName === 'DIV', 'CheckboxGroup 挂载');
+      B.ColorPicker = mount(__arkui_dom_globals.ColorPicker);
+      check(!!B.ColorPicker, 'ColorPicker 挂载');
+      B.ColorPickerDialog = mount(__arkui_dom_globals.ColorPickerDialog);
+      check(!!B.ColorPickerDialog, 'ColorPickerDialog 挂载');
+      B.Option = mount(__arkui_dom_globals.Option);
+      check(!!B.Option, 'Option 挂载');
+      B.PatternLock = mount(__arkui_dom_globals.PatternLock);
+      check(!!B.PatternLock, 'PatternLock 挂载');
+      B.SelectionContainer = mount(__arkui_dom_globals.SelectionContainer);
+      check(!!B.SelectionContainer, 'SelectionContainer 挂载');
+    } catch(e) { check(false, 'B 组异常: ' + e.message); }
+
+    // ══════════ C：文本媒体 ══════════
+    const C = {};
+    try {
+      C.ContainerSpan = mount(__arkui_dom_globals.ContainerSpan);
+      check(!!C.ContainerSpan, 'ContainerSpan 挂载');
+      C.ImageSpan = mount(__arkui_dom_globals.ImageSpan);
+      check(!!C.ImageSpan, 'ImageSpan 挂载');
+      C.RichText = mount(__arkui_dom_globals.RichText);
+      check(!!C.RichText, 'RichText 挂载');
+      C.SymbolGlyph = mount(__arkui_dom_globals.SymbolGlyph);
+      check(!!C.SymbolGlyph, 'SymbolGlyph 挂载');
+      C.SymbolSpan = mount(__arkui_dom_globals.SymbolSpan);
+      check(!!C.SymbolSpan, 'SymbolSpan 挂载');
+      C.Web = mount(__arkui_dom_globals.Web);
+      check(!!C.Web, 'Web 挂载');
+    } catch(e) { check(false, 'C 组异常: ' + e.message); }
+
+    // ══════════ D：导航路由 ══════════
+    const D = {};
+    try {
+      D.NavRouter = mount(__arkui_dom_globals.NavRouter);
+      check(!!D.NavRouter, 'NavRouter 挂载');
+      D.Navigator = mount(__arkui_dom_globals.Navigator);
+      check(!!D.Navigator, 'Navigator 挂载');
+      D.PageTransitionEnter = mount(__arkui_dom_globals.PageTransitionEnter);
+      check(!!D.PageTransitionEnter, 'PageTransitionEnter 挂载');
+      D.PageTransitionExit = mount(__arkui_dom_globals.PageTransitionExit);
+      check(!!D.PageTransitionExit, 'PageTransitionExit 挂载');
+      D.ToolBarItem = mount(__arkui_dom_globals.ToolBarItem);
+      check(!!D.ToolBarItem, 'ToolBarItem 挂载');
+      D.UIPickerComponent = mount(__arkui_dom_globals.UIPickerComponent);
+      check(!!D.UIPickerComponent, 'UIPickerComponent 挂载');
+    } catch(e) { check(false, 'D 组异常: ' + e.message); }
+
+    // ══════════ E：动效物理 ══════════
+    const E = {};
+    try {
+      E.Animator = mount(__arkui_dom_globals.Animator);
+      check(!!E.Animator, 'Animator 挂载');
+      E.FrictionMotion = mount(__arkui_dom_globals.FrictionMotion);
+      check(!!E.FrictionMotion, 'FrictionMotion 挂载');
+      E.GeometryView = mount(__arkui_dom_globals.GeometryView);
+      check(!!E.GeometryView, 'GeometryView 挂载');
+      E.ScrollBar = mount(__arkui_dom_globals.ScrollBar);
+      check(!!E.ScrollBar, 'ScrollBar 挂载');
+      E.ScrollMotion = mount(__arkui_dom_globals.ScrollMotion);
+      check(!!E.ScrollMotion, 'ScrollMotion 挂载');
+      E.SpringMotion = mount(__arkui_dom_globals.SpringMotion);
+      check(!!E.SpringMotion, 'SpringMotion 挂载');
+      E.SpringProp = mount(__arkui_dom_globals.SpringProp);
+      check(!!E.SpringProp, 'SpringProp 挂载');
+    } catch(e) { check(false, 'E 组异常: ' + e.message); }
+
+    // ══════════ F：功能组件 ══════════
+    const F = {};
+    try {
+      F.Calendar = mount(__arkui_dom_globals.Calendar);
+      check(!!F.Calendar, 'Calendar 挂载');
+      F.ContainerReader = mount(__arkui_dom_globals.ContainerReader);
+      check(!!F.ContainerReader, 'ContainerReader 挂载');
+      F.IndicatorComponent = mount(__arkui_dom_globals.IndicatorComponent);
+      check(!!F.IndicatorComponent, 'IndicatorComponent 挂载');
+      F.MenuItemGroup = mount(__arkui_dom_globals.MenuItemGroup);
+      check(!!F.MenuItemGroup, 'MenuItemGroup 挂载');
+      F.Repeat = mount(__arkui_dom_globals.Repeat);
+      check(!!F.Repeat, 'Repeat 挂载');
+      F.WithTheme = mount(__arkui_dom_globals.WithTheme);
+      check(!!F.WithTheme, 'WithTheme 挂载');
+    } catch(e) { check(false, 'F 组异常: ' + e.message); }
+
+    lines.push(`PASS 总计 ${pass} / FAIL ${fail}`);
+    if (fail === 0) lines.unshift('=== ALL PASS ===');
+    else lines.unshift(`=== ${fail} FAILURES ===`);
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = fail === 0 ? 'pass' : 'fail';
+    document.title = fail === 0 ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

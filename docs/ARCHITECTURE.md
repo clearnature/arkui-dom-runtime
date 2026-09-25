@@ -1680,16 +1680,16 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
 == 用例矩阵 ==
   浏览器 run.sh     63 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify measure lazy provide v2 observe async ability promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo mediademo smalldemo stepdemo imagedemo scrolldemo animatordemo listitemgroup refreshdemo datepickerdemo timepickerdemo waterflowdemo calendarpickerdemo textpickerdemo griddemo texttimedemo alphabetindexerdemo sidebardemo splitdemo paneldemo gridrowdemo richvideodemo router netfile persist
   Electron          62 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo mediademo smalldemo stepdemo imagedemo scrolldemo animatordemo listitemgroup refreshdemo datepickerdemo timepickerdemo waterflowdemo calendarpickerdemo textpickerdemo griddemo texttimedemo alphabetindexerdemo sidebardemo splitdemo paneldemo gridrowdemo richvideodemo measure lazy provide async v2 observe
-  测试页            69 个
+  测试页            70 个
   fixtures 转换产物  65 个：AlphabetIndexerDemo AnimDemo AnimatorDemo AsyncIO BatchFuncDemo BatchLayoutDemo BatchMediaDemo CalendarPickerDemo Callee CanvasDemo DatePickerDemo Detail DrawDemo GestureDemo GestureGroupDemo GridDemo GridRowDemo Home ImageDemo Index InputDemo Layout Lazy LazyVar ListGroupDemo MeasArea MeasImage MeasNotify Measure MediaDemo NavBarDemo NavDemo NavShimDemo NavTransDemo NetFile Observe PanelDemo PopDemo PromptAct Provide QrDemo RefreshDemo RelDemo Rich RichVideoDemo ScrollDemo ShapeDemo ShowDemo SideBarDemo SmallDemo SplitDemo StepDemo SwiperDemo TabsGrid TextDemo TextMeasure TextPickerDemo TextTimeDemo TimePickerDemo TransitionDemo UiContextDemo V2 WaterFlowDemo Widgets XCompDemo
 
 == 体积（源码，不含产物/Electron 运行时）==
   runtime          942.6 KB
   runtime(src)     957.5 KB
-  test             770.0 KB
+  test             777.2 KB
   tools            59.1 KB
   electron(src)    25.9 KB
-  docs             653.3 KB
+  docs             653.4 KB
   fixtures         463.3 KB
 
 == 逐文件（文档"文件职责"表的来源）==
@@ -1712,7 +1712,7 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   .gitignore                                757 B  0.7 KB
   README.md                              157245 B  153.6 KB
   THIRD-PARTY-NOTICES.md                  10718 B  10.5 KB
-  docs/ARCHITECTURE.md                   151644 B  148.1 KB
+  docs/ARCHITECTURE.md                   151702 B  148.1 KB
   docs/CAPABILITY.md                      61086 B  59.7 KB
   docs/DEVELOPING.md                      66055 B  64.5 KB
   docs/ROADMAP.md                        146349 B  142.9 KB
@@ -1829,6 +1829,7 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   test/animatordemo.html                   5613 B  5.5 KB
   test/animdemo.html                      11498 B  11.2 KB
   test/async.html                          5977 B  5.8 KB
+  test/batch-verify.html                   7421 B  7.2 KB
   test/batchfunc.html                     10189 B  10.0 KB
   test/batchinputdemo.html                 9853 B  9.6 KB
   test/batchlayout.html                    8681 B  8.5 KB
