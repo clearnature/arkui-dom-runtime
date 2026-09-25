@@ -78,6 +78,10 @@ const HANDWRITTEN = ['Text', 'Button', 'Column', 'Row', 'Stack', 'List', 'ListIt
   'GridRow', 'GridCol',
   // 补账：R33/R34 已手写实现但漏登记（QRCode 编码器为真机 WASM，R41）
   'TextInput', 'TextArea', 'Search', 'Hyperlink', 'QRCode',
+  // R63：Panel（底部滑出面板）
+  'Panel',
+  // 内部布局算法（WaterFlow/Grid 内部使用，非用户组件）
+  'DynamicLayout', 'LazyColumnLayout', 'LazyDynamicLayout', 'LazyVGridLayout', 'LazyVWaterFlowLayout',
   // R66：批量组件类型化（六组并行工作流产出，37 个）
   'Animator', 'Calendar', 'CheckboxGroup', 'ColorPicker', 'ColorPickerDialog',
   'ContainerReader', 'ContainerSpan', 'FolderStack', 'FrictionMotion', 'GeometryView',

@@ -1652,13 +1652,13 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
 ```
 == 组件库 ==
   ets-loader 注册名    149
-  手写实现（真布局语义）109：Text Button Column Row Stack List ListItem RelativeContainer Tabs TabContent Swiper Navigation NavDestination Progress Gauge DataPanel Rating Circle Ellipse Rect Line Path Polygon Polyline Shape Checkbox Radio Toggle Slider Badge Counter Divider Marquee Select Menu MenuItem Canvas XComponent Flex Span LoadingProgress Blank Stepper StepperItem Image Scroll ImageAnimator ListItemGroup Refresh DatePicker TimePicker WaterFlow FlowItem CalendarPicker TextPicker Grid GridItem TextClock TextTimer AlphabetIndexer RichEditor Video SideBarContainer RowSplit ColumnSplit GridRow GridCol TextInput TextArea Search Hyperlink QRCode Animator Calendar CheckboxGroup ColorPicker ColorPickerDialog ContainerReader ContainerSpan FolderStack FrictionMotion GeometryView GridContainer ImageSpan IndicatorComponent MenuItemGroup NavRouter Navigator Option PageTransitionEnter PageTransitionExit PatternLock Repeat RichText ScrollBar ScrollMotion Section SelectionContainer Sheet SpringMotion SpringProp SymbolGlyph SymbolSpan ToolBarItem UIPickerComponent UnionEffectContainer Web WithTheme XComponentNode
+  手写实现（真布局语义）115：Text Button Column Row Stack List ListItem RelativeContainer Tabs TabContent Swiper Navigation NavDestination Progress Gauge DataPanel Rating Circle Ellipse Rect Line Path Polygon Polyline Shape Checkbox Radio Toggle Slider Badge Counter Divider Marquee Select Menu MenuItem Canvas XComponent Flex Span LoadingProgress Blank Stepper StepperItem Image Scroll ImageAnimator ListItemGroup Refresh DatePicker TimePicker WaterFlow FlowItem CalendarPicker TextPicker Grid GridItem TextClock TextTimer AlphabetIndexer RichEditor Video SideBarContainer RowSplit ColumnSplit GridRow GridCol TextInput TextArea Search Hyperlink QRCode Panel DynamicLayout LazyColumnLayout LazyDynamicLayout LazyVGridLayout LazyVWaterFlowLayout Animator Calendar CheckboxGroup ColorPicker ColorPickerDialog ContainerReader ContainerSpan FolderStack FrictionMotion GeometryView GridContainer ImageSpan IndicatorComponent MenuItemGroup NavRouter Navigator Option PageTransitionEnter PageTransitionExit PatternLock Repeat RichText ScrollBar ScrollMotion Section SelectionContainer Sheet SpringMotion SpringProp SymbolGlyph SymbolSpan ToolBarItem UIPickerComponent UnionEffectContainer Web WithTheme XComponentNode
   控制流宏（非组件）    3：If ForEach LazyForEach
-  骨架·有 DOM 画像     2（容器 2 / 叶子 0）
-  骨架·仅 data-*       38
+  骨架·有 DOM 画像     1（容器 1 / 叶子 0）
+  骨架·仅 data-*       33
   ⇒ 可建出的组件名      149 / 149
   原生输入类控件       0
-  属性元数据总数       213（平均 1.4／组件，最多 LocationButton=20）
+  属性元数据总数       180（平均 1.2／组件，最多 LocationButton=20）
 
 == 运行时 API ==
   global 导出        401 个
@@ -1687,9 +1687,9 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   runtime          942.6 KB
   runtime(src)     957.5 KB
   test             777.2 KB
-  tools            59.1 KB
+  tools            59.3 KB
   electron(src)    25.9 KB
-  docs             653.4 KB
+  docs             653.5 KB
   fixtures         463.3 KB
 
 == 逐文件（文档"文件职责"表的来源）==
@@ -1699,7 +1699,7 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   tools/extract.mjs                        6563 B  6.4 KB
   tools/gen-components.mjs                 7775 B  7.6 KB
   tools/serve.py                           3887 B  3.8 KB
-  tools/stats.mjs                         17282 B  16.9 KB
+  tools/stats.mjs                         17512 B  17.1 KB
   tools/assert-counts.mjs                  7476 B  7.3 KB
   tools/preflight.mjs                      5422 B  5.3 KB
   tools/check-all.sh                       4053 B  4.0 KB
@@ -1712,7 +1712,7 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   .gitignore                                757 B  0.7 KB
   README.md                              157245 B  153.6 KB
   THIRD-PARTY-NOTICES.md                  10718 B  10.5 KB
-  docs/ARCHITECTURE.md                   151702 B  148.1 KB
+  docs/ARCHITECTURE.md                   151794 B  148.2 KB
   docs/CAPABILITY.md                      61086 B  59.7 KB
   docs/DEVELOPING.md                      66055 B  64.5 KB
   docs/ROADMAP.md                        146349 B  142.9 KB
