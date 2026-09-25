@@ -76,6 +76,9 @@ interface Element {
   __arkuiFlowItem?: boolean;
   __arkuiCalPick?: boolean;
   __calp?: any;
+  __arkuiTextPick?: boolean;
+  __txp?: any;
+  __txpStep?: (dir: number) => void;
   __lig?: any;
   __an?: any;
   __anCbs?: any;

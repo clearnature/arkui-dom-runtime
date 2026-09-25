@@ -931,6 +931,29 @@ md5 一致。
 `runtime/src/runtime.d.ts`、`tools/stats.mjs`（手写 49→50）、
 `fixtures/pages/DatePickerDemo.ts`、`test/datepickerdemo.html`、`run.sh`、`electron/run.sh`
 
+### R56 — TextPicker 文本选择器 ✅（2026-09-25）
+
+选择器三部曲收官（DatePicker R51 / TimePicker R52 / TextPicker R56）。**声明面**（本机
+text_picker.d.ts，1811 行）：`create({range, selected})`，range 支持 string[] /
+TextPickerRangeContent[]（取 .text）/ string[][]（多列）；`onChange(value: string|string[],
+index: number|number[])`（**联合类型签名，夹具窄签名被 ArkTS 编译器 10605999 拒——参数逆变**）；
+`selectedIndex` 属性 = create 之后的 selected 覆盖；`defaultPickerItemHeight` 行高（缺省 40）。
+**真机**（text_picker/pattern.cpp:803 FireChangeEvent(value,index)）：滚轮选中变化即触发，
+与 R51/R52 滚轮同族同步单步一致。**实现**（textpicker.js，第 25 个分片）：单列 5 行滚轮
+（视觉同 DatePicker：中行高亮/translateY 定位）、wheel 同步单步、边界不动不发、
+`__txpStep(dir)` 暴露给测试；多列/级联 range 只取第一列并记警告；TextPickerDialog 静态弹层
+未实现（记 ROADMAP 待办）。
+
+**验收**：`bash run.sh textpickerdemo`（11 条断言：基础 4/覆盖 2/步进事件 4/wheel 1）双端通过。
+**破坏验证（合并跑 2 红）**：边界不动不发摘除 → 重复 'CHG冬:3;' 红；selectedIndex 覆盖摘除 →
+tx2 变 '0' 红。**首跑 4 红的根因是坑 87 再演**：onChange 同步发但 `@State`→DOM 批量重渲染
+滞后，断言前缺 `tick(30)`（测试缺陷，实现无需改）。
+
+**触及**：`runtime/src/textpicker.js`（新，第 25 个分片）、`runtime/src/area.js`、
+`runtime/src/main.js`（@include + TextPicker 挂 global）、`runtime/src/runtime.d.ts`、
+`tools/stats.mjs`（手写 60→61）、`fixtures/pages/TextPickerDemo.ts`、
+`test/textpickerdemo.html`、`run.sh`、`electron/run.sh`
+
 ### R55 — noImplicitAny 类型化专项 ✅（2026-09-25，十六批人工 + 六组并行代理）
 
 目标：把 `noImplicitAny` 翻进门禁。**画像**：1464 个隐式 any（TS7006 参数 1202 / TS7053 索引

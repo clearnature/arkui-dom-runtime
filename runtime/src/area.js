@@ -292,6 +292,11 @@
       TIMEPICKER_ATTRS[prop](node, value);
       return;
     }
+    // TextPicker（R56）：selectedIndex/defaultPickerItemHeight/onChange 是语义属性
+    if (node.__arkuiTextPick && TEXTPICKER_ATTRS[prop]) {
+      TEXTPICKER_ATTRS[prop](node, value);
+      return;
+    }
     // Refresh（R50）：refreshing/refreshOffset/事件是语义属性（函数值抢在通用 on* 前，坑 86）
     if (node.__arkuiRefresh && REFRESH_ATTRS[prop]) {
       REFRESH_ATTRS[prop](node, value);

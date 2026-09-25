@@ -30,6 +30,7 @@
         "pages/DatePickerDemo",
         "pages/TimePickerDemo",
         "pages/WaterFlowDemo",
-        "pages/CalendarPickerDemo"
+        "pages/CalendarPickerDemo",
+        "pages/TextPickerDemo"
     ]
 }
