@@ -5154,6 +5154,7 @@
   };
 
   // 形状组件工厂：create 参数里做几何（后续 .width()/.height() 只改 svg 的视口，不再反推几何 —— 已知限制）
+  /** @param {string} name @param {{tag: string, geometry: (el: any, o: any, w: number, h: number) => void, [k: string]: any}} build */
   function shapeComponent(name, build) {
     return ensureComponent(name, (args) => {
       const o = args && typeof args[0] === 'object' && args[0] !== null ? args[0] : {};
