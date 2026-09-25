@@ -7737,6 +7737,7 @@
   const v2ProtoMeta = new WeakMap();   // 原型 -> {observed, consumers, providers, monitors, computed}
 
   // 依赖单元的粒度是【实例 × 字段】。若按原型共享，同类多实例会互相触发多余重渲染。
+  /** @param {any} inst @param {string} key */
   function v2Cell(inst, key) {
     let m = v2InstCells.get(inst);
     if (!m) v2InstCells.set(inst, (m = new Map()));
@@ -7745,6 +7746,7 @@
     return c;
   }
 
+  /** @param {any} proto */
   function v2Info(proto) {
     let i = v2ProtoMeta.get(proto);
     if (!i) {
@@ -7757,6 +7759,7 @@
   }
 
   // 沿原型链汇总（子类能继承装饰器信息，与 ArkUI 一致）
+  /** @param {any} inst @param {(info: any, out: any[]) => void} pick @param {any[]=} [out] */
   function v2Collect(inst, pick, out = []) {
     for (let p = Object.getPrototypeOf(inst); p && p !== Object.prototype; p = Object.getPrototypeOf(p)) {
       const info = v2ProtoMeta.get(p);
@@ -7766,8 +7769,10 @@
   }
 
   // 字段存储的隐藏槽。名字带前缀避免与产物的其它字段撞车。
+  /** @param {string} key */
   const v2Slot = (key) => '__v2slot_' + key;
 
+  /** @param {any} proto @param {string} key @param {string} kind */
   function installV2Accessor(proto, key, kind) {
     const existing = /** @type {any} */ (Object.getOwnPropertyDescriptor(proto, key));
     if (existing && existing.get && existing.get.__v2) return;    // 已装过（重复装饰）
@@ -7812,6 +7817,7 @@
   // （"Property 'value' does not exist on type 'string'"）——所以这里以 .d.ts 为准。
   // 已知简化：一次赋值只产生一条 dirty（ArkUI 会把同一批变更合并），且 path 是
   // 字段名而不是 `items.0.name` 这样的点分路径。
+  /** @param {any} inst @param {string} key @param {any} value @param {any} before */
   function fireV2Monitors(inst, key, value, before) {
     const methods = v2Collect(inst, (info, out) => {
       const s = info.monitors.get(key);
@@ -7839,7 +7845,8 @@
     }
   }
 
-  const v2Field = (kind) => function (target, key) {
+  /** @param {string} kind */
+  const v2Field = (kind) => function (/** @type {any} */ target, /** @type {any} */ key) {
     if (typeof key === 'string') installV2Accessor(target, key, kind);
     return undefined;                                  // 属性装饰器的返回值被 __decorate 忽略
   };
@@ -7855,21 +7862,24 @@
   const EventDeco = v2Field('event');
   const Trace = v2Field('trace');
 
-  const Provider = (name) => function (target, key) {
+  /** @param {string=} [name] */
+  const Provider = (name) => function (/** @type {any} */ target, /** @type {any} */ key) {
     if (typeof key !== 'string') return undefined;
     installV2Accessor(target, key, 'local');
     v2Info(target).providers.set(key, name || key);
     return undefined;
   };
 
-  const Consumer = (name) => function (target, key) {
+  /** @param {string=} [name] */
+  const Consumer = (name) => function (/** @type {any} */ target, /** @type {any} */ key) {
     if (typeof key !== 'string') return undefined;
     installV2Accessor(target, key, 'local');
     v2Info(target).consumers.set(key, name || key);
     return undefined;
   };
 
-  const Monitor = (...keys) => function (target, key, desc) {
+  /** @param {...string} keys */
+  const Monitor = (...keys) => function (/** @type {any} */ target, /** @type {any} */ key, /** @type {any} */ desc) {
     const info = v2Info(target);
     for (const k of keys) {
       const s = info.monitors.get(k) || new Set();
@@ -7882,6 +7892,7 @@
   // @Computed：【不缓存】实现。getter 体在求值时就处在目标 elmtId 的渲染上下文里，
   // 它读到的每个字段都会直接把依赖记到该 elmtId 上——所以"传递依赖"天然成立，
   // 也就不需要缓存与失效逻辑。代价是每次重渲染都重算，换了正确性，值这个价。
+  /** @param {any} target @param {any} key @param {any} desc */
   function Computed(target, key, desc) {
     if (typeof key === 'string') {
       if (desc && typeof desc.get === 'function') v2Info(target).computed.add(key);
@@ -7892,6 +7903,7 @@
 
   // @ObservedV2 是【类装饰器】：__decorate([ObservedV2], Cls) 只有 1 个实参，
   // 助手会当成"整体替换"处理，所以必须返回这个类本身。
+  /** @param {any} target */
   function ObservedV2(target) {
     v2Info(target.prototype);
     return target;
@@ -7900,16 +7912,21 @@
   class ViewV2 extends ViewPU {
     // 注意产物调用的是 super(parent, elmtId, extraInfo) —— 比 ViewPU 少一个
     // __localStorage。这里补上 undefined 以复用 ViewPU 的全部机制。
+    /** @param {any} parent @param {number} elmtId @param {any} extraInfo */
     constructor(parent, elmtId, extraInfo) {
       super(parent, undefined, elmtId, extraInfo);
       this.__v2consumerBind = null;
     }
 
     // ── 产物契约：initParam / updateParam / resetParam ──
+    /** @param {string} name @param {any} value */
     initParam(name, value) { this[name] = value; }
+    /** @param {string} name @param {any} value */
     updateParam(name, value) { this[name] = value; }
+    /** @param {string} name @param {any} value */
     resetParam(name, value) { this[name] = value; }
 
+    /** @param {string} fieldKey @param {any} fallback */
     resetConsumer(fieldKey, fallback) {
       const provName = v2Collect(this, (info, out) => {
         const n = info.consumers.get(fieldKey);
@@ -7924,10 +7941,13 @@
     }
 
     // 无缓存实现 → 无需失效；保留方法只为对齐产物契约
+    /** @param {string=} [_name] */
     resetComputed(_name) {}
     resetMonitorsOnReuse() {}
+    /** @param {any=} [_params] */
     resetStateVarsOnReuse(_params) {}
 
+    /** @param {string} fieldKey @param {string} provName @param {boolean=} [quiet] */
     bindConsumer(fieldKey, provName, quiet) {
       const found = this._findProvided(provName);
       if (found && found.inst) {
