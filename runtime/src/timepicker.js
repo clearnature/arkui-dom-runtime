@@ -59,8 +59,11 @@
     };
     const cols = { hour: mk('hour'), minute: mk('minute') };
     if (hasSec) cols.second = mk('second');
+    /** @param {number} v */
     const pad2 = (v) => String(v).padStart(2, '0');
+    /** @param {number} h */
     const fmtHour = (h) => (tp.military ? String(h) : h === 0 ? '12 AM' : h < 12 ? `${h} AM` : h === 12 ? '12 PM' : `${h - 12} PM`);
+    /** @param {string} col @param {any[]} options @param {number} idx @param {(v: any) => string} fmtFn */
     const renderCol = (col, options, idx, fmtFn) => {
       const c = cols[col];
       for (let r = 0; r < 5; r++) {

@@ -975,6 +975,7 @@
     Button: ['create', 'createWithLabel', 'createWithIcon', 'createWithChild'],
   };
 
+  /** @param {string} name @param {(args: any[]) => Element} domFactory @param {any=} [contentUpdater] */
   function ensureComponent(name, domFactory, contentUpdater) {
     if (components[name]) return components[name];
     const C = function () {};
@@ -1769,6 +1770,7 @@
   const pageStack = [];
   function currentRoot() { return rootNode; }
 
+  /** @param {string} pagePath */
   function createPage(pagePath) {
     const factory = routes.get(pagePath);
     if (!factory) throw new Error('[arkui-dom] 未注册的路由: ' + pagePath);

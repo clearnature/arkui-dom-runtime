@@ -321,7 +321,7 @@
   }
 
   // 统一的挂载点：记录 elmtId→节点，处理 Stack 叠放，并给节点打上可查询的组件标记
-  /** @param {HTMLElement} node @param {any=} [rec] */
+  /** @param {any} node @param {any=} [rec] */
   function mountNode(node, rec) {
     const parentEl = parentOfTop();
     if (node.__arkuiComp) node.setAttribute('data-arkui-comp', node.__arkuiComp);

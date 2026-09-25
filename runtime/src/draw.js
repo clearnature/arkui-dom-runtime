@@ -30,6 +30,7 @@
 
   // 圆环坐标：0 点 = 0 度、顺时针为正（Gauge 的 .d.ts JSDoc 原话）
   // a=0 → 顶部中央；a=90 → 右侧；a=180 → 底部中央
+  /** @param {number} cx @param {number} cy @param {number} r @param {number} deg */
   const polar = (cx, cy, r, deg) => ({
     x: cx + r * Math.sin((deg * Math.PI) / 180),
     y: cy - r * Math.cos((deg * Math.PI) / 180),

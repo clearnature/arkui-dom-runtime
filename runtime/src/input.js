@@ -41,6 +41,7 @@
   // Radio 的组登记：互斥时被取消成员的 onChange(false) 要【补发】—— Chrome 只给新选中者发
   // change（radio.d.ts JSDoc："false means that the radio button changes from selected to
   // unselected"，被取消的那次状态变化也是"选中态变化"，真机会发）
+  /** @type {Map<string, any>} */
   const radioGroups = new Map();
   const Radio = inputComponent('Radio', 'radio', (el, o) => {
     if (o.group !== undefined && o.group !== null) {

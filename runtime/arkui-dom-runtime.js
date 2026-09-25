@@ -2056,7 +2056,7 @@
   }
 
   // 统一的挂载点：记录 elmtId→节点，处理 Stack 叠放，并给节点打上可查询的组件标记
-  /** @param {HTMLElement} node @param {any=} [rec] */
+  /** @param {any} node @param {any=} [rec] */
   function mountNode(node, rec) {
     const parentEl = parentOfTop();
     if (node.__arkuiComp) node.setAttribute('data-arkui-comp', node.__arkuiComp);
@@ -3602,6 +3602,7 @@
 
   // 圆环坐标：0 点 = 0 度、顺时针为正（Gauge 的 .d.ts JSDoc 原话）
   // a=0 → 顶部中央；a=90 → 右侧；a=180 → 底部中央
+  /** @param {number} cx @param {number} cy @param {number} r @param {number} deg */
   const polar = (cx, cy, r, deg) => ({
     x: cx + r * Math.sin((deg * Math.PI) / 180),
     y: cy - r * Math.cos((deg * Math.PI) / 180),
@@ -4441,6 +4442,7 @@
     Button: ['create', 'createWithLabel', 'createWithIcon', 'createWithChild'],
   };
 
+  /** @param {string} name @param {(args: any[]) => Element} domFactory @param {any=} [contentUpdater] */
   function ensureComponent(name, domFactory, contentUpdater) {
     if (components[name]) return components[name];
     const C = function () {};
@@ -5277,6 +5279,7 @@
   // Radio 的组登记：互斥时被取消成员的 onChange(false) 要【补发】—— Chrome 只给新选中者发
   // change（radio.d.ts JSDoc："false means that the radio button changes from selected to
   // unselected"，被取消的那次状态变化也是"选中态变化"，真机会发）
+  /** @type {Map<string, any>} */
   const radioGroups = new Map();
   const Radio = inputComponent('Radio', 'radio', (el, o) => {
     if (o.group !== undefined && o.group !== null) {
@@ -6659,8 +6662,11 @@
     };
     const cols = { hour: mk('hour'), minute: mk('minute') };
     if (hasSec) cols.second = mk('second');
+    /** @param {number} v */
     const pad2 = (v) => String(v).padStart(2, '0');
+    /** @param {number} h */
     const fmtHour = (h) => (tp.military ? String(h) : h === 0 ? '12 AM' : h < 12 ? `${h} AM` : h === 12 ? '12 PM' : `${h - 12} PM`);
+    /** @param {string} col @param {any[]} options @param {number} idx @param {(v: any) => string} fmtFn */
     const renderCol = (col, options, idx, fmtFn) => {
       const c = cols[col];
       for (let r = 0; r < 5; r++) {
@@ -8341,6 +8347,7 @@
   const pageStack = [];
   function currentRoot() { return rootNode; }
 
+  /** @param {string} pagePath */
   function createPage(pagePath) {
     const factory = routes.get(pagePath);
     if (!factory) throw new Error('[arkui-dom] 未注册的路由: ' + pagePath);
