@@ -931,6 +931,29 @@ md5 一致。
 `runtime/src/runtime.d.ts`、`tools/stats.mjs`（手写 49→50）、
 `fixtures/pages/DatePickerDemo.ts`、`test/datepickerdemo.html`、`run.sh`、`electron/run.sh`
 
+### R57 — Grid/GridItem 网格 ✅（2026-09-25）
+
+CSS grid 与 ArkUI 轨道模板**天然同构**的代表性实现（grid.js，第 26 个分片）：
+display:grid 基座 + `columnsTemplate/rowsTemplate → grid-template-*`（normalizeTrackList
+归一化，main.js 既有）+ `columnsGap/rowsGap → column-gap/row-gap`；滚动事件族照 WaterFlow
+R53 同款收口（原生 scroll 去重坑 95 / onScrollIndex 区间变才发+首帧补发 / onReachEnd 过境
+判定 / onScrollStart·Stop 80ms 静默近似）；**GridItem 跨行跨列**：columnStart/End、
+rowStart/End → grid-column/row（ArkUI 含端 → CSS 排线 +1）；`Grid.create(scroller)` 单参
+直传（工厂里 _bind，Scroll 同款）；cachedCount/GridLayoutOptions 记 data-*。
+**测量教训两条**：①夹具 id 打在内层 Text 上——Text 的 offsetParent 跳过静态 GridItem
+直达 Grid，按 id 查几何读出 (1,1)/宽 18 的假象，必须按 `[data-arkui-comp="GridItem"]` 查
+组件本体；②跨列项被 CSS 稀疏自动放置推到第 4 行（内容 240 而非 180）——CSS 与真机
+auto-placement 行为一致，按实测修正预期而非"修"实现。
+
+**验收**：`bash run.sh griddemo`（12 条断言：基座 4/几何 3/初始 1/滚动 3/wheel…）双端通过。
+**破坏验证（合并 1 处）**：跨列映射摘除 → **7 红**（几何/滚动链全面偏移，断言网有牙）。
+还原后 grep BROKEN 无残留。
+
+**触及**：`runtime/src/grid.js`（新，第 26 个分片）、`runtime/src/area.js`、
+`runtime/src/main.js`（@include + Grid/GridItem 挂 global）、`runtime/src/runtime.d.ts`、
+`tools/stats.mjs`（手写 61→63）、`fixtures/pages/GridDemo.ts`、`test/griddemo.html`、
+`run.sh`、`electron/run.sh`
+
 ### R56 — TextPicker 文本选择器 ✅（2026-09-25）
 
 选择器三部曲收官（DatePicker R51 / TimePicker R52 / TextPicker R56）。**声明面**（本机

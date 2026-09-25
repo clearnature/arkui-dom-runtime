@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R57：Grid 网格（CSS grid 同构 / GridItem 跨列 / 滚动事件族）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 360px; }
+  #root [data-arkui-comp="Grid"] { border: 1px solid #ddd; }
+  #root [data-arkui-comp="GridItem"] { background: #eef3f8; box-sizing: border-box; border: 1px solid #c5d5e5; }
+  #root button { margin-right: 6px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R57：Grid（两列 / 跨列 / scrollHeight / onScrollIndex·onReachEnd）</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/griddemo-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const el = (id) => root.querySelector('#' + id);
+    const txt = (id) => String(el(id) ? el(id).textContent : '<缺>');
+    const click = async (sel) => {
+      const n = root.querySelector(sel);
+      if (!n) { check(false, '要点击的节点不存在：' + sel); return; }
+      n.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      await tick(30);
+    };
+    const group = async (name, fn) => {
+      try { await fn(); } catch (e) {
+        allPass = false;
+        lines.push(`FAIL [${name}] 抛出异常：${e && e.stack ? String(e.stack).split('\n')[0] : e}`);
+      }
+    };
+
+    // 几何推演：240 宽 2×'1fr' 列（各 120）、6 项（前 5 项高 60 + g5 跨两列高 60）
+    // → 3 行 × 60 = 内容 180；视口 150 → 可滚 30
+    try {
+      __arkui_dom_requireModule('GridDemo');
+      __arkui_dom_loadRoute('pages/GridDemo', root);
+      await tick(120);
+      const gd = el('gd');
+      const g = (id) => root.querySelector('#' + id);
+
+      // ══════════ ① 基座（4 条） ══════════
+      await group('基座', async () => {
+        check(!!gd && gd.style.display === 'grid',
+          `display:grid 基座（实际 '${gd && gd.style.display}'）`);
+        check(gd.style.gridTemplateColumns === '1fr 1fr' && gd.style.columnGap === '0px',
+          `两列 '1fr 1fr' + 列间距 0（实际 '${gd.style.gridTemplateColumns}'/'${gd.style.columnGap}'）`);
+        check(gd.style.overflowY === 'auto' && gd.dataset.scrollBar === '0',
+          `可滚基座 + scrollBar Off（实际 '${gd.style.overflowY}'/'${gd.dataset.scrollBar}'）`);
+        check(gd.scrollHeight === 240 && gd.clientHeight === 150,
+          `内容 240（g5 跨列项被稀疏自动放置推到第 4 行）/ 视口 150 → 可滚 90（实际 ${gd.scrollHeight}/${gd.clientHeight}）`);
+      });
+
+      // ══════════ ② 几何 + 跨列（3 条） ══════════
+      await group('几何', async () => {
+        const items = [...gd.querySelectorAll('[data-arkui-comp="GridItem"]')];
+        check(items[0].offsetLeft === 0 && items[0].offsetTop === 0,
+          `g0 GridItem → 行1列1（offset ${items[0].offsetLeft},${items[0].offsetTop}；⚠️ id 在内层 Text 上，Text 的 offsetParent 跳过静态 GridItem 直达 Grid）`);
+        check(items[1].offsetLeft === 120,
+          `g1 → 行1列2 offsetLeft=120（实际 ${items[1].offsetLeft}）`);
+        check(items[5].offsetLeft === 0 && items[5].offsetTop === 180 && items[5].offsetWidth === 240,
+          `g5 columnStart(1)columnEnd(2) → 跨满两列、自动放置推到第 4 行（实际 ${items[5].offsetLeft},${items[5].offsetTop} 宽 ${items[5].offsetWidth}）`);
+      });
+
+      // ══════════ ③ 初始事件（1 条） ══════════
+      await group('初始', async () => {
+        check(txt('gd-log') === 'I0,4;',
+          `首帧 onScrollIndex(0,4)（视口 [0,150)：g0..g4 可见；实际 '${txt('gd-log')}'）`);
+      });
+
+      // ══════════ ④ 滚动事件族（3 条） ══════════
+      await group('滚动', async () => {
+        await click('#btn-by');
+        await tick(30);
+        check(gd.scrollTop === 60 && txt('gd-log') === 'I0,4;I2,5;',
+          `by60 → scrollTop 60：区间 I2,5、未到底无 RE（实际 scrollTop=${gd.scrollTop} '${txt('gd-log')}'）`);
+        await click('#btn-by');
+        await tick(30);
+        check(gd.scrollTop === 90 && txt('gd-log') === 'I0,4;I2,5;RE;',
+          `再 by60 → clamp 到 90 到底：区间不变不重发 + onReachEnd（实际 scrollTop=${gd.scrollTop} '${txt('gd-log')}'）`);
+        await click('#btn-end');
+        await tick(30);
+        check(txt('gd-log') === 'I0,4;I2,5;RE;' && gd.scrollTop === 90,
+          `已到底再 scrollEdge：无滚动量不重复发（实际 '${txt('gd-log')}' ${gd.scrollTop}）`);
+        gd.scrollTop = 0;
+        gd.dispatchEvent(new Event('scroll'));
+        await tick(30);
+        check(gd.scrollTop === 0 && txt('gd-log') === 'I0,4;I2,5;RE;I0,4;',
+          `回顶 → 区间回到 I0,4（实际 '${txt('gd-log')}'）`);
+      });
+
+      lines.push(`LOG='${txt('gd-log')}'`);
+      lines.push(`ELMT ${__arkui_dom_elmtRecords.size}`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+
+  })();
+  </script>
+</body>
+</html>

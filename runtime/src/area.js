@@ -297,6 +297,15 @@
       TEXTPICKER_ATTRS[prop](node, value);
       return;
     }
+    // Grid（R57）/ GridItem（R57）：columnsTemplate/事件族与跨行跨列是语义属性
+    if (node.__arkuiGrid && GRID_ATTRS[prop]) {
+      GRID_ATTRS[prop](node, value);
+      return;
+    }
+    if (node.__arkuiGridItem && GRIDITEM_ATTRS[prop]) {
+      GRIDITEM_ATTRS[prop](node, value);
+      return;
+    }
     // Refresh（R50）：refreshing/refreshOffset/事件是语义属性（函数值抢在通用 on* 前，坑 86）
     if (node.__arkuiRefresh && REFRESH_ATTRS[prop]) {
       REFRESH_ATTRS[prop](node, value);

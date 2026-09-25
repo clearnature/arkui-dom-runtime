@@ -1703,6 +1703,8 @@
 
   // @include scroll
 
+  // @include grid
+
   // @include waterflow
 
   // @include calendarpicker
@@ -1949,6 +1951,8 @@
     TimePicker, TimePickerFormat: { HOUR_MINUTE: 0, HOUR_MINUTE_SECOND: 1 },
     // R56：TextPicker（选择器三部曲收官）
     TextPicker,
+    // R57：Grid/GridItem（CSS grid 同构基座 + 滚动事件族）
+    Grid, GridItem,
     // R50：Refresh + RefreshStatus（声明顺序：Inactive=0/Drag=1/OverDrag=2/Refresh=3/Done=4，
     // refresh.d.ts 无显式数值）。注意：Refresh 内部 RefreshAnimationState(1..3) 是另一个
     // 数值空间，勿混用
