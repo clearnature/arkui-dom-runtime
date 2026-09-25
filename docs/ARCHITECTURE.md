@@ -1661,7 +1661,7 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   属性元数据总数       450（平均 3.0／组件，最多 Web=55）
 
 == 运行时 API ==
-  global 导出        319 个
+  global 导出        323 个
   状态类            ObservedPropertySimplePU ObservedPropertyObjectPU SynchedPropertySimpleOneWayPU SynchedPropertySimpleTwoWayPU SynchedPropertyNesedObjectPU
   内置组件          Text Button Column Row Stack List ListItem If ForEach LazyForEach RelativeContainer Tabs TabContent Swiper Navigation NavDestination Progress Gauge DataPanel Rating
   内部钩子 __arkui_dom_*  32 个
@@ -1678,22 +1678,22 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   15 个：app.ability.AbilityConstant app.ability.ConfigurationConstant app.ability.UIAbility app.ability.Want data.preferences file.fs hilog measure multimedia.image multimedia.media net.http notificationManager promptAction router window
 
 == 用例矩阵 ==
-  浏览器 run.sh     60 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify measure lazy provide v2 observe async ability promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo mediademo smalldemo stepdemo imagedemo scrolldemo animatordemo listitemgroup refreshdemo datepickerdemo timepickerdemo waterflowdemo calendarpickerdemo textpickerdemo griddemo texttimedemo alphabetindexerdemo sidebardemo splitdemo router netfile persist
-  Electron          59 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo mediademo smalldemo stepdemo imagedemo scrolldemo animatordemo listitemgroup refreshdemo datepickerdemo timepickerdemo waterflowdemo calendarpickerdemo textpickerdemo griddemo texttimedemo alphabetindexerdemo sidebardemo splitdemo measure lazy provide async v2 observe
-  测试页            60 个
-  fixtures 转换产物  58 个：AlphabetIndexerDemo AnimDemo AnimatorDemo AsyncIO CalendarPickerDemo Callee CanvasDemo DatePickerDemo Detail DrawDemo GestureDemo GestureGroupDemo GridDemo Home ImageDemo Index InputDemo Layout Lazy LazyVar ListGroupDemo MeasArea MeasImage MeasNotify Measure MediaDemo NavBarDemo NavDemo NavTransDemo NetFile Observe PopDemo PromptAct Provide QrDemo RefreshDemo RelDemo Rich ScrollDemo ShapeDemo ShowDemo SideBarDemo SmallDemo SplitDemo StepDemo SwiperDemo TabsGrid TextDemo TextMeasure TextPickerDemo TextTimeDemo TimePickerDemo TransitionDemo UiContextDemo V2 WaterFlowDemo Widgets XCompDemo
+  浏览器 run.sh     61 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify measure lazy provide v2 observe async ability promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo mediademo smalldemo stepdemo imagedemo scrolldemo animatordemo listitemgroup refreshdemo datepickerdemo timepickerdemo waterflowdemo calendarpickerdemo textpickerdemo griddemo texttimedemo alphabetindexerdemo sidebardemo splitdemo paneldemo router netfile persist
+  Electron          60 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo mediademo smalldemo stepdemo imagedemo scrolldemo animatordemo listitemgroup refreshdemo datepickerdemo timepickerdemo waterflowdemo calendarpickerdemo textpickerdemo griddemo texttimedemo alphabetindexerdemo sidebardemo splitdemo paneldemo measure lazy provide async v2 observe
+  测试页            61 个
+  fixtures 转换产物  59 个：AlphabetIndexerDemo AnimDemo AnimatorDemo AsyncIO CalendarPickerDemo Callee CanvasDemo DatePickerDemo Detail DrawDemo GestureDemo GestureGroupDemo GridDemo Home ImageDemo Index InputDemo Layout Lazy LazyVar ListGroupDemo MeasArea MeasImage MeasNotify Measure MediaDemo NavBarDemo NavDemo NavTransDemo NetFile Observe PanelDemo PopDemo PromptAct Provide QrDemo RefreshDemo RelDemo Rich ScrollDemo ShapeDemo ShowDemo SideBarDemo SmallDemo SplitDemo StepDemo SwiperDemo TabsGrid TextDemo TextMeasure TextPickerDemo TextTimeDemo TimePickerDemo TransitionDemo UiContextDemo V2 WaterFlowDemo Widgets XCompDemo
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          738.6 KB
-  runtime(src)     593.3 KB
-  test             708.5 KB
+  runtime          742.0 KB
+  runtime(src)     596.8 KB
+  test             712.8 KB
   tools            58.2 KB
-  electron(src)    25.3 KB
-  docs             649.2 KB
-  fixtures         422.9 KB
+  electron(src)    25.5 KB
+  docs             650.3 KB
+  fixtures         426.4 KB
 
 == 逐文件（文档"文件职责"表的来源）==
-  runtime/arkui-dom-runtime.js           496517 B  484.9 KB
+  runtime/arkui-dom-runtime.js           499985 B  488.3 KB
   runtime/generated-components.js         57617 B  56.3 KB
   runtime/ohos-shims.js                   61848 B  60.4 KB
   tools/extract.mjs                        6563 B  6.4 KB
@@ -1704,18 +1704,18 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   tools/preflight.mjs                      5422 B  5.3 KB
   tools/check-all.sh                       4053 B  4.0 KB
   tools/build-runtime.mjs                  5138 B  5.0 KB
-  run.sh                                  28285 B  27.6 KB
-  electron/run.sh                         16721 B  16.3 KB
+  run.sh                                  28655 B  28.0 KB
+  electron/run.sh                         16918 B  16.5 KB
   electron/main.js                         7025 B  6.9 KB
   electron/preload.js                      1961 B  1.9 KB
   package.json                             1366 B  1.3 KB
   .gitignore                                757 B  0.7 KB
   README.md                              157245 B  153.6 KB
   THIRD-PARTY-NOTICES.md                  10718 B  10.5 KB
-  docs/ARCHITECTURE.md                   149454 B  146.0 KB
+  docs/ARCHITECTURE.md                   149658 B  146.2 KB
   docs/CAPABILITY.md                      61086 B  59.7 KB
   docs/DEVELOPING.md                      66055 B  64.5 KB
-  docs/ROADMAP.md                        144330 B  140.9 KB
+  docs/ROADMAP.md                        145253 B  141.8 KB
   docs/surface-measurement.md              6496 B  6.3 KB
   docs/SESSION-2026-09-20.md              12842 B  12.5 KB
   runtime/src/.mimosa                      4096 B  4.0 KB
@@ -1733,11 +1733,12 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   runtime/src/image.js                     7000 B  6.8 KB
   runtime/src/input.js                    10663 B  10.4 KB
   runtime/src/layout.js                   18442 B  18.0 KB
-  runtime/src/main.js                    106974 B  104.5 KB
+  runtime/src/main.js                    107102 B  104.6 KB
   runtime/src/nav.js                      56681 B  55.4 KB
+  runtime/src/panel.js                     3360 B  3.3 KB
   runtime/src/popup.js                     5042 B  4.9 KB
   runtime/src/refresh.js                   8193 B  8.0 KB
-  runtime/src/runtime.d.ts                 6558 B  6.4 KB
+  runtime/src/runtime.d.ts                 6601 B  6.4 KB
   runtime/src/scroll.js                    6346 B  6.2 KB
   runtime/src/shape.js                     7525 B  7.3 KB
   runtime/src/show.js                     18856 B  18.4 KB
@@ -1780,6 +1781,7 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   fixtures/pages/NavTransDemo.ts          21393 B  20.9 KB
   fixtures/pages/NetFile.ts                5039 B  4.9 KB
   fixtures/pages/Observe.ts               11906 B  11.6 KB
+  fixtures/pages/PanelDemo.ts              3551 B  3.5 KB
   fixtures/pages/PopDemo.ts                5514 B  5.4 KB
   fixtures/pages/PromptAct.ts              6916 B  6.8 KB
   fixtures/pages/Provide.ts                6731 B  6.6 KB
@@ -1839,6 +1841,7 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   test/netfile.html                        5302 B  5.2 KB
   test/observe.html                        6232 B  6.1 KB
   test/opfs-probe.html                     1620 B  1.6 KB
+  test/paneldemo.html                      4428 B  4.3 KB
   test/popdemo.html                        5709 B  5.6 KB
   test/promptaction.html                  12719 B  12.4 KB
   test/provide.html                        4238 B  4.1 KB

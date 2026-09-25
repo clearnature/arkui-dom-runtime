@@ -36,6 +36,7 @@
         "pages/TextTimeDemo",
         "pages/AlphabetIndexerDemo",
         "pages/SideBarDemo",
-        "pages/SplitDemo"
+        "pages/SplitDemo",
+        "pages/PanelDemo"
     ]
 }

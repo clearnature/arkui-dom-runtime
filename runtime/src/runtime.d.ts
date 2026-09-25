@@ -96,6 +96,8 @@ interface Element {
   __sbcApply?: () => void;
   __arkuiRowSplit?: boolean;
   __arkuiColumnSplit?: boolean;
+  __arkuiPanel?: boolean;
+  __panel?: any;
   __lig?: any;
   __an?: any;
   __anCbs?: any;

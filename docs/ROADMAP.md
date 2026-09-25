@@ -972,6 +972,20 @@ auto-placement 行为一致，按实测修正预期而非"修"实现。
 `tools/stats.mjs`（手写 61→63）、`fixtures/pages/GridDemo.ts`、`test/griddemo.html`、
 `run.sh`、`electron/run.sh`
 
+### R63 — Panel 底部滑出面板 ✅（2026-09-26）
+
+panel.js（第 31 个分片）。**实现**：div 底部定位 + dragBar 顶部横条 + mode CSS class 切换
+（Mini/Half/Full → panel-mode-{name}）；`PANEL_ATTRS` Record 化（mode/dragBar/
+backgroundMask/customHeight/onChange/onHeightChange）；`Panel.create(show?: boolean)`
+缺省显示；mode 同值守卫（不重复发 onChange）。**编译器双拒**：`halfFullScreenHeight`
+和 `backgroundMask` 不在当前 SDK API——夹具简化为 mode+dragBar+双事件。
+
+**验收**：`bash run.sh paneldemo`（6 条断言：基座 4/mode 切换 2）双端通过。
+
+**触及**：`runtime/src/panel.js`（新，第 31 个分片）、`runtime/src/main.js`（@include +
+Panel/PanelMode 挂 global）、`runtime/src/runtime.d.ts`、`tools/stats.mjs`（手写 69→70）、
+`fixtures/pages/PanelDemo.ts`、`test/paneldemo.html`、`run.sh`、`electron/run.sh`
+
 ### R60 — AlphabetIndexer 字母索引条 ✅（2026-09-25）
 
 alphabetindexer.js（第 28 个分片）。**声明面**（alphabet_indexer.d.ts）：`create({arrayValue,

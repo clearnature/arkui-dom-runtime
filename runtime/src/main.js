@@ -1710,6 +1710,8 @@
 
   // @include alphabetindexer
 
+  // @include panel
+
   // @include sidebar
 
   // @include split
@@ -1972,6 +1974,8 @@
     SideBarContainer, SideBarContainerType: { Embed: 0, Overlay: 1 },
     // R62：RowSplit/ColumnSplit（分隔容器）
     RowSplit, ColumnSplit,
+    // R63：Panel（底部滑出面板）+ PanelMode
+    Panel, PanelMode: { Mini: 0, Half: 1, Full: 2 },
     // R57：Grid/GridItem（CSS grid 同构基座 + 滚动事件族）
     Grid, GridItem,
     // R50：Refresh + RefreshStatus（声明顺序：Inactive=0/Drag=1/OverDrag=2/Refresh=3/Done=4，
