@@ -1754,6 +1754,7 @@
       if (!global.__arkui_dom_sm) global.__arkui_dom_sm = new SubscriberManager();
       return global.__arkui_dom_sm;
     }
+    /** @param {any} id */
     delete(id) { this._subs.delete(id); }
   }
 

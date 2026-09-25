@@ -35,6 +35,7 @@
     x: cx + r * Math.sin((deg * Math.PI) / 180),
     y: cy - r * Math.cos((deg * Math.PI) / 180),
   });
+  /** @param {number} cx @param {number} cy @param {number} r @param {number} a0 @param {number} a1 */
   function arcPath(cx, cy, r, a0, a1) {
     const sweep = a1 - a0;
     if (sweep <= 0) return '';

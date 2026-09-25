@@ -23,6 +23,7 @@
   const ToggleType = { Switch: 'switch', Checkbox: 'checkbox', Button: 'button' };
   const SliderChangeMode = { Begin: 0, Moving: 1, End: 2, Click: 3 };
 
+  /** @param {string} name @param {string} type @param {(el: any, o: any) => void} setup */
   function inputComponent(name, type, setup) {
     return ensureComponent(name, (args) => {
       const el = document.createElement(type === 'textarea' ? 'textarea' : 'input');

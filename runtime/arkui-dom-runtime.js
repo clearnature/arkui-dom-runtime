@@ -414,7 +414,9 @@
   /** @param {any} e */
   function _effectSummary(e) { return _effectChain(e).map((n) => n.kind).join('+'); }
 
+  /** @type {any[]} */
   const transitionRegistered = [];         // 登记过的 transition（自省用）
+  /** @type {any[]} */
   const transitionRuns = [];               // 每次真的跑过的出现/消失（自省用）
   let transitionSeq = 0;
   let transitionRunSeq = 0;
@@ -479,6 +481,7 @@
   const TransitionEdge = { Top: 0, Bottom: 1, Left: 2, Right: 3 };
   // 自省用的"偏离态"文本（断言据此核对 translate/scale/opacity 真的被算进去了）
   function _offText(off) {
+    /** @type {string[]} */
     const parts = [];
     if (off.opacity !== undefined) parts.push('opacity=' + off.opacity);
     if (off.transforms.length) parts.push('transform=' + off.transforms.join(' '));
@@ -3607,6 +3610,7 @@
     x: cx + r * Math.sin((deg * Math.PI) / 180),
     y: cy - r * Math.cos((deg * Math.PI) / 180),
   });
+  /** @param {number} cx @param {number} cy @param {number} r @param {number} a0 @param {number} a1 */
   function arcPath(cx, cy, r, a0, a1) {
     const sweep = a1 - a0;
     if (sweep <= 0) return '';
@@ -5261,6 +5265,7 @@
   const ToggleType = { Switch: 'switch', Checkbox: 'checkbox', Button: 'button' };
   const SliderChangeMode = { Begin: 0, Moving: 1, End: 2, Click: 3 };
 
+  /** @param {string} name @param {string} type @param {(el: any, o: any) => void} setup */
   function inputComponent(name, type, setup) {
     return ensureComponent(name, (args) => {
       const el = document.createElement(type === 'textarea' ? 'textarea' : 'input');
@@ -6498,8 +6503,11 @@
     // 列选项
     const getYears = () => { const a = []; for (let y = start.getFullYear(); y <= end.getFullYear(); y++) a.push(y); return a; };
     const getMonths = () => { const a = []; for (let m = 1; m <= 12; m++) a.push(m); return a; };
+    /** @param {number} y @param {number} m */
     const getDays = (y, m) => { const n = dpDaysInMonth(y, m); const a = []; for (let d = 1; d <= n; d++) a.push(d); return a; };
+    /** @type {Record<string, any>} */
     const cols = {};
+    /** @param {string} label */
     const mk = (label) => {
       const wrap = document.createElement('div');
       wrap.dataset['dpCol'] = label;
@@ -8331,6 +8339,7 @@
       if (!global.__arkui_dom_sm) global.__arkui_dom_sm = new SubscriberManager();
       return global.__arkui_dom_sm;
     }
+    /** @param {any} id */
     delete(id) { this._subs.delete(id); }
   }
 

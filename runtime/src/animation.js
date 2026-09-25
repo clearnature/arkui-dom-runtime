@@ -105,7 +105,9 @@
   /** @param {any} e */
   function _effectSummary(e) { return _effectChain(e).map((n) => n.kind).join('+'); }
 
+  /** @type {any[]} */
   const transitionRegistered = [];         // 登记过的 transition（自省用）
+  /** @type {any[]} */
   const transitionRuns = [];               // 每次真的跑过的出现/消失（自省用）
   let transitionSeq = 0;
   let transitionRunSeq = 0;
@@ -170,6 +172,7 @@
   const TransitionEdge = { Top: 0, Bottom: 1, Left: 2, Right: 3 };
   // 自省用的"偏离态"文本（断言据此核对 translate/scale/opacity 真的被算进去了）
   function _offText(off) {
+    /** @type {string[]} */
     const parts = [];
     if (off.opacity !== undefined) parts.push('opacity=' + off.opacity);
     if (off.transforms.length) parts.push('transform=' + off.transforms.join(' '));

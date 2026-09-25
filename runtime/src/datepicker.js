@@ -57,8 +57,11 @@
     // 列选项
     const getYears = () => { const a = []; for (let y = start.getFullYear(); y <= end.getFullYear(); y++) a.push(y); return a; };
     const getMonths = () => { const a = []; for (let m = 1; m <= 12; m++) a.push(m); return a; };
+    /** @param {number} y @param {number} m */
     const getDays = (y, m) => { const n = dpDaysInMonth(y, m); const a = []; for (let d = 1; d <= n; d++) a.push(d); return a; };
+    /** @type {Record<string, any>} */
     const cols = {};
+    /** @param {string} label */
     const mk = (label) => {
       const wrap = document.createElement('div');
       wrap.dataset['dpCol'] = label;
