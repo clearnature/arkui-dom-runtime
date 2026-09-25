@@ -91,6 +91,9 @@ interface Element {
   __arkuiAlphabetIndexer?: boolean;
   __aix?: any;
   __arkuiLeaf?: boolean;
+  __arkuiSideBar?: boolean;
+  __sbc?: any;
+  __sbcApply?: () => void;
   __lig?: any;
   __an?: any;
   __anCbs?: any;

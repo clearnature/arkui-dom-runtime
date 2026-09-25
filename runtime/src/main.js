@@ -1710,6 +1710,8 @@
 
   // @include alphabetindexer
 
+  // @include sidebar
+
   // @include scroll
 
   // @include grid
@@ -1964,6 +1966,8 @@
     TextClock, TextClockController, TextTimer, TextTimerController,
     // R60：AlphabetIndexer（字母索引条）
     AlphabetIndexer,
+    // R61：SideBarContainer（侧边栏容器）
+    SideBarContainer, SideBarContainerType: { Embed: 0, Overlay: 1 },
     // R57：Grid/GridItem（CSS grid 同构基座 + 滚动事件族）
     Grid, GridItem,
     // R50：Refresh + RefreshStatus（声明顺序：Inactive=0/Drag=1/OverDrag=2/Refresh=3/Done=4，

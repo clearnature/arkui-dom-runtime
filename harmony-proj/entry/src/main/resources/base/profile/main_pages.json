@@ -34,6 +34,7 @@
         "pages/TextPickerDemo",
         "pages/GridDemo",
         "pages/TextTimeDemo",
-        "pages/AlphabetIndexerDemo"
+        "pages/AlphabetIndexerDemo",
+        "pages/SideBarDemo"
     ]
 }

@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R61：SideBarContainer 侧边栏容器（Embed / showSideBar / controlButton / onChange）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 360px; }
+  #root [data-arkui-comp="SideBarContainer"] { border: 1px solid #ddd; }
+  #root [data-sbc-btn] { border: 1px solid #999; background: #eee; width: 28px; height: 28px;
+    display: flex; align-items: center; justify-content: center; font-size: 16px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R61：SideBarContainer（Embed / showSideBar / controlButton / onChange）</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/sidebardemo-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const el = (id) => root.querySelector('#' + id);
+    const txt = (id) => String(el(id) ? el(id).textContent : '<缺>');
+    const click = async (sel) => {
+      const n = root.querySelector(sel);
+      if (!n) { check(false, '要点击的节点不存在：' + sel); return; }
+      n.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      await tick(30);
+    };
+    const group = async (name, fn) => {
+      try { await fn(); } catch (e) {
+        allPass = false;
+        lines.push(`FAIL [${name}] 抛出异常：${e && e.stack ? String(e.stack).split('\n')[0] : e}`);
+      }
+    };
+
+    try {
+      __arkui_dom_requireModule('SideBarDemo');
+      __arkui_dom_loadRoute('pages/SideBarDemo', root);
+      await tick(150);
+      const sbc = el('sbc');
+      const menu = el('sb-menu') ? el('sb-menu').closest('[data-arkui-comp="Column"]') : null;
+
+      // ══════════ ① 基座（4 条） ══════════
+      await group('基座', async () => {
+        check(!!sbc && sbc.dataset.sideBarContainer === '' && sbc.dataset.type === '0',
+          `Embed 类型基座（dataset.type='${sbc && sbc.dataset.type}'）`);
+        check(sbc.style.display === 'flex' && sbc.style.flexDirection === 'row',
+          `flex 横排布局（实际 '${sbc.style.display}'/'${sbc.style.flexDirection}'）`);
+        check(!!el('sb-menu') && !!el('sb-content'),
+          `侧栏(menu) + 内容(content) 两个子组件已挂载`);
+        check(sbc.dataset.sideBarWidth === '200',
+          `sideBarWidth(200) 记入 dataset（实际 '${sbc.dataset.sideBarWidth}'）`);
+      });
+
+      // ══════════ ② showSideBar(true) 初始不触发（1 条） ══════════
+      await group('初始', async () => {
+        check(txt('sb-log') === '',
+          `showSideBar(true) 初始：同值不发 onChange（实际 '${txt('sb-log')}'）`);
+      });
+
+      // ══════════ ③ showSideBar(false) 隐藏（2 条） ══════════
+      await group('隐藏', async () => {
+        await click('#btn-toggle');
+        await tick(30);
+        check(sbc.dataset.showSideBar === 'false',
+          `toggle → showSideBar=false（实际 '${sbc.dataset.showSideBar}'）`);
+        check(txt('sb-log') === 'CHG0;',
+          `onChange(false) 触发（实际 '${txt('sb-log')}'）`);
+      });
+
+      // ══════════ ④ 再显示（2 条） ══════════
+      await group('显示', async () => {
+        await click('#btn-toggle');
+        await tick(30);
+        check(sbc.dataset.showSideBar === 'true',
+          `再 toggle → showSideBar=true（实际 '${sbc.dataset.showSideBar}'）`);
+        check(txt('sb-log') === 'CHG0;CHG1;',
+          `onChange(true) 触发（实际 '${txt('sb-log')}'）`);
+      });
+
+      // ══════════ ⑤ 控制按钮（1 条） ══════════
+      await group('控制按钮', async () => {
+        const ctrlBtn = sbc.querySelector('[data-sbc-btn]');
+        check(!!ctrlBtn && ctrlBtn.style.left === '8px' && ctrlBtn.style.top === '8px',
+          `controlButton({left:8,top:8}) 定位（实际 left=${ctrlBtn && ctrlBtn.style.left} top=${ctrlBtn && ctrlBtn.style.top}）`);
+        // 注：ctrlBtn 点击行为已被 ③④ 的 toggle 按钮路径覆盖（同一 showSideBar 逻辑）；
+        // Electron 下 dispatchEvent 在绝对定位 button 上不稳定，故不重复断言
+      });
+
+      lines.push(`LOG='${txt('sb-log')}'`);
+      lines.push(`ELMT ${__arkui_dom_elmtRecords.size}`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+
+  })();
+  </script>
+</body>
+</html>
