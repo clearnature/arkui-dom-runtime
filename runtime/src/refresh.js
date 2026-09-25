@@ -18,6 +18,7 @@
   // 见 CAPABILITY 限制）。指针只收 pointerType='touch'（真机 SetIsAllowMouse(false)，
   // refresh_pattern.cpp:215 / refresh.d.ts:248）。松手回弹/Done 复位用 setTimeout
   // （350ms，坑 ⑧：不用 rAF）。
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
   const REFRESH_ATTRS = {
     refreshing: (n, v) => { n.__rfApplyRefreshing(!!resolveResource(v)); },
     refreshOffset: (n, v) => {

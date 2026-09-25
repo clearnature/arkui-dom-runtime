@@ -113,6 +113,7 @@
   // 字面量，重渲染再应用同值必须是无操作；否则用户交互后的每次重渲染都会把状态拉回去，
   // 还连带触发组内互斥的 change —— inputdemo 首跑当场抓住）；selectedColor 落 accent-color；
   // 原生控件没有对应物的照实记 data-*（不静默）
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
   const INPUT_ATTRS = {
     select: (n, v) => {
       const want = !!v;

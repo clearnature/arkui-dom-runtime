@@ -73,6 +73,7 @@
   });
   // Canvas 的属性分派：onReady 是函数值（拦在通用 on* 规则之前，否则变成 'ready' DOM 监听——
   // 原生 canvas 不会自发派发 ready），create-args 无需处理
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
   const CANVAS_ATTRS = {
     onReady: (n, v) => {
       n.__arkuiCanvasOnReady = v;
@@ -142,6 +143,7 @@
     if (ctl && typeof ctl.__arkuiBindXComponent === 'function') ctl.__arkuiBindXComponent(el);
     return el;
   });
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
   const XC_ATTRS = {
     onLoad: (n, v) => {
       n.__arkuiXcOnLoad = v;

@@ -203,6 +203,7 @@
 
   // 语义属性分派（applyAttr 里抢在通用落点之前）：Divider 三件 + Marquee 字体 +
   // Counter 的 onInc/onDec/enable（函数值，必须拦在通用 on* 规则之前）
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
   const SHOW_ATTRS = {
     onInc: (n, v) => { (/** @type {any} */ (n.__counterCbs = n.__counterCbs || {})).inc = v; },
     onDec: (n, v) => { (/** @type {any} */ (n.__counterCbs = n.__counterCbs || {})).dec = v; },
@@ -320,6 +321,7 @@
     el.__arkuiQrPending = true;                // 等渲染后同步阶段画（不变量 18）
     return el;
   });
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
   const QR_ATTRS = {
     color: (n, v) => { n.__arkuiQrFg = colorOf(v); redrawQr(n); },
     backgroundColor: (n, v) => { n.__arkuiQrBg = colorOf(v); redrawQr(n); },

@@ -14,6 +14,7 @@
   // 第一帧；播完 iterations → 状态落 Stopped、发 onFinish（保持末帧）。回调**延时派发**：
   // state 属性先于 onStart 应用，同步发会丢（实测）；重渲染重复应用 images/state 需深 diff/
   // 同值守卫（坑 88 同族）。reverse 反向播放未实现（记警告）。
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
   const ANIMATOR_ATTRS = {
     images: (n, v) => {
       const an = n.__an;

@@ -5286,6 +5286,7 @@
   // 字面量，重渲染再应用同值必须是无操作；否则用户交互后的每次重渲染都会把状态拉回去，
   // 还连带触发组内互斥的 change —— inputdemo 首跑当场抓住）；selectedColor 落 accent-color；
   // 原生控件没有对应物的照实记 data-*（不静默）
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
   const INPUT_ATTRS = {
     select: (n, v) => {
       const want = !!v;
@@ -5537,6 +5538,7 @@
 
   // 语义属性分派（applyAttr 里抢在通用落点之前）：Divider 三件 + Marquee 字体 +
   // Counter 的 onInc/onDec/enable（函数值，必须拦在通用 on* 规则之前）
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
   const SHOW_ATTRS = {
     onInc: (n, v) => { (/** @type {any} */ (n.__counterCbs = n.__counterCbs || {})).inc = v; },
     onDec: (n, v) => { (/** @type {any} */ (n.__counterCbs = n.__counterCbs || {})).dec = v; },
@@ -5654,6 +5656,7 @@
     el.__arkuiQrPending = true;                // 等渲染后同步阶段画（不变量 18）
     return el;
   });
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
   const QR_ATTRS = {
     color: (n, v) => { n.__arkuiQrFg = colorOf(v); redrawQr(n); },
     backgroundColor: (n, v) => { n.__arkuiQrBg = colorOf(v); redrawQr(n); },
@@ -5729,6 +5732,7 @@
   // 弹出类语义属性分派（applyAttr 里抢在通用落点之前）：函数值的 onSelect/onChange 必须拦在
   // 通用 on* 规则之前（坑 86 同族），selected 按组件身份分派（Select 落 selectedIndex、
   // MenuItem 落 data-selected）
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
   const POPUP_ATTRS = {
     selected: (n, v) => {
       if (n.__arkuiPopup === 'Select') {
@@ -5833,6 +5837,7 @@
   });
   // Canvas 的属性分派：onReady 是函数值（拦在通用 on* 规则之前，否则变成 'ready' DOM 监听——
   // 原生 canvas 不会自发派发 ready），create-args 无需处理
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
   const CANVAS_ATTRS = {
     onReady: (n, v) => {
       n.__arkuiCanvasOnReady = v;
@@ -5902,6 +5907,7 @@
     if (ctl && typeof ctl.__arkuiBindXComponent === 'function') ctl.__arkuiBindXComponent(el);
     return el;
   });
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
   const XC_ATTRS = {
     onLoad: (n, v) => {
       n.__arkuiXcOnLoad = v;
@@ -5937,6 +5943,7 @@
   // 回调经 __imgCbs 闭包间接引用（覆盖语义，坑 88 同族）；图已缓存完成时补派发（定时器
   // 收口，坑 ⑧ 同思想）。
   const IMAGE_FIT_CSS = { 0: 'contain', 1: 'cover', 3: 'fill', 4: 'scale-down', 5: 'none' };
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
   const IMAGE_ATTRS = {
     objectFit: (n, v) => {
       const fit = Number(resolveResource(v));
@@ -6073,6 +6080,7 @@
   // 第一帧；播完 iterations → 状态落 Stopped、发 onFinish（保持末帧）。回调**延时派发**：
   // state 属性先于 onStart 应用，同步发会丢（实测）；重渲染重复应用 images/state 需深 diff/
   // 同值守卫（坑 88 同族）。reverse 反向播放未实现（记警告）。
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
   const ANIMATOR_ATTRS = {
     images: (n, v) => {
       const an = n.__an;
@@ -6206,6 +6214,7 @@
   // 见 CAPABILITY 限制）。指针只收 pointerType='touch'（真机 SetIsAllowMouse(false)，
   // refresh_pattern.cpp:215 / refresh.d.ts:248）。松手回弹/Done 复位用 setTimeout
   // （350ms，坑 ⑧：不用 rAF）。
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
   const REFRESH_ATTRS = {
     refreshing: (n, v) => { n.__rfApplyRefreshing(!!resolveResource(v)); },
     refreshOffset: (n, v) => {

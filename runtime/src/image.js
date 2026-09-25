@@ -14,6 +14,7 @@
   // 回调经 __imgCbs 闭包间接引用（覆盖语义，坑 88 同族）；图已缓存完成时补派发（定时器
   // 收口，坑 ⑧ 同思想）。
   const IMAGE_FIT_CSS = { 0: 'contain', 1: 'cover', 3: 'fill', 4: 'scale-down', 5: 'none' };
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
   const IMAGE_ATTRS = {
     objectFit: (n, v) => {
       const fit = Number(resolveResource(v));

@@ -63,6 +63,7 @@
   // 弹出类语义属性分派（applyAttr 里抢在通用落点之前）：函数值的 onSelect/onChange 必须拦在
   // 通用 on* 规则之前（坑 86 同族），selected 按组件身份分派（Select 落 selectedIndex、
   // MenuItem 落 data-selected）
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
   const POPUP_ATTRS = {
     selected: (n, v) => {
       if (n.__arkuiPopup === 'Select') {
