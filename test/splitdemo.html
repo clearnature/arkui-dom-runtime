@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R62：RowSplit/ColumnSplit 分隔容器</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 360px; }
+  #root [data-arkui-comp="RowSplit"], #root [data-arkui-comp="ColumnSplit"] { outline: 1px solid #ddd; }
+  #root [data-arkui-comp="RowSplit"] Text, #root [data-arkui-comp="ColumnSplit"] Text {
+    display: flex; align-items: center; justify-content: center; font-size: 14px;
+  }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R62：RowSplit（水平）/ ColumnSplit（垂直）</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/splitdemo-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const el = (id) => root.querySelector('#' + id);
+    const group = async (name, fn) => {
+      try { await fn(); } catch (e) {
+        allPass = false;
+        lines.push(`FAIL [${name}] 抛出异常：${e && e.stack ? String(e.stack).split('\n')[0] : e}`);
+      }
+    };
+
+    try {
+      __arkui_dom_requireModule('SplitDemo');
+      __arkui_dom_loadRoute('pages/SplitDemo', root);
+      await tick(120);
+      const rs = el('rs');
+      const cs = el('cs');
+      const rsL = el('rs-l');
+      const rsR = el('rs-r');
+      const csT = el('cs-t');
+      const csB = el('cs-b');
+
+      // ══════════ ① RowSplit（3 条） ══════════
+      await group('RowSplit', async () => {
+        check(!!rs && rs.dataset.rowSplit === '' && rs.style.display === 'flex' && rs.style.flexDirection === 'row',
+          `RowSplit flex row 基座（实际 '${rs.style.display}'/'${rs.style.flexDirection}'）`);
+        check(rsL.offsetLeft === 0 && rsR.offsetLeft === 120,
+          `水平排列：L(0) R(120)（实际 ${rsL.offsetLeft}/${rsR.offsetLeft}）`);
+        check(rs.offsetWidth === 240 && rs.offsetHeight === 60,
+          `容器尺寸 240×60（实际 ${rs.offsetWidth}x${rs.offsetHeight}）`);
+      });
+
+      // ══════════ ② ColumnSplit（3 条） ══════════
+      await group('ColumnSplit', async () => {
+        check(!!cs && cs.dataset.columnSplit === '' && cs.style.display === 'flex' && cs.style.flexDirection === 'column',
+          `ColumnSplit flex column 基座（实际 '${cs.style.display}'/'${cs.style.flexDirection}'）`);
+        check(csT.offsetTop === 0 && csB.offsetTop === 40,
+          `垂直排列：T(0) B(40)（实际 ${csT.offsetTop}/${csB.offsetTop}）`);
+        check(cs.offsetWidth === 120 && cs.offsetHeight === 80,
+          `容器尺寸 120×80（实际 ${cs.offsetWidth}x${cs.offsetHeight}）`);
+      });
+
+      // ══════════ ③ 页面完整渲染（1 条） ══════════
+      check(!!el('done-marker'), 'done 标记渲染完成');
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+
+  })();
+  </script>
+</body>
+</html>
