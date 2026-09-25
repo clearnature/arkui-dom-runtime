@@ -1684,16 +1684,16 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   fixtures 转换产物  52 个：AnimDemo AnimatorDemo AsyncIO CalendarPickerDemo Callee CanvasDemo DatePickerDemo Detail DrawDemo GestureDemo GestureGroupDemo Home ImageDemo Index InputDemo Layout Lazy LazyVar ListGroupDemo MeasArea MeasImage MeasNotify Measure MediaDemo NavBarDemo NavDemo NavTransDemo NetFile Observe PopDemo PromptAct Provide QrDemo RefreshDemo RelDemo Rich ScrollDemo ShapeDemo ShowDemo SmallDemo StepDemo SwiperDemo TabsGrid TextDemo TextMeasure TimePickerDemo TransitionDemo UiContextDemo V2 WaterFlowDemo Widgets XCompDemo
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          673.3 KB
-  runtime(src)     425.9 KB
-  test             674.1 KB
+  runtime          674.1 KB
+  runtime(src)     426.7 KB
+  test             676.3 KB
   tools            57.6 KB
   electron(src)    24.0 KB
-  docs             636.1 KB
-  fixtures         392.2 KB
+  docs             636.8 KB
+  fixtures         392.8 KB
 
 == 逐文件（文档"文件职责"表的来源）==
-  runtime/arkui-dom-runtime.js          429663 B  419.6 KB
+  runtime/arkui-dom-runtime.js          430452 B  420.4 KB
   runtime/generated-components.js        57617 B  56.3 KB
   runtime/ohos-shims.js                  61848 B  60.4 KB
   tools/extract.mjs                       6563 B  6.4 KB
@@ -1712,17 +1712,17 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   .gitignore                               757 B  0.7 KB
   README.md                             157245 B  153.6 KB
   THIRD-PARTY-NOTICES.md                 10718 B  10.5 KB
-  docs/ARCHITECTURE.md                  147857 B  144.4 KB
-  docs/CAPABILITY.md                     59892 B  58.5 KB
+  docs/ARCHITECTURE.md                  147858 B  144.4 KB
+  docs/CAPABILITY.md                     60130 B  58.7 KB
   docs/DEVELOPING.md                     66055 B  64.5 KB
-  docs/ROADMAP.md                       133683 B  130.5 KB
+  docs/ROADMAP.md                       134199 B  131.1 KB
   docs/surface-measurement.md             6496 B  6.3 KB
   docs/SESSION-2026-09-20.md             12842 B  12.5 KB
   runtime/src/ability.js                  9225 B  9.0 KB
   runtime/src/animation.js               28024 B  27.4 KB
   runtime/src/animator.js                 6181 B  6.0 KB
   runtime/src/area.js                    24451 B  23.9 KB
-  runtime/src/calendarpicker.js          16058 B  15.7 KB
+  runtime/src/calendarpicker.js          16847 B  16.5 KB
   runtime/src/canvas.js                   9472 B  9.3 KB
   runtime/src/datepicker.js               8353 B  8.2 KB
   runtime/src/draw.js                    18208 B  17.8 KB
@@ -1745,7 +1745,7 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   fixtures/pages/AnimDemo.ts              6451 B  6.3 KB
   fixtures/pages/AnimatorDemo.ts          4050 B  4.0 KB
   fixtures/pages/AsyncIO.ts               6206 B  6.1 KB
-  fixtures/pages/CalendarPickerDemo.ts    4870 B  4.8 KB
+  fixtures/pages/CalendarPickerDemo.ts    5560 B  5.4 KB
   fixtures/pages/Callee.ts                1726 B  1.7 KB
   fixtures/pages/CanvasDemo.ts            4151 B  4.1 KB
   fixtures/pages/DatePickerDemo.ts        4740 B  4.6 KB
@@ -1798,7 +1798,7 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   test/animatordemo.html                  5613 B  5.5 KB
   test/animdemo.html                     11498 B  11.2 KB
   test/async.html                         5977 B  5.8 KB
-  test/calendarpickerdemo.html            8859 B  8.7 KB
+  test/calendarpickerdemo.html           11100 B  10.8 KB
   test/canvasedemo.html                   4301 B  4.2 KB
   test/components.html                    6789 B  6.6 KB
   test/datepickerdemo.html                8228 B  8.0 KB

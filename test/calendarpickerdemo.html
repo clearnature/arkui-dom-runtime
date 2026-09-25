@@ -84,6 +84,8 @@
         check(dayCell(dlg, 1).offsetLeft === wk2.offsetLeft,
           `10/1（周二）落在第 3 列：day1.offsetLeft === 表头第 3 格 offsetLeft（${dayCell(dlg, 1).offsetLeft} vs ${wk2.offsetLeft}）`);
         check(dayCell(dlg, 8).hasAttribute('data-cal-selected'), 'day8 有选中标记（圆形高亮）');
+        check(dayCell(dlg, 8).style.borderRadius === '50%',
+          `hintRadius 缺省 16 → 选中圆底（inline borderRadius '${dayCell(dlg, 8).style.borderRadius}'）`);
         check(dayCell(dlg, 10).hasAttribute('data-cal-disabled') && dayCell(dlg, 12).hasAttribute('data-cal-disabled')
           && !dayCell(dlg, 9).hasAttribute('data-cal-disabled'),
           'disabledDateRange 10-12 禁用、9 不禁用');
@@ -132,6 +134,36 @@
         await click(st.querySelector('[data-cal-ok]'));
         check(!document.body.querySelector('[data-arkui-calpick-static]') && txt('cp-log').endsWith('ACC15;'),
           `OK → 关层 + onAccept(Date)='ACC15;'（实际 '${txt('cp-log').slice(-10)}'）`);
+      });
+
+      // ══════════ ⑥ hintRadius 档位 + markToday 可观测（5 条） ══════════
+      await group('hintRadius/markToday', async () => {
+        await click(el('cp3'));
+        const d3 = el('cp3').querySelector('[data-arkui-calpick-dlg]');
+        check(!!d3 && !!dayCell(d3, 8) && dayCell(d3, 8).style.borderRadius === '0px',
+          `hintRadius 0 → 直角（inline '${d3 && dayCell(d3, 8) && dayCell(d3, 8).style.borderRadius}'；.d.ts:81 0=直角矩形）`);
+        await click(root);
+        await click(el('cp4'));
+        const d4 = el('cp4').querySelector('[data-arkui-calpick-dlg]');
+        check(!!d4 && !!dayCell(d4, 8) && dayCell(d4, 8).style.borderRadius === '8px',
+          `hintRadius 8 → 8px 圆角（inline '${d4 && dayCell(d4, 8) && dayCell(d4, 8).style.borderRadius}'；.d.ts:81 (0,16)=圆角）`);
+        await click(root);
+        // markToday：翻到当前月，今天的格子带 data-cal-today（cp1 markToday(true)；系统时钟同源）
+        await click(el('cp1'));
+        const d1 = el('cp1').querySelector('[data-arkui-calpick-dlg]');
+        const now = new Date();
+        const steps = (now.getFullYear() - 2024) * 12 + (now.getMonth() - 9);
+        for (let i = 0; i < steps; i++) await click(d1.querySelector('[data-cal-next]'));
+        const today = d1.querySelector('[data-cal-today]');
+        check(!!today && today.textContent === String(now.getDate()),
+          `markToday(true)：翻到当前月今天 ${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()} 有标记`);
+        await click(root);
+        // cp2 缺省 markToday=false → 同样翻月无标记（对照组，证 markToday 真在把关）
+        await click(el('cp2'));
+        const d2 = el('cp2').querySelector('[data-arkui-calpick-dlg]');
+        for (let i = 0; i < steps; i++) await click(d2.querySelector('[data-cal-next]'));
+        check(!d2.querySelector('[data-cal-today]'), '缺省 markToday=false：当前月无今天标记（对照）');
+        await click(root);
       });
 
       lines.push(`LOG='${txt('cp-log')}'`);

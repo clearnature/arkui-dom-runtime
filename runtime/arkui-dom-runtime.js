@@ -7032,6 +7032,9 @@
     if (end && calpLt(end, p)) return Object.assign({}, end);         // p 在 end 后 → 压到 end
     return p;
   };
+  // hintRadius（.d.ts:73-83）：0=直角矩形、(0,16)=圆角 px、负数或>16=回落缺省 16（圆形 → 50%）
+  const calpRadius = (hr) => (hr === undefined || hr === null || hr < 0 || hr > 16)
+    ? '50%' : (hr === 0 ? '0px' : `${hr}px`);
   // 禁用判定：越 [start,end] 边界，或落在任一 disabledDateRange 区间内
   const calpDisabled = (p, st) => {
     if (st.start && !calpLe(st.start, p)) return true;
@@ -7093,7 +7096,10 @@
         if (o.font && o.font.weight !== undefined) s.style.fontWeight = String(resolveResource(o.font.weight));
       });
     },
-    markToday: (n, v) => { n.dataset.markToday = String(v === true); },
+    markToday: (n, v) => {
+      (/** @type {any} */ (n).__calp).markToday = v === true;   // 状态必须接线（首跑抓到只写 dataset）
+      n.dataset.markToday = String(v === true);
+    },
     onChange: (n, v) => { (/** @type {any} */ (n).__calp).cbs.change = v; },
   };
   // 弹层网格（组件弹层与静态 Dialog 共用）：首列周日、前置空格、选中/禁用/今天标记
@@ -7117,7 +7123,10 @@
         const cell = document.createElement('button');
         cell.setAttribute('data-cal-day', String(d));
         cell.textContent = String(d);
-        if (calpEq(p, st.sel)) cell.setAttribute('data-cal-selected', 'true');
+        if (calpEq(p, st.sel)) {
+          cell.setAttribute('data-cal-selected', 'true');
+          cell.style.borderRadius = calpRadius(st.hr);       // hintRadius 视觉（缺省圆形）
+        }
         if (calpDisabled(p, st)) cell.setAttribute('data-cal-disabled', 'true');
         if (st.markToday && calpEq(p, calpPartsOf(new Date()))) cell.setAttribute('data-cal-today', 'true');
         cell.addEventListener('click', (ev) => {
@@ -7200,7 +7209,7 @@
     el.style.position = 'relative';
     const o = (args && typeof args[0] === 'object' && args[0] !== null) ? args[0] : {};
     const st = /** @type {any} */ (el).__calp = /** @type {any} */ ({
-      sel: null, start: null, end: null, dis: [],
+      sel: null, start: null, end: null, dis: [], hr: undefined,
       align: 2, markToday: false, seg: 'day', cbs: {}, dlg: null, outside: null, view: null,
     });
     if (o.start instanceof Date) { st.start = calpPartsOf(o.start); el.dataset.start = calpIso(o.start); }
@@ -7215,6 +7224,8 @@
       ? calpPartsOf(o.selected)
       : calpPartsOf(new Date());                             // 缺省 = 系统今天（.d.ts:101）
     st.sel = calpAdjust(st.sel, st.start, st.end);           // AdjustDateToRange
+    if (o.hintRadius !== undefined) st.hr = Number(resolveResource(o.hintRadius));
+    el.dataset.hintRadius = String(st.hr === undefined ? 16 : st.hr);   // 缺省 16（.d.ts:85）
     el.dataset.align = '2';                                  // 缺省 END（.d.ts:198）
     el.dataset.markToday = 'false';                          // 缺省 false（.d.ts:291）
     ['year', 'month', 'day'].forEach((k) => {
@@ -7265,6 +7276,7 @@
             .filter((r) => r && r.start instanceof Date && r.end instanceof Date)
             .map((r) => ({ start: calpPartsOf(r.start), end: calpPartsOf(r.end) }))
           : [],
+        hr: o.hintRadius !== undefined ? Number(resolveResource(o.hintRadius)) : undefined,
         align: 1, markToday: o.markToday === true, seg: 'day',
         cbs: {}, dlg: null, outside: null,
         view: { y: 0, m: 0 },

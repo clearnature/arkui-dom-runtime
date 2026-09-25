@@ -946,10 +946,15 @@ Calendar 要农历数据，均缓）。**真机结构逐条确证后实现**（c
 DOM：入口 inline-flex；弹层为入口内绝对定位面板（edgeAlign START/CENTER/END，缺省 END）；
 7 列 grid，前置空格=首日 getDay()；语言取 zh（夹具环境，标注）。
 
-**验收**：`bash run.sh calendarpickerdemo`（19 条断言：入口 4/弹层 6/时序 4/步进 3/静态 Dialog 2）
+**验收**：`bash run.sh calendarpickerdemo`（24 条断言：入口 4/弹层 7/时序 4/步进 3/静态 Dialog 2/
+hintRadius+markToday 5——含 hintRadius 0/8/缺省三档内联圆角与 markToday 翻月对照）
 双端通过。**破坏验证（3 处）**：前置空格改周一制（列位错位）**1 红**；摘 +/- 的 FireChangeEvents
 **1 红**；摘同值去重 **1 红**（B+C 合并跑 3 红）。还原后 grep BROKEN 无残留、门禁复跑全绿。
 本切片被预算闸硬拦两次（研究后/首跑后各一次），断点落 todo 无损续做。
+**残留清账（R54.1）**：Mimosa deep 审计重跑 **0 findings**（seal sha256:f6e09366…，依赖 partial=
+零 npm 依赖同 R38）；hintRadius 落到真实视觉（选中日内联 borderRadius，0 直角/(0,16) px/负数
+或>16 回落 50%）；markToday 状态接线补上（attr 只写 dataset 没写 st——翻月对照断言首跑即红，
+正是"从 dataset 层升到可观测层"抓到的真 bug）。
 
 **触及**：`runtime/src/calendarpicker.js`（新，第 24 个分片）、`runtime/src/area.js`、
 `runtime/src/main.js`（@include + CalendarPicker/CalendarPickerDialog/CalendarAlign 挂 global）、

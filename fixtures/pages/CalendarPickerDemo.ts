@@ -64,6 +64,16 @@ class CalendarPickerDemo extends ViewPU {
             CalendarPicker.id('cp2');
         }, CalendarPicker);
         this.observeComponentCreation2((elmtId, isInitialRender) => {
+            // ④ hintRadius（.d.ts:73-83）：0=直角矩形、(0,16)=圆角、负数或>16=回落缺省 16（圆形）
+            CalendarPicker.create({ selected: new Date(2024, 9, 8), hintRadius: 0 });
+            // ④ hintRadius（.d.ts:73-83）：0=直角矩形、(0,16)=圆角、负数或>16=回落缺省 16（圆形）
+            CalendarPicker.id('cp3');
+        }, CalendarPicker);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            CalendarPicker.create({ selected: new Date(2024, 9, 8), hintRadius: 8 });
+            CalendarPicker.id('cp4');
+        }, CalendarPicker);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
             // ③ 静态弹层 CalendarPickerDialog.show：onAccept/onCancel
             Button.createWithLabel('dlg');
             // ③ 静态弹层 CalendarPickerDialog.show：onAccept/onCancel

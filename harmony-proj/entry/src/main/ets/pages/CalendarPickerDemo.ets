@@ -24,6 +24,12 @@ struct CalendarPickerDemo {
       CalendarPicker({ selected: new Date(2024, 8, 25), start: new Date(2024, 9, 5), end: new Date(2024, 9, 20) })
         .id('cp2')
 
+      // ④ hintRadius（.d.ts:73-83）：0=直角矩形、(0,16)=圆角、负数或>16=回落缺省 16（圆形）
+      CalendarPicker({ selected: new Date(2024, 9, 8), hintRadius: 0 })
+        .id('cp3')
+      CalendarPicker({ selected: new Date(2024, 9, 8), hintRadius: 8 })
+        .id('cp4')
+
       // ③ 静态弹层 CalendarPickerDialog.show：onAccept/onCancel
       Button('dlg').id('btn-dlg').onClick(() => {
         CalendarPickerDialog.show({
