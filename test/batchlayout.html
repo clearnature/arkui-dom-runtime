@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R67：批次 E 布局/叠放族（FolderStack / GridContainer / Sheet / Section / UnionEffectContainer / XComponentNode）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 360px; border: 1px dashed #bbb; position: relative; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R67：FolderStack 折叠屏叠放 / GridContainer 列网格 / Sheet+Section / UnionEffectContainer / XComponentNode</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/batchlayout-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const el = (id) => root.querySelector('#' + id);
+    const txt = (id) => String(el(id) ? el(id).textContent : '<缺>');
+    const squash = (s) => String(s || '').replace(/\s+/g, '');
+
+    try {
+      __arkui_dom_requireModule('BatchLayoutDemo');
+      __arkui_dom_loadRoute('pages/BatchLayoutDemo', root);
+      await tick(120);
+
+      // ══════════ ① FolderStack 基座（5 条） ══════════
+      const fs = el('fs');
+      const fsW = /** @type {any} */ (fs && fs.__folderstack);
+      const fsKids = fs ? Array.prototype.slice.call(fs.children) : [];
+      check(!!fs && fs.dataset.folderStack === '' && getComputedStyle(fs).display === 'grid',
+        `FolderStack 叠放基座：grid 容器（实际 display '${fs && getComputedStyle(fs).display}'）`);
+      check(fsKids.length === 2 && fsKids.every((k) => squash(k.style.gridArea) === '1/1'),
+        `子组件 grid 同格叠放 gridArea 1/1（实际 '${fsKids.map((k) => squash(k.style.gridArea)).join(',')}'）`);
+      check(fs.dataset.upperItems === '["fs-upper"]',
+        `create 选项 upperItems 落 dataset（实际 '${fs.dataset.upperItems}'）`);
+      check(fs.dataset.enableAnimation === 'false',
+        `enableAnimation(false) 登记（实际 '${fs.dataset.enableAnimation}'）`);
+      check(fs.dataset.autoHalfFold === 'true',
+        `autoHalfFold(true) 登记（实际 '${fs.dataset.autoHalfFold}'）`);
+
+      // ══════════ ② FolderStack 悬停避让（5 条） ══════════
+      // 真机由折屏硬件驱动；DOM 用状态袋 setHoverStatus/setFoldStatus 编程驱动
+      fsW.setHoverStatus({ foldStatus: 3, isHoverMode: true, appRotation: 1, windowStatusType: 1 });
+      const upper = el('fs-upper');
+      const lower = fsKids.map((k) => /** @type {HTMLElement} */ (k)).find((k) => k.id !== 'fs-upper');
+      check(!!upper && upper.hasAttribute('data-folder-upper') && upper.style.top === '0px' && upper.style.height === '50%',
+        `悬停态：upperItems 子项移到上半屏（top '${upper && upper.style.top}' height '${upper && upper.style.height}'）`);
+      check(!!lower && lower.hasAttribute('data-folder-lower') && lower.style.top === '50%',
+        `悬停态：其余子项留在下半屏（top '${lower && lower.style.top}'）`);
+      check(txt('fs-hover-log').indexOf('H1') >= 0,
+        `onHoverStatusChange 派发（log '${txt('fs-hover-log')}'）`);
+      let gotParam = null;
+      fsW.cbs.hoverStatus = (p) => { gotParam = p; };
+      fsW.setHoverStatus({ foldStatus: 3, isHoverMode: true, appRotation: 1, windowStatusType: 1 });
+      check(!!gotParam && gotParam.isHoverMode === true && gotParam.windowStatusType === 1 && gotParam.foldStatus === 3,
+        `HoverEventParam 四字段原样透传`);
+      fsW.setHoverStatus({ foldStatus: 3, isHoverMode: false, appRotation: 1, windowStatusType: 1 });
+      check(fsKids.every((k) => squash(k.style.gridArea) === '1/1') && fs.dataset.hoverMode === 'false',
+        `悬停退出：子项恢复 grid 同格叠放`);
+
+      // ══════════ ③ FolderStack 折态事件（1 条） ══════════
+      fsW.setFoldStatus(3);
+      check(fs.dataset.foldStatus === '3' && txt('fs-fold-log').indexOf('F3') >= 0,
+        `setFoldStatus(3) → dataset + onFolderStateChange（log '${txt('fs-fold-log')}'）`);
+
+      // ══════════ ④ GridContainer（4 条） ══════════
+      const gc = el('gc');
+      const gcTracks = getComputedStyle(gc).gridTemplateColumns.split(' ').filter((s) => s !== '');
+      check(gc.dataset.columns === '4' && gcTracks.length === 4,
+        `columns:4 → 4 条轨道（实际 dataset '${gc.dataset.columns}' tracks '${gcTracks.length}'）`);
+      check(gc.dataset.sizeType === '2',
+        `sizeType SizeType.SM=2 落 dataset（实际 '${gc.dataset.sizeType}'）`);
+      check(getComputedStyle(gc).columnGap === '8px',
+        `gutter:8 → column-gap（实际 '${getComputedStyle(gc).columnGap}'）`);
+      check(getComputedStyle(gc).paddingLeft === '12px' && getComputedStyle(gc).paddingRight === '12px',
+        `margin:12 → 两侧 padding（实际 '${getComputedStyle(gc).paddingLeft}'/'${getComputedStyle(gc).paddingRight}'）`);
+
+      // ══════════ ⑤ XComponentNode 类面 + 声明面（4 条） ══════════
+      // 页面 aboutToAppear：合法值 TEXTURE=1 → true；非法值 9 → false
+      check(txt('xcn-log').indexOf('rt=1,bad=1') >= 0,
+        `changeRenderType 合法/非法返回值（log '${txt('xcn-log')}'）`);
+      const n2 = new XComponentNode(null, {}, 'tcn', 2, 'demo-lib');
+      const n2W = /** @type {any} */ (n2).__xcn;
+      check(!!n2W && n2W.id === 'tcn' && n2W.libraryName === 'demo-lib' && n2W.type === 2,
+        `构造参数进状态袋（id '${n2W && n2W.id}' lib '${n2W && n2W.libraryName}' type '${n2W && n2W.type}'）`);
+      check(n2.changeRenderType(1) === true && n2W.renderType === 1 && n2.changeRenderType(9) === false,
+        `changeRenderType：TEXTURE=1 true / 9 false`);
+      const host = XComponentNode.create({ id: 'tcn', type: 2, libraryName: 'demo-lib' });
+      XComponentNode.pop();
+      await tick(30);
+      const hostEl = /** @type {any} */ (host);
+      check(hostEl.dataset.xcnId === 'tcn' && n2W.created === true && n2W.hostEl === host
+        && n2W.lastCreateEvent && n2W.lastCreateEvent.surfaceId === 'XComponent-tcn',
+        `宿主按 id 认领实例并触发 onCreate（surfaceId '${n2W.lastCreateEvent && n2W.lastCreateEvent.surfaceId}'）`);
+      n2.changeRenderType(0);
+      check(hostEl.dataset.renderType === '0',
+        `changeRenderType(0) 落宿主 dataset.renderType（实际 '${hostEl.dataset.renderType}'）`);
+
+      // ══════════ ⑥ Sheet + Section（内部组件对，2 条） ══════════
+      const sheet = Sheet.create();
+      const section = Section.create();
+      Section.pop();
+      Sheet.pop();
+      check(sheet.dataset.sheet === '' && section.parentElement === sheet
+        && sheet.style.flexDirection === 'column',
+        `Sheet 面板容器 + Section 内容段父子结构`);
+      check(section.dataset.section === '' && section.style.flex === '1',
+        `Section flex:1 占满面板剩余空间`);
+
+      // ══════════ ⑦ UnionEffectContainer pointLight（2 条） ══════════
+      const uec = UnionEffectContainer.create();
+      UnionEffectContainer.pointLight({ intensity: 0.5 });
+      UnionEffectContainer.pop();
+      check(uec.dataset.unionEffectContainer === '' && uec.dataset.pointLight === '{"intensity":0.5}',
+        `pointLight 参数落 data-*（实际 '${uec.dataset.pointLight}'）`);
+      const warns = /** @type {any} */ (global).__arkui_dom_layout_warnings || [];
+      check(warns.some((w) => String(w).indexOf('UnionEffectContainer.pointLight') >= 0),
+        `光效无 DOM 对应物 → layoutWarnings 记录（不静默）`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+
+  })();
+  </script>
+</body>
+</html>

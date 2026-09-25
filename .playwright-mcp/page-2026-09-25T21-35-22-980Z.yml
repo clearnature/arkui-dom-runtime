@@ -1,0 +1,12 @@
+- generic [active] [ref=f2e1]:
+  - heading "R66：NavRouter（点击路由/onStateChange）· Navigator（跳转）· PageTransition（规格+逐帧）· ToolBarItem（placement）· UIPickerComponent（滚轮/事件/指示器）" [level=3] [ref=f2e2]
+  - generic [ref=f2e5]:
+    - generic [ref=f2e6]: NavShim
+    - generic [ref=f2e9] [cursor=pointer]: entry
+    - generic [ref=f2e11] [cursor=pointer]: go target
+    - generic [ref=f2e15]:
+      - generic [ref=f2e17]: Alpha
+      - generic [ref=f2e18]: Bravo
+      - generic [ref=f2e19]: Charlie
+      - generic [ref=f2e20]: Delta
+  - generic [ref=f2e21]: running…

@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R66：ScrollBar 滚动条 + 动效族原子件（Animator / FrictionMotion / ScrollMotion / SpringMotion / SpringProp / GeometryView）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 280px; }
+  #root [data-arkui-comp="ScrollBar"] { outline: 1px dashed #ccc; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R66：ScrollBar（子组件滑块 / 默认样式 / BarState / 防抢绑）+ 动效族原子件直探</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/motiondemo-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const el = (id) => root.querySelector('#' + id);
+    const num = (s) => { const m = String(s || '').match(/-?\d+(\.\d+)?/); return m ? Number(m[0]) : NaN; };
+
+    try {
+      __arkui_dom_requireModule('MotionDemo');
+      __arkui_dom_loadRoute('pages/MotionDemo', root);
+      await tick(150);
+
+      const scA = el('sc-a');
+      const sbA = el('sb-a');
+      const sbB = el('sb-b');
+      const sbC = el('sb-c');
+
+      // ══════════ ① ScrollBar 子组件滑块版（5 条） ══════════
+      check(!!sbA && sbA.dataset.scrollBar === '' && !!scA,
+        `ScrollBar A 基座（data-scroll-bar + Scroll 容器，实际 sbA=${!!sbA} scA=${!!scA}）`);
+      const wA = sbA && sbA.__sbar;
+      check(!!wA && wA.state === 2,
+        `create 选项 state: BarState.On=2 落 bag（实际 ${wA && wA.state}）`);
+      const thumbA = sbA && sbA.firstElementChild;
+      check(!!thumbA && !sbA.querySelector('[data-sb-thumb="default"]')
+        && thumbA.style.position === 'absolute',
+        `有子组件 → 子组件即滑块（绝对定位、无默认滑块，实际 position='${thumbA && thumbA.style.position}'）`);
+      const scrA = wA && wA.scroller;
+      check(!!scrA && scrA._el === scA && scrA.__sbEl === sbA,
+        `scroller._el 仍是容器 + __sbEl 记滚动条（防 main.js 通用绑定抢绑，实际 _el===scA:${!!(scrA && scrA._el === scA)}）`);
+      check(num(thumbA && thumbA.style.transform) === 0,
+        `起点位移 0（实际 '${thumbA && thumbA.style.transform}'）`);
+
+      // 滚动驱动滑块：scroller.scrollBy(0,80) → 80/160 → 滑块位移 round(.5×(160-48))=56
+      if (scrA && scrA.scrollBy) scrA.scrollBy(0, 80);
+      await tick(40);
+      check(num(thumbA && thumbA.style.transform) === 56,
+        `滚动 80/160 → 滑块位移 56px（实际 ${num(thumbA && thumbA.style.transform)}px）`);
+      check(sbA.dataset.enableNestedScroll === 'true' && wA.nested === true,
+        `enableNestedScroll(true) → dataset+bag（实际 '${sbA.dataset.enableNestedScroll}'）`);
+
+      // ══════════ ② 默认样式版（3 条） ══════════
+      const defB = sbB && sbB.querySelector('[data-sb-thumb="default"]');
+      check(!!defB, '无子组件 → 默认滑块（API12+ 默认样式）');
+      const scrB = sbB && sbB.__sbar && sbB.__sbar.scroller;
+      if (scrB && scrB.scrollBy) scrB.scrollBy(0, 80);
+      await tick(40);
+      check(num(defB && defB.style.transform) === 48,
+        `默认滑块位移 48px（可滚80、滑块72、行程48，实际 ${num(defB && defB.style.transform)}px）`);
+      check(sbB.style.opacity === '1',
+        `BarState.On 常显（opacity='${sbB && sbB.style.opacity}'）`);
+
+      // ══════════ ③ BarState.Off 关闭版（1 条） ══════════
+      check(sbC && sbC.__sbar && sbC.__sbar.state === 0 && sbC.style.opacity === '0',
+        `Off → 常隐（state=${sbC && sbC.__sbar && sbC.__sbar.state} opacity='${sbC && sbC.style.opacity}'）`);
+
+      // 方向一致性：不应出现方向不匹配警告（三组都是纵向绑纵向）
+      const warns = (window.__arkui_dom_layout_warnings || []);
+      check(!warns.some((w) => String(w).indexOf('ScrollBar.direction') >= 0),
+        '无方向不匹配警告（纵向绑纵向）');
+
+      // ══════════ ④ Animator 原子件直探（6 条） ══════════
+      // atomic Animator 不可从应用态 ArkTS 源码引用（animator.json systemApi），这里直探运行时全局
+      const An = window.Animator;
+      check(typeof An === 'function' && typeof An.create === 'function', 'Animator 全局已挂载');
+      const an1 = An.create({ duration: 120, iterations: 2, easing: 'linear' });
+      const frames = [];
+      let fin = 0; let rep = 0; let start = 0;
+      an1.__anim.cbs.frame = (p) => frames.push(p);
+      an1.__anim.cbs.finish = () => { fin++; };
+      an1.__anim.cbs.repeat = () => { rep++; };
+      an1.__anim.cbs.start = () => { start++; };
+      an1.__animApplyState(1);
+      await tick(650);
+      check(frames.length >= 6 && start === 1 && rep === 1 && fin === 1,
+        `逐帧引擎：帧 ${frames.length}≥6、onStart/repeat/finish 各 1（s${start}/r${rep}/f${fin}）`);
+      check(an1.dataset.animState === '3' && Math.abs(Number(an1.dataset.animProgress) - 1) < 1e-9,
+        `播完落 Stopped、保持 end 值（state='${an1.dataset.animState}' p=${an1.dataset.animProgress}）`);
+
+      const an2 = An.create({ duration: 100, delay: 300 });
+      const f2 = [];
+      an2.__anim.cbs.frame = (p) => f2.push(p);
+      an2.__animApplyState(1);
+      await tick(150);
+      const nAtDelay = f2.length;
+      check(nAtDelay === 0, `delay 期不派发 onFrame（${nAtDelay} 帧 @150ms < 300ms）`);
+      await tick(450);
+      check(f2.length > 0, `delay 后开始派发（共 ${f2.length} 帧）`);
+
+      const an3 = An.create({ duration: 3000 });
+      const f3 = [];
+      an3.__anim.cbs.frame = (p) => f3.push(p);
+      an3.__animApplyState(1);
+      await tick(100);
+      an3.__animApplyState(2);                    // Paused：停表保持
+      const n3 = f3.length;
+      await tick(140);
+      check(f3.length === n3, `Paused 停表（${n3} → ${f3.length}）`);
+
+      const an4 = An.create({ duration: 80, iterations: 1 });
+      an4.__anim.playMode = 1;                    // PlayMode.Reverse
+      an4.__anim.ease = null;                     // linear
+      const f4 = [];
+      an4.__anim.cbs.frame = (p) => f4.push(p);
+      an4.__animApplyState(1);
+      await tick(400);
+      check(f4.length > 0 && f4[0] > 0.4 && f4[f4.length - 1] < 0.6,
+        `Reverse 从 1 退到 0（首 ${f4.length ? f4[0].toFixed(2) : '-'} 末 ${f4.length ? f4[f4.length - 1].toFixed(2) : '-'}）`);
+
+      // ══════════ ⑤ 物理动效四件 + GeometryView 直探（4 条） ══════════
+      const fm = window.FrictionMotion && window.FrictionMotion.create(0.9);
+      const sm = window.SpringMotion && window.SpringMotion.create({ response: 0.28, dampingFraction: 0.86 });
+      const sp = window.SpringProp && window.SpringProp.create(120, 24);
+      const scm = window.ScrollMotion && window.ScrollMotion.create(0.98);
+      const gv = window.GeometryView && window.GeometryView.create();
+      check(!!fm && fm.style.display === 'none' && JSON.stringify(fm.__motionParams) === '[0.9]'
+        && JSON.stringify(sp.__motionParams) === '[120,24]' && JSON.stringify(scm.__motionParams) === '[0.98]',
+        'FrictionMotion/SpringProp/ScrollMotion 标记件 + 参数落 __motionParams');
+      check(!!sm && JSON.stringify(sm.__motionParams) === '{"response":0.28,"dampingFraction":0.86}',
+        'SpringMotion 对象参数记录');
+      check(!!gv && gv.style.display === 'contents' && gv.dataset.geometryView === '',
+        'GeometryView display:contents 透明包装');
+      const an5 = An.create();
+      check(!!an5.__anim && an5.__anim.motion === null && !!an5.__anim.cbs
+        && an5.__anim.iterations === 1,
+        `Animator 缺省 bag（iterations=1 默认、motion=null、cbs 就绪；实际 it=${an5.__anim && an5.__anim.iterations}）`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+
+  })();
+  </script>
+</body>
+</html>

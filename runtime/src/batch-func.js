@@ -1,0 +1,892 @@
+  // ────────── 批量功能组件（R66）：Calendar / ContainerReader / IndicatorComponent /
+  // MenuItemGroup / Repeat / WithTheme ──────────
+  //
+  // 权威来源：
+  //   Repeat           component/repeat.d.ts（Repeat(arr) → .each/.key/.template/.templateId/
+  //                    .virtualScroll；each 是必填；templateId 未命中任何 template 时回落 each）
+  //   WithTheme        component/with_theme.d.ts（WithThemeOptions {theme?, colorMode?}；
+  //                    ThemeColorMode：SYSTEM=0 / LIGHT=1 / DARK=2，common.d.ts:6808）
+  //   MenuItemGroup    component/menu_item_group.d.ts（MenuItemGroupOptions {header?, footer?}，
+  //                    header/footer: ResourceStr | CustomBuilder；子组件只有 MenuItem）
+  //   IndicatorComponent component/indicatorcomponent.d.ts（create(controller?) + initialIndex/
+  //                    count/style/loop/vertical/onChange + IndicatorComponentController）
+  //   ContainerReader  api/@ohos.arkui.components.ContainerReader.d.ts（create({size,
+  //                    widthBreakpoint?, heightBreakpoint?}) + .breakpointConfig({width?[], height?[]})）
+  //   Calendar         【无 d.ts】——本 SDK 只发布了 CalendarPicker；Calendar 是 systemApi 老组件，
+  //                    声明文件未随 SDK 发布（component/index-full.d.ts 引用 ./calendar.d.ts 但文件
+  //                    缺失）。属性面取自 ets-loader/components/calendar.json（date/showLunar/
+  //                    startOfWeek/offDays/onSelectChange/onRequestData/currentData/preData/
+  //                    nextData/needSlide/showHoliday/direction + 五个样式对象）；无权威文本的
+  //                    语义（onRequestData 入参、CalendarDay 结构）按字段名近似，见各 handler 注释。
+  //
+  // 产物形态（ets-loader lib/process_component_build.js：recurseRepeatExpression 会给 Repeat
+  // 调用追加 this 实参；其余按 component_map 通用 create/attr 形态）：
+  //   Repeat.create(this.arr, this); Repeat.each((ri) => {…}); Repeat.key((item, i) => …);
+  //     Repeat.templateId(fn)?; Repeat.template('t', (ri) => {…})?; Repeat.virtualScroll({...})?;
+  //   Repeat.pop();
+  //   WithTheme.create({ colorMode: 1 }); …子组件…; WithTheme.pop();
+  //   MenuItemGroup.create({ header: '组一' }); …MenuItem…; MenuItemGroup.pop();
+  //   IndicatorComponent.create(this.ctrl); IndicatorComponent.count(3); …; IndicatorComponent.pop();
+  //   ContainerReader.create({ size: { width: 700, height: 500 } }); …; ContainerReader.pop();
+  //
+  // DOM 策略：
+  //   Repeat/WithTheme 是"逻辑容器"——Repeat 用 display:contents（同 ForEach，不引入盒子）；
+  //   WithTheme 用真块级盒（color-scheme 要作用到后代原生控件）。Item 渲染走 microtask 批处理：
+  //   属性方法在首渲染与每次重渲染都会重放（updateFunc 重跑），而 pop() 只在 initialRender 出现，
+  //   所以渲染触发点放【属性应用】上（同 ForEach 把 forEachUpdateFunction 放 updateFunc 内的思路），
+  //   用 scheduled 标记去重、lastSig 快照去重（数组没变就不重建）。
+
+  // ════════════════════ Repeat ════════════════════
+  /** @param {any[]} prev @param {any[]} next @param {number} n */
+  const repeatSigSame = (prev, next, n) => prev.length === n && next.length >= n
+    && prev.every((/** @type {any} */ v, /** @type {number} */ k) => Object.is(v, next[k]));
+
+  /** @param {any} st */
+  function repeatSchedule(st) {
+    if (st.scheduled) return;
+    st.scheduled = true;
+    Promise.resolve().then(() => {
+      st.scheduled = false;
+      repeatRender(st);
+    });
+  }
+
+  /** @param {any} st */
+  function repeatRender(st) {
+    // virtualScroll 的总数语义（repeat.d.ts VirtualScrollOptions JSDoc）：
+    //   totalCount ∈ (0, 数据源长度] → 只渲染 [0, totalCount-1]；=0 → 不渲染；
+    //   缺省/非法 → 数据源长度。onTotalCount() 与 totalCount 二选一，前者优先。
+    let total = st.arr.length;
+    if (st.vs && typeof st.vs === 'object') {
+      let want = null;
+      if (typeof st.vs.onTotalCount === 'function') {
+        try { want = Number(st.vs.onTotalCount()); } catch (e) {
+          warnOnce('Repeat.virtualScroll.onTotalCount 抛错：' + (e && e.message));
+        }
+      } else if (st.vs.totalCount !== undefined) {
+        want = Number(st.vs.totalCount);
+      }
+      if (want !== null && Number.isFinite(want) && want >= 0) total = Math.min(total, Math.floor(want));
+      if (!st.warnedVs) {
+        st.warnedVs = true;
+        // 如实：DOM 运行时不做真·懒加载（onLazyLoading 没有触发源——本实现从不渲染
+        // 超出数据源的项），只保留 totalCount 的"裁剪渲染条数"语义。
+        layoutWarnings.push('Repeat.virtualScroll 未实现真懒加载：onLazyLoading 不会触发，'
+          + 'totalCount/onTotalCount 仅用于裁剪渲染条数');
+      }
+    }
+    const n = Math.max(0, Math.min(st.arr.length, total));
+    if (st.lastSig && repeatSigSame(st.lastSig, st.arr, n)) return;
+    st.lastSig = st.arr.slice(0, n);
+
+    st.el.textContent = '';
+    purgeDetachedRecords();
+    let rendered = 0;
+    for (let i = 0; i < n; i++) {
+      const item = st.arr[i];
+      let b = st.eachB;
+      if (st.templateIdFn) {
+        let t = null;
+        try { t = st.templateIdFn(item, i); } catch (e) {
+          warnOnce('Repeat.templateId 抛错：' + (e && e.message));
+        }
+        if (t !== undefined && t !== null && st.templates[String(t)]) b = st.templates[String(t)];
+      }
+      if (typeof b !== 'function') {
+        if (!st.warnedEach) {
+          st.warnedEach = true;
+          // repeat.d.ts："The each property is mandatory. If it is omitted, runtime errors
+          // will occur." —— 真机直接报错；这里降级为警告 + 跳过该项，其余项照常渲染。
+          layoutWarnings.push('Repeat 缺少 .each 构建器（必填），未命中模板的项不会渲染');
+        }
+        continue;
+      }
+      // repeat.d.ts：itemGenerator 收到 RepeatItem {item, index}，且【不要解构】（保持可观测）
+      const ri = { item, index: i };
+      runBuilderInto(st.el, () => b(ri), 'Repeat.item' + i);
+      rendered++;
+    }
+    st.el.dataset.repeatCount = String(rendered);
+  }
+
+  // repeat.json 属性面：each/key/onMove/template/templateId/virtualScroll。
+  // 注意 main.js 通用代理只把 attr 前两个实参透传给 applyAttr（args[0]→v、args[1]→opts），
+  // 所以 template(type, itemBuilder, templateOptions?) 的【第三个参 cachedCount 到不了这里】
+  // ——如实记录：TemplateOptions.cachedCount 是缓存池容量（纯性能参数，不影响行为）。
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
+  const REPEAT_ATTRS = {
+    each: (n, v) => {
+      const st = (/** @type {any} */ (n)).__repeat;
+      if (!st) return;
+      st.eachB = typeof v === 'function' ? v : null;
+      repeatSchedule(st);
+    },
+    key: (n, v) => {
+      const st = (/** @type {any} */ (n)).__repeat;
+      if (!st) return;
+      st.keyFn = typeof v === 'function' ? v : null;
+      // 键生成器只服务 diff 复用；本实现是"数组变了整体重建"（同 ForEach 基线），键不参与
+      n.dataset.key = typeof v === 'function' ? 'custom' : 'default';
+    },
+    template: (n, v, opts) => {
+      const st = (/** @type {any} */ (n)).__repeat;
+      if (!st) return;
+      st.templates[String(v)] = typeof opts === 'function' ? opts : null;
+      repeatSchedule(st);
+    },
+    templateId: (n, v) => {
+      const st = (/** @type {any} */ (n)).__repeat;
+      if (!st) return;
+      st.templateIdFn = typeof v === 'function' ? v : null;
+      repeatSchedule(st);
+    },
+    virtualScroll: (n, v) => {
+      const st = (/** @type {any} */ (n)).__repeat;
+      if (!st) return;
+      st.vs = v && typeof v === 'object' ? v : null;
+      n.dataset.virtualScroll = st.vs ? 'on' : 'off';
+      repeatSchedule(st);
+    },
+    onMove: (n, v) => {
+      const st = (/** @type {any} */ (n)).__repeat;
+      if (!st) return;
+      st.onMove = typeof v === 'function' ? v : null;
+      n.dataset.onMove = st.onMove ? 'registered' : 'none';
+      if (st.onMove && !st.warnedMove) {
+        st.warnedMove = true;
+        // 如实：DOM 垫片没有列表拖拽排序的触发源（ArkUI 的拖拽排序由容器拖拽手势驱动），
+        // 回调只登记、不由本实现派发。
+        layoutWarnings.push('Repeat.onMove 已登记，但本实现没有拖拽排序触发源，回调不会被派发');
+      }
+    },
+  };
+
+  /** @param {any[]} args */
+  const Repeat = ensureComponent('Repeat', (args) => {
+    const el = document.createElement('div');
+    (/** @type {any} */ (el)).__arkuiRepeat = true;
+    el.setAttribute('data-arkui-repeat', '');
+    el.style.display = 'contents';              // 逻辑容器：不引入盒子（同 ForEach）
+    const st = /** @type {any} */ (el).__repeat = /** @type {any} */ ({
+      el,
+      arr: args && Array.isArray(args[0]) ? args[0] : [],
+      eachB: null, keyFn: null, templateIdFn: null,
+      /** @type {Record<string, any>} */ templates: {},
+      vs: null, onMove: null,
+      scheduled: false, lastSig: null,
+      warnedEach: false, warnedVs: false, warnedMove: false,
+    });
+    return st.el;
+  }, (/** @type {any} */ node, /** @type {any} */ args) => {
+    // 重渲染：Repeat.create(arr, this) 重放 → 只更新数据源；构建器由属性重放重新登记
+    const st = (/** @type {any} */ (node)).__repeat;
+    if (!st) return;
+    st.arr = args && Array.isArray(args[0]) ? args[0] : [];
+    repeatSchedule(st);
+  });
+
+  // ════════════════════ WithTheme ════════════════════
+  /** @param {HTMLElement} el @param {any} o @returns {any} */
+  function applyWithThemeOptions(el, o) {
+    const anyEl = /** @type {any} */ (el);
+    if (!o || typeof o !== 'object') return anyEl.__wtheme;
+    const st = anyEl.__wtheme || (anyEl.__wtheme = /** @type {any} */ ({
+      colorMode: 0, hasTheme: false, warnedTheme: false,
+    }));
+    if (o.colorMode !== undefined) {
+      // ThemeColorMode：SYSTEM=0 / LIGHT=1 / DARK=2（common.d.ts:6808 起）
+      const m = Number(resolveResource(o.colorMode)) || 0;
+      st.colorMode = m;
+      el.dataset.colorMode = String(m);
+      // DOM 对应物：CSS color-scheme 作用域（后代原生控件的浅/深色默认皮肤随之切换）
+      el.style.colorScheme = m === 2 ? 'dark' : (m === 1 ? 'light' : '');
+    }
+    if (o.theme !== undefined) {
+      st.hasTheme = o.theme !== null;
+      el.dataset.theme = st.hasTheme ? 'custom' : 'none';
+      if (st.hasTheme && !st.warnedTheme) {
+        st.warnedTheme = true;
+        // 如实：CustomTheme 是令牌表（@ohos.arkui.theme），没有到 CSS 变量的映射，只记录
+        layoutWarnings.push('WithTheme({theme}) 的 CustomTheme 令牌未映射到 DOM（仅记录 data-theme）；'
+          + 'colorMode 生效');
+      }
+    }
+    return st;
+  }
+
+  /** @param {any[]} args */
+  const WithTheme = ensureComponent('WithTheme', (args) => {
+    const el = document.createElement('div');
+    (/** @type {any} */ (el)).__arkuiWithTheme = true;
+    el.dataset.withTheme = '';
+    el.style.display = 'block';
+    applyWithThemeOptions(el, args && args[0]);
+    return el;
+  }, (/** @type {any} */ node, /** @type {any} */ args) => { applyWithThemeOptions(node, args && args[0]); });
+
+  // ════════════════════ MenuItemGroup ════════════════════
+  // header/footer: ResourceStr | CustomBuilder（menu_item_group.d.ts）。真机序是
+  // header → items → footer（同 ListItemGroup）；items 由框架在 create..pop 之间 appendChild，
+  // 会排在【DOM 里最后】的 footerWrap 之后 → 给 footerWrap 设 flex order:1（header/items 缺省 0，
+  // DOM 序先行），视觉序仍是 header → items → footer。
+  /** @param {HTMLElement} slot @param {any} v @param {string} what */
+  function applyMigSlot(slot, v, what) {
+    if (typeof v === 'function') {
+      runBuilderInto(slot, v, 'MenuItemGroup.' + what);
+      return;
+    }
+    slot.textContent = String(resolveResource(v));
+  }
+
+  /** @param {any[]} args */
+  const MenuItemGroup = ensureComponent('MenuItemGroup', (args) => {
+    const el = document.createElement('div');
+    (/** @type {any} */ (el)).__arkuiMenuItemGroup = true;
+    el.dataset.menuItemGroup = '';
+    el.style.display = 'flex';
+    el.style.flexDirection = 'column';
+    const st = /** @type {any} */ (el).__mig = /** @type {any} */ ({ header: null, footer: null });
+    const o = (args && typeof args[0] === 'object' && args[0] !== null) ? args[0] : {};
+    if (o.header !== undefined) st.header = o.header;
+    if (o.footer !== undefined) st.footer = o.footer;
+    const headerWrap = document.createElement('div');
+    headerWrap.setAttribute('data-arkui-mig-header', '');
+    el.appendChild(headerWrap);
+    if (st.header !== null) applyMigSlot(headerWrap, st.header, 'header');
+    const footerWrap = document.createElement('div');
+    footerWrap.setAttribute('data-arkui-mig-footer', '');
+    footerWrap.style.order = '1';
+    el.appendChild(footerWrap);
+    if (st.footer !== null) applyMigSlot(footerWrap, st.footer, 'footer');
+    return el;
+  });
+
+  // ════════════════════ IndicatorComponent ════════════════════
+  // 指示器条（indicatorcomponent.d.ts，since 15）：create(controller?)；属性 initialIndex/count/
+  // style/loop/vertical/onChange；控制器 showNext/showPrevious/changeIndex(i, useAnimation?)。
+  // DOM：一排圆点（flex row/column）；活动点由 loop 决定越界回卷或停在边界（同 Swiper 基线）。
+  let indicSeq = 0;
+
+  class IndicatorComponentController {
+    constructor() {
+      /** @type {number} */ this._id = ++indicSeq;
+      /** @type {any} */ this._state = null;
+    }
+    showNext() { return indicStep(this._state, 1); }
+    showPrevious() { return indicStep(this._state, -1); }
+    /** @param {number} i @param {boolean=} [useAnimation] */
+    changeIndex(i, useAnimation) {
+      if (useAnimation === true) {
+        warnOnce('IndicatorComponentController.changeIndex(useAnimation=true)：无动画实现，已忽略动画');
+      }
+      return indicStep(this._state, 0, Number(i));
+    }
+  }
+
+  /** @param {any} st @param {any} ctl */
+  function bindIndicController(st, ctl) {
+    if (!ctl || typeof ctl !== 'object') return;
+    if (typeof ctl.showNext !== 'function') {
+      layoutWarnings.push('IndicatorComponent.create 的参数不是 IndicatorComponentController');
+      return;
+    }
+    if (ctl._state && ctl._state !== st) {
+      layoutWarnings.push('同一个 IndicatorComponentController 被绑定到多个 IndicatorComponent（后绑定的生效）');
+    }
+    ctl._state = st;
+    st.controller = ctl;
+  }
+
+  /** @param {any} st @param {number} delta @param {number=} [absolute] */
+  function indicStep(st, delta, absolute) {
+    if (!st) {
+      layoutWarnings.push('IndicatorComponentController 尚未绑定到任何 IndicatorComponent');
+      return false;
+    }
+    const n = st.count;
+    if (!n) {
+      layoutWarnings.push('IndicatorComponent.count 为 0，无法切换指示点');
+      return false;
+    }
+    let next = (absolute !== undefined) ? absolute : st.index + delta;
+    if (st.loop) next = ((next % n) + n) % n;
+    return indicSetActive(st, next, true);
+  }
+
+  /** @param {any} st @param {number} i @param {boolean} fire */
+  function indicSetActive(st, i, fire) {
+    const n = st.count;
+    let idx = Number(i);
+    if (!st.loop && (idx < 0 || idx >= n)) {
+      layoutWarnings.push(`IndicatorComponent 切换越界（index=${i}，count=${n}，loop=false）`);
+      return false;
+    }
+    if (st.loop) idx = ((idx % n) + n) % n;
+    st.index = idx;
+    st.dots.forEach((/** @type {any} */ d, /** @type {number} */ k) => {
+      d.setAttribute('data-indic-active', k === idx ? 'true' : 'false');
+    });
+    if (fire) {
+      const cb = st.cbs.change;
+      if (typeof cb === 'function') {
+        try { cb(idx); } catch (e) { layoutWarnings.push(`IndicatorComponent.onChange 抛错：${e && e.message}`); }
+      }
+    }
+    return true;
+  }
+
+  /** @param {any} st */
+  function indicRender(st) {
+    const el = st.el;
+    el.textContent = '';
+    st.dots = [];
+    for (let k = 0; k < st.count; k++) {
+      const d = document.createElement('div');
+      d.setAttribute('data-indic-dot', String(k));
+      d.setAttribute('data-indic-active', 'false');
+      d.style.width = '8px';
+      d.style.height = '8px';
+      d.style.borderRadius = '50%';
+      d.style.background = '#bbb';
+      d.style.cursor = 'pointer';
+      d.addEventListener('click', () => indicSetActive(st, k, true));
+      el.appendChild(d);
+      st.dots.push(d);
+    }
+    if (st.count) indicSetActive(st, st.index, false);
+  }
+
+  /** @param {any} st */
+  function indicSchedule(st) {
+    if (st.scheduled) return;
+    st.scheduled = true;
+    Promise.resolve().then(() => {
+      st.scheduled = false;
+      indicRender(st);
+    });
+  }
+
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
+  const INDIC_ATTRS = {
+    initialIndex: (n, v) => {
+      const st = (/** @type {any} */ (n)).__indic;
+      if (st) st.index = Math.max(0, Number(resolveResource(v)) || 0);
+    },
+    count: (n, v) => {
+      const st = (/** @type {any} */ (n)).__indic;
+      if (!st) return;
+      st.count = Math.max(0, Math.floor(Number(resolveResource(v)) || 0));
+      indicSchedule(st);
+    },
+    style: (n, v) => {
+      const st = (/** @type {any} */ (n)).__indic;
+      if (!st) return;
+      n.dataset.style = 'custom';
+      if (!st.warnedStyle) {
+        st.warnedStyle = true;
+        // 与 Swiper.indicator 同一口径：DotIndicator/DigitIndicator 的配置读不到，退化为默认圆点
+        layoutWarnings.push('IndicatorComponent.style 只支持默认圆点；DotIndicator/DigitIndicator 的配置未实现');
+      }
+    },
+    loop: (n, v) => {
+      const st = (/** @type {any} */ (n)).__indic;
+      if (st) st.loop = !!v;
+      n.dataset.loop = String(!!v);
+    },
+    vertical: (n, v) => {
+      const st = (/** @type {any} */ (n)).__indic;
+      if (st) st.vertical = !!v;
+      n.style.flexDirection = v ? 'column' : 'row';
+      n.dataset.vertical = String(!!v);
+    },
+    onChange: (n, v) => {
+      const st = (/** @type {any} */ (n)).__indic;
+      if (st) st.cbs.change = v;
+    },
+  };
+
+  /** @param {any[]} args */
+  const IndicatorComponent = ensureComponent('IndicatorComponent', (args) => {
+    const el = document.createElement('div');
+    (/** @type {any} */ (el)).__arkuiIndicator = true;
+    el.dataset.indicator = '';
+    el.style.display = 'flex';
+    el.style.flexDirection = 'row';
+    el.style.justifyContent = 'center';
+    el.style.alignItems = 'center';
+    el.style.gap = '8px';
+    const st = /** @type {any} */ (el).__indic = /** @type {any} */ ({
+      el, index: 0, count: 0, loop: false, vertical: false,
+      cbs: {}, dots: [], controller: null,
+      scheduled: false, warnedStyle: false,
+    });
+    bindIndicController(st, args && args[0]);
+    return el;
+  }, (/** @type {any} */ node, /** @type {any} */ args) => {
+    const st = (/** @type {any} */ (node)).__indic;
+    if (st) bindIndicController(st, args && args[0]);
+  });
+
+  // ════════════════════ ContainerReader ════════════════════
+  // 容器断点读取（@ohos.arkui.components.ContainerReader.d.ts，since 26.0.0）：
+  //   create({size:{width,height}, widthBreakpoint?, heightBreakpoint?}) + .breakpointConfig(
+  //   {width?: number[], height?: number[]})。桶序 = 【不小于】阈值的连续个数（阈值升序）；
+  //   未配置阈值时透传 create 里的 WidthBreakpoint/HeightBreakpoint 枚举值。
+  /** @param {any[]} th @param {number} v @returns {number} */
+  function creaderBucket(th, v) {
+    const arr = [...th].sort((/** @type {number} */ a, /** @type {number} */ b) => a - b);
+    let i = 0;
+    while (i < arr.length && v >= arr[i]) i++;
+    return i;
+  }
+
+  /** @param {any} st */
+  function creaderApply(st) {
+    const w = (st.size && Number(st.size.width)) || 0;
+    const h = (st.size && Number(st.size.height)) || 0;
+    st.activeW = (st.cfg.width && st.cfg.width.length) ? creaderBucket(st.cfg.width, w) : st.widthBp;
+    st.activeH = (st.cfg.height && st.cfg.height.length) ? creaderBucket(st.cfg.height, h) : st.heightBp;
+    st.el.dataset.widthBp = String(st.activeW);
+    st.el.dataset.heightBp = String(st.activeH);
+  }
+
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
+  const CREADER_ATTRS = {
+    breakpointConfig: (n, v) => {
+      const st = (/** @type {any} */ (n)).__creader;
+      if (!st) return;
+      const o = v && typeof v === 'object' ? v : {};
+      st.cfg.width = Array.isArray(o.width) ? o.width.map(Number) : [];
+      st.cfg.height = Array.isArray(o.height) ? o.height.map(Number) : [];
+      n.dataset.bpWidth = JSON.stringify(st.cfg.width);
+      n.dataset.bpHeight = JSON.stringify(st.cfg.height);
+      creaderApply(st);
+    },
+  };
+
+  /** @param {any[]} args */
+  const ContainerReader = ensureComponent('ContainerReader', (args) => {
+    const el = document.createElement('div');
+    (/** @type {any} */ (el)).__arkuiCReader = true;
+    el.dataset.containerReader = '';
+    el.style.display = 'block';
+    const o = (args && typeof args[0] === 'object' && args[0] !== null) ? args[0] : {};
+    const st = /** @type {any} */ (el).__creader = /** @type {any} */ ({
+      el,
+      size: o.size && typeof o.size === 'object' ? o.size : { width: 0, height: 0 },
+      widthBp: Number(o.widthBreakpoint) || 0,
+      heightBp: Number(o.heightBreakpoint) || 0,
+      cfg: { width: [], height: [] },
+      activeW: 0, activeH: 0,
+    });
+    creaderApply(st);
+    return el;
+  }, (/** @type {any} */ node, /** @type {any} */ args) => {
+    // 重渲染：create({size}) 重放 → 只刷新 size 与断点（breakpointConfig 由属性重放重新应用）
+    const st = (/** @type {any} */ (node)).__creader;
+    if (!st) return;
+    const o = (args && typeof args[0] === 'object' && args[0] !== null) ? args[0] : {};
+    if (o.size && typeof o.size === 'object') st.size = o.size;
+    if (o.widthBreakpoint !== undefined) st.widthBp = Number(o.widthBreakpoint) || 0;
+    if (o.heightBreakpoint !== undefined) st.heightBp = Number(o.heightBreakpoint) || 0;
+    creaderApply(st);
+  });
+
+  // ════════════════════ Calendar（systemApi 老组件，无随包 d.ts）════════════════════
+  // 属性面 = ets-loader/components/calendar.json。无权威文本处按字段名近似（已标注）：
+  //   date：锚定月份 + 选中日（接受 Date/时间戳/'YYYY-MM-DD'）；
+  //   startOfWeek：0=周日（getDay 口径）；offDays：休息日 weekday 数组；
+  //   currentData：当月天数据（按 {year,month,day} 匹配标记，month 为 1 基的近似口径）；
+  //   preData/nextData：相邻月数据，只记条数（本实现不显示相邻月格子）；
+  //   onRequestData：挂载/翻月时回调 currentYearMonth（'YYYY-MM' 字符串——近似口径）；
+  //   needSlide：显示 ‹ › 翻月按钮（真机是手势滑动，DOM 近似为按钮）；
+  //   direction：Axis 竖排（周头条在上）/ 横排（周头条在左）；运行时全局 Axis 的取值是
+  //     'vertical'/'horizontal' 字符串（layout.js），SDK 枚举是 0/1，两者都认。
+  const CAL_WEEK_CN = ['日', '一', '二', '三', '四', '五', '六'];
+
+  /** @param {any} v @returns {Date} */
+  function calToDate(v) {
+    if (v instanceof Date) return v;
+    if (typeof v === 'number') return new Date(v);
+    if (typeof v === 'string') {
+      const m = v.match(/^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?/);
+      if (m) return new Date(Number(m[1]), Number(m[2]) - 1, m[3] ? Number(m[3]) : 1);
+    }
+    return new Date();
+  }
+
+  /** @param {Date} d @returns {string} */
+  function calKeyOf(d) {
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0')
+      + '-' + String(d.getDate()).padStart(2, '0');
+  }
+
+  /** @param {Date} d @returns {string} */
+  function calMonthKeyOf(d) {
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  }
+
+  /** @param {HTMLElement} c @param {any} s */
+  function calApplyTextStyle(c, s) {
+    if (!s || typeof s !== 'object') return;
+    // CalendarDayStyle 近似字段面：dayColor/dayFontSize/dayFontWeight/dayFontFamily 作用到
+    // 【公历】文本；lunarColor 等 Lunar 系字段没有对应渲染物（本实现不排农历），只落 data-*
+    if (s.dayColor !== undefined) c.style.color = colorOf(s.dayColor);
+    if (s.dayFontSize !== undefined) c.style.fontSize = toCssSize(s.dayFontSize);
+    if (s.dayFontWeight !== undefined) c.style.fontWeight = String(resolveResource(s.dayFontWeight));
+    if (s.dayFontFamily !== undefined) c.style.fontFamily = String(resolveResource(s.dayFontFamily));
+    if (s.lunarColor !== undefined) (/** @type {any} */ (c)).__lunarColor = colorOf(s.lunarColor);
+  }
+
+  /** @param {any} st */
+  function calSchedule(st) {
+    if (st.scheduled) return;
+    st.scheduled = true;
+    Promise.resolve().then(() => {
+      st.scheduled = false;
+      calRender(st);
+    });
+  }
+
+  /** @param {any} st */
+  function calRender(st) {
+    const el = st.el;
+    const anchor = st.anchor;
+    const y = anchor.getFullYear();
+    const m = anchor.getMonth();
+
+    // 头部：‹ YYYY-MM ›（needSlide=false 时隐藏按钮）
+    const label = el.querySelector('[data-cal-month]');
+    if (label) label.textContent = calMonthKeyOf(anchor);
+    const prevBtn = el.querySelector('[data-cal-prev]');
+    const nextBtn = el.querySelector('[data-cal-next]');
+    if (prevBtn) (/** @type {HTMLElement} */ (prevBtn)).style.display = st.needSlide ? '' : 'none';
+    if (nextBtn) (/** @type {HTMLElement} */ (nextBtn)).style.display = st.needSlide ? '' : 'none';
+
+    // 周头条（按 startOfWeek 旋起）；横排方向时整条变竖列
+    const weeksEl = /** @type {HTMLElement} */ (el.querySelector('[data-cal-weeks]'));
+    weeksEl.textContent = '';
+    weeksEl.style.display = st.horizontal ? 'flex' : 'grid';
+    if (!st.horizontal) {
+      weeksEl.style.gridTemplateColumns = 'repeat(7, 1fr)';
+    }
+    for (let k = 0; k < 7; k++) {
+      const wd = (st.startOfWeek + k) % 7;
+      const c = document.createElement('div');
+      c.setAttribute('data-cal-week', String(wd));
+      c.textContent = CAL_WEEK_CN[wd];
+      c.style.textAlign = 'center';
+      calApplyTextStyle(c, st.styles.weekStyle);
+      weeksEl.appendChild(c);
+    }
+
+    // 日格：首列按 startOfWeek 对齐；前导补空位；选中/今天/休息日/已登记数据落 data-*
+    const gridEl = /** @type {HTMLElement} */ (el.querySelector('[data-cal-grid]'));
+    gridEl.textContent = '';
+    gridEl.style.display = 'grid';
+    gridEl.style.gridTemplateColumns = 'repeat(7, 1fr)';
+    const first = new Date(y, m, 1);
+    const lead = (first.getDay() - st.startOfWeek + 7) % 7;
+    for (let p = 0; p < lead; p++) {
+      const pad = document.createElement('div');
+      pad.setAttribute('data-cal-pad', String(p));
+      gridEl.appendChild(pad);
+    }
+    const days = new Date(y, m + 1, 0).getDate();
+    const today = new Date();
+    const tKey = calKeyOf(today);
+    // currentData 的标记索引（近似口径：{year,month,day}，month 为 1 基）
+    /** @type {Record<string, any>} */
+    const marks = {};
+    for (const e of (st.dataCur || [])) {
+      if (e && typeof e === 'object' && e.year !== undefined && e.day !== undefined) {
+        const key = Number(e.year) + '-' + String(Number(e.month || (m + 1))).padStart(2, '0')
+          + '-' + String(Number(e.day)).padStart(2, '0');
+        marks[key] = e;
+      }
+    }
+    for (let d = 1; d <= days; d++) {
+      const date = new Date(y, m, d);
+      const key = calKeyOf(date);
+      const c = document.createElement('div');
+      c.setAttribute('data-cal-day', String(d));
+      c.setAttribute('data-date', key);
+      c.textContent = String(d);
+      c.style.textAlign = 'center';
+      c.style.cursor = 'pointer';
+      const wd = date.getDay();
+      if (st.offDays.indexOf(wd) >= 0) {
+        c.setAttribute('data-off-day', 'true');
+        calApplyTextStyle(c, st.styles.workStateStyle);
+      } else {
+        calApplyTextStyle(c, st.styles.currentDayStyle);
+      }
+      if (key === tKey) {
+        c.setAttribute('data-today', 'true');
+        calApplyTextStyle(c, st.styles.todayStyle);
+      }
+      if (st.selected && calKeyOf(st.selected) === key) c.setAttribute('data-selected', 'true');
+      if (marks[key]) {
+        c.setAttribute('data-marked', 'true');
+        const mk = marks[key].mark || (marks[key].status && marks[key].status.mark);
+        if (mk !== undefined && mk !== null) c.setAttribute('data-mark', String(mk));
+      }
+      c.addEventListener('click', () => {
+        st.selected = date;
+        calMarkSelection(st);
+        const cb = st.cbs.select;
+        if (typeof cb === 'function') {
+          try { cb(new Date(y, m, d)); } catch (e) {
+            layoutWarnings.push(`Calendar.onSelectChange 抛错：${e && e.message}`);
+          }
+        }
+      });
+      gridEl.appendChild(c);
+    }
+    el.dataset.currentCount = String(st.dataCur ? st.dataCur.length : 0);
+    if (!st.requested) {
+      st.requested = true;
+      const cb = st.cbs.request;
+      if (typeof cb === 'function') {
+        try { cb(calMonthKeyOf(anchor)); } catch (e) {
+          layoutWarnings.push(`Calendar.onRequestData 抛错：${e && e.message}`);
+        }
+      }
+    }
+  }
+
+  /** @param {any} st */
+  function calMarkSelection(st) {
+    const gridEl = st.el.querySelector('[data-cal-grid]');
+    if (!gridEl) return;
+    const sel = st.selected ? calKeyOf(st.selected) : null;
+    [...gridEl.children].forEach((/** @type {any} */ c) => {
+      if (c.getAttribute('data-cal-day') === null) return;
+      const on = sel !== null && c.getAttribute('data-date') === sel;
+      if (on) c.setAttribute('data-selected', 'true');
+      else c.removeAttribute('data-selected');
+    });
+  }
+
+  /** @param {any} st @param {number} delta */
+  function calShiftMonth(st, delta) {
+    const a = st.anchor;
+    st.anchor = new Date(a.getFullYear(), a.getMonth() + delta, 1);
+    calRender(st);
+    const cb = st.cbs.request;
+    if (typeof cb === 'function') {
+      try { cb(calMonthKeyOf(st.anchor)); } catch (e) {
+        layoutWarnings.push(`Calendar.onRequestData 抛错：${e && e.message}`);
+      }
+    }
+  }
+
+  // 应用 create 选项 / 属性共用的入口（键面与 calendar.json 一致 + selected/lunar 等别名）
+  /** @param {any} st @param {any} o */
+  function applyCalOptions(st, o) {
+    if (!o || typeof o !== 'object') return;
+    if (o.date !== undefined || o.selected !== undefined) {
+      const d = calToDate(o.date !== undefined ? o.date : o.selected);
+      st.anchor = new Date(d.getFullYear(), d.getMonth(), 1);
+      st.selected = d;
+    }
+    if (o.showLunar !== undefined) {
+      st.showLunar = !!o.showLunar;
+      if (st.showLunar && !st.warnedLunar) {
+        st.warnedLunar = true;
+        // 如实：农历换算没有实现，showLunar=true 只落标记、不排农历文本
+        layoutWarnings.push('Calendar.showLunar 已记录，但本实现不排农历文本（无农历换算）');
+      }
+    }
+    if (o.startOfWeek !== undefined) {
+      st.startOfWeek = Math.min(6, Math.max(0, Math.floor(Number(resolveResource(o.startOfWeek)) || 0)));
+    }
+    if (o.offDays !== undefined) {
+      st.offDays = Array.isArray(o.offDays) ? o.offDays.map((/** @type {any} */ x) => Number(x) % 7) : [];
+    }
+    if (o.onSelectChange !== undefined) st.cbs.select = o.onSelectChange;
+    if (o.onRequestData !== undefined) st.cbs.request = o.onRequestData;
+    if (o.currentData !== undefined) st.dataCur = Array.isArray(o.currentData) ? o.currentData : [];
+    if (o.preData !== undefined) {
+      st.el.dataset.preCount = String(Array.isArray(o.preData) ? o.preData.length : 0);
+    }
+    if (o.nextData !== undefined) {
+      st.el.dataset.nextCount = String(Array.isArray(o.nextData) ? o.nextData.length : 0);
+    }
+    if (o.needSlide !== undefined) st.needSlide = !!o.needSlide;
+    if (o.showHoliday !== undefined) {
+      st.showHoliday = !!o.showHoliday;
+      if (st.showHoliday && !st.warnedHoliday) {
+        st.warnedHoliday = true;
+        layoutWarnings.push('Calendar.showHoliday 已记录，但本实现无节假日数据，不显示节假日名');
+      }
+    }
+    if (o.direction !== undefined) st.horizontal = isHorizontalAxis(o.direction);
+    const styleKeys = ['currentDayStyle', 'nonCurrentDayStyle', 'todayStyle', 'weekStyle', 'workStateStyle'];
+    for (const k of styleKeys) {
+      if (o[k] !== undefined) st.styles[k] = o[k];
+    }
+    calSchedule(st);
+  }
+
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
+  const CALGRID_ATTRS = {
+    date: (n, v) => {
+      const st = (/** @type {any} */ (n)).__calgrid;
+      if (st) applyCalOptions(st, { date: v });
+    },
+    showLunar: (n, v) => {
+      const st = (/** @type {any} */ (n)).__calgrid;
+      if (st) applyCalOptions(st, { showLunar: v });
+      n.dataset.showLunar = String(!!v);
+    },
+    startOfWeek: (n, v) => {
+      const st = (/** @type {any} */ (n)).__calgrid;
+      if (st) applyCalOptions(st, { startOfWeek: v });
+    },
+    offDays: (n, v) => {
+      const st = (/** @type {any} */ (n)).__calgrid;
+      if (st) applyCalOptions(st, { offDays: v });
+    },
+    onSelectChange: (n, v) => {
+      const st = (/** @type {any} */ (n)).__calgrid;
+      if (st) st.cbs.select = v;
+    },
+    onRequestData: (n, v) => {
+      const st = (/** @type {any} */ (n)).__calgrid;
+      if (st) st.cbs.request = v;
+    },
+    currentData: (n, v) => {
+      const st = (/** @type {any} */ (n)).__calgrid;
+      if (st) applyCalOptions(st, { currentData: v });
+    },
+    preData: (n, v) => {
+      const st = (/** @type {any} */ (n)).__calgrid;
+      if (st) applyCalOptions(st, { preData: v });
+    },
+    nextData: (n, v) => {
+      const st = (/** @type {any} */ (n)).__calgrid;
+      if (st) applyCalOptions(st, { nextData: v });
+    },
+    needSlide: (n, v) => {
+      const st = (/** @type {any} */ (n)).__calgrid;
+      if (st) {
+        st.needSlide = !!v;
+        calSchedule(st);
+      }
+      n.dataset.needSlide = String(!!v);
+    },
+    showHoliday: (n, v) => {
+      const st = (/** @type {any} */ (n)).__calgrid;
+      if (st) applyCalOptions(st, { showHoliday: v });
+      n.dataset.showHoliday = String(!!v);
+    },
+    direction: (n, v) => {
+      const st = (/** @type {any} */ (n)).__calgrid;
+      if (st) {
+        st.horizontal = isHorizontalAxis(v);
+        n.dataset.direction = st.horizontal ? 'horizontal' : 'vertical';
+        calSchedule(st);
+      }
+    },
+    currentDayStyle: (n, v) => {
+      const st = (/** @type {any} */ (n)).__calgrid;
+      if (st) applyCalOptions(st, { currentDayStyle: v });
+    },
+    nonCurrentDayStyle: (n, v) => {
+      const st = (/** @type {any} */ (n)).__calgrid;
+      if (st) applyCalOptions(st, { nonCurrentDayStyle: v });
+    },
+    todayStyle: (n, v) => {
+      const st = (/** @type {any} */ (n)).__calgrid;
+      if (st) applyCalOptions(st, { todayStyle: v });
+    },
+    weekStyle: (n, v) => {
+      const st = (/** @type {any} */ (n)).__calgrid;
+      if (st) applyCalOptions(st, { weekStyle: v });
+    },
+    workStateStyle: (n, v) => {
+      const st = (/** @type {any} */ (n)).__calgrid;
+      if (st) applyCalOptions(st, { workStateStyle: v });
+    },
+  };
+
+  /** @param {any[]} args */
+  const Calendar = ensureComponent('Calendar', (args) => {
+    const el = document.createElement('div');
+    (/** @type {any} */ (el)).__arkuiCalendar = true;
+    el.dataset.calendar = '';
+    el.style.display = 'flex';
+    el.style.flexDirection = 'column';
+    const st = /** @type {any} */ (el).__calgrid = /** @type {any} */ ({
+      el,
+      anchor: new Date(),
+      selected: null,
+      startOfWeek: 0,
+      offDays: [],
+      showLunar: false, showHoliday: false, needSlide: true,
+      horizontal: false,
+      dataCur: [],
+      styles: {},
+      cbs: {},
+      scheduled: false, requested: false,
+      warnedLunar: false, warnedHoliday: false,
+    });
+
+    const head = document.createElement('div');
+    head.setAttribute('data-cal-head', '');
+    head.style.display = 'flex';
+    head.style.flexDirection = 'row';
+    head.style.alignItems = 'center';
+    head.style.justifyContent = 'center';
+    head.style.gap = '8px';
+    const prev = document.createElement('div');
+    prev.setAttribute('data-cal-prev', '');
+    prev.textContent = '‹';
+    prev.style.cursor = 'pointer';
+    prev.addEventListener('click', () => calShiftMonth(st, -1));
+    const label = document.createElement('div');
+    label.setAttribute('data-cal-month', '');
+    const next = document.createElement('div');
+    next.setAttribute('data-cal-next', '');
+    next.textContent = '›';
+    next.style.cursor = 'pointer';
+    next.addEventListener('click', () => calShiftMonth(st, 1));
+    head.appendChild(prev);
+    head.appendChild(label);
+    head.appendChild(next);
+    el.appendChild(head);
+
+    const body = document.createElement('div');
+    body.setAttribute('data-cal-body', '');
+    body.style.display = 'flex';
+    body.style.flexDirection = 'row';
+    body.style.gap = '4px';
+    const weeks = document.createElement('div');
+    weeks.setAttribute('data-cal-weeks', '');
+    weeks.style.flex = 'none';
+    const grid = document.createElement('div');
+    grid.setAttribute('data-cal-grid', '');
+    grid.style.flex = '1 1 auto';
+    body.appendChild(weeks);
+    body.appendChild(grid);
+    el.appendChild(body);
+
+    applyCalOptions(st, args && args[0]);
+    return el;
+  }, (/** @type {any} */ node, /** @type {any} */ args) => {
+    const st = (/** @type {any} */ (node)).__calgrid;
+    if (st) applyCalOptions(st, args && args[0]);
+  });
+
+  // ════════════════════ 安装全局 ════════════════════
+  // 产物里这些名字是【自由变量】引用（不走 import）。registerGeneratedComponents 只给
+  // 【生成骨架】装全局；手写组件如果只进 components 注册表而不上 global，页面一跑就是
+  // ReferenceError —— 所以这里按 main.js Object.assign 的同一口径自己装上。
+  (/** @type {any} */ (global)).Calendar = Calendar;
+  (/** @type {any} */ (global)).ContainerReader = ContainerReader;
+  (/** @type {any} */ (global)).IndicatorComponent = IndicatorComponent;
+  (/** @type {any} */ (global)).IndicatorComponentController = IndicatorComponentController;
+  (/** @type {any} */ (global)).MenuItemGroup = MenuItemGroup;
+  (/** @type {any} */ (global)).Repeat = Repeat;
+  (/** @type {any} */ (global)).WithTheme = WithTheme;

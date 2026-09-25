@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R66：导航垫片批次（NavRouter / Navigator / PageTransition / ToolBarItem / UIPickerComponent）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 420px; }
+  #root [data-arkui-comp="NavRouter"] { border: 1px solid #ddd; padding: 4px; margin-bottom: 6px; cursor: pointer; }
+  #root [data-arkui-comp="Navigator"] { border: 1px solid #ddd; padding: 4px; margin-bottom: 6px; }
+  #root [data-arkui-comp="UIPickerComponent"] { border: 1px solid #ddd; margin-bottom: 6px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R66：NavRouter（点击路由/onStateChange）· Navigator（跳转）· PageTransition（规格+逐帧）·
+      ToolBarItem（placement）· UIPickerComponent（滚轮/事件/指示器）</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/navshimdemo-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const el = (id) => root.querySelector('#' + id);
+    const txt = (id) => String(el(id) ? el(id).textContent : '<缺>');
+
+    try {
+      // Navigator 的目标页：测试侧登记（编译产物一个文件只登记一个路由，这是测试脚手架）
+      registerNamedRoute(() => ({
+        initialRender() { (/** @type {any} */ (__arkui_dom_root())).textContent = 'NAV-TARGET-PAGE'; },
+      }), '', { pagePath: 'pages/NavTarget' });
+
+      __arkui_dom_requireModule('NavShimDemo');
+      __arkui_dom_loadRoute('pages/NavShimDemo', root);
+      await tick(150);
+      const nr = el('nr');
+      const nv = el('nv');
+      const pk = el('pk');
+
+      // ══════════ ① ToolBarItem（2 条） ══════════
+      const tb0 = el('tb0');
+      const tb1 = el('tb1');
+      check(!!tb0 && tb0.dataset.placement === '0' && !!tb1 && tb1.dataset.placement === '1',
+        `ToolBarItem placement 落 dataset（实际 '${tb0 && tb0.dataset.placement}'/'${tb1 && tb1.dataset.placement}'）`);
+
+      // ══════════ ② UIPickerComponent（5 条） ══════════
+      check(!!pk && pk.dataset.selectedIndex === '[1]' && pk.dataset.itemCount === '5',
+        `UIPicker 初始 selectedIndex=1、收割 5 个子项（实际 '${pk && pk.dataset.selectedIndex}'/'${pk && pk.dataset.itemCount}'）`);
+      const wheel = pk ? pk.querySelector('[data-upx-wheel]') : null;
+      const midRow = wheel ? wheel.querySelector('[data-upx-row="2"]') : null;
+      check(!!wheel && midRow && midRow.textContent === 'Bravo' &&
+        wheel.querySelectorAll('[data-upx-row]').length === 5,
+        `滚轮 5 行、中行(2)高亮 sel=1 项 Bravo（实际 '${midRow && midRow.textContent}'）`);
+      check(pk.dataset.indicatorType === '1' &&
+        !!pk.querySelector('[data-upx-indicator]'),
+        `selectionIndicator DIVIDER 生效（indicatorType='${pk.dataset.indicatorType}'）`);
+      if (wheel) {
+        const box = wheel.getBoundingClientRect();
+        wheel.dispatchEvent(new MouseEvent('click', { clientY: box.top + box.height * 0.75, bubbles: true }));
+      }
+      await tick(140);                                   // onScrollStop 去抖 60ms
+      check(pk.dataset.selectedIndex === '[2]' && txt('log').indexOf('P2') >= 0 && txt('log').indexOf('S2') >= 0,
+        `滚轮步进 sel=2 + onChange(P2)/onScrollStop(S2)（实际 '${pk.dataset.selectedIndex}' log='${txt('log')}'）`);
+      check(pk.querySelectorAll('[data-upx-stash] > *').length === 5,
+        `子项进 stash 保留（复用不销毁，实际 ${pk.querySelectorAll('[data-upx-stash] > *').length} 个）`);
+
+      // ══════════ ③ PageTransitionEnter/Exit（2 条） ══════════
+      const specs = (/** @type {any} */ (globalThis)).__arkui_dom_pageTransitionSpecs || [];
+      check(specs.length === 2 && specs[0].kind === 'enter' && specs[0].type === 1 &&
+        specs[1].kind === 'exit' && specs[1].duration === 300,
+        `转场规格登记 enter/exit×Push=1、duration 300（实际 ${specs.length} 条）`);
+      const anim = (/** @type {any} */ (globalThis)).__arkui_dom_playPageTransition('enter', 1);
+      await tick(420);                                   // 300ms 动画 + 逐帧回调收尾
+      check(!!anim && txt('log').indexOf('PT10') >= 0,
+        `enter 驱动播 + onEnter 逐帧到 progress=1（PT10；实际 anim=${!!anim} log='${txt('log')}'）`);
+
+      // ══════════ ④ NavRouter（3 条） ══════════
+      check(!!nr && nr.dataset.routeName === 'detail',
+        `NavRouter RouteInfo.name 落 dataset（实际 '${nr && nr.dataset.routeName}'）`);
+      if (nr) nr.click();
+      await tick(120);
+      const dest = el('dest-detail');
+      check(nr && nr.dataset.state === 'true' && !!dest && txt('log').indexOf('NS1') >= 0,
+        `点击 → 压栈激活 onStateChange(true)（state='${nr && nr.dataset.state}' dest=${!!dest}）`);
+      const dpop = Array.from(root.querySelectorAll('button')).find((b) => b.textContent === 'dpop');
+      if (dpop) dpop.click();
+      await tick(120);
+      check(txt('log').indexOf('NS0') >= 0,
+        `dpop 弹栈 → onStateChange(false)（log='${txt('log')}'）`);
+
+      // ══════════ ⑤ Navigator（2 条，放最后：跳转会清根重建） ══════════
+      check(nv && nv.dataset.target === 'pages/NavTarget' && nv.dataset.type === '0' && nv.dataset.active === 'true',
+        `Navigator target/type=Push(0)/active 落 dataset（实际 '${nv && nv.dataset.target}'/'${nv && nv.dataset.type}'/'${nv && nv.dataset.active}'）`);
+      if (nv) nv.click();
+      await tick(120);
+      const jumped = root.textContent.indexOf('NAV-TARGET-PAGE') >= 0;
+      const passed = (/** @type {any} */ (globalThis)).__arkui_dom_navigatorParams;
+      check(jumped && !!passed && passed.target === 'pages/NavTarget' && passed.params.from === 'shim',
+        `点击跳转到目标页 + params 传递（jump=${jumped} params=${JSON.stringify(passed || null)}）`);
+
+      lines.push(`LOG='${txt('log')}'`);
+      lines.push(`WARN ${__arkui_dom_layout_warnings.length}`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+
+  })();
+  </script>
+</body>
+</html>

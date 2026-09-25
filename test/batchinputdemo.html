@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R66：批量输入收官（CheckboxGroup / PatternLock / SelectionContainer / ColorPicker / ColorPickerDialog / Option）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 360px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+  [data-pl-dot] { border: 2px solid #b3b7bb; border-radius: 50%; position: absolute; box-sizing: border-box; }
+</style>
+</head>
+<body>
+  <h3>R66：批量输入收官（CheckboxGroup / PatternLock / SelectionContainer / ColorPicker / ColorPickerDialog / Option）</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/batchinputdemo-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const el = (id) => root.querySelector('#' + id);
+    const txt = (id) => String(el(id) ? el(id).textContent : '<缺>');
+    const firePointer = (target, type, x, y) => target.dispatchEvent(new PointerEvent(type, {
+      bubbles: true, cancelable: true, pointerId: 7, clientX: x, clientY: y,
+    }));
+
+    try {
+      __arkui_dom_requireModule('BatchInputDemo');
+      __arkui_dom_loadRoute('pages/BatchInputDemo', root);
+      await tick(150);                                   // PatternLock 的 layout() 在 setTimeout(0) 里跑
+      const cg = el('cg1');
+      const apple = el('cb-apple');
+      const banana = el('cb-banana');
+      const pl = el('pl1');
+      const sc = el('sc1');
+      const cp = el('cp1');
+      const cpd = el('cpd1');
+
+      // ══════════ ① CheckboxGroup（7 条） ══════════
+      check(!!cg && cg.tagName === 'INPUT' && cg.type === 'checkbox' && cg.dataset.checkboxGroup === 'fruits',
+        `CheckboxGroup 基座：原生 checkbox + 组名（实际 tag=${cg && cg.tagName} group='${cg && cg.dataset.checkboxGroup}'）`);
+      check(cg.dataset.status === '2',
+        `selectAll(false) 初始 → status None(2)（实际 '${cg && cg.dataset.status}'）`);
+      cg.click();
+      check(cg.checked && cg.dataset.status === '0' && apple.checked && banana.checked,
+        `点母节点 → 全选 All(0)，组员同步（apple=${apple && apple.checked} banana=${banana && banana.checked}）`);
+      check(txt('cg-log').includes('CG2/0'),
+        `onChange({name:['apple','banana'], status:0})（实际 log='${txt('cg-log')}'）`);
+      banana.click();                                    // 组员自态变化 → 组状态 Part
+      await tick(20);
+      check(cg.indeterminate && cg.dataset.status === '1',
+        `组员取消 → 组 Part(1)：母 indeterminate（实际 status='${cg && cg.dataset.status}' ind=${cg && cg.indeterminate}` +
+        ` checked=${cg && cg.checked}）`);
+      check(txt('cg-log').includes('CG1/1'),
+        `组员带动 onChange({name:['apple'], status:1})（实际 log='${txt('cg-log')}'）`);
+      check(cg.style.accentColor === '#007dff' || cg.style.accentColor === 'rgb(0, 125, 255)',
+        `selectedColor → 母节点 accent-color（实际 '${cg && cg.style.accentColor}'）`);
+
+      // ══════════ ② PatternLock（7 条） ══════════
+      const dots = pl.querySelectorAll('[data-pl-dot]');
+      check(!!pl && dots.length === 9 && !!pl.querySelector('[data-pl-line]'),
+        `PatternLock 基座：9 点位 + SVG 连线层（实际 dots=${dots.length}）`);
+      check(pl.style.width === '240px' && pl.style.height === '240px',
+        `sideLength(240) → 240px（实际 '${pl.style.width}'）`);
+      check(dots[0].style.width === '24px',
+        `circleRadius(12) → 点直径 24px（实际 '${dots[0].style.width}'）`);
+      const c1 = dots[0].getBoundingClientRect();
+      const c2 = dots[1].getBoundingClientRect();
+      const c3 = dots[2].getBoundingClientRect();
+      firePointer(pl, 'pointerdown', c1.left + c1.width / 2, c1.top + c1.height / 2);
+      firePointer(pl, 'pointermove', c2.left + c2.width / 2, c2.top + c2.height / 2);
+      firePointer(pl, 'pointermove', c3.left + c3.width / 2, c3.top + c3.height / 2);
+      firePointer(pl, 'pointerup', c3.left + c3.width / 2, c3.top + c3.height / 2);
+      await tick(10);
+      check(pl.dataset.sequence === '1-2-3',
+        `手势 1→2→3：sequence 1-2-3（实际 '${pl.dataset.sequence}'）`);
+      check(txt('pl-log').includes('D1;D2;D3;') && txt('pl-log').includes('P123;'),
+        `onDotConnect ×3 + onPatternComplete([1,2,3])（实际 log='${txt('pl-log')}'）`);
+      // 控制器：类必须挂 global（产物里 new PatternLockController() 是自由变量引用）；
+      // 实例在产物闭包里，测试够不到 —— reset 机制经状态袋验证（控制器委托的就是它）
+      check(typeof globalThis.PatternLockController === 'function'
+        && typeof globalThis.SelectionContainerController === 'function',
+        `PatternLockController / SelectionContainerController 已挂 global（产物可 new）`);
+      pl.__patternLock.reset();
+      await tick(10);
+      check(pl.dataset.sequence === '' && pl.dataset.challengeResult === undefined,
+        `reset() 清空序（控制器委托同一机制；实际 sequence='${pl.dataset.sequence}'）`);
+
+      // ══════════ ③ SelectionContainer（4 条） ══════════
+      check(!!sc && sc.style.userSelect === 'text' && sc.dataset.copyOption === '1',
+        `SelectionContainer 基座：user-select:text + copyOption InApp(1)（实际 '${sc && sc.dataset.copyOption}'）`);
+      const beta = el('sp-beta');
+      const range = document.createRange();
+      range.selectNodeContents(beta);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      document.dispatchEvent(new Event('selectionchange'));
+      await tick(20);
+      check(txt('sc-log').includes('S1'),
+        `选区 beta → onTextSelectionChange(['beta'])（实际 log='${txt('sc-log')}'）`);
+      let copied = '';
+      const ev = new ClipboardEvent('copy', { bubbles: true, cancelable: true });
+      if (ev.clipboardData) { ev.clipboardData.setData('text/plain', 'x'); copied = 'ev'; }
+      sc.dispatchEvent(ev);
+      await tick(10);
+      check(txt('sc-log').includes('Cbeta') && sc.dataset.lastCopied === 'beta',
+        `copy 事件 → onCopy('beta') + lastCopied（实际 log='${txt('sc-log')}' last='${sc.dataset.lastCopied}'）`);
+      check(sc.dataset.textJoinStyle === '1' && !!sc.getAttribute('data-arkui-selc'),
+        `textJoinStyle DIRECT(1) + 实例选择样式标记（实际 join='${sc.dataset.textJoinStyle}'）`);
+
+      // ══════════ ④ Option（2 条） ══════════
+      const optA = el('opt-a');
+      check(!!optA && optA.dataset.option === '' && optA.textContent.indexOf('opt-a') >= 0,
+        `Option 基座：菜单项 + 文本（实际 text='${optA && optA.textContent}'）`);
+      let optEvt = '';
+      const menu = el('mn-opt');
+      menu.addEventListener('optionselect', (/** @type {Event} */ e) => {
+        optEvt = /** @type {CustomEvent} */ (e).detail ? String(/** @type {CustomEvent} */ (e).detail.value) : '';
+      });
+      optA.click();
+      check(optA.dataset.selected === 'true' && optEvt === 'opt-a',
+        `点击 → selected + optionselect 冒泡（detail.value='${optEvt}'）`);
+
+      // ══════════ ⑤ ColorPicker（3 条） ══════════
+      const swatches = cp.querySelectorAll('[data-swatch]');
+      check(swatches.length === 3,
+        `colors 三色 → 3 色块（实际 ${swatches.length}）`);
+      swatches[1].click();
+      await tick(10);
+      check(cp.dataset.lastColor === '#00ff00' && txt('cp-log').includes('CP#00ff00'),
+        `点第 2 块 → onSelect('#00ff00')（实际 log='${txt('cp-log')}' last='${cp.dataset.lastColor}'）`);
+      check(cp.style.gridTemplateColumns.indexOf('3') >= 0,
+        `setColunms(3)（SDK 原始拼写）→ 3 列网格（实际 '${cp.style.gridTemplateColumns}'）`);
+
+      // ══════════ ⑥ ColorPickerDialog（3 条） ══════════
+      check(cpd.style.display === 'none' && cpd.dataset.show === 'false',
+        `ColorPickerDialog 初始 show(@State false) → 隐藏（实际 display='${cpd.style.display}'）`);
+      check(cpd.querySelectorAll('[data-swatch]').length === 2,
+        `colors 外推超集 → 内嵌 2 色块（实际 ${cpd.querySelectorAll('[data-swatch]').length}）`);
+      el('btn-dlg').click();                             // @State 翻转 → 重渲染 → show(true) 走真实属性路径
+      await tick(60);
+      check(cpd.style.display !== 'none' && cpd.dataset.show === 'true',
+        `show(@State true) → 遮罩显示（实际 display='${cpd.style.display}' dataset='${cpd.dataset.show}'）`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 异常：' + (e && e.message) + '\n' + (e && e.stack));
+    }
+
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n') + '\n\n' + (allPass ? '✅ ALL PASS' : '❌ HAS FAIL');
+    lines.forEach((/** @type {string} */ l) => console.log(l));
+    console.log(allPass ? 'RESULT: PASS' : 'RESULT: FAIL');
+    document.title = (allPass ? 'PASS ' : 'FAIL ') + document.title;
+  })();
+  </script>
+</body>
+</html>

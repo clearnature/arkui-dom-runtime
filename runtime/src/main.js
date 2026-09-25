@@ -1732,6 +1732,20 @@
 
   // @include small
 
+  // R66/R67 批量分片（batch-*）：组件注册 + 枚举/效果类常量本体在此定义；
+  // global 挂载见下方「安装全局」块（分片只声明，不自行挂 global）
+  // @include batch-layout
+
+  // @include batch-input
+
+  // @include batch-media
+
+  // @include batch-nav
+
+  // @include batch-motion
+
+  // @include batch-func
+
   // ── 由 tools/gen-components.mjs 生成的 149 个组件骨架 ──
   // 手写实现（上面那些，已被测试覆盖）优先；生成的只补缺口。
   // 骨架保证"能建出正确的 DOM 标签 + 基础样式"，精细化布局语义按需手补（见 docs）。
@@ -1978,6 +1992,14 @@
     AlphabetIndexer,
     // R65：RichEditor（富文本编辑器）/ Video（视频播放器）
     RichEditor, RichEditorController, Video, VideoController,
+    // 批量媒体分片（batch-media）：ContainerSpan/ImageSpan/RichText/SymbolGlyph/SymbolSpan/Web。
+    // 常量本体都在分片内定义，这里只挂 global —— 产物里 `Web.create(...)`、`new WebController()`、
+    // `SymbolEffectStrategy.NONE` 等全是自由变量引用，不挂直接 ReferenceError
+    ContainerSpan, ImageSpan, RichText, SymbolGlyph, SymbolSpan, Web, WebController,
+    ImageSpanAlignment, SymbolRenderingStrategy, SymbolEffectStrategy,
+    EffectScope, EffectDirection, EffectFillStyle, ReplaceEffectType,
+    SymbolEffect, ScaleSymbolEffect, HierarchicalSymbolEffect, AppearSymbolEffect,
+    DisappearSymbolEffect, BounceSymbolEffect, ReplaceSymbolEffect, PulseSymbolEffect,
     // R61：SideBarContainer（侧边栏容器）
     SideBarContainer, SideBarContainerType: { Embed: 0, Overlay: 1 },
     // R62：RowSplit/ColumnSplit（分隔容器）
@@ -1986,6 +2008,34 @@
     GridRow, GridCol,
     // R63：Panel（底部滑出面板）+ PanelMode
     Panel, PanelMode: { Mini: 0, Half: 1, Full: 2 },
+    // 批量导航分片（batch-nav）。枚举定义在分片内，值照 .d.ts 声明顺序：
+    // NavRouteMode PUSH_WITH_RECREATE=0/PUSH=1/REPLACE=2；NavigationType Push=0/Back=1/Replace=2；
+    // RouteType None=0/Push=1/Pop=2；SlideEffect 0..3,5,6；ToolBarItemPlacement 0/1；
+    // PickerIndicatorType 0/1。__arkui_dom_pageTransitionSpecs / __arkui_dom_playPageTransition
+    // 由分片自带 Object.defineProperty(global) 挂载，刻意不走本 assign 块
+    //（防 stats.mjs 的 assignBlock 正则误吸分片段）
+    NavRouter, Navigator, PageTransitionEnter, PageTransitionExit, ToolBarItem,
+    UIPickerComponent, NavRouteMode, NavigationType, RouteType, SlideEffect,
+    ToolBarItemPlacement, PickerIndicatorType,
+    // 批量布局分片（batch-layout）。SizeType/NodeRenderType 是 fixture 产物的运行期自由变量
+    // （必需）；XComponentType/Alignment 已有导出（R32/安装全局），勿重复
+    FolderStack, GridContainer, Section, Sheet, UnionEffectContainer, XComponentNode,
+    FoldStatus, AppRotation, SizeType, NodeRenderType,
+    // 批量输入收官（batch-input）：CheckboxGroup/ColorPicker/ColorPickerDialog/Option/
+    // PatternLock/SelectionContainer。generated-components.js 骨架表虽有这些名字，但其注册
+    // 循环对手写已注册名 continue 跳过且因此不挂 global —— 不追加这里，产物里
+    // `ColorPicker()`、`new PatternLockController()`、`CopyOptions.InApp`、`CheckBoxShape.CIRCLE`
+    // 等自由变量引用直接 ReferenceError
+    CheckboxGroup, ColorPicker, ColorPickerDialog, Option, PatternLock, SelectionContainer,
+    PatternLockController, SelectionContainerController, PatternLockChallengeResult,
+    SelectionContainerTextJoinStyle, CopyOptions, CheckBoxShape, SelectStatus,
+    // 批量动效分片（batch-motion）。BarState/PlayMode/AnimationStatus 已挂过勿重复；
+    // FillMode 不需要 —— 分片内 ANIM_FILL_MODE_CSS 按值映射 0..3
+    Animator, ScrollBar, ScrollBarDirection, FrictionMotion, ScrollMotion,
+    SpringMotion, SpringProp, GeometryView,
+    // 批量函数组件收官（batch-func）：Repeat/Calendar/ContainerReader/Indicator + Menu/Theme 件
+    Calendar, ContainerReader, IndicatorComponent, IndicatorComponentController,
+    MenuItemGroup, Repeat, WithTheme,
     // R57：Grid/GridItem（CSS grid 同构基座 + 滚动事件族）
     Grid, GridItem,
     // R50：Refresh + RefreshStatus（声明顺序：Inactive=0/Drag=1/OverDrag=2/Refresh=3/Done=4，

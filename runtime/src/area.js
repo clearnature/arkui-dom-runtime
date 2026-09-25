@@ -321,6 +321,114 @@
       VIDEO_ATTRS[prop](node, value);
       return;
     }
+    // ── 批量分片收官（R66/R67）：以下分支全部抢在通用 on*/data-* 落点之前（坑 86：
+    //    函数值语义属性若落成 DOM 监听器就是永不触发的死代码）──
+
+    // batch-media：ContainerSpan/ImageSpan/RichText/SymbolGlyph/SymbolSpan/Web
+    if (node.__arkuiContainerSpan && CONTAINERSPAN_ATTRS[prop]) {
+      CONTAINERSPAN_ATTRS[prop](node, value);
+      return;
+    }
+    if (node.__arkuiImageSpan && IMAGESPAN_ATTRS[prop]) {
+      IMAGESPAN_ATTRS[prop](node, value);
+      return;
+    }
+    if (node.__arkuiRichText && RICHTEXT_ATTRS[prop]) {
+      RICHTEXT_ATTRS[prop](node, value);
+      return;
+    }
+    if (node.__arkuiSymbolGlyph && SYMBOLGLYPH_ATTRS[prop]) {
+      SYMBOLGLYPH_ATTRS[prop](node, value);
+      return;
+    }
+    if (node.__arkuiSymbolSpan && SYMBOLSPAN_ATTRS[prop]) {
+      SYMBOLSPAN_ATTRS[prop](node, value);
+      return;
+    }
+    if (node.__arkuiWeb && WEB_ATTRS[prop]) {
+      WEB_ATTRS[prop](node, value);
+      return;
+    }
+
+    // batch-nav：NavRouter/Navigator/PageTransition(Enter|Exit 共用一张表，元素上标记为
+    // 'enter'|'exit')/UIPickerComponent（onChange 必须拦在通用 on* 前）。ToolBarItem 无分支：
+    // toolbar.d.ts:112 ToolBarItemAttribute 是空类、不支持通用属性，无 ATTRS 表
+    if (node.__arkuiNavRouter && NAVROUTER_ATTRS[prop]) {
+      NAVROUTER_ATTRS[prop](node, value);
+      return;
+    }
+    if (node.__arkuiNavigator && NAVIGATOR_ATTRS[prop]) {
+      NAVIGATOR_ATTRS[prop](node, value);
+      return;
+    }
+    if (node.__arkuiPageTransition && PAGE_TRANSITION_ATTRS[prop]) {
+      PAGE_TRANSITION_ATTRS[prop](node, value);
+      return;
+    }
+    if (node.__arkuiPicker && UIPICKER_ATTRS[prop]) {
+      UIPICKER_ATTRS[prop](node, value);
+      return;
+    }
+
+    // batch-layout：FolderStack/GridContainer/UnionEffectContainer/XComponentNode。
+    // Sheet/Section 无自有属性（ets-loader JSON attrs=[]），不需分支；FolderStack.alignContent
+    // 刻意不在表内 —— 落到下方通用 `prop === 'alignContent'` → applyAlignment 分支
+    if (node.__arkuiFolderStack && FOLDERSTACK_ATTRS[prop]) {
+      FOLDERSTACK_ATTRS[prop](node, value);
+      return;
+    }
+    if (node.__arkuiGridContainer && GRIDCONTAINER_ATTRS[prop]) {
+      GRIDCONTAINER_ATTRS[prop](node, value);
+      return;
+    }
+    if (node.__arkuiUnionEffect && UNIONEFFECT_ATTRS[prop]) {
+      UNIONEFFECT_ATTRS[prop](node, value);
+      return;
+    }
+    if (node.__arkuiXComponentNodeFlag && XCNODE_ATTRS[prop]) {
+      XCNODE_ATTRS[prop](node, value);
+      return;
+    }
+
+    // batch-input（R66）：六组件的函数值回调/语义属性抢在通用 on*/data-* 之前（坑 86 同族）；
+    // 表内每个条目按 __arkuiComp/__batchPicker.kind/__selContainer 身份守卫。Option 的字体四件
+    // （fontColor/fontSize/fontWeight/fontFamily）刻意不在表内，落通用 cssPropSize/cssPropRaw
+    if (node.__arkuiBatchIn && BATCHINPUT_ATTRS[prop]) {
+      BATCHINPUT_ATTRS[prop](node, value);
+      return;
+    }
+
+    // batch-motion：Animator 动画组件 + ScrollBar。FrictionMotion/ScrollMotion/SpringMotion/
+    // SpringProp/GeometryView 的 ets-loader json attrs 为空，无需分派（未实现语义走通用
+    // data-* 落点）
+    if (node.__arkuiAnimComp && ANIM_COMP_ATTRS[prop]) {
+      ANIM_COMP_ATTRS[prop](node, value);
+      return;
+    }
+    if (node.__arkuiScrollBar && SCROLLBAR_ATTRS[prop]) {
+      SCROLLBAR_ATTRS[prop](node, value);
+      return;
+    }
+
+    // batch-func（R66）：Repeat/Calendar/ContainerReader/IndicatorComponent 的构建器/配置/
+    // 事件是函数值或语义属性（Repeat.each 不分派就不渲染、Calendar.onSelectChange 失效）；
+    // MenuItemGroup/WithTheme 无属性方法，不需要分派
+    if (node.__arkuiRepeat && REPEAT_ATTRS[prop]) {
+      REPEAT_ATTRS[prop](node, value, extra);
+      return;
+    }
+    if (node.__arkuiCalendar && CALGRID_ATTRS[prop]) {
+      CALGRID_ATTRS[prop](node, value, extra);
+      return;
+    }
+    if (node.__arkuiCReader && CREADER_ATTRS[prop]) {
+      CREADER_ATTRS[prop](node, value, extra);
+      return;
+    }
+    if (node.__arkuiIndicator && INDIC_ATTRS[prop]) {
+      INDIC_ATTRS[prop](node, value, extra);
+      return;
+    }
     // SideBarContainer（R61）：showSideBar/sideBarWidth/controlButton/onChange 是语义属性
     if (node.__arkuiSideBar && SIDEBAR_ATTRS[prop]) {
       SIDEBAR_ATTRS[prop](node, value);

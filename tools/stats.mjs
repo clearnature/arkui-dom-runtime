@@ -77,7 +77,15 @@ const HANDWRITTEN = ['Text', 'Button', 'Column', 'Row', 'Stack', 'List', 'ListIt
   // R64：GridRow/GridCol（响应式网格）
   'GridRow', 'GridCol',
   // 补账：R33/R34 已手写实现但漏登记（QRCode 编码器为真机 WASM，R41）
-  'TextInput', 'TextArea', 'Search', 'Hyperlink', 'QRCode'];
+  'TextInput', 'TextArea', 'Search', 'Hyperlink', 'QRCode',
+  // R66：批量组件类型化（六组并行工作流产出，37 个）
+  'Animator', 'Calendar', 'CheckboxGroup', 'ColorPicker', 'ColorPickerDialog',
+  'ContainerReader', 'ContainerSpan', 'FolderStack', 'FrictionMotion', 'GeometryView',
+  'GridContainer', 'ImageSpan', 'IndicatorComponent', 'MenuItemGroup', 'NavRouter',
+  'Navigator', 'Option', 'PageTransitionEnter', 'PageTransitionExit', 'PatternLock',
+  'Repeat', 'RichText', 'ScrollBar', 'ScrollMotion', 'Section', 'SelectionContainer',
+  'Sheet', 'SpringMotion', 'SpringProp', 'SymbolGlyph', 'SymbolSpan', 'ToolBarItem',
+  'UIPickerComponent', 'UnionEffectContainer', 'Web', 'WithTheme', 'XComponentNode'];
 const CONTROL_FLOW = ['If', 'ForEach', 'LazyForEach'];   // 不在 149 注册表内，单独实现
 
 const gen = read('runtime/generated-components.js');

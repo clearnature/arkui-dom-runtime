@@ -1,0 +1,3 @@
+- generic [active] [ref=e1]:
+  - heading "R66：NavRouter（点击路由/onStateChange）· Navigator（跳转）· PageTransition（规格+逐帧）· ToolBarItem（placement）· UIPickerComponent（滚轮/事件/指示器）" [level=3] [ref=e2]
+  - generic [ref=e3]: "=== HAS FAILURE === FAIL 抛出异常: ReferenceError: registerNamedRoute is not defined at http://127.0.0.1:8944/build/navshim-verify.html:38:7 at http://127.0.0.1:8944/build/navshim-verify.html:123:5"

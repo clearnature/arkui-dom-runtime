@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R66：批量功能组件（Repeat / WithTheme / MenuItemGroup / IndicatorComponent / ContainerReader / Calendar）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 420px; }
+  #root [data-arkui-comp="Calendar"] { border: 1px solid #ddd; border-radius: 8px; padding: 8px; }
+  #root [data-cal-day], #root [data-cal-week] { padding: 2px 0; }
+  #root [data-cal-day][data-selected="true"] { background: #1976d2; color: #fff; border-radius: 4px; }
+  #root [data-cal-day][data-today="true"] { outline: 1px solid #B3261E; }
+  #root [data-cal-day][data-off-day="true"] { color: #c62828; }
+  #root [data-indic-dot][data-indic-active="true"] { background: #1976d2 !important; }
+  #root [data-arkui-mig-header], #root [data-arkui-mig-footer] { color: #888; font-size: 12px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R66：Repeat / WithTheme / MenuItemGroup / IndicatorComponent / ContainerReader / Calendar</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/batchfuncdemo-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const el = (id) => root.querySelector('#' + id);
+    const txt = (id) => String(el(id) ? el(id).textContent : '<缺>');
+
+    try {
+      __arkui_dom_requireModule('BatchFuncDemo');
+      __arkui_dom_loadRoute('pages/BatchFuncDemo', root);
+      await tick(160);   // Repeat/Calendar/Indicator 的 microtask 渲染 + 首帧
+
+      // ══════════ ① Repeat（4 条） ══════════
+      const rep = root.querySelector('[data-arkui-repeat]');
+      check(!!rep && rep.style.display === 'contents',
+        `Repeat 基座：display:contents 逻辑容器（实际 '${rep && rep.style.display}'）`);
+      check(rep && rep.dataset.repeatCount === '4' && !!el('rep-0') && !!el('rep-3'),
+        `Repeat 渲染 4 项（rep-0..3，dataset.repeatCount='${rep && rep.dataset.repeatCount}'）`);
+      check(!el('rep-4') && !el('rep-5'),
+        `virtualScroll({totalCount:4}) 裁剪：rep-4/rep-5 不渲染（6 项数据源）`);
+      check(txt('rep-2') === 'Rc',
+        `each(ri) 收到 RepeatItem：#rep-2 文本 'Rc'（实际 '${txt('rep-2')}'）`);
+
+      // ══════════ ② WithTheme（2 条） ══════════
+      const wt = el('wt');
+      check(!!wt && wt.dataset.colorMode === '1' && wt.style.colorScheme === 'light',
+        `WithTheme({colorMode:LIGHT=1}) → data-color-mode='1' + color-scheme:light`
+        + `（实际 '${wt && wt.dataset.colorMode}' / '${wt && wt.style.colorScheme}'）`);
+      check(!!wt && wt.querySelector('#wt-text') !== null,
+        `WithTheme 子组件挂进作用域盒（#wt-text）`);
+
+      // ══════════ ③ MenuItemGroup（3 条） ══════════
+      const mig = el('mig');
+      const mh = mig && mig.querySelector('[data-arkui-mig-header]');
+      const mf = mig && mig.querySelector('[data-arkui-mig-footer]');
+      check(!!mig && mh && mh.textContent === '分组A' && mf && mf.textContent === 'A组尾',
+        `MenuItemGroup header/footer 槽（'分组A'/'A组尾'，实际`
+        + ` '${mh ? mh.textContent : '<缺>'}'/'${mf ? mf.textContent : '<缺>'}'）`);
+      check(!!mig && mig.querySelector('#mi-a1') !== null && mig.querySelector('#mi-a2') !== null,
+        `MenuItem 子组件挂在组内（mi-a1/mi-a2）`);
+      const a2 = el('mi-a2');
+      const footTop = mf ? mf.getBoundingClientRect().top : -1;
+      const a2Bottom = a2 ? a2.getBoundingClientRect().bottom : -1;
+      check(footTop >= a2Bottom - 1,
+        `视觉序 header→items→footer（flex order，footer.top=${footTop.toFixed(0)}` +
+        ` ≥ 末项.bottom=${a2Bottom.toFixed(0)}）`);
+
+      // ══════════ ④ IndicatorComponent（4 条） ══════════
+      const ind = el('ind');
+      const dots = ind ? ind.querySelectorAll('[data-indic-dot]') : [];
+      check(!!ind && dots.length === 3,
+        `count(3) → 3 个指示点（实际 ${dots.length}）`);
+      const activeIdx = () => {
+        let a = -1;
+        dots.forEach((d, k) => { if (d.getAttribute('data-indic-active') === 'true') a = k; });
+        return a;
+      };
+      check(activeIdx() === 1,
+        `initialIndex(1) → 活动点 1（实际 ${activeIdx()}）`);
+      const indW = /** @type {any} */ (ind).__indic;
+      if (indW && indW.controller) indW.controller.showNext();
+      await tick(20);          // onChange → @State → 重渲染走 microtask flush
+      check(activeIdx() === 2 && txt('ind-log') === 'idx=2',
+        `controller.showNext() → 点 2 且 onChange(2) 派发（日志 '${txt('ind-log')}'）`);
+      if (indW && indW.controller) { indW.controller.changeIndex(0); indW.controller.showPrevious(); }
+      check(activeIdx() === 0,
+        `changeIndex(0) 后 showPrevious 在边界停住（loop=false 不回卷，实际 ${activeIdx()}）`);
+
+      // ══════════ ⑤ ContainerReader（3 条） ══════════
+      const cr = el('cr');
+      check(!!cr && cr.dataset.widthBp === '2',
+        `size.width=700 对 [320,600,840] → 桶 2（实际 '${cr && cr.dataset.widthBp}'）`);
+      check(!!cr && cr.dataset.heightBp === '0' && cr.dataset.widthBp !== undefined,
+        `未配置 height 阈值 → 透传 create 的 heightBreakpoint 缺省 0（实际 '${cr && cr.dataset.heightBp}'）`);
+      check(!!cr && JSON.parse(cr.dataset.bpWidth || '[]').join(',') === '320,600,840',
+        `breakpointConfig 阈值落 data-bp-width（实际 '${cr && cr.dataset.bpWidth}'）`);
+
+      // ══════════ ⑥ Calendar（8 条） ══════════
+      const cal = el('cal');
+      const label = cal ? cal.querySelector('[data-cal-month]') : null;
+      check(!!cal && label && label.textContent === '2026-09',
+        `selected=2026-09-15 锚定 9 月（月标 '${label ? label.textContent : '<缺>'}'）`);
+      const days = cal ? cal.querySelectorAll('[data-cal-day]') : [];
+      check(days.length === 30,
+        `2026-09 共 30 个日格（实际 ${days.length}）`);
+      const d15 = cal ? cal.querySelector('[data-cal-day="15"]') : null;
+      check(!!d15 && d15.getAttribute('data-selected') === 'true',
+        `15 日选中（data-selected）`);
+      const todayCell = cal ? cal.querySelector('[data-cal-day][data-today="true"]') : null;
+      check(!!todayCell && todayCell.getAttribute('data-date') === '2026-09-26',
+        `今天 2026-09-26 带 data-today（实际 '${todayCell && todayCell.getAttribute('data-date')}'）`);
+      const w0 = cal ? cal.querySelector('[data-cal-week]') : null;
+      check(!!w0 && w0.textContent === '一',
+        `startOfWeek(1) → 周头从周一开始（实际 '${w0 ? w0.textContent : '<缺>'}'）`);
+      const d6 = cal ? cal.querySelector('[data-cal-day="6"]') : null;
+      check(!!d6 && d6.getAttribute('data-off-day') === 'true' && d6.style.color === 'rgb(198, 40, 40)',
+        `offDays([0,6])：9/6 周日休息且 workStateStyle 生效（color='${d6 && d6.style.color}'）`);
+      const d10 = cal ? cal.querySelector('[data-cal-day="10"]') : null;
+      check(!!d10 && d10.getAttribute('data-mark') === '会',
+        `currentData[{day:10,mark:'会'}] → 日 10 data-mark='会'（实际 '${d10 && d10.getAttribute('data-mark')}'）`);
+      check(!!cal && cal.querySelector('[data-cal-prev]').style.display === 'none'
+        && txt('cal-month-log') === 'month=2026-09' && txt('cal-sel-log') === 'sel=',
+        `needSlide(false) 藏翻月钮；onRequestData 挂载回调 '2026-09'（'${txt('cal-month-log')}'）`);
+      if (d15) {
+        const d20 = cal.querySelector('[data-cal-day="20"]');
+        d20.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await tick(20);        // onSelectChange → @State → 重渲染走 microtask flush
+        check(d20.getAttribute('data-selected') === 'true'
+          && d15.getAttribute('data-selected') !== 'true'
+          && txt('cal-sel-log') === 'sel=2026-9-20',
+          `点选 20 日 → onSelectChange('2026-9-20') + 选中态迁移（'${txt('cal-sel-log')}'）`);
+      } else {
+        check(false, '点选 20 日：15 日格缺失，无法执行');
+      }
+
+      // ══════════ 重渲染健壮性（1 条）：@State 变更引发整页重放后，Repeat 复用不重建不重复 ══════════
+      const repAfter = root.querySelector('[data-arkui-repeat]');
+      check(repAfter === rep && repAfter.dataset.repeatCount === '4'
+        && root.querySelectorAll('#rep-0').length === 1,
+        `sel 变更重放后 Repeat 复用同一节点、仍 4 项且无重复（repeatCount='${repAfter && repAfter.dataset.repeatCount}'）`);
+
+      // ══════════ 全局注册（1 条） ══════════
+      check(['Calendar', 'ContainerReader', 'IndicatorComponent', 'MenuItemGroup', 'Repeat', 'WithTheme']
+        .every((n) => typeof (/** @type {any} */ (globalThis))[n] !== 'undefined'),
+        '6 个组件 + 控制器类都装上 global（页面自由变量引用可用）');
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+
+  })();
+  </script>
+</body>
+</html>

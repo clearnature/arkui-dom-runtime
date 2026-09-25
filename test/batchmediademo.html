@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R66：batch-media 六件（ContainerSpan / ImageSpan / RichText / SymbolGlyph / SymbolSpan / Web）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 360px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R66：batch-media 六件（内联族 / 符号 / RichText / Web）</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/batchmediademo-module.js"></script>
+  <script>
+  // $r 最小垫片：符号资源的名字在 params[0]（runtime 的 symbolNameOf 靠它取名字）
+  window.$r = (n) => ({ id: 0, type: 0, params: [String(n)] });
+
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const el = (id) => root.querySelector('#' + id);
+    const txt = (id) => String(el(id) ? el(id).textContent : '<缺>');
+    const waitFor = async (fn, ms) => {
+      const t0 = Date.now();
+      while (!fn()) {
+        if (Date.now() - t0 > ms) return false;
+        await tick(40);
+      }
+      return true;
+    };
+
+    try {
+      __arkui_dom_requireModule('BatchMediaDemo');
+      __arkui_dom_loadRoute('pages/BatchMediaDemo', root);
+      await tick(120);
+      const cs = el('cs1');
+      const is = el('is1');
+      const ss = el('ss1');
+      const sg = el('sg1');
+      const rt = el('rt1');
+      const wb = el('wb1');
+
+      // ══════════ ① ContainerSpan（2 条） ══════════
+      check(!!cs && cs.tagName === 'SPAN',
+        `ContainerSpan 是内联 <span> 基座（实际 ${cs ? cs.tagName : '<缺>'}）`);
+      check(!!cs && cs.style.backgroundColor === 'rgb(255, 224, 178)' && cs.style.borderRadius === '6px',
+        `textBackgroundStyle({color:'#ffe0b2', radius:6} 落背景+圆角（实际 '${cs && cs.style.backgroundColor}'/'${cs && cs.style.borderRadius}'）`);
+
+      // ══════════ ② ImageSpan（3 条） ══════════
+      const isImg = is ? is.querySelector('img[data-arkui-imagespan-img]') : null;
+      check(!!is && is.style.display === 'inline-block' && !!isImg
+        && (isImg.src || '').endsWith('known-7x3.png'),
+        `ImageSpan inline-block + <img src>（实际 display='${is && is.style.display}' src='${isImg && isImg.src}'）`);
+      check(!!is && is.style.verticalAlign === 'middle',
+        `verticalAlign(CENTER) → vertical-align:middle（实际 '${is && is.style.verticalAlign}'）`);
+      const icOk = await waitFor(() => txt('bm-log').indexOf('IC7x3;') >= 0, 3000);
+      check(icOk,
+        `onComplete 载荷含真实解码尺寸 IC7x3（log='${txt('bm-log')}'）`);
+
+      // ══════════ ③ SymbolGlyph / SymbolSpan（4 条） ══════════
+      check(!!sg && sg.dataset.symbol === 'sys.symbol.ohos_wifi'
+        && txt('sg1') === 'sys.symbol.ohos_wifi',
+        `SymbolGlyph 名字落 data-symbol + 可见降级文本（实际 '${sg && sg.dataset.symbol}'/'${txt('sg1')}'）`);
+      check(!!sg && sg.style.fontSize === '24px' && sg.style.color === 'rgb(255, 0, 0)',
+        `fontSize(24) + fontColor 第一色（实际 '${sg && sg.style.fontSize}'/'${sg && sg.style.color}'）`);
+      check(!!sg && sg.dataset.renderingStrategy === '0' && sg.dataset.effectStrategy === '1',
+        `renderingStrategy=0(SINGLE) effectStrategy=1(SCALE) 记 data-*（实际 '${sg && sg.dataset.renderingStrategy}'/'${sg && sg.dataset.effectStrategy}'）`);
+      check(!!ss && ss.dataset.symbol === 'sys.symbol.ohos_star' && ss.style.fontSize === '20px',
+        `SymbolSpan 内联符号 + fontSize(20)（实际 '${ss && ss.dataset.symbol}'/'${ss && ss.style.fontSize}'）`);
+
+      // ══════════ ④ RichText（2 条） ══════════
+      const rtFrame = rt ? rt.querySelector('iframe[data-arkui-richtext-frame]') : null;
+      const srcdoc = rtFrame ? rtFrame.getAttribute('srcdoc') : '';
+      check(!!rtFrame && srcdoc.indexOf('hi') >= 0,
+        `RichText 内容进 iframe srcdoc（实际 '${srcdoc}'）`);
+      let rtBody = '';
+      try { rtBody = rtFrame.contentDocument.body.textContent || ''; } catch (e) { rtBody = '<跨域>'; }
+      check(rtBody.indexOf('hi') >= 0,
+        `iframe 文档真的渲染出内容（body='${rtBody}'）`);
+      const rcOk = await waitFor(() => txt('bm-log').indexOf('RS;') >= 0 && txt('bm-log').indexOf('RC;') >= 0, 3000);
+      check(rcOk,
+        `onStart/onComplete 生命周期进 log（log='${txt('bm-log')}'）`);
+
+      // ══════════ ⑤ Web（4 条） ══════════
+      const wbFrame = wb ? wb.querySelector('iframe[data-arkui-web-frame]') : null;
+      check(!!wbFrame && (wbFrame.src || '').endsWith('test-assets/web-probe.html'),
+        `Web src → iframe.src（实际 '${wbFrame && wbFrame.src}'）`);
+      const weOk = await waitFor(() => txt('bm-log').indexOf('WB;') >= 0 && txt('bm-log').indexOf('WE;') >= 0, 4000);
+      check(weOk,
+        `onPageBegin/onPageEnd 生命周期进 log（log='${txt('bm-log')}'）`);
+      const wtOk = await waitFor(() => txt('bm-log').indexOf('WTprobe;') >= 0, 3000);
+      check(wtOk,
+        `onTitleReceive 载荷含文档标题（log='${txt('bm-log')}'）`);
+      const wjOk = await waitFor(() => txt('bm-log').indexOf('WJ2;') >= 0, 3000);
+      check(wjOk,
+        `WebController.runJavaScript('1+1') → WJ2（log='${txt('bm-log')}'）`);
+
+      lines.push(`LOG='${txt('bm-log')}'`);
+      lines.push(`WARN ${__arkui_dom_layout_warnings.length}`);
+      lines.push(`ELMT ${__arkui_dom_elmtRecords.size}`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+
+  })();
+  </script>
+</body>
+</html>

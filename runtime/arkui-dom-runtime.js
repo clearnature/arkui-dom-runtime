@@ -4423,6 +4423,114 @@
       VIDEO_ATTRS[prop](node, value);
       return;
     }
+    // ── 批量分片收官（R66/R67）：以下分支全部抢在通用 on*/data-* 落点之前（坑 86：
+    //    函数值语义属性若落成 DOM 监听器就是永不触发的死代码）──
+
+    // batch-media：ContainerSpan/ImageSpan/RichText/SymbolGlyph/SymbolSpan/Web
+    if (node.__arkuiContainerSpan && CONTAINERSPAN_ATTRS[prop]) {
+      CONTAINERSPAN_ATTRS[prop](node, value);
+      return;
+    }
+    if (node.__arkuiImageSpan && IMAGESPAN_ATTRS[prop]) {
+      IMAGESPAN_ATTRS[prop](node, value);
+      return;
+    }
+    if (node.__arkuiRichText && RICHTEXT_ATTRS[prop]) {
+      RICHTEXT_ATTRS[prop](node, value);
+      return;
+    }
+    if (node.__arkuiSymbolGlyph && SYMBOLGLYPH_ATTRS[prop]) {
+      SYMBOLGLYPH_ATTRS[prop](node, value);
+      return;
+    }
+    if (node.__arkuiSymbolSpan && SYMBOLSPAN_ATTRS[prop]) {
+      SYMBOLSPAN_ATTRS[prop](node, value);
+      return;
+    }
+    if (node.__arkuiWeb && WEB_ATTRS[prop]) {
+      WEB_ATTRS[prop](node, value);
+      return;
+    }
+
+    // batch-nav：NavRouter/Navigator/PageTransition(Enter|Exit 共用一张表，元素上标记为
+    // 'enter'|'exit')/UIPickerComponent（onChange 必须拦在通用 on* 前）。ToolBarItem 无分支：
+    // toolbar.d.ts:112 ToolBarItemAttribute 是空类、不支持通用属性，无 ATTRS 表
+    if (node.__arkuiNavRouter && NAVROUTER_ATTRS[prop]) {
+      NAVROUTER_ATTRS[prop](node, value);
+      return;
+    }
+    if (node.__arkuiNavigator && NAVIGATOR_ATTRS[prop]) {
+      NAVIGATOR_ATTRS[prop](node, value);
+      return;
+    }
+    if (node.__arkuiPageTransition && PAGE_TRANSITION_ATTRS[prop]) {
+      PAGE_TRANSITION_ATTRS[prop](node, value);
+      return;
+    }
+    if (node.__arkuiPicker && UIPICKER_ATTRS[prop]) {
+      UIPICKER_ATTRS[prop](node, value);
+      return;
+    }
+
+    // batch-layout：FolderStack/GridContainer/UnionEffectContainer/XComponentNode。
+    // Sheet/Section 无自有属性（ets-loader JSON attrs=[]），不需分支；FolderStack.alignContent
+    // 刻意不在表内 —— 落到下方通用 `prop === 'alignContent'` → applyAlignment 分支
+    if (node.__arkuiFolderStack && FOLDERSTACK_ATTRS[prop]) {
+      FOLDERSTACK_ATTRS[prop](node, value);
+      return;
+    }
+    if (node.__arkuiGridContainer && GRIDCONTAINER_ATTRS[prop]) {
+      GRIDCONTAINER_ATTRS[prop](node, value);
+      return;
+    }
+    if (node.__arkuiUnionEffect && UNIONEFFECT_ATTRS[prop]) {
+      UNIONEFFECT_ATTRS[prop](node, value);
+      return;
+    }
+    if (node.__arkuiXComponentNodeFlag && XCNODE_ATTRS[prop]) {
+      XCNODE_ATTRS[prop](node, value);
+      return;
+    }
+
+    // batch-input（R66）：六组件的函数值回调/语义属性抢在通用 on*/data-* 之前（坑 86 同族）；
+    // 表内每个条目按 __arkuiComp/__batchPicker.kind/__selContainer 身份守卫。Option 的字体四件
+    // （fontColor/fontSize/fontWeight/fontFamily）刻意不在表内，落通用 cssPropSize/cssPropRaw
+    if (node.__arkuiBatchIn && BATCHINPUT_ATTRS[prop]) {
+      BATCHINPUT_ATTRS[prop](node, value);
+      return;
+    }
+
+    // batch-motion：Animator 动画组件 + ScrollBar。FrictionMotion/ScrollMotion/SpringMotion/
+    // SpringProp/GeometryView 的 ets-loader json attrs 为空，无需分派（未实现语义走通用
+    // data-* 落点）
+    if (node.__arkuiAnimComp && ANIM_COMP_ATTRS[prop]) {
+      ANIM_COMP_ATTRS[prop](node, value);
+      return;
+    }
+    if (node.__arkuiScrollBar && SCROLLBAR_ATTRS[prop]) {
+      SCROLLBAR_ATTRS[prop](node, value);
+      return;
+    }
+
+    // batch-func（R66）：Repeat/Calendar/ContainerReader/IndicatorComponent 的构建器/配置/
+    // 事件是函数值或语义属性（Repeat.each 不分派就不渲染、Calendar.onSelectChange 失效）；
+    // MenuItemGroup/WithTheme 无属性方法，不需要分派
+    if (node.__arkuiRepeat && REPEAT_ATTRS[prop]) {
+      REPEAT_ATTRS[prop](node, value, extra);
+      return;
+    }
+    if (node.__arkuiCalendar && CALGRID_ATTRS[prop]) {
+      CALGRID_ATTRS[prop](node, value, extra);
+      return;
+    }
+    if (node.__arkuiCReader && CREADER_ATTRS[prop]) {
+      CREADER_ATTRS[prop](node, value, extra);
+      return;
+    }
+    if (node.__arkuiIndicator && INDIC_ATTRS[prop]) {
+      INDIC_ATTRS[prop](node, value, extra);
+      return;
+    }
     // SideBarContainer（R61）：showSideBar/sideBarWidth/controlButton/onChange 是语义属性
     if (node.__arkuiSideBar && SIDEBAR_ATTRS[prop]) {
       SIDEBAR_ATTRS[prop](node, value);
@@ -9123,6 +9231,3853 @@
     return el;
   });
 
+  // R66/R67 批量分片（batch-*）：组件注册 + 枚举/效果类常量本体在此定义；
+  // global 挂载见下方「安装全局」块（分片只声明，不自行挂 global）
+  // ────────────────── 批次 E：布局/叠放/内部组件（R67）──────────────────
+  //
+  // 六组件（权威出处）：
+  //   FolderStack   —— component/folder_stack.d.ts（public，since 11）
+  //   GridContainer —— component/grid_container.d.ts（deprecated since 9，useinstead GridRow/GridCol）
+  //   Section       —— build-tools/ets-loader/components/section.json（内部组件：attrs=[]，无 d.ts）
+  //   Sheet         —— build-tools/ets-loader/components/sheet.json（内部组件：children=["Section"]，attrs=[]，无 d.ts）
+  //   UnionEffectContainer —— build-tools/ets-loader/components/union_effect_container.json（systemApi:true，attrs=["pointLight"]，无 d.ts）
+  //   XComponentNode —— api/arkui/XComponentNode.d.ts（deprecated since 12，useinstead typeNode#XComponent）
+  //
+  // ⚠️ Section/Sheet/UnionEffectContainer 在本 SDK 里【没有 d.ts 声明】——它们只存在于
+  //    ets-loader 的组件表（generated-components.js 的 149 个骨架即来源于此）。字段形态
+  //    以那三个 JSON 为唯一权威，DOM 语义按组件名/父子关系做保守近似（全部注明）。
+
+  // FolderStack 回调载荷里的两个枚举（enums.d.ts:4431/4482，显式数值）
+  const FoldStatus = { UNKNOWN: 0, EXPANDED: 1, FOLDED: 2, HALF_FOLDED: 3 };
+  const AppRotation = { ROTATION_0: 0, ROTATION_90: 1, ROTATION_180: 2, ROTATION_270: 3 };
+  // GridContainer 的 SizeType（grid_container.d.ts:28-74，声明顺序 Auto/XS/SM/MD/LG）
+  const SizeType = { Auto: 0, XS: 1, SM: 2, MD: 3, LG: 4 };
+  // XComponentNode.changeRenderType 的 NodeRenderType（api/arkui/BuilderNode.d.ts:87-107）
+  const NodeRenderType = { RENDER_TYPE_DISPLAY: 0, RENDER_TYPE_TEXTURE: 1 };
+
+  // ────────────────── FolderStack（叠放 + 折叠屏悬停）──────────────────
+  //
+  // 产物形态（FolderStackInterface，folder_stack.d.ts:66-80）：
+  //   FolderStack.create({ upperItems: ['a', 'b'] });
+  //   FolderStack.alignContent(Alignment.Start); FolderStack.enableAnimation(false);
+  //   FolderStack.autoHalfFold(true);
+  //   FolderStack.onFolderStateChange((e: {foldStatus}) => …);
+  //   FolderStack.onHoverStatusChange((p: HoverEventParam) => …);
+  //
+  // 语义（folder_stack.d.ts）：Stack 叠放基座 + 折叠屏悬停 —— 悬停态下 upperItems 里
+  //   的子组件（按 .id() 匹配）避开折痕区移到上半屏，其余子组件留在下半屏；
+  //   alignContent 默认 Alignment.Center；enableAnimation/autoHalfFold 默认 true。
+  // DOM：与 Stack 同款 grid 同格叠放（子项 gridArea 1/1，mountNode 只认 __arkuiComp==='Stack'，
+  //   所以这里用 MutationObserver 给新挂子项补 gridArea——self-contained，不动共享文件）。
+  //   悬停态是 DOM 无触发源的系统能力（真机由折屏硬件驱动）：提供状态袋方法
+  //   setFoldStatus(status) / setHoverStatus(param) 编程驱动；悬停时 upperItems 子项
+  //   绝对定位到上半屏（top:0 h:50%），其余子项到下半屏（top:50% h:50%）。
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
+  const FOLDERSTACK_ATTRS = {
+    // alignContent 刻意【不在本表】：area.js 的通用分支 `prop === 'alignContent' →
+    // applyAlignment` 已按同一语义处理（Stack 同款），表里再放一份是双路径漂移点。
+    onFolderStateChange: (n, v) => {
+      const w = /** @type {any} */ (n).__folderstack;
+      if (w) w.cbs.foldStatus = v;
+    },
+    onHoverStatusChange: (n, v) => {
+      const w = /** @type {any} */ (n).__folderstack;
+      if (w) w.cbs.hoverStatus = v;
+    },
+    enableAnimation: (n, v) => {
+      // DOM 无折屏开合动画管道：只落语义标记（与 Panel.dragBar 同级的"记而未演"）
+      const w = /** @type {any} */ (n).__folderstack;
+      if (w) w.enableAnimation = v !== false;
+      n.dataset.enableAnimation = String(v !== false);
+    },
+    autoHalfFold: (n, v) => {
+      const w = /** @type {any} */ (n).__folderstack;
+      if (w) w.autoHalfFold = v !== false;
+      n.dataset.autoHalfFold = String(v !== false);
+    },
+  };
+  /** @param {any} n */
+  function applyFolderStackLayout(n) {
+    const w = /** @type {any} */ (n).__folderstack;
+    if (!w) return;
+    for (const k of Array.prototype.slice.call(n.children)) {
+      const kid = /** @type {any} */ (k);
+      if (!kid || !kid.style) continue;
+      if (!w.hoverMode) {
+        // 悬停退出：清掉覆盖样式，回到 grid 同格叠放
+        kid.style.position = ''; kid.style.top = ''; kid.style.left = '';
+        kid.style.width = ''; kid.style.height = '';
+        kid.removeAttribute('data-folder-upper'); kid.removeAttribute('data-folder-lower');
+        kid.style.gridArea = '1 / 1';
+        continue;
+      }
+      const upper = kid.id !== undefined && w.upperItems.indexOf(String(kid.id)) >= 0;
+      kid.style.gridArea = '';                       // 绝对定位脱离网格流
+      kid.style.position = 'absolute';
+      kid.style.left = '0';
+      kid.style.width = '100%';
+      kid.style.height = '50%';
+      if (upper) { kid.style.top = '0'; kid.setAttribute('data-folder-upper', ''); }
+      else { kid.style.top = '50%'; kid.setAttribute('data-folder-lower', ''); }
+    }
+  }
+  /** @param {any[]} args */
+  const FolderStack = ensureComponent('FolderStack', (args) => {
+    const el = document.createElement('div');
+    el.dataset.folderStack = '';
+    (/** @type {any} */ (el)).__arkuiFolderStack = true;   // area.js 属性分派的身份守卫（同 GridContainer 等）
+    // Stack 同款叠放：grid 同格 + 默认 Alignment.Center（d.ts:147 "Default value: Alignment.Center"）
+    el.style.display = 'grid';
+    el.style.justifyItems = 'center';
+    el.style.alignItems = 'center';
+    el.style.position = 'relative';                  // 悬停态子项以它为包含块
+    const o = (args && typeof args[0] === 'object' && args[0] !== null) ? args[0] : {};
+    const w = /** @type {any} */ (el).__folderstack = /** @type {any} */ ({
+      upperItems: Array.isArray(o.upperItems) ? o.upperItems.map(String) : [],
+      foldStatus: 0,
+      hoverMode: false,
+      enableAnimation: true,                         // d.ts:190 "Default value: true"
+      autoHalfFold: true,                            // d.ts:206 "Default value: true"
+      cbs: {},
+    });
+    if (Array.isArray(o.upperItems)) el.dataset.upperItems = JSON.stringify(o.upperItems);
+    // 编程驱动（真机由折屏硬件产生，DOM 无触发源 —— 测试/上层用它发事件）
+    w.setFoldStatus = (/** @type {any} */ status) => {
+      w.foldStatus = status;
+      el.dataset.foldStatus = String(status);
+      const cb = w.cbs.foldStatus;
+      if (typeof cb === 'function') {
+        try { cb({ foldStatus: status }); }
+        catch (e) { layoutWarnings.push(`FolderStack.onFolderStateChange 回调抛错：${e && e.message}`); }
+      }
+    };
+    w.setHoverStatus = (/** @type {any} */ param) => {
+      // param 形状 = HoverEventParam（folder_stack.d.ts:225-262）：
+      //   { foldStatus, isHoverMode, appRotation, windowStatusType }
+      w.hoverMode = !!(param && param.isHoverMode);
+      el.dataset.hoverMode = String(w.hoverMode);
+      applyFolderStackLayout(el);
+      const cb = w.cbs.hoverStatus;
+      if (typeof cb === 'function') {
+        try { cb(param); }
+        catch (e) { layoutWarnings.push(`FolderStack.onHoverStatusChange 回调抛错：${e && e.message}`); }
+      }
+    };
+    // mountNode 只给 __arkuiComp==='Stack' 的子项补 gridArea（main.js mountNode）；
+    // FolderStack 的子项在这里补——观察 childList 即可覆盖 create 后挂进来的全部子项。
+    const mo = new MutationObserver((muts) => {
+      for (const m of muts) {
+        m.addedNodes.forEach((/** @type {any} */ nd) => {
+          if (nd && nd.style && !w.hoverMode) nd.style.gridArea = '1 / 1';
+        });
+      }
+    });
+    mo.observe(el, { childList: true });
+    return el;
+  });
+
+  // ────────────────── GridContainer（deprecated 列网格容器）──────────────────
+  //
+  // 产物形态（GridContainerInterface，grid_container.d.ts:135-147）：
+  //   GridContainer.create({ columns: 4, sizeType: SizeType.SM, gutter: 8, margin: 12 });
+  //
+  // 语义（grid_container.d.ts，deprecated since 9）：options =
+  //   { columns?: number|"auto", sizeType?: SizeType, gutter?: number|string, margin?: number|string }；
+  //   GridContainerAttribute extends ColumnAttribute —— 链式属性与 Column 同（无自有 setter）。
+  // DOM：display:grid + repeat(N, 1fr)；gutter → column-gap；margin → 左右 padding。
+  //   columns:"auto"/缺省：真机按设备宽度档位（SizeType）解析列数，DOM 无设备型号 ——
+  //   固定按 12 列渲染并 warnOnce 记差异（不静默）。
+  /** @param {any} el @param {any} o */
+  function applyGridContainerOptions(el, o) {
+    if (o.columns !== undefined && o.columns !== 'auto') {
+      const cols = Number(resolveResource(o.columns)) || 12;
+      el.dataset.columns = String(cols);
+      el.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+    } else {
+      el.dataset.columns = 'auto';
+      // DOM 侧固定 12 列的取舍（真机 "auto" 按设备解析）必须留痕：
+      warnOnce('GridContainer.columns 为 auto/缺省：真机按设备宽度档位解析列数，DOM 固定按 12 列渲染');
+      el.style.gridTemplateColumns = 'repeat(12, 1fr)';
+    }
+    if (o.sizeType !== undefined) {
+      el.dataset.sizeType = String(Number(resolveResource(o.sizeType)));
+    }
+    if (o.gutter !== undefined) el.style.columnGap = toCssSize(resolveResource(o.gutter));
+    if (o.margin !== undefined) {
+      const m = toCssSize(resolveResource(o.margin));
+      el.style.paddingLeft = m;                      // "Spacing on both sides"（d.ts:117）
+      el.style.paddingRight = m;
+    }
+  }
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
+  const GRIDCONTAINER_ATTRS = {
+    // 四个 options 键同时接受链式 setter（防编译产物把选项摊平成属性链的形态）
+    columns: (n, v) => { applyGridContainerOptions(n, { columns: v }); },
+    sizeType: (n, v) => { applyGridContainerOptions(n, { sizeType: v }); },
+    gutter: (n, v) => { applyGridContainerOptions(n, { gutter: v }); },
+    margin: (n, v) => { applyGridContainerOptions(n, { margin: v }); },
+  };
+  /** @param {any[]} args */
+  const GridContainer = ensureComponent('GridContainer', (args) => {
+    const el = document.createElement('div');
+    (/** @type {any} */ (el)).__arkuiGridContainer = true;
+    el.dataset.gridContainer = '';
+    el.style.display = 'grid';
+    const o = (args && typeof args[0] === 'object' && args[0] !== null) ? args[0] : {};
+    applyGridContainerOptions(el, o);
+    return el;
+  });
+
+  // ────────────────── Sheet / Section（内部组件对）──────────────────
+  //
+  // 语义（sheet.json："children": ["Section"]；section.json："attrs": []）：真机 bindSheet
+  //   的内部承载结构 —— Sheet 是弹层面板容器，Section 是其中的内容段。本 SDK 无公开 d.ts、
+  //   无公开属性；产物里也不会出现用户态的 Sheet.create()（由框架内部建出）。
+  // DOM：Sheet → 白底 flex column 面板（弹层定位由上层驱动，这里只做承载）；
+  //   Section → flex column 内容段（flex:1 占满面板剩余空间）。
+  // 无 SHEET_ATTRS/SECTION_ATTRS：attrs 为空表时 area.js 无需分派分支（通用属性走通用规则）。
+  const Sheet = ensureComponent('Sheet', () => {
+    const el = document.createElement('div');
+    (/** @type {any} */ (el)).__arkuiSheet = true;
+    el.dataset.sheet = '';
+    el.style.display = 'flex';
+    el.style.flexDirection = 'column';
+    el.style.backgroundColor = '#ffffff';
+    return el;
+  });
+  const Section = ensureComponent('Section', () => {
+    const el = document.createElement('div');
+    (/** @type {any} */ (el)).__arkuiSection = true;
+    el.dataset.section = '';
+    el.style.display = 'flex';
+    el.style.flexDirection = 'column';
+    el.style.flex = '1';
+    el.style.minHeight = '0';
+    el.style.minWidth = '0';
+    return el;
+  });
+
+  // ────────────────── UnionEffectContainer（systemApi 联动光效容器）──────────────────
+  //
+  // 语义（union_effect_container.json，systemApi:true）：唯一属性 pointLight（本 SDK 无该
+  //   属性的任何 d.ts 声明 —— 无参数形状可依，按 options 对象/布尔宽容记录）。
+  // DOM：普通容器（block + relative）；pointLight 的视觉光效（真机渲染管线特效）在 DOM 无
+  //   对应物 —— 参数落 data-* 并记 layoutWarnings（不静默忽略）。
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
+  const UNIONEFFECT_ATTRS = {
+    pointLight: (n, v) => {
+      try { n.dataset.pointLight = JSON.stringify(v); }
+      catch (e) { n.dataset.pointLight = String(v); }
+      warnOnce('UnionEffectContainer.pointLight 视觉光效无 DOM 对应物（渲染管线特效），参数已记 data-point-light');
+    },
+  };
+  /** @param {any[]} args */
+  const UnionEffectContainer = ensureComponent('UnionEffectContainer', (args) => {
+    const el = document.createElement('div');
+    (/** @type {any} */ (el)).__arkuiUnionEffect = true;
+    el.dataset.unionEffectContainer = '';
+    el.style.display = 'block';
+    el.style.position = 'relative';
+    return el;
+  });
+
+  // ────────────────── XComponentNode（自定义节点宿主）──────────────────
+  //
+  // 这个名字在 SDK 里有【两副面孔】，两副都实现、共用同一个导出名：
+  // ① 声明式组件（ets-loader components/xcomponentNode.json，attrs 共 7 个）——
+  //    ensureComponent 注册（进 components 表 → generated-components.js 的同名骨架被
+  //    "手写优先"跳过），工厂产出宿主 div。
+  // ② 类（api/arkui/XComponentNode.d.ts:32-81，extends FrameNode，deprecated since 12）——
+  //    constructor(uiContext, options, id, type, libraryName?)；
+  //    onCreate(event?)/onDestroy() 是子类覆写的生命周期；changeRenderType(type): boolean。
+  //    DOM 无 FrameNode 基类：实例自带状态袋 __xcn，宿主 DOM 由 __arkuiBindHost 绑定。
+  //    按 id 注册进 xcNodeRegistry —— 声明式面的宿主 div 建出时按 id 认领实例并在
+  //    surface 就绪刻度（setTimeout(0)，与 canvas.js XComponent.onLoad 同款）触发 onCreate。
+  // changeRenderType 只认 NodeRenderType（BuilderNode.d.ts:87-107 DISPLAY=0/TEXTURE=1），
+  //   非法值返回 false 并记警告；合法值落 dataset.renderType。
+  /** @type {Map<string, any>} */
+  const xcNodeRegistry = new Map();
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
+  const XCNODE_ATTRS = {
+    type: (n, v) => { n.dataset.xcnType = String(resolveResource(v)); },
+    libraryName: (n, v) => { n.dataset.xcnLibrary = String(resolveResource(v)); },
+    onCreate: (n, v) => {
+      n.__arkuiXcnOnCreate = v;
+      if (n.__arkuiXcnScheduled) return;             // 覆盖语义：cb 替换、调度只排一次
+      n.__arkuiXcnScheduled = true;
+      setTimeout(() => {
+        if (typeof n.__arkuiXcnOnCreate === 'function') {
+          try { n.__arkuiXcnOnCreate({ surfaceId: 'XComponent-' + (n.dataset.xcnId || '') }); }
+          catch (e) { layoutWarnings.push(`XComponentNode.onCreate 抛错：${e && e.message}`); }
+        }
+      }, 0);
+    },
+    onDestroy: (n, v) => {
+      n.__arkuiXcnOnDestroy = v;                     // DOM 销毁时机无卸载钩子，只登记
+    },
+    changeRenderType: (n, v) => {
+      const t = Number(resolveResource(v));
+      if (t !== 0 && t !== 1) {
+        layoutWarnings.push(`XComponentNode.changeRenderType(${String(v)}): 非法 NodeRenderType，已忽略`);
+        return;
+      }
+      n.dataset.renderType = String(t);
+    },
+  };
+  /** @param {any[]} args */
+  const XComponentNodeComp = ensureComponent('XComponentNode', (args) => {
+    const o = (args && typeof args[0] === 'object' && args[0] !== null) ? args[0] : {};
+    const el = document.createElement('div');
+    (/** @type {any} */ (el)).__arkuiXComponentNodeFlag = true;
+    el.dataset.xcomponentNode = '';
+    el.style.position = 'relative';
+    const id = o.id === undefined ? '' : String(o.id);
+    if (id) el.dataset.xcnId = id;
+    if (o.type !== undefined) el.dataset.xcnType = String(o.type);
+    if (o.libraryName !== undefined) el.dataset.xcnLibrary = String(o.libraryName);
+    // 宿主建出 → 认领同类面实例，按 surface 就绪刻度触发 onCreate（真机时序的 DOM 近似）
+    const inst = id !== '' ? xcNodeRegistry.get(id) : null;
+    if (inst) {
+      setTimeout(() => {
+        try {
+          /** @type {any} */ (inst).__arkuiBindHost(el);
+          /** @type {any} */ (inst).onCreate({ surfaceId: 'XComponent-' + id });
+        } catch (e) { layoutWarnings.push(`XComponentNode.onCreate 抛错：${e && e.message}`); }
+      }, 0);
+    }
+    return el;
+  });
+  class XComponentNodeHost {
+    /** @param {any} uiContext @param {any} options @param {any} id @param {any} type @param {any=} [libraryName] */
+    constructor(uiContext, options, id, type, libraryName) {
+      const self = /** @type {any} */ (this);
+      self.__xcn = /** @type {any} */ ({
+        uiContext: uiContext || null,                // DOM 运行时不使用 UIContext，仅存档
+        options: options || null,
+        id: String(id === undefined ? '' : id),
+        type: type,
+        libraryName: libraryName === undefined ? '' : String(libraryName),
+        renderType: 0,                               // NodeRenderType.RENDER_TYPE_DISPLAY
+        hostEl: null,
+        created: false,
+        destroyed: false,
+      });
+      if (self.__xcn.id) xcNodeRegistry.set(self.__xcn.id, self);
+    }
+    /** @param {any=} [event] */
+    onCreate(event) {
+      const w = /** @type {any} */ (this).__xcn;
+      if (w) { w.created = true; w.lastCreateEvent = event || null; }
+    }
+    onDestroy() {
+      const w = /** @type {any} */ (this).__xcn;
+      if (w) w.destroyed = true;
+    }
+    /** @param {any} type */
+    changeRenderType(type) {
+      const w = /** @type {any} */ (this).__xcn;
+      const ok = type === 0 || type === 1;
+      if (!w) return ok;
+      if (!ok) {
+        layoutWarnings.push(`XComponentNode.changeRenderType(${String(type)}): 非法 NodeRenderType，返回 false`);
+        return false;
+      }
+      w.renderType = type;
+      if (w.hostEl) w.hostEl.dataset.renderType = String(type);
+      return true;
+    }
+    /** @param {HTMLElement} el */
+    __arkuiBindHost(el) {
+      const w = /** @type {any} */ (this).__xcn;
+      if (w) w.hostEl = el;
+    }
+  }
+  // 类面作导出名；create/pop 从声明式面的 ensureComponent 实例借来（同一闭包，行为一致）
+  const XComponentNode = /** @type {any} */ (XComponentNodeHost);
+  XComponentNode.create = XComponentNodeComp.create;
+  XComponentNode.pop = XComponentNodeComp.pop;
+
+  // ────────────────── 批量输入收官（R66）：CheckboxGroup / ColorPicker / ColorPickerDialog
+  //  / Option / PatternLock / SelectionContainer ──────────────────
+  //
+  // 语义锚点（SDK 实测路径）：
+  //   • checkboxgroup.d.ts（全文已读）：CheckboxGroup(options?: {group?: string})；
+  //     selectAll(boolean)、selectedColor、unselectedColor、mark(MarkStyle)、
+  //     onChange(CheckboxGroupResult { name: string[], status: SelectStatus })、
+  //     checkboxShape(CheckBoxShape)、contentModifier(21+)。
+  //     SelectStatus 按声明顺序：All=0 / Part=1 / None=2（enums 声明不带初值）。
+  //   • pattern_lock.d.ts（全文已读）：PatternLock(controller?)；sideLength/circleRadius/
+  //     backgroundColor/regularColor/selectedColor/activeColor/pathColor/pathStrokeWidth/
+  //     onPatternComplete(Array<number>)/autoReset/onDotConnect(number)/
+  //     activateCircleStyle({color,radius,enableWaveEffect,enableForeground})/
+  //     skipUnselectedPoint（⚠️ d.ts 有、ets-loader pattern_lock.json 无）。
+  //     PatternLockController: reset() / setChallengeResult(PatternLockChallengeResult
+  //     {CORRECT=1, WRONG=2}，d.ts 显式赋值）。onPatternComplete 的点位编号 d.ts 未写死，
+  //     本实现取官方文档惯例 1~9（行优先）；取舍记录在此，测试按 1 基断言。
+  //   • api/@ohos.arkui.components.SelectionContainer.d.ts（全文已读）：
+  //     SelectionContainer({controller})；copyOption/caretColor/selectedBackgroundColor/
+  //     enableHapticFeedback/textJoinStyle(NEWLINE=0/DIRECT=1)/bindSelectionMenu/
+  //     editMenuOptions/onTextSelectionChange(Callback<Array<string>>)/
+  //     onWillCopy((content)=>boolean)/onCopy((content)=>void)。
+  //     SelectionContainerController: closeSelectionMenu() / clearTextSelection()。
+  //   • ⚠️ ColorPicker / ColorPickerDialog / Option：本 SDK 安装里【没有 d.ts】
+  //     （component/、api/、ets-loader/declarations/ 三处 grep 均无）。
+  //     唯一权威是 ets-loader 组件表（本机实测路径 build-tools/ets-loader/components/）：
+  //       colorPicker.json        attrs: colors, onSelect, setAlignment, setColunms, setRows
+  //                               （"setColunms" 是 SDK 原始拼写——setColumns 的笔误，原样保留）
+  //       colorPickerDialog.json  attrs: show
+  //       option.json             parents: [Menu]；attrs: fontColor, fontSize, fontWeight, fontFamily
+  //     三者的 create 签名/回调参数形状官方未在本机 SDK 出面，本实现按 attrs 表 +
+  //     ArkUI 同族语义外推，凡外推处都有注释标记；colors/onSelect 用于 ColorPickerDialog
+  //     属外推超集（JSON 只列 show），取舍在此记录。
+  //
+  // DOM 映射：
+  //   CheckboxGroup → 原生 <input type=checkbox>（全选母 Checkbox，Part 态走 indeterminate）；
+  //     组员同步：优先找带 data-arkui-checkbox-group="<组名>" 标记的原生 checkbox（标记
+  //     约定见 docs；input.js 的 Checkbox 目前不落 group，补一行 dataset 即生效）；
+  //     无标记时退化为"页面上全部真 Checkbox"（排除 Toggle：input.js 给 Toggle 落
+  //     data-toggle-type，Checkbox 没有——可据此区分）；多组并存时退化路径会串组，
+  //     每个母 Checkbox 只报一次 layoutWarning，不静默。
+  //   PatternLock → div（CSS grid 3×3 点位）+ SVG 连线层；pointer 手势驱动。
+  //   SelectionContainer → div（user-select:text）；selectionchange/copy 事件派发回调。
+  //   Option → Menu（popup.js 的 flex 列 div）里的行式菜单项（同族 MenuItem 形态）。
+  //   ColorPicker → CSS grid 色块阵；ColorPickerDialog → fixed 遮罩 + 居中卡片。
+  //
+  // 事件派发纪律（坑 86 同族）：onSelect/onPatternComplete/onDotConnect/
+  // onTextSelectionChange/onCopy/onWillCopy 全是函数值——必须抢在通用 on* 规则之前登记，
+  // 否则会变成永不触发的 DOM 事件监听。统一走 __arkuiBatchIn 标记 + BATCHINPUT_ATTRS
+  // 单分派分支（需要的 area.js 接线见分片报告）。
+  const SelectStatus = { All: 0, Part: 1, None: 2 };              // checkboxgroup.d.ts 声明顺序
+  const CopyOptions = { None: 0, InApp: 1, LocalDevice: 2 };      // enums.d.ts:3229（None=0/InApp=1/LocalDevice=2）
+  const CheckBoxShape = { CIRCLE: 0, ROUNDED_SQUARE: 1 };         // enums.d.ts:29（显式赋值）
+  const PatternLockChallengeResult = { CORRECT: 1, WRONG: 2 };    // pattern_lock.d.ts 显式赋值
+  const SelectionContainerTextJoinStyle = { NEWLINE: 0, DIRECT: 1 }; // SelectionContainer.d.ts 显式赋值
+
+  // ── CheckboxGroup：组员发现与全选同步 ──
+  // 组员标记约定：原生 checkbox 带 data-arkui-checkbox-group="<组名>" 即属于该组。
+  // input.js 的 Checkbox.create({name, group}) 目前丢弃 group（input.js:39-41 只落 name），
+  // 补一行 `el.dataset.arkuiCheckboxGroup = String(o.group)` 即可让本发现路径精确命中。
+  /** @type {Set<any>} */
+  const cgMasters = new Set();                                    // 页面上所有 CheckboxGroup 母节点
+  /** @param {any} master @returns {any[]} */
+  const cgMembers = (master) => {
+    const g = master.__cg.group;
+    // ① 精确路径：带组标记的原生 checkbox（不含母节点自身、不含 Toggle）
+    const marked = Array.from((master.ownerDocument || document)
+      .querySelectorAll('input[type=checkbox][data-arkui-checkbox-group]'))
+      .filter((/** @type {any} */ m) => m !== master && m.dataset.arkuiCheckboxGroup === g);
+    if (marked.length) return marked;
+    // ② 退化路径：整页所有"真 Checkbox"（Toggle 有 data-toggle-type，Checkbox 没有）
+    const all = Array.from((master.ownerDocument || document)
+      .querySelectorAll('input[type=checkbox]:not([data-toggle-type])'))
+      .filter((/** @type {any} */ m) => m !== master && !m.__cgClaimed);
+    if (cgMasters.size > 1) {
+      // 多组并存时退化路径会串组（组员无法按组名区分）——只报一次，不静默
+      if (!master.__cg.warnedFallback) {
+        master.__cg.warnedFallback = true;
+        layoutWarnings.push(`CheckboxGroup('${g}') 组员发现退化为全页 Checkbox`
+          + '（无 data-arkui-checkbox-group 标记）；多组并存会串组，请给 Checkbox 落组标记');
+      }
+    }
+    all.forEach((/** @type {any} */ m) => { m.__cgClaimed = master; });   // 先到先得，减少串组面
+    return all;
+  };
+  /** @param {any[]} members @returns {number} SelectStatus（All/Part/None） */
+  const cgStatusOf = (members) => {
+    if (!members.length) return -1;                                 // 无组员：由母节点自态决定
+    const on = members.filter((/** @type {any} */ m) => m.checked).length;
+    if (on === members.length) return SelectStatus.All;
+    return on === 0 ? SelectStatus.None : SelectStatus.Part;
+  };
+  /** @param {any} master @param {boolean=} [fire] */
+  const cgSyncAndFire = (master, fire) => {
+    const w = master.__cg;
+    const members = cgMembers(master);
+    members.forEach((/** @type {any} */ m) => { m.checked = w.all; });     // 编程同步不派发 change（DOM 语义，input.js 同取舍）
+    const st = cgStatusOf(members);
+    const status = st === -1 ? (w.all ? SelectStatus.All : SelectStatus.None) : st;
+    master.indeterminate = status === SelectStatus.Part;
+    master.dataset.status = String(status);
+    if (fire !== false && typeof w.cbs.change === 'function') {
+      const names = members.filter((/** @type {any} */ m) => m.checked)
+        .map((/** @type {any} */ m) => String(m.name || ''));
+      try { w.cbs.change({ name: names, status }); }
+      catch (e) { layoutWarnings.push(`CheckboxGroup.onChange 派发抛错：${e && e.message}`); }
+    }
+  };
+  // 组员自态变化 → 组状态变化也要发 CheckboxGroup.onChange（d.ts："Triggered when the
+  // selected status of the check box group or any check box wherein changes"）。
+  // 单个捕获监听统一收口；未认领的组员且页面恰有一个组 → 自动认领（单组演示页成立）。
+  document.addEventListener('change', (/** @type {Event} */ e) => {
+    const t = /** @type {any} */ (e.target);
+    // Toggle 不参与；母节点自身的 change 由工厂 click 处理器收口（这里只收组员）
+    if (!t || t.type !== 'checkbox' || t.dataset.toggleType || t.__cg) return;
+    let master = t.__cgClaimed;
+    if (!master && t.dataset.arkuiCheckboxGroup) {
+      master = Array.from(cgMasters).find((/** @type {any} */ m) => m.__cg.group === t.dataset.arkuiCheckboxGroup) || null;
+      if (master) t.__cgClaimed = master;
+    }
+    if (!master && cgMasters.size === 1) {
+      master = Array.from(cgMasters)[0];
+      t.__cgClaimed = master;
+    }
+    if (!master) return;
+    const members = cgMembers(master);
+    const st = cgStatusOf(members);
+    const status = st === -1 ? (master.checked ? SelectStatus.All : SelectStatus.None) : st;
+    master.indeterminate = status === SelectStatus.Part;
+    master.__cg.all = status === SelectStatus.All;
+    master.checked = status === SelectStatus.All;
+    master.dataset.status = String(status);
+    if (typeof master.__cg.cbs.change === 'function') {
+      const names = members.filter((/** @type {any} */ m) => m.checked).map((/** @type {any} */ m) => String(m.name || ''));
+      try { master.__cg.cbs.change({ name: names, status }); }
+      catch (err) { layoutWarnings.push(`CheckboxGroup.onChange(组员) 派发抛错：${err && err.message}`); }
+    }
+  }, true);
+
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
+  const BATCHINPUT_ATTRS = {
+    // ── CheckboxGroup ──
+    selectAll: (n, v) => {
+      if (n.__arkuiComp !== 'CheckboxGroup') return;
+      n.__cg.all = !!v;
+      n.checked = !!v;
+      cgSyncAndFire(n);                                             // selectAll 走完整"同步+派发"路径
+    },
+    // selectedColor 双组件同名属性合并为一个条目（同一对象字面量禁止同名键，TS1117）：
+    // 按 __arkuiComp 身份分身守卫 —— CheckboxGroup 走 accentColor，PatternLock 走状态袋
+    selectedColor: (n, v) => {
+      if (n.__arkuiComp === 'CheckboxGroup') { n.style.accentColor = colorOf(v); return; }
+      if (n.__arkuiComp === 'PatternLock') {
+        const w = n.__patternLock; if (!w) return;
+        w.selectedColor = colorOf(v);
+        n.dataset.selectedColor = w.selectedColor;
+      }
+    },
+    unselectedColor: (n, v) => { if (n.__arkuiComp === 'CheckboxGroup') n.dataset.unselectedColor = colorOf(v); },
+    mark: (n, v) => { if (n.__arkuiComp === 'CheckboxGroup') n.dataset.mark = JSON.stringify(v); },
+    checkboxShape: (n, v) => {
+      if (n.__arkuiComp !== 'CheckboxGroup') return;
+      const s = Number(resolveResource(v));                         // CheckBoxShape：CIRCLE=0 / ROUNDED_SQUARE=1
+      n.dataset.checkboxShape = String(s);
+      n.style.borderRadius = s === 0 ? '50%' : '';
+    },
+    contentModifier: (n, v) => {
+      if (n.__arkuiComp !== 'CheckboxGroup') return;
+      n.dataset.contentModifier = 'recorded';
+      layoutWarnings.push('CheckboxGroup.contentModifier 记 data-*（自定义内容区本实现未渲染）');
+    },
+    onChange: (n, v) => {
+      // 六件里只有 CheckboxGroup 的 onChange 是语义回调；其余组件没有该属性，
+      // 走不到这条（分派按 __arkuiBatchIn 身份 + 表名双保险）
+      if (n.__arkuiComp !== 'CheckboxGroup') return;
+      n.__cg.cbs.change = v;
+    },
+    // ── ColorPicker（ets-loader colorPicker.json attrs）──
+    colors: (n, v) => {
+      const w = n.__batchPicker; if (!w) return;
+      w.colors = Array.isArray(v) ? v : [];
+      if (w.kind === 'grid') w.rebuild();
+      else if (w.kind === 'dialog') w.rebuildDialog();
+    },
+    onSelect: (n, v) => {
+      const w = n.__batchPicker; if (!w) return;
+      w.cbs.select = v;
+    },
+    setColunms: (n, v) => {                                         // SDK 原始拼写（setColumns 笔误），原样接
+      const w = n.__batchPicker; if (!w) return;
+      w.cols = Number(resolveResource(v)) || 0;
+      if (w.kind === 'grid') w.el.style.gridTemplateColumns = w.cols > 0 ? `repeat(${w.cols}, 1fr)` : '';
+      else n.dataset.cols = String(w.cols);
+    },
+    setRows: (n, v) => {
+      const w = n.__batchPicker; if (!w) return;
+      w.rows = Number(resolveResource(v)) || 0;
+      if (w.kind === 'grid') w.el.style.gridTemplateRows = w.rows > 0 ? `repeat(${w.rows}, 1fr)` : '';
+      else n.dataset.rows = String(w.rows);
+    },
+    setAlignment: (n, v) => {
+      // 无 d.ts，取值形状官方未出面：字符串按 CSS 对齐关键字透传，其余记 data-*
+      const w = n.__batchPicker; if (!w) return;
+      w.alignment = v;
+      n.dataset.alignment = String(typeof v === 'object' && v !== null ? JSON.stringify(v) : v);
+      if (typeof v === 'string') { n.style.justifyItems = v; n.style.alignItems = v; }
+    },
+    // ── ColorPickerDialog（ets-loader colorPickerDialog.json attrs：show；colors/onSelect 为外推超集）──
+    show: (n, v) => {
+      const w = n.__batchPicker; if (!w || w.kind !== 'dialog') return;
+      const on = v === true || v === 'true';
+      n.style.display = on ? '' : 'none';                           // 显隐整个遮罩（卡片随遮罩）
+      n.dataset.show = String(on);
+    },
+    // ── PatternLock（pattern_lock.d.ts）──
+    sideLength: (n, v) => {
+      if (n.__arkuiComp !== 'PatternLock') { n.dataset.sideLength = String(resolveResource(v)); return; }
+      const s = toCssSize(v);
+      n.style.width = s; n.style.height = s;
+      n.dataset.sideLength = s;
+      if (n.__patternLock) n.__patternLock.layout();
+    },
+    circleRadius: (n, v) => {
+      if (n.__arkuiComp !== 'PatternLock') { n.dataset.circleRadius = String(resolveResource(v)); return; }
+      const w = n.__patternLock; if (!w) return;
+      w.radius = Number(resolveResource(v)) || 14;
+      n.dataset.circleRadius = String(w.radius);
+      w.layout();
+    },
+    regularColor: (n, v) => {
+      if (n.__arkuiComp !== 'PatternLock') return;
+      n.dataset.regularColor = colorOf(v);
+      n.querySelectorAll('[data-pl-dot]').forEach((/** @type {any} */ d) => { d.style.borderColor = colorOf(v); });
+    },
+    // selectedColor 已并入上方 CheckboxGroup 段的合并条目（同名键 TS1117，按 __arkuiComp 分身守卫）
+    activeColor: (n, v) => {
+      if (n.__arkuiComp !== 'PatternLock') return;
+      const w = n.__patternLock; if (!w) return;
+      w.activeColor = colorOf(v);
+      n.dataset.activeColor = w.activeColor;
+    },
+    pathColor: (n, v) => {
+      if (n.__arkuiComp !== 'PatternLock') return;
+      const w = n.__patternLock; if (!w) return;
+      w.pathColor = colorOf(v);
+      n.dataset.pathColor = w.pathColor;
+      const line = n.querySelector('[data-pl-line]');
+      if (line) line.setAttribute('stroke', w.pathColor);
+    },
+    pathStrokeWidth: (n, v) => {
+      if (n.__arkuiComp !== 'PatternLock') return;
+      const w = n.__patternLock; if (!w) return;
+      w.strokeWidth = Number(resolveResource(v)) || 6;
+      n.dataset.pathStrokeWidth = String(w.strokeWidth);
+      const line = n.querySelector('[data-pl-line]');
+      if (line) line.setAttribute('stroke-width', String(w.strokeWidth));
+    },
+    autoReset: (n, v) => {
+      if (n.__arkuiComp !== 'PatternLock') return;
+      const w = n.__patternLock; if (!w) return;
+      w.autoReset = v !== false;                                    // .d.ts 默认 true
+      n.dataset.autoReset = String(w.autoReset);
+    },
+    skipUnselectedPoint: (n, v) => {
+      if (n.__arkuiComp !== 'PatternLock') return;
+      const w = n.__patternLock; if (!w) return;
+      w.skipUnselected = !!v;                                       // d.ts 有、ets-loader 表无——按 d.ts 补面
+      n.dataset.skipUnselectedPoint = String(w.skipUnselected);
+    },
+    activateCircleStyle: (n, v) => {
+      if (n.__arkuiComp !== 'PatternLock') return;
+      const w = n.__patternLock; if (!w) return;
+      const o = (v && typeof v === 'object') ? v : {};
+      w.actColor = o.color !== undefined ? colorOf(o.color) : w.actColor;
+      if (o.radius !== undefined) w.actRadius = Number(resolveResource(o.radius)) || w.actRadius;
+      w.actWave = !!o.enableWaveEffect;
+      w.actForeground = !!o.enableForeground;
+      n.dataset.activateCircleStyle = JSON.stringify(o);
+      w.layout();
+    },
+    onPatternComplete: (n, v) => {
+      const w = n.__patternLock; if (!w) return;
+      w.cbs.complete = v;
+    },
+    onDotConnect: (n, v) => {
+      const w = n.__patternLock; if (!w) return;
+      w.cbs.dotConnect = v;
+    },
+    // ── SelectionContainer（@ohos.arkui.components.SelectionContainer.d.ts）──
+    copyOption: (n, v) => {
+      if (!n.__selContainer) return;
+      const w = n.__selContainer;
+      w.copyOption = Number(resolveResource(v));
+      n.dataset.copyOption = String(w.copyOption);
+    },
+    caretColor: (n, v) => {
+      if (!n.__selContainer) return;
+      n.dataset.caretColor = colorOf(v);                            // 光标色只在可编辑区可见，DOM 选择容器记 data-*
+    },
+    selectedBackgroundColor: (n, v) => {
+      if (!n.__selContainer) return;
+      const w = n.__selContainer;
+      w.selBg = colorOf(v);
+      n.dataset.selectedBackgroundColor = w.selBg;
+      if (!w.styleEl) {                                             // ::selection 只能走样式表（每实例一条规则）
+        w.styleEl = document.createElement('style');
+        document.head.appendChild(w.styleEl);
+      }
+      w.styleEl.textContent = `[data-arkui-selc="${w.seq}"]::selection{background:${w.selBg}}`
+        + `[data-arkui-selc="${w.seq}"]::-moz-selection{background:${w.selBg}}`;
+    },
+    enableHapticFeedback: (n, v) => {
+      if (!n.__selContainer) return;
+      n.dataset.enableHapticFeedback = String(!!v);                 // DOM 无触感反馈，只记录
+    },
+    textJoinStyle: (n, v) => {
+      if (!n.__selContainer) return;
+      const w = n.__selContainer;
+      w.joinStyle = Number(resolveResource(v));                     // NEWLINE=0 / DIRECT=1
+      n.dataset.textJoinStyle = String(w.joinStyle);
+    },
+    bindSelectionMenu: (n, v) => {
+      if (!n.__selContainer) return;
+      n.dataset.bindSelectionMenu = 'recorded';
+      layoutWarnings.push('SelectionContainer.bindSelectionMenu 记 data-*（选择菜单本实现不渲染）');
+    },
+    editMenuOptions: (n, v) => {
+      if (!n.__selContainer) return;
+      const w = n.__selContainer;
+      w.editMenu = v;
+      n.dataset.editMenuOptions = 'recorded';
+    },
+    onTextSelectionChange: (n, v) => {
+      const w = n.__selContainer; if (!w) return;
+      w.cbs.selectionChange = v;
+    },
+    onWillCopy: (n, v) => {
+      const w = n.__selContainer; if (!w) return;
+      w.cbs.willCopy = v;
+    },
+    onCopy: (n, v) => {
+      const w = n.__selContainer; if (!w) return;
+      w.cbs.copy = v;
+    },
+  };
+
+  // ── CheckboxGroup（checkboxgroup.d.ts）──
+  /** @param {any[]} args */
+  const CheckboxGroup = ensureComponent('CheckboxGroup', (args) => {
+    const el = document.createElement('input');
+    el.style.display = 'inline-block';
+    (/** @type {any} */ (el)).type = 'checkbox';
+    (/** @type {any} */ (el)).__arkuiBatchIn = true;
+    const o = (args && typeof args[0] === 'object' && args[0] !== null) ? args[0] : {};
+    const w = /** @type {any} */ (el).__cg = /** @type {any} */ ({
+      group: o.group !== undefined && o.group !== null ? String(resolveResource(o.group)) : '',
+      all: false,
+      cbs: {},
+      warnedFallback: false,
+    });
+    el.dataset.checkboxGroup = w.group;
+    cgMasters.add(el);
+    // 点击母 Checkbox：全选 ↔ 全不选翻转，同步组员并派发 onChange
+    el.addEventListener('click', () => {
+      w.all = el.checked;
+      cgSyncAndFire(el);
+    });
+    return el;
+  });
+
+  // ── PatternLock（pattern_lock.d.ts）──
+  // 控制器：产物里是 `new PatternLockController()` 自由变量引用，须挂 global。
+  // 绑定走 __el 弱关联（create(args) 的 args[0] 就是控制器本身）。
+  class PatternLockController {
+    constructor() { this.__el = /** @type {any} */ (null); }
+    reset() {
+      if (this.__el && this.__el.__patternLock) this.__el.__patternLock.reset();
+      else layoutWarnings.push('PatternLockController.reset: 尚未绑定到任何 PatternLock');
+    }
+    /** @param {number} result */
+    setChallengeResult(result) {
+      if (!this.__el || !this.__el.__patternLock) {
+        layoutWarnings.push('PatternLockController.setChallengeResult: 尚未绑定到任何 PatternLock');
+        return;
+      }
+      const w = this.__el.__patternLock;
+      w.challenge = Number(result);                                 // CORRECT=1 / WRONG=2（d.ts 显式赋值）
+      this.__el.dataset.challengeResult = String(w.challenge);
+      this.__el.classList.remove('pl-wrong', 'pl-correct');
+      this.__el.classList.add(w.challenge === PatternLockChallengeResult.WRONG ? 'pl-wrong' : 'pl-correct');
+    }
+  }
+  /** @param {number} a @param {number} b 相邻判（skipUnselectedPoint 用）：相邻点才可直连 */
+  const isAdjacent = (a, b) => {
+    const ra = Math.floor((a - 1) / 3), ca = (a - 1) % 3;
+    const rb = Math.floor((b - 1) / 3), cb = (b - 1) % 3;
+    return Math.abs(ra - rb) <= 1 && Math.abs(ca - cb) <= 1;
+  };
+  /** @param {any[]} args */
+  const PatternLock = ensureComponent('PatternLock', (args) => {
+    const el = document.createElement('div');
+    (/** @type {any} */ (el)).__arkuiBatchIn = true;
+    Object.assign(el.style, {
+      position: 'relative', touchAction: 'none', boxSizing: 'border-box',
+      width: '300px', height: '300px',                             // .d.ts 默认 sideLength 300vp
+    });
+    // SVG 连线层（viewBox 随 sideLength 重算，点位坐标即像素）
+    const svg = svgEl('svg', { 'data-pl-svg': '', width: '100%', height: '100%' });
+    svg.style.position = 'absolute';
+    svg.style.inset = '0';
+    svg.style.pointerEvents = 'none';
+    const line = svgEl('polyline', {
+      'data-pl-line': '', fill: 'none', stroke: '#007dff', 'stroke-width': '6',
+      'stroke-linecap': 'round', 'stroke-linejoin': 'round', visibility: 'hidden',
+    });
+    svg.appendChild(line);
+    el.appendChild(svg);
+    // 9 个点位（行优先 1..9），网格坐标由 layout() 摆放
+    /** @type {any[]} */
+    const dots = [];
+    for (let i = 1; i <= 9; i++) {
+      const d = document.createElement('div');
+      d.setAttribute('data-pl-dot', String(i));
+      Object.assign(d.style, {
+        position: 'absolute', boxSizing: 'border-box', borderRadius: '50%',
+        border: '2px solid #b3b7bb', background: 'transparent',
+      });
+      el.appendChild(d);
+      dots.push(d);
+    }
+    const w = /** @type {any} */ (el).__patternLock = /** @type {any} */ ({
+      seq: [],
+      drawing: false,
+      radius: 14, strokeWidth: 6,
+      side: 300,                                                    // .d.ts 默认 sideLength 300vp
+      autoReset: true,
+      skipUnselected: false,
+      regularColor: '#b3b7bb', selectedColor: '#007dff', activeColor: '#007dff',
+      pathColor: '#007dff', actColor: '', actRadius: 0, actWave: false, actForeground: false,
+      challenge: 0,
+      cbs: {},
+      dots,
+    });
+    // 摆放：3×3 网格中心坐标 = (col+0.5)/3 × side；点直径 = 2×circleRadius
+    w.layout = () => {
+      const side = el.clientWidth || w.side;
+      for (let i = 0; i < 9; i++) {
+        const d = /** @type {any} */ (dots[i]);
+        const cx = (((i % 3) + 0.5) / 3) * side;
+        const cy = ((Math.floor(i / 3) + 0.5) / 3) * side;
+        const rr = w.radius;
+        d.style.left = (cx - rr) + 'px';
+        d.style.top = (cy - rr) + 'px';
+        d.style.width = (rr * 2) + 'px';
+        d.style.height = (rr * 2) + 'px';
+      }
+      svg.setAttribute('viewBox', `0 0 ${side} ${side}`);
+    };
+    // 选中/激活态上色
+    /** @param {number} i @param {string} color */
+    const paintDot = (i, color) => {
+      const d = /** @type {any} */ (dots[i - 1]);
+      d.style.borderColor = color;
+      if (w.actColor && color === w.selectedColor) {
+        d.style.background = w.actColor;                            // activateCircleStyle.color 外环填充近似
+        d.style.boxShadow = (w.actRadius > w.radius)
+          ? `0 0 0 ${(w.actRadius - w.radius).toFixed(2)}px ${w.actColor}33` : '';
+      }
+    };
+    /** @param {number} i */
+    const connectDot = (i) => {
+      if (w.seq.includes(i)) return;
+      w.seq.push(i);
+      paintDot(i, w.selectedColor);
+      el.dataset.lastDot = String(i);
+      el.dataset.sequence = w.seq.join('-');
+      if (typeof w.cbs.dotConnect === 'function') {
+        try { w.cbs.dotConnect(i); }
+        catch (e) { layoutWarnings.push(`PatternLock.onDotConnect 派发抛错：${e && e.message}`); }
+      }
+    };
+    /** @param {number[]} seq */
+    const drawPath = (seq) => {
+      const side = el.clientWidth || w.side;
+      const pts = seq.map((/** @type {number} */ i) => {
+        const k = i - 1;
+        return `${(((k % 3) + 0.5) / 3) * side},${((Math.floor(k / 3) + 0.5) / 3) * side}`;
+      }).join(' ');
+      line.setAttribute('points', pts);
+      line.setAttribute('stroke', w.pathColor);
+      line.setAttribute('stroke-width', String(w.strokeWidth));
+      line.setAttribute('visibility', seq.length ? 'visible' : 'hidden');
+    };
+    w.reset = () => {
+      w.seq = [];
+      w.drawing = false;
+      el.dataset.sequence = '';
+      dots.forEach((/** @type {any} */ d) => {
+        d.style.borderColor = w.regularColor;
+        d.style.background = 'transparent';
+        d.style.boxShadow = '';
+      });
+      line.setAttribute('visibility', 'hidden');
+    };
+    /** @param {PointerEvent} e */
+    const hitDot = (e) => {
+      const t = document.elementFromPoint(e.clientX, e.clientY);
+      const d = /** @type {any} */ (t && (t.closest ? t.closest('[data-pl-dot]') : null));
+      return d ? Number(d.getAttribute('data-pl-dot')) : 0;
+    };
+    el.addEventListener('pointerdown', (/** @type {PointerEvent} */ e) => {
+      w.reset();
+      w.drawing = true;
+      try { el.setPointerCapture(e.pointerId); } catch (err) { /* 无捕获时退化为 elementFromPoint 命中 */ }
+      const i = hitDot(e);
+      if (i) connectDot(i);
+      drawPath(w.seq);
+    });
+    el.addEventListener('pointermove', (/** @type {PointerEvent} */ e) => {
+      if (!w.drawing) return;
+      const i = hitDot(e);
+      if (!i) return;
+      if (w.seq.includes(i)) return;
+      // skipUnselectedPoint(true)：跨过的未选中点不自动入串（d.ts 属性语义）
+      if (w.skipUnselected && w.seq.length && !isAdjacent(w.seq[w.seq.length - 1], i)) return;
+      connectDot(i);
+      drawPath(w.seq);
+    });
+    el.addEventListener('pointerup', () => {
+      if (!w.drawing) return;
+      w.drawing = false;
+      const out = w.seq.slice();
+      if (typeof w.cbs.complete === 'function') {
+        try { w.cbs.complete(out); }
+        catch (e) { layoutWarnings.push(`PatternLock.onPatternComplete 派发抛错：${e && e.message}`); }
+      }
+      el.dataset.completed = out.join('-');
+      if (w.autoReset) setTimeout(() => { w.reset(); }, 300);       // autoReset（默认 true）：完成即重置
+    });
+    // 初始摆放：等一次布局（clientWidth 才可信），与 Stepper 的 setTimeout(syncStepper,0) 同理
+    setTimeout(() => { w.layout(); w.reset(); }, 0);
+    // create(args)：args[0] 就是 controller 本体（PatternLockInterface 单参）
+    const c = args && args[0];
+    if (c && typeof c.reset === 'function' && 'setChallengeResult' in c) c.__el = el;
+    return el;
+  });
+
+  // ── SelectionContainer（@ohos.arkui.components.SelectionContainer.d.ts）──
+  class SelectionContainerController {
+    constructor() { this.__el = /** @type {any} */ (null); }
+    closeSelectionMenu() {
+      if (!this.__el || !this.__el.__selContainer) {
+        layoutWarnings.push('SelectionContainerController.closeSelectionMenu: 尚未绑定');
+        return;
+      }
+      this.__el.__selContainer.menuOpen = false;
+      this.__el.dataset.selectionMenu = 'closed';
+    }
+    clearTextSelection() {
+      const w = this.__el && this.__el.__selContainer;
+      if (!w) { layoutWarnings.push('SelectionContainerController.clearTextSelection: 尚未绑定'); return; }
+      const sel = window.getSelection();
+      if (sel) sel.removeAllRanges();
+      w.lastTexts = [];
+      if (typeof w.cbs.selectionChange === 'function') {
+        try { w.cbs.selectionChange([]); }
+        catch (e) { layoutWarnings.push(`SelectionContainer.onTextSelectionChange 派发抛错：${e && e.message}`); }
+      }
+    }
+  }
+  /** @type {number} */ let selcSeq = 0;
+  /** @param {any[]} args */
+  const SelectionContainer = ensureComponent('SelectionContainer', (args) => {
+    const el = document.createElement('div');
+    (/** @type {any} */ (el)).__arkuiBatchIn = true;
+    Object.assign(el.style, { userSelect: 'text', WebkitUserSelect: 'text' });
+    const my = ++selcSeq;
+    el.setAttribute('data-arkui-selc', String(my));
+    const w = /** @type {any} */ (el).__selContainer = /** @type {any} */ ({
+      seq: my,
+      copyOption: CopyOptions.InApp,                                // Text 族同款缺省（copyOption 缺省 InApp）
+      joinStyle: SelectionContainerTextJoinStyle.NEWLINE,
+      selBg: '', styleEl: null, editMenu: null,
+      menuOpen: false,
+      lastTexts: [],
+      cbs: {},
+    });
+    // create({controller})：SelectionContainerOptions.controller 必填（d.ts）
+    const o = (args && typeof args[0] === 'object' && args[0] !== null) ? args[0] : {};
+    if (o.controller && typeof o.controller === 'object') o.controller.__el = el;
+    // 选区文本收集：range 与容器求交，逐 range 取克隆文本（数组形态对齐 d.ts Callback<Array<string>>）
+    /** @returns {string[]} */
+    const collect = () => {
+      const sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0) return [];
+      /** @type {string[]} */
+      const out = [];
+      for (let i = 0; i < sel.rangeCount; i++) {
+        const r = sel.getRangeAt(i);
+        if (!el.contains(r.commonAncestorContainer)) continue;
+        const frag = r.cloneContents();
+        const holder = document.createElement('div');
+        holder.appendChild(frag);
+        const text = (holder.textContent || '').trim();
+        if (text) out.push(text);
+      }
+      return out;
+    };
+    let selTimer = 0;
+    const onSelChange = () => {
+      if (selTimer) return;
+      selTimer = setTimeout(() => {
+        selTimer = 0;
+        const texts = collect();
+        if (texts.length === 0 && w.lastTexts.length === 0) return;   // 空选区只发一次（离开选择不发重复空）
+        w.lastTexts = texts;
+        if (typeof w.cbs.selectionChange === 'function') {
+          try { w.cbs.selectionChange(texts); }
+          catch (e) { layoutWarnings.push(`SelectionContainer.onTextSelectionChange 派发抛错：${e && e.message}`); }
+        }
+      }, 0);
+    };
+    document.addEventListener('selectionchange', onSelChange);
+    el.addEventListener('copy', (/** @type {ClipboardEvent} */ e) => {
+      const texts = collect();
+      const content = texts.join(w.joinStyle === SelectionContainerTextJoinStyle.NEWLINE ? '\n' : '');
+      // copyOption None=0：禁止复制（preventDefault）；其余档位放行
+      if (w.copyOption === CopyOptions.None) { e.preventDefault(); return; }
+      if (typeof w.cbs.willCopy === 'function') {
+        let ok = true;
+        try { ok = w.cbs.willCopy(content) !== false; }              // Callback<string, boolean>：false 拦截
+        catch (err) { layoutWarnings.push(`SelectionContainer.onWillCopy 派发抛错：${err && err.message}`); }
+        if (!ok) { e.preventDefault(); return; }
+      }
+      if (e.clipboardData) e.clipboardData.setData('text/plain', content);
+      e.preventDefault();
+      el.dataset.lastCopied = content;
+      if (typeof w.cbs.copy === 'function') {
+        try { w.cbs.copy(content); }
+        catch (err) { layoutWarnings.push(`SelectionContainer.onCopy 派发抛错：${err && err.message}`); }
+      }
+    });
+    return el;
+  });
+
+  // ── Option（ets-loader option.json：parents=[Menu]，attrs=字体四件）──
+  // ⚠️ 无 d.ts：create 签名官方未在本机 SDK 出面。取宽容形态：字符串或 {value, icon?}。
+  // 字体四件（fontColor/fontSize/fontWeight/fontFamily）不进本表——cssPropSize/cssPropRaw
+  // 通用落点已覆盖（fontColor→color 等），别处拦会吞掉通用路径。
+  /** @param {any[]} args */
+  const Option = ensureComponent('Option', (args) => {
+    const el = document.createElement('div');
+    (/** @type {any} */ (el)).__arkuiBatchIn = true;
+    el.dataset.option = '';
+    el.style.display = 'flex';
+    el.style.alignItems = 'center';
+    el.style.cursor = 'pointer';
+    el.style.padding = '4px 8px';
+    const o = (args && typeof args[0] === 'object' && args[0] !== null) ? (args[0] || {})
+      : { value: args && args[0] !== undefined ? args[0] : '' };
+    if (o.icon !== undefined && o.icon !== null) {
+      const ic = document.createElement('span');
+      ic.setAttribute('data-option-icon', '');
+      ic.textContent = String(resolveResource(o.icon));
+      el.appendChild(ic);
+    }
+    const text = document.createElement('span');
+    text.setAttribute('data-option-value', '');
+    text.textContent = String(resolveResource(o.value === undefined ? '' : o.value));
+    el.appendChild(text);
+    // 点击：记录选中并派发 CustomEvent（attrs 表无 onSelect——点击消费方是 Menu/Select，
+    // DOM 侧用事件冒泡给宿主，不虚构 attrs 表之外的属性）
+    el.addEventListener('click', () => {
+      el.dataset.selected = 'true';
+      el.dispatchEvent(new CustomEvent('optionselect', { bubbles: true, detail: { value: text.textContent } }));
+    });
+    return el;
+  });
+
+  // ── ColorPicker（ets-loader colorPicker.json）──
+  /** @param {any[]} args @param {string} kind 'grid'=组件本体 / 'dialog'=对话框内嵌 */
+  function buildPickerGrid(args, kind) {
+    const el = document.createElement('div');
+    (/** @type {any} */ (el)).__arkuiBatchIn = true;
+    Object.assign(el.style, { display: 'grid', gap: '6px', gridTemplateColumns: 'repeat(5, 28px)' });
+    const w = /** @type {any} */ (el).__batchPicker = /** @type {any} */ ({
+      kind, el,
+      colors: [], cols: 0, rows: 0, alignment: '',
+      cbs: {},
+      /** 按当前 colors 重建色块阵 */
+      rebuild: () => {
+        el.querySelectorAll('[data-swatch]').forEach((/** @type {any} */ s) => s.remove());
+        w.colors.forEach((/** @type {any} */ c) => {
+          const sw = document.createElement('div');
+          sw.setAttribute('data-swatch', '');
+          sw.dataset.color = colorOf(c);
+          Object.assign(sw.style, {
+            width: '28px', height: '28px', borderRadius: '4px',
+            background: colorOf(c), cursor: 'pointer', boxSizing: 'border-box',
+          });
+          sw.addEventListener('click', () => {
+            el.querySelectorAll('[data-swatch]').forEach((/** @type {any} */ s) => {
+              s.style.border = 'none'; s.dataset.selected = 'false';
+            });
+            sw.style.border = '2px solid #1a1a1a';
+            sw.dataset.selected = 'true';
+            el.dataset.lastColor = sw.dataset.color;
+            if (typeof w.cbs.select === 'function') {
+              try { w.cbs.select(sw.dataset.color); }
+              catch (e) { layoutWarnings.push(`ColorPicker.onSelect 派发抛错：${e && e.message}`); }
+            }
+          });
+          el.appendChild(sw);
+        });
+      },
+      /** 对话框形态：colors 落到内嵌网格（外推超集，见头注） */
+      rebuildDialog: () => {
+        if (!w.gridEl || !w.gridEl.__batchPicker) return;
+        w.gridEl.__batchPicker.colors = w.colors;
+        w.gridEl.__batchPicker.cbs = w.cbs;
+        w.gridEl.__batchPicker.rebuild();
+      },
+      card: /** @type {any} */ (null),
+      gridEl: /** @type {any} */ (null),
+    });
+    if (kind === 'dialog') {
+      // fixed 遮罩 + 居中卡片：show(true/false) 只切卡片显示（BATCHINPUT_ATTRS.show）
+      el.style.position = 'fixed';
+      el.style.inset = '0';
+      el.style.background = 'rgba(0,0,0,0.3)';
+      el.style.display = 'none';                                    // 缺省隐藏（show 控制）
+      el.style.zIndex = '999';
+      const card = document.createElement('div');
+      card.setAttribute('data-picker-card', '');
+      Object.assign(card.style, {
+        position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%,-50%)',
+        background: '#fff', borderRadius: '8px', padding: '12px',
+      });
+      const grid = buildPickerGrid([], 'grid');
+      grid.removeAttribute('data-arkui-comp');                      // 内嵌网格不冒充独立组件
+      (/** @type {any} */ (grid)).__arkuiBatchIn = false;
+      w.card = card;
+      w.gridEl = grid;
+      card.appendChild(grid);
+      el.appendChild(card);
+    }
+    if (args && Array.isArray(args[0])) {                           // 宽容：create([...colors]) 直落
+      w.colors = args[0];
+      if (kind === 'grid') w.rebuild(); else w.rebuildDialog();
+    }
+    return el;
+  }
+  /** @param {any[]} args */
+  const ColorPicker = ensureComponent('ColorPicker', (args) => buildPickerGrid(args, 'grid'));
+  /** @param {any[]} args */
+  const ColorPickerDialog = ensureComponent('ColorPickerDialog', (args) => buildPickerGrid(args, 'dialog'));
+
+  // ══════════ batch-media（R66）：ContainerSpan / ImageSpan / RichText /
+  //            SymbolGlyph / SymbolSpan / Web ══════════
+  //
+  // 产物形态（实测 fixtures/pages/BatchMediaDemo.ts）：
+  //   Text() { ContainerSpan() { Span('A'); ImageSpan('…png'); } }
+  //     .textBackgroundStyle({ color: '#ffe0b2', radius: 6 });
+  //   SymbolGlyph($r('sys.symbol.ohos_wifi')).fontSize(24).fontColor(['#f00'])
+  //     .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+  //     .effectStrategy(SymbolEffectStrategy.SCALE);
+  //   RichText('<p>hi</p>').onStart(cb).onComplete(cb);
+  //   Web({ src: '…', controller: new WebController() }).onPageBegin(cb).onPageEnd(cb);
+  //
+  // 真机语义与 DOM 映射：
+  //   · ContainerSpan（container_span.d.ts:52-78）——Text 的内联子段，只支持
+  //     textBackgroundStyle（TextBackgroundStyle = { color?, radius? }，span.d.ts:28-45），
+  //     统一管理内部多个 Span/ImageSpan 的背景与圆角 → <span>（display:inline）+
+  //     background-color/border-radius。子项未自设背景时视觉透出包裹层背景（CSS 天然成立）。
+  //   · ImageSpan（image_span.d.ts:66-169）——Text 内联图 → <span>（inline-block，
+  //     vertical-align 默认 BOTTOM，JSDoc 原话）内含 <img>；objectFit → CSS object-fit；
+  //     colorFilter 的 4x5 矩阵无法用 CSS filter 表达 → data-* + 诊断；onComplete 载荷用
+  //     真实解码尺寸（naturalWidth/Height）；onError → img error。坑 ⑧ 收口：load 可能晚于
+  //     onComplete 属性挂载——回调经状态袋间接引用 + complete 已成立时补派发。
+  //   · RichText（rich_text.d.ts:29-77）——HTML 内容独立渲染上下文 → <iframe srcdoc>；
+  //     sandbox="allow-same-origin"（不给 allow-scripts，与真机"独立上下文"一致，
+  //     又允许测试读 contentDocument）；onStart 在内容装载开始时派发、onComplete 挂在
+  //     iframe load 事件上。内容变化（重渲染）经 contentUpdater diff 更新 srcdoc。
+  //   · SymbolGlyph / SymbolSpan（symbolglyph.d.ts:618+ / symbol_span.d.ts:65-187）——
+  //     符号图标 → 文本元素，textContent = 符号名（浏览器没有 HM Symbol 字体，
+  //     显示名字本身 = 如实降级且可断言）；fontColor 数组按 renderingStrategy 取第一层
+  //     （SINGLE 本来就只应用第一色；MULTIPLE_COLOR/MULTIPLE_OPACITY 的分层着色
+  //     无法在纯文本上表达 → 记 data-* + 诊断）；effectStrategy=SCALE 给一次性 CSS
+  //     缩放动画，HIERARCHICAL 记诊断。SymbolSpan 是 Text 内联子段（<span>），
+  //     未设置的字体属性继承父 Text（d.ts NOTE：inherits from its parent Text——CSS 继承天然成立）。
+  //   · Web（web.d.ts:3446 WebOptions{src,controller} / 5814+ WebAttribute）——
+  //     → <iframe>（无 sandbox：真机 Web 可执行 JS）；src → iframe.src；加载生命周期
+  //     桥接：onPageBegin（src 赋值时登记 pending，load 时补派发，保证 begin 先于 end）、
+  //     onPageEnd/onLoadFinished（iframe load）、onProgressChange({newProgress:100}
+  //     ——DOM 观测不到渐进进度，只在完成时派发终值）、onTitleReceive（同源才读得到
+  //     contentDocument.title）、onErrorReceive（iframe error，极少触发）。
+  //     布尔开关族（javaScriptAccess/domStorageAccess/…）逐项落 data-*；userAgent/
+  //     initialScale/textZoomRatio/javaScriptProxy/javaScriptOnDocument* 无法作用于
+  //     原生 iframe → data-* + 诊断。WebController（web.d.ts:3216，deprecated but valid）
+  //     loadUrl/refresh/backward/forward/accessBackward/runJavaScript/stop 映射到
+  //     iframe 同源 API（try/catch 兜底跨域）；clearHistory/getCookieManager 等无法
+  //     实现的显式记诊断，不静默假装成功。
+
+  // ── Resource / 字符串 → 符号名（SymbolGlyph/SymbolSpan 共用）──
+  // $r('sys.symbol.x') 的最小形态是 { id, params: ['sys.symbol.x'] }：名字在 params[0]，
+  // 必须先于 resolveResource 查表（查表只会把它换成数字 id，名字就丢了）。
+  /** @param {any} v */
+  const symbolNameOf = (v) => {
+    if (v === undefined || v === null) return '';
+    // 名字在原始资源的 params[0]，必须【先于】resolveResource 检查——
+    // resolveResource 对带 id/type 的对象直接查表，查不到会把整个资源换成 undefined
+    if (v && typeof v === 'object' && Array.isArray(v.params) && typeof v.params[0] === 'string') {
+      return v.params[0];
+    }
+    const r = resolveResource(v);
+    if (typeof r === 'string') return r;
+    if (r && typeof r === 'object') {
+      if (r.id !== undefined) return String(r.id);
+    }
+    return '';
+  };
+  // 符号缩放动画的 keyframes 只注入一次（同 LoadingProgress 的 keyframes 做法）
+  const ensureSymbolKeyframes = () => {
+    if (!document.getElementById('arkui-symbol-keyframes')) {
+      const st = document.createElement('style');
+      st.id = 'arkui-symbol-keyframes';
+      st.textContent = '@keyframes arkuiSymScale{0%,100%{transform:scale(1)}50%{transform:scale(0.5)}}';
+      document.head.appendChild(st);
+    }
+  };
+  // SymbolEffectStrategy（symbolglyph.d.ts:118-152）：NONE=0 / SCALE=1 / HIERARCHICAL=2
+  /** @type {Record<string, number>} */
+  const SYMBOL_EFFECT_STRATEGY = { NONE: 0, SCALE: 1, HIERARCHICAL: 2 };
+  // SymbolRenderingStrategy（symbolglyph.d.ts:55-106）：SINGLE=0 / MULTIPLE_COLOR=1 / MULTIPLE_OPACITY=2
+  /** @type {Record<string, number>} */
+  const SYMBOL_RENDERING_STRATEGY = { SINGLE: 0, MULTIPLE_COLOR: 1, MULTIPLE_OPACITY: 2 };
+  // EffectScope / EffectDirection / EffectFillStyle / ReplaceEffectType（symbolglyph.d.ts:163-310）
+  /** @type {Record<string, number>} */
+  const SYMBOL_EFFECT_SCOPE = { LAYER: 0, WHOLE: 1 };
+  /** @type {Record<string, number>} */
+  const SYMBOL_EFFECT_DIRECTION = { DOWN: 0, UP: 1 };
+  /** @type {Record<string, number>} */
+  const SYMBOL_EFFECT_FILL_STYLE = { OPACITY: 0, COLOR: 1, GRADIENT: 2 };
+  /** @type {Record<string, number>} */
+  const SYMBOL_REPLACE_EFFECT_TYPE = { DIRECT: 0, CROSS_FADE: 1 };
+  // 符号字体属性族（SymbolGlyph / SymbolSpan 共用实现）
+  /** @param {any} n @param {any} v */
+  const symFontSize = (n, v) => { n.style.fontSize = `${dimOf(v, 16)}px`; };
+  /** @param {any} n @param {any} v */
+  const symFontColor = (n, v) => {
+    const arr = Array.isArray(v) ? v : [v];
+    const w = n.__sym;
+    if (w) w.colors = arr;
+    if (arr.length > 0) n.style.color = colorOf(arr[0]);    // 单色模式：只应用第一色
+    n.dataset.fontColorLayers = String(arr.length);
+  };
+  /** @param {any} n @param {any} v */
+  const symFontWeight = (n, v) => { n.style.fontWeight = String(resolveResource(v)); };
+  /** @param {any} n @param {any} v */
+  const symEffectStrategy = (n, v) => {
+    const k = Number(resolveResource(v));
+    n.dataset.effectStrategy = String(k);
+    if (k === SYMBOL_EFFECT_STRATEGY.SCALE) {
+      ensureSymbolKeyframes();
+      n.style.animation = 'arkuiSymScale 0.6s ease-in-out 1';   // 一次性整体缩放
+    } else if (k === SYMBOL_EFFECT_STRATEGY.HIERARCHICAL) {
+      // 分层透明度动效需要逐层节点，纯文本降级无法表达
+      layoutWarnings.push('Symbol 组件 effectStrategy=HIERARCHICAL 的分层动效未实现（记 data-effectStrategy）');
+    }
+  };
+  /** @param {any} n @param {any} v */
+  const symRenderingStrategy = (n, v) => {
+    const k = Number(resolveResource(v));
+    n.dataset.renderingStrategy = String(k);
+    const w = n.__sym;
+    if (w) w.renderingStrategy = k;
+    if (k !== SYMBOL_RENDERING_STRATEGY.SINGLE) {
+      // MULTIPLE_COLOR（最多三层配色）/ MULTIPLE_OPACITY（100%/50%/20% 分层透明度）
+      // 都要逐层节点着色，纯文本降级只应用第一层
+      layoutWarnings.push('Symbol 组件 renderingStrategy 的分层着色未实现，只应用第一层色（记 data-renderingStrategy）');
+    }
+  };
+  /** @param {any} n @param {any} v */
+  const symSymbolEffect = (n, v) => {
+    const name = v && v.constructor && v.constructor.name ? v.constructor.name : String(v);
+    n.dataset.symbolEffect = name;
+    layoutWarnings.push(`Symbol 组件 symbolEffect(${name}) 的对象式动效 API 未实现（记 data-symbolEffect）`);
+  };
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
+  const SYMBOLGLYPH_ATTRS = {
+    fontSize: symFontSize,
+    fontColor: symFontColor,
+    fontWeight: symFontWeight,
+    effectStrategy: symEffectStrategy,
+    renderingStrategy: symRenderingStrategy,
+    symbolEffect: symSymbolEffect,
+    // minFontScale/maxFontScale/symbolShadow/shaderStyle 落通用 data-*（无 DOM 对应物）
+  };
+
+  // ── ① ContainerSpan（container_span.d.ts）：Text 内联背景/圆角包裹层 ──
+  // TextBackgroundStyle.radius 是 Dimension | BorderRadiuses（span.d.ts:40-45）：后者按四角展开
+  /** @param {any} n @param {any} v */
+  const applyTextBackground = (n, v) => {
+    const o = (v && typeof v === 'object' && v) || {};
+    if (o.color !== undefined) n.style.backgroundColor = colorOf(o.color);
+    const r = o.radius;
+    if (r !== undefined && r !== null && typeof r === 'object' && !Array.isArray(r)) {
+      n.style.borderRadius = `${dimOf(r.topLeft, 0)}px ${dimOf(r.topRight, 0)}px`
+        + ` ${dimOf(r.bottomRight, 0)}px ${dimOf(r.bottomLeft, 0)}px`;
+    } else if (r !== undefined && r !== null) {
+      n.style.borderRadius = toCssSize(r);
+    }
+    try { n.dataset.textBackgroundStyle = JSON.stringify(v); }
+    catch (e) { n.dataset.textBackgroundStyle = String(v); }
+  };
+  const ContainerSpan = ensureComponent('ContainerSpan', () => {
+    const el = document.createElement('span');
+    (/** @type {any} */ (el)).__arkuiContainerSpan = true;
+    el.dataset.containerSpan = '';
+    el.style.display = 'inline';            // 内联子段：不参与 Text 的行内断行布局
+    return el;
+  });
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
+  const CONTAINERSPAN_ATTRS = {
+    textBackgroundStyle: applyTextBackground,
+  };
+
+  // ── ② ImageSpan（image_span.d.ts）：Text 内联图 ──
+  // ImageSpanAlignment（enums.d.ts:3635-3686）：BASELINE=0 / BOTTOM=1 / CENTER=2 / TOP=3 /
+  // FOLLOW_PARAGRAPH=4（跟随父 Text 的对齐 = 清掉自身设置）
+  /** @type {Record<string, number>} */
+  const IMAGESPAN_ALIGNMENT = { BASELINE: 0, BOTTOM: 1, CENTER: 2, TOP: 3, FOLLOW_PARAGRAPH: 4 };
+  /** @type {Record<string, string>} */
+  const IMAGESPAN_VALIGN_CSS = { 0: 'baseline', 1: 'bottom', 2: 'middle', 3: 'top' };
+  // ImageFit → CSS（Contain=0/Cover=1/Fill=3/ScaleDown=4/None=5；Auto=2 如实不映射）
+  /** @type {Record<string, string>} */
+  const IMAGESPAN_FIT_CSS = { 0: 'contain', 1: 'cover', 3: 'fill', 4: 'scale-down', 5: 'none' };
+  const ImageSpan = ensureComponent('ImageSpan', (args) => {
+    const el = document.createElement('span');
+    (/** @type {any} */ (el)).__arkuiImageSpan = true;
+    el.dataset.imageSpan = '';
+    // inline-block 才能 width/height/object-fit；vertical-align 默认 BOTTOM（JSDoc 原话）
+    el.style.display = 'inline-block';
+    el.style.verticalAlign = 'bottom';
+    el.style.overflow = 'hidden';
+    const img = document.createElement('img');
+    img.setAttribute('data-arkui-imagespan-img', '');
+    img.style.width = '100%';
+    img.style.height = '100%';
+    img.style.display = 'block';
+    const src = args && args[0] !== undefined && args[0] !== null ? resolveResource(args[0]) : null;
+    if (src != null) img.src = String(src);
+    el.appendChild(img);
+    const w = /** @type {any} */ (el).__imgs = /** @type {any} */ ({ img, cbs: {}, loaded: false, failed: false, fired: false });
+    // 事件收口（坑 ⑧）：回调经 __imgs.cbs 间接引用（覆盖语义）；补派发只跑一次
+    w.tryFire = () => {
+      if (w.fired) return;
+      if (!w.loaded && !w.failed) return;
+      w.fired = true;
+      if (w.loaded) {
+        const cb = w.cbs.complete;
+        if (typeof cb === 'function') {
+          setTimeout(() => {
+            try {
+              const cr = img.getBoundingClientRect();
+              const er = el.getBoundingClientRect();
+              // ImageLoadResult（image_span.d.ts:216-344）：宽高用真实解码尺寸（px），
+              // contentOffset 置 0（DOM 的 object-fit 模型下内容从盒子左上角起）
+              cb({
+                width: img.naturalWidth, height: img.naturalHeight,
+                componentWidth: er.width, componentHeight: er.height,
+                loadingStatus: 1,                       // 1 = 成功解码（JSDoc 原话）
+                contentWidth: cr.width, contentHeight: cr.height,
+                contentOffsetX: 0, contentOffsetY: 0,
+              });
+            } catch (e) { layoutWarnings.push(`ImageSpan.onComplete 回调抛错：${e && e.message}`); }
+          }, 0);
+        }
+      } else {
+        const cb = w.cbs.error;
+        if (typeof cb === 'function') {
+          setTimeout(() => {
+            try { cb({ name: 'ImageSpan', message: `load failed: ${img.src}` }); }
+            catch (e) { layoutWarnings.push(`ImageSpan.onError 回调抛错：${e && e.message}`); }
+          }, 0);
+        }
+      }
+    };
+    img.addEventListener('load', () => { w.loaded = true; w.tryFire(); });
+    img.addEventListener('error', () => { w.failed = true; w.tryFire(); });
+    return el;
+  });
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
+  const IMAGESPAN_ATTRS = {
+    verticalAlign: (n, v) => {
+      const k = Number(resolveResource(v));
+      n.dataset.verticalAlign = String(k);
+      const css = IMAGESPAN_VALIGN_CSS[k];
+      if (css) n.style.verticalAlign = css;
+      else if (k === IMAGESPAN_ALIGNMENT.FOLLOW_PARAGRAPH) n.style.verticalAlign = '';
+    },
+    objectFit: (n, v) => {
+      const fit = Number(resolveResource(v));
+      n.dataset.objectFit = String(fit);
+      const css = IMAGESPAN_FIT_CSS[fit];
+      const w = /** @type {any} */ (n).__imgs;
+      if (css && w && w.img) w.img.style.objectFit = css;
+    },
+    colorFilter: (n, v) => {
+      try { n.dataset.colorFilter = JSON.stringify(v); }
+      catch (e) { n.dataset.colorFilter = '1'; }
+      layoutWarnings.push('ImageSpan.colorFilter 的 4x5 矩阵未映射为 CSS filter（记 data-colorFilter）');
+    },
+    alt: (n, v) => {
+      // 真机 alt 是 PixelMap（image_span.d.ts:168）；DOM 无 PixelMap，只如实记录
+      const r = resolveResource(v);
+      n.dataset.alt = typeof r === 'string' ? r : String(v);
+    },
+    supportSvg2: (n, v) => { n.dataset.supportSvg2 = String(v === true); },
+    onComplete: (n, v) => {
+      const w = /** @type {any} */ (n).__imgs;
+      if (!w) return;
+      w.cbs.complete = v;
+      w.tryFire();                              // 图已在缓存里完成时补派发
+    },
+    onError: (n, v) => {
+      const w = /** @type {any} */ (n).__imgs;
+      if (!w) return;
+      w.cbs.error = v;
+      w.tryFire();
+    },
+    textBackgroundStyle: applyTextBackground,   // BaseSpan 家族属性（span.d.ts:49-66）
+  };
+
+  // ── ③ RichText（rich_text.d.ts）：HTML 内容 → <iframe srcdoc> ──
+  /** @param {any} el @param {any} content */
+  const applyRichTextContent = (el, content) => {
+    const w = /** @type {any} */ (el).__richTxt;
+    if (!w) return;
+    const s = content === undefined || content === null ? '' : String(resolveResource(content));
+    w.lastContent = s;
+    w.started = true;
+    // onStart 延后一拍派发，且【派发时才读回调】——属性此刻还没挂上，提前捕获必丢（坑 ⑧）
+    setTimeout(() => {
+      const cbStart = w.cbs.start;
+      if (typeof cbStart === 'function') {
+        try { cbStart(); }
+        catch (e) { layoutWarnings.push(`RichText.onStart 回调抛错：${e && e.message}`); }
+      }
+    }, 0);
+    // 相同内容重赋 srcdoc 会触发整页重载——diff 掉
+    if (w.frame.getAttribute('srcdoc') !== s) w.frame.setAttribute('srcdoc', s);
+  };
+  const RichText = ensureComponent('RichText', (args) => {
+    const el = document.createElement('div');
+    (/** @type {any} */ (el)).__arkuiRichText = true;
+    el.dataset.richText = '';
+    el.style.position = 'relative';
+    el.style.width = '100%';
+    const frame = document.createElement('iframe');
+    frame.setAttribute('data-arkui-richtext-frame', '');
+    frame.style.width = '100%';
+    frame.style.height = '100%';
+    frame.style.border = 'none';
+    frame.style.display = 'block';
+    // allow-same-origin：让测试能读 contentDocument 断言渲染结果；
+    // 不给 allow-scripts——真机 RichText 的 HTML 跑在独立上下文
+    frame.setAttribute('sandbox', 'allow-same-origin');
+    el.appendChild(frame);
+    const w = /** @type {any} */ (el).__richTxt = /** @type {any} */ ({ frame, cbs: {}, lastContent: null, started: false });
+    applyRichTextContent(el, args && args[0]);
+    // load 挂在首份内容装载之后（避免 about:blank 的首次空 load 误派发 onComplete）
+    frame.addEventListener('load', () => {
+      if (!w.started) return;
+      const cbDone = w.cbs.complete;
+      if (typeof cbDone === 'function') {
+        setTimeout(() => {
+          try { cbDone(); }
+          catch (e) { layoutWarnings.push(`RichText.onComplete 回调抛错：${e && e.message}`); }
+        }, 0);
+      }
+    });
+    return el;
+  }, (/** @type {any} */ node, /** @type {any} */ args) => {
+    const content = args && args[0];
+    const s = content === undefined || content === null ? '' : String(resolveResource(content));
+    const w = /** @type {any} */ (node).__richTxt;
+    if (w && w.lastContent !== s) applyRichTextContent(node, content);
+  });
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
+  const RICHTEXT_ATTRS = {
+    onStart: (n, v) => {
+      const w = /** @type {any} */ (n).__richTxt;
+      if (w) w.cbs.start = v;
+    },
+    onComplete: (n, v) => {
+      const w = /** @type {any} */ (n).__richTxt;
+      if (w) w.cbs.complete = v;
+    },
+  };
+
+  // ── ④ SymbolGlyph（symbolglyph.d.ts）：独立符号图标 ──
+  const SymbolGlyph = ensureComponent('SymbolGlyph', (args) => {
+    const el = document.createElement('div');
+    (/** @type {any} */ (el)).__arkuiSymbolGlyph = true;
+    el.dataset.symbolGlyph = '';
+    /** @type {any} */ (el).__sym = /** @type {any} */ ({ renderingStrategy: 0, colors: null });
+    const name = symbolNameOf(args && args[0]);
+    if (name) {
+      el.dataset.symbol = name;
+      // 浏览器没有 HM Symbol 字体：符号名作为可见文本 = 如实降级 + 可断言
+      el.textContent = name;
+    } else if (args && args[0] !== undefined) {
+      el.dataset.symbolSrc = String(args[0]);   // 解析不出名字的资源：记原始引用
+    }
+    el.style.display = 'inline-flex';
+    el.style.alignItems = 'center';
+    el.style.justifyContent = 'center';
+    return el;
+  });
+
+  // ── ⑤ SymbolSpan（symbol_span.d.ts）：Text 内联符号子段 ──
+  // d.ts NOTE：未设置的属性继承父 Text——DOM 里不设 inline 样式即天然继承
+  const SymbolSpan = ensureComponent('SymbolSpan', (args) => {
+    const el = document.createElement('span');
+    (/** @type {any} */ (el)).__arkuiSymbolSpan = true;
+    el.dataset.symbolSpan = '';
+    /** @type {any} */ (el).__sym = /** @type {any} */ ({ renderingStrategy: 0, colors: null });
+    const name = symbolNameOf(args && args[0]);
+    if (name) {
+      el.dataset.symbol = name;
+      el.textContent = name;                    // 同 SymbolGlyph 的如实降级
+    } else if (args && args[0] !== undefined) {
+      el.dataset.symbolSrc = String(args[0]);
+    }
+    return el;
+  });
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
+  const SYMBOLSPAN_ATTRS = {
+    fontSize: symFontSize,
+    fontColor: symFontColor,
+    fontWeight: symFontWeight,
+    effectStrategy: symEffectStrategy,
+    renderingStrategy: symRenderingStrategy,
+  };
+
+  // ── ⑥ Web（web.d.ts）：<iframe> 垫片 + WebController ──
+  /** @param {string} key */
+  const webFlag = (key) => (/** @type {any} */ n, /** @type {any} */ v) => {
+    n.dataset[key] = String(!!resolveResource(v));
+  };
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
+  const WEB_ATTRS = {
+    // 布尔开关族：DOM iframe 无逐项对应物，逐项落 data-*（不静默丢失）
+    javaScriptAccess: webFlag('javaScriptAccess'),
+    domStorageAccess: webFlag('domStorageAccess'),
+    fileAccess: webFlag('fileAccess'),
+    onlineImageAccess: webFlag('onlineImageAccess'),
+    imageAccess: webFlag('imageAccess'),
+    zoomAccess: webFlag('zoomAccess'),
+    multiWindowAccess: webFlag('multiWindowAccess'),
+    databaseAccess: webFlag('databaseAccess'),
+    geolocationAccess: webFlag('geolocationAccess'),
+    mediaPlayGestureAccess: webFlag('mediaPlayGestureAccess'),
+    overviewModeAccess: webFlag('overviewModeAccess'),
+    verticalScrollBarAccess: webFlag('verticalScrollBarAccess'),
+    horizontalScrollBarAccess: webFlag('horizontalScrollBarAccess'),
+    blockNetwork: webFlag('blockNetwork'),
+    wideViewModeAccess: webFlag('wideViewModeAccess'),
+    cacheMode: (n, v) => { n.dataset.cacheMode = String(Number(resolveResource(v))); },
+    darkMode: (n, v) => {
+      n.dataset.darkMode = String(resolveResource(v));
+      layoutWarnings.push('Web.darkMode 无法作用于原生 iframe（记 data-darkMode）');
+    },
+    forceDarkAccess: (n, v) => {
+      n.dataset.forceDarkAccess = String(!!v);
+      layoutWarnings.push('Web.forceDarkAccess 无法作用于原生 iframe（记 data-forceDarkAccess）');
+    },
+    userAgent: (n, v) => {
+      n.dataset.userAgent = String(resolveResource(v));
+      layoutWarnings.push('Web.userAgent 无法作用于原生 iframe（记 data-userAgent）');
+    },
+    initialScale: (n, v) => {
+      n.dataset.initialScale = String(resolveResource(v));
+      layoutWarnings.push('Web.initialScale 无法作用于原生 iframe（记 data-initialScale）');
+    },
+    textZoomRatio: (n, v) => {
+      n.dataset.textZoomRatio = String(resolveResource(v));
+      layoutWarnings.push('Web.textZoomRatio 无法作用于原生 iframe（记 data-textZoomRatio）');
+    },
+    javaScriptProxy: (n, v) => {
+      try { n.dataset.javaScriptProxy = JSON.stringify(v && v.name ? v.name : v); }
+      catch (e) { n.dataset.javaScriptProxy = '1'; }
+      layoutWarnings.push('Web.javaScriptProxy 无法注入原生 iframe（记 data-javaScriptProxy）');
+    },
+    javaScriptOnDocumentStart: (n, v) => {
+      n.dataset.javaScriptOnDocumentStart = String(typeof v === 'function' ? 'fn' : v);
+      layoutWarnings.push('Web.javaScriptOnDocumentStart 无法注入原生 iframe（记 data-*）');
+    },
+    javaScriptOnDocumentEnd: (n, v) => {
+      n.dataset.javaScriptOnDocumentEnd = String(typeof v === 'function' ? 'fn' : v);
+      layoutWarnings.push('Web.javaScriptOnDocumentEnd 无法注入原生 iframe（记 data-*）');
+    },
+    // ── 加载生命周期（函数值抢在通用 on* 规则之前，坑 86）──
+    onPageBegin: (n, v) => {
+      const w = /** @type {any} */ (n).__web;
+      if (!w) return;
+      w.cbs.pageBegin = v;
+      // src 赋值时登记的 pendingBegin：回调挂上后补派发（已由 load 派发过则 pending 为空）
+      if (w.pendingBegin) {
+        setTimeout(() => {
+          if (!w.pendingBegin) return;
+          const ev = w.pendingBegin;
+          w.pendingBegin = null;
+          try { w.cbs.pageBegin(ev); }
+          catch (e) { layoutWarnings.push(`Web.onPageBegin 回调抛错：${e && e.message}`); }
+        }, 0);
+      }
+    },
+    onPageEnd: (n, v) => {
+      const w = /** @type {any} */ (n).__web;
+      if (w) w.cbs.pageEnd = v;
+    },
+    onLoadStarted: (n, v) => {
+      const w = /** @type {any} */ (n).__web;
+      if (w) w.cbs.loadStarted = v;
+    },
+    onLoadFinished: (n, v) => {
+      const w = /** @type {any} */ (n).__web;
+      if (w) w.cbs.loadFinished = v;
+    },
+    onProgressChange: (n, v) => {
+      const w = /** @type {any} */ (n).__web;
+      if (w) w.cbs.progressChange = v;
+    },
+    onTitleReceive: (n, v) => {
+      const w = /** @type {any} */ (n).__web;
+      if (w) w.cbs.titleReceive = v;
+    },
+    onErrorReceive: (n, v) => {
+      const w = /** @type {any} */ (n).__web;
+      if (w) w.cbs.errorReceive = v;
+    },
+    onControllerAttached: (n, v) => {
+      const w = /** @type {any} */ (n).__web;
+      if (!w) return;
+      w.cbs.controllerAttached = v;
+      // 真机在 controller 绑定后触发；DOM 里 create 与属性链同一 tick，
+      // 延后一拍保证回调已挂上（坑 ⑧）
+      setTimeout(() => {
+        const cb = w.cbs.controllerAttached;
+        if (typeof cb === 'function') {
+          try { cb(); }
+          catch (e) { layoutWarnings.push(`Web.onControllerAttached 回调抛错：${e && e.message}`); }
+        }
+      }, 0);
+    },
+  };
+  const Web = ensureComponent('Web', (args) => {
+    const o = (args && typeof args[0] === 'object' && args[0] !== null) ? args[0] : {};
+    const el = document.createElement('div');
+    (/** @type {any} */ (el)).__arkuiWeb = true;
+    el.dataset.web = '';
+    el.style.position = 'relative';
+    const frame = document.createElement('iframe');
+    frame.setAttribute('data-arkui-web-frame', '');
+    frame.style.width = '100%';
+    frame.style.height = '100%';
+    frame.style.border = 'none';
+    frame.style.display = 'block';
+    el.appendChild(frame);
+    const w = /** @type {any} */ (el).__web = /** @type {any} */ ({ frame, cbs: {}, url: '', pendingBegin: null });
+    /** @param {any} k @param {any} payload */
+    const fire = (k, payload) => {
+      const cb = w.cbs[k];
+      if (typeof cb !== 'function') return;
+      try { cb(payload); }
+      catch (e) { layoutWarnings.push(`Web.${k} 回调抛错：${e && e.message}`); }
+    };
+    /** @param {any} rawUrl */
+    const loadTo = (rawUrl) => {
+      const url = String(resolveResource(rawUrl));
+      w.url = url;
+      w.pendingBegin = { url };
+      frame.src = url;
+      el.dataset.src = url;
+      const cbStart = w.cbs.loadStarted;
+      if (typeof cbStart === 'function') {
+        setTimeout(() => {
+          try { cbStart({ url }); }
+          catch (e) { layoutWarnings.push(`Web.onLoadStarted 回调抛错：${e && e.message}`); }
+        }, 0);
+      }
+    };
+    w.loadTo = loadTo;
+    // 加载生命周期桥：iframe load → begin(补) → end → finished → progress(100) → title
+    frame.addEventListener('load', () => {
+      if (w.pendingBegin) {
+        const ev = w.pendingBegin;
+        w.pendingBegin = null;
+        fire('pageBegin', ev);
+      }
+      fire('pageEnd', { url: w.url });
+      fire('loadFinished', { url: w.url });
+      // DOM 观测不到渐进加载进度，只在完成时派发终值 100
+      fire('progressChange', { newProgress: 100 });
+      let title = null;
+      try { title = frame.contentDocument ? frame.contentDocument.title : null; } catch (e) { title = null; }
+      if (title) fire('titleReceive', { title, isRealTitle: true });
+    });
+    frame.addEventListener('error', () => {
+      // OnErrorReceiveEvent 的 request/response 形态拿不到，给最小载荷
+      fire('errorReceive', { url: w.url });
+    });
+    if (o.src !== undefined && o.src !== null) loadTo(o.src);
+    if (o.controller && typeof o.controller._bind === 'function') {
+      o.controller._bind({
+        /** @param {any} url */
+        loadUrl(url) { loadTo(url); },
+        /** @param {any} opts */
+        loadData(opts) {
+          const data = opts && opts.data !== undefined ? String(opts.data) : '';
+          w.url = String((opts && opts.baseUrl) || 'about:blank');
+          w.pendingBegin = { url: w.url };
+          frame.setAttribute('srcdoc', data);
+        },
+        refresh() {
+          try { w.frame.contentWindow.location.reload(); }
+          catch (e) { w.frame.src = w.frame.src; }          // 跨域退化为整页重载
+        },
+        backward() {
+          try { w.frame.contentWindow.history.back(); }
+          catch (e) { layoutWarnings.push('WebController.backward: 跨域 iframe 历史不可控'); }
+        },
+        forward() {
+          try { w.frame.contentWindow.history.forward(); }
+          catch (e) { layoutWarnings.push('WebController.forward: 跨域 iframe 历史不可控'); }
+        },
+        /** @returns {boolean} */
+        accessBackward() {
+          try { return w.frame.contentWindow.history.length > 1; }
+          catch (e) { return false; }
+        },
+        /** @returns {boolean} */
+        accessForward() { return false; },                   // 前向历史 DOM 无法探测，保守 false
+        /** @param {any} _step */
+        accessStep(_step) { layoutWarnings.push('WebController.accessStep 未实现'); },
+        clearHistory() { layoutWarnings.push('WebController.clearHistory 无法清除 iframe 历史（已忽略）'); },
+        /** @param {any} _name */
+        deleteJavaScriptRegister(_name) { /* 登记表随 iframe 重载天然失效 */ },
+        /** @param {any} obj @param {any} name @param {any} _methods */
+        registerJavaScriptProxy(obj, name, _methods) {
+          w.jsProxy = { obj, name };
+          layoutWarnings.push('WebController.registerJavaScriptProxy 无法注入沙箱 iframe（已登记）');
+        },
+        /** @param {any} script @returns {any} */
+        runJavaScript(script) {
+          try { return w.frame.contentWindow.eval(String(script)); }
+          catch (e) {
+            layoutWarnings.push(`WebController.runJavaScript 抛错：${e && e.message}`);
+            return undefined;
+          }
+        },
+        /** @returns {null} */
+        getCookieManager() { layoutWarnings.push('WebController.getCookieManager 未实现'); return null; },
+        /** @returns {number} */
+        getHitTest() { layoutWarnings.push('WebController.getHitTest 未实现'); return 0; },
+        requestFocus() {
+          try { w.frame.contentWindow.focus(); }
+          catch (e) { w.frame.focus(); }
+        },
+        onActive() { /* 前后台事件无 DOM 对应物 */ },
+        onInactive() { /* 前后台事件无 DOM 对应物 */ },
+        stop() {
+          try { w.frame.contentWindow.stop(); }
+          catch (e) { /* 旧引擎无 stop：静默 */ }
+        },
+        /** @param {any} _factor */
+        zoom(_factor) { layoutWarnings.push('WebController.zoom 未实现（iframe 缩放不可控）'); },
+      });
+    }
+    return el;
+  });
+  // WebController（web.d.ts:3216，API 8 deprecated，方法面与上面 _bind 的一一对应）
+  class WebController {
+    constructor() { this._api = null; }
+    /** @param {any} api */
+    _bind(api) { this._api = api; }
+    /** @param {any} url */
+    loadUrl(url) { if (this._api) this._api.loadUrl(url); }
+    /** @param {any} opts */
+    loadData(opts) { if (this._api) this._api.loadData(opts); }
+    refresh() { if (this._api) this._api.refresh(); }
+    backward() { if (this._api) this._api.backward(); }
+    forward() { if (this._api) this._api.forward(); }
+    /** @returns {boolean} */
+    accessBackward() { return this._api ? !!this._api.accessBackward() : false; }
+    /** @returns {boolean} */
+    accessForward() { return this._api ? !!this._api.accessForward() : false; }
+    /** @param {any} step */
+    accessStep(step) { if (this._api) this._api.accessStep(step); }
+    clearHistory() { if (this._api) this._api.clearHistory(); }
+    /** @param {any} name */
+    deleteJavaScriptRegister(name) { if (this._api) this._api.deleteJavaScriptRegister(name); }
+    /** @param {any} obj @param {any} name @param {any} methods */
+    registerJavaScriptProxy(obj, name, methods) { if (this._api) this._api.registerJavaScriptProxy(obj, name, methods); }
+    /** @param {any} script @returns {any} */
+    runJavaScript(script) { return this._api ? this._api.runJavaScript(script) : undefined; }
+    /** @returns {null} */
+    getCookieManager() { return this._api ? this._api.getCookieManager() : null; }
+    /** @returns {number} */
+    getHitTest() { return this._api ? this._api.getHitTest() : 0; }
+    requestFocus() { if (this._api) this._api.requestFocus(); }
+    onActive() { if (this._api) this._api.onActive(); }
+    onInactive() { if (this._api) this._api.onInactive(); }
+    stop() { if (this._api) this._api.stop(); }
+    /** @param {any} factor */
+    zoom(factor) { if (this._api) this._api.zoom(factor); }
+  }
+  // 枚举自由变量（产物里 `SymbolGlyph…(SymbolRenderingStrategy.SINGLE)` 这类引用）——
+  // 与取值表同值（symbolglyph.d.ts:55-152 / enums.d.ts:3635-3686）
+  const SymbolRenderingStrategy = { SINGLE: 0, MULTIPLE_COLOR: 1, MULTIPLE_OPACITY: 2 };
+  const SymbolEffectStrategy = { NONE: 0, SCALE: 1, HIERARCHICAL: 2 };
+  const EffectScope = { LAYER: 0, WHOLE: 1 };
+  const EffectDirection = { DOWN: 0, UP: 1 };
+  const EffectFillStyle = { OPACITY: 0, COLOR: 1, GRADIENT: 2 };
+  const ReplaceEffectType = { DIRECT: 0, CROSS_FADE: 1 };
+  const ImageSpanAlignment = { BASELINE: 0, BOTTOM: 1, CENTER: 2, TOP: 3, FOLLOW_PARAGRAPH: 4 };
+  // SymbolEffect 族（symbolglyph.d.ts:312-616）：DOM 降级只记录构造参数，动效不实现
+  class SymbolEffect { }
+  class ScaleSymbolEffect extends SymbolEffect {
+    /** @param {any} [scope] @param {any} [direction] */
+    constructor(scope, direction) {
+      super();
+      this.scope = scope === undefined ? EffectScope.LAYER : scope;
+      this.direction = direction === undefined ? EffectDirection.DOWN : direction;
+    }
+  }
+  class HierarchicalSymbolEffect extends SymbolEffect {
+    /** @param {any} [fillStyle] */
+    constructor(fillStyle) {
+      super();
+      this.fillStyle = fillStyle === undefined ? EffectFillStyle.OPACITY : fillStyle;
+    }
+  }
+  class AppearSymbolEffect extends SymbolEffect {
+    /** @param {any} [scope] */
+    constructor(scope) {
+      super();
+      this.scope = scope === undefined ? EffectScope.LAYER : scope;
+    }
+  }
+  class DisappearSymbolEffect extends SymbolEffect {
+    /** @param {any} [scope] */
+    constructor(scope) {
+      super();
+      this.scope = scope === undefined ? EffectScope.LAYER : scope;
+    }
+  }
+  class BounceSymbolEffect extends SymbolEffect {
+    /** @param {any} [scope] @param {any} [direction] */
+    constructor(scope, direction) {
+      super();
+      this.scope = scope === undefined ? EffectScope.LAYER : scope;
+      this.direction = direction === undefined ? EffectDirection.DOWN : direction;
+    }
+  }
+  class ReplaceSymbolEffect extends SymbolEffect {
+    /** @param {any} [scope] @param {any} [replaceType] */
+    constructor(scope, replaceType) {
+      super();
+      this.scope = scope === undefined ? EffectScope.LAYER : scope;
+      this.replaceType = replaceType;
+    }
+  }
+  class PulseSymbolEffect extends SymbolEffect { }
+
+  // ────────────────── 批次 D：导航 / 页面转场 / 工具栏项 / 选择器（R66）──────────────────
+  //
+  // 六组件（权威出处：nav_router.d.ts / navigator.d.ts / page_transition.d.ts / toolbar.d.ts
+  // / ui_picker_component.d.ts）：
+  //
+  //   NavRouter(value?: RouteInfo)   —— deprecated since 13（useinstead NavPathStack）。
+  //     .onStateChange((isActivated: boolean) => …) / .mode(NavRouteMode)
+  //     真机语义：点击后自动把 RouteInfo 压入所属 Navigation 的路由栈（"default processing
+  //     logic for responding to clicks"）。本垫片：click → 向上找带 __navState.stack 的
+  //     Navigation，调 NavPathStack.pushPathByName /（REPLACE 时）replacePathByName；
+  //     push 同步建出目的地（navBuildDest），返回即"已激活"→ onStateChange(true)；
+  //     pop 包装（实例级补丁，不动 nav.js）→ 被弹出的是自己时 onStateChange(false)。
+  //     ⚠️ 真机旧 API 的目的地是 NavRouter 的【第二个子组件】按结构注册；本运行时的目的地
+  //     只能由 PageMap builder 建出（navBuildDest 按 builder 找 name）——所以 NavRouter 里
+  //     内联的那个 NavDestination 子组件会被 mountNavDestination 挂成 display:none 并记
+  //     layoutWarning（"不在目标区内"），实际显示的是 PageMap 建的那份。结构性差异，非缺陷。
+  //
+  //   Navigator(value?: { target, type }) —— deprecated since 13。
+  //     .active(bool) / .type(NavigationType) / .target(string) / .params(object)
+  //     真机语义：点击整块区域按 type 跳转；active=false 时不生效（默认激活）。
+  //     Push=0/Back=1/Replace=2（.d.ts 声明顺序）。Back → __arkui_dom_back()；
+  //     Push/Replace → __arkui_dom_navigate(target)（本运行时 router 的既定模型：清根重建、
+  //     页面实例留在 pageStack —— 与 router.pushUrl 垫片一致）。Replace 的"销毁当前页"
+  //     未建模，点一次记一条 layoutWarning。params 存 global.__arkui_dom_navigatorParams。
+  //
+  //   PageTransitionEnter / PageTransitionExit(options) —— 页面级声明（真机在 pageTransition()
+  //     钩子里，不在 build 里）。CommonTransition 五属性：slide/translate/scale/opacity +
+  //     onEnter/onExit 逐帧回调（(type: RouteType, progress: 0..1)）。options：type/duration
+  //     (默认 1000ms)/curve(默认 linear)/delay(默认 0)。RouteType：None=0（任意方向生效）/
+  //     Push=1/Pop=2；SlideEffect：Left=0/Right=1/Top=2/Bottom=3/START=5/END=6（LTR 下
+  //     START≡Left、END≡Right）。本垫片：元素 display:none 只做【规格登记】
+  //     （__arkui_dom_pageTransitionSpecs），驱动入口 __arkui_dom_playPageTransition(kind, rt)
+  //     —— 对页面根做 Web Animations + rAF 逐帧回调。路由变更不自动触发（运行时 router 无
+  //     pageTransition 钩子，需主会话接线或测试显式驱动）。
+  //
+  //   ToolBarItem(options?: { placement }) —— API 20。ToolBarItemAttribute 是【空类】
+  //     （明确不支持通用属性），唯一参数 placement：TOP_BAR_LEADING=0/TOP_BAR_TRAILING=1。
+  //     真机与 toolbar 通用属性（标题栏列）配合；本垫片只落语义标记（dataset.placement），
+  //     标题栏列分配未接线（toolbar 通用属性属于另一批）。
+  //
+  //   UIPickerComponent(options?: { selectedIndex }) —— API 22。子组件即选项（Text/Image/
+  //     Row，Row 整体算一项）。滚轮：itemHeight 默认 40vp、displayedItemCount 默认 7、选中项
+  //     指示器 BACKGROUND(0,默认)/DIVIDER(1)。事件 onChange/onScrollStop 回调签名是
+  //     (selectedIndex: number)。canLoop/enableHapticFeedback 落 dataset（循环滚动与震动
+  //     未实现，≥8 项且 canLoop 时记一条 layoutWarning）。子项在 pop 时收割（Tabs 模式）：
+  //     节点挪进隐藏 stash 保留复用，标签取 textContent 重建滚轮。
+  //
+  // DOM 概览：
+  //   NavRouter   <div data-arkui-comp="NavRouter">            display:block，整块可点
+  //   Navigator   <div data-arkui-comp="Navigator">            display:block，整块可点
+  //   PageTrans*  <div data-arkui-comp="PageTransitionEnter">  display:none（纯规格）
+  //   ToolBarItem <div data-arkui-comp="ToolBarItem">          inline-flex
+  //   UIPicker    <div data-arkui-comp="UIPickerComponent">    flex；[data-upx-indicator] +
+  //               [data-upx-wheel]（滚轮，translateY 定位，中行高亮）+ 隐藏 stash
+
+  // ── 枚举：值照 .d.ts 声明顺序（显式数值照原文）。产物里都是自由变量引用，主会话挂 global ──
+  const NavRouteMode = { PUSH_WITH_RECREATE: 0, PUSH: 1, REPLACE: 2 };
+  const NavigationType = { Push: 0, Back: 1, Replace: 2 };
+  const RouteType = { None: 0, Push: 1, Pop: 2 };
+  const SlideEffect = { Left: 0, Right: 1, Top: 2, Bottom: 3, START: 5, END: 6 };
+  const ToolBarItemPlacement = { TOP_BAR_LEADING: 0, TOP_BAR_TRAILING: 1 };
+  const PickerIndicatorType = { BACKGROUND: 0, DIVIDER: 1 };
+
+  // ── NavRouter ──
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
+  const NAVROUTER_ATTRS = {
+    onStateChange: (n, v) => {
+      const w = /** @type {any} */ (n).__navRouter;
+      if (w) w.cbs.stateChange = v;
+    },
+    mode: (n, v) => {
+      const w = /** @type {any} */ (n).__navRouter;
+      if (!w) return;
+      w.mode = Number(resolveResource(v)) || 0;
+      n.dataset.mode = String(w.mode);
+    },
+  };
+  /** @param {HTMLElement} el */
+  const navRouterStackOf = (el) => {
+    for (let p = el.parentElement; p; p = p.parentElement) {
+      const st = /** @type {any} */ (p).__navState;
+      if (st && st.stack) return /** @type {any} */ (st.stack);
+    }
+    return null;
+  };
+  /** @param {any} el @param {boolean} on */
+  const navRouterSetState = (el, on) => {
+    const w = /** @type {any} */ (el).__navRouter;
+    if (!w || w.state === on) return;
+    w.state = on;
+    el.dataset.state = String(on);
+    const cb = w.cbs.stateChange;
+    if (typeof cb === 'function') {
+      try { cb(on); }
+      catch (e) { layoutWarnings.push(`NavRouter.onStateChange 回调抛错：${e && e.message}`); }
+    }
+  };
+  /** @param {any[]} args */
+  const NavRouter = ensureComponent('NavRouter', (args) => {
+    const el = document.createElement('div');
+    (/** @type {any} */ (el)).__arkuiNavRouter = true;
+    el.style.display = 'block';
+    const o = args && args[0] && typeof args[0] === 'object' ? args[0] : {};
+    // RouteInfo：{ name: string, param?: unknown }
+    const w = /** @type {any} */ (el).__navRouter = /** @type {any} */ ({
+      route: {
+        name: o.name === undefined ? '' : String(resolveResource(o.name)),
+        param: o.param,
+      },
+      mode: 0,                       // 默认 NavRouteMode.PUSH_WITH_RECREATE（.d.ts JSDoc）
+      state: false,
+      popPatched: false,
+      cbs: {},
+    });
+    el.dataset.routeName = w.route.name;
+    el.dataset.mode = String(w.mode);
+    el.dataset.state = 'false';
+    el.addEventListener('click', () => {
+      const stack = navRouterStackOf(el);
+      if (!stack) {
+        layoutWarnings.push('NavRouter 点击：向上找不到绑定了 NavPathStack 的 Navigation，路由跳过');
+        return;
+      }
+      if (!w.route.name) { layoutWarnings.push('NavRouter 缺少 RouteInfo.name，无法路由'); return; }
+      if (w.mode === NavRouteMode.REPLACE) {
+        stack.replacePathByName(w.route.name, w.route.param);
+      } else {
+        // PUSH_WITH_RECREATE 与 PUSH 都走 pushPathByName —— "当前页是否重建"未建模
+        stack.pushPathByName(w.route.name, w.route.param);
+      }
+      // push 同步建出目的地（navBuildDest），返回即视为"已激活 + NavDestination 已加载"
+      navRouterSetState(el, true);
+      // 实例级 pop 包装（不动 nav.js）：被弹出的栈顶是自己时回落 onStateChange(false)
+      if (!w.popPatched && typeof stack.pop === 'function') {
+        w.popPatched = true;
+        const prevPop = stack.pop;
+        /** @param {any=} [a1] @param {any=} [a2] */
+        stack.pop = function (a1, a2) {
+          const paths = /** @type {any} */ (stack)._paths;
+          const top = paths && paths.length ? paths[paths.length - 1] : null;
+          const r = prevPop.call(stack, a1, a2);
+          if (top && top.name === w.route.name) navRouterSetState(el, false);
+          return r;
+        };
+      }
+    });
+    return el;
+  });
+
+  // ── Navigator ──
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
+  const NAVIGATOR_ATTRS = {
+    active: (n, v) => {
+      const w = /** @type {any} */ (n).__navigator;
+      if (!w) return;
+      w.active = v === true;
+      n.dataset.active = String(w.active);
+    },
+    type: (n, v) => {
+      const w = /** @type {any} */ (n).__navigator;
+      if (!w) return;
+      w.type = Number(resolveResource(v)) || 0;
+      n.dataset.type = String(w.type);
+    },
+    target: (n, v) => {
+      const w = /** @type {any} */ (n).__navigator;
+      if (!w) return;
+      w.target = String(resolveResource(v));
+      n.dataset.target = w.target;
+    },
+    params: (n, v) => {
+      const w = /** @type {any} */ (n).__navigator;
+      if (!w) return;
+      w.params = v;
+      try { n.dataset.params = JSON.stringify(v); }
+      catch (e) { n.dataset.params = '[unserializable]'; }
+    },
+  };
+  /** @param {any[]} args */
+  const Navigator = ensureComponent('Navigator', (args) => {
+    const el = document.createElement('div');
+    (/** @type {any} */ (el)).__arkuiNavigator = true;
+    el.style.display = 'block';
+    const o = args && args[0] && typeof args[0] === 'object' ? args[0] : {};
+    // active 的默认值 .d.ts 未写；取 true 依据是"组件缺省即可用"（点一下就该跳），**这是推断**
+    const w = /** @type {any} */ (el).__navigator = /** @type {any} */ ({
+      active: true,
+      type: o.type === undefined ? 0 : Number(resolveResource(o.type)),   // 默认 NavigationType.Push
+      target: o.target === undefined ? '' : String(resolveResource(o.target)),
+      params: undefined,
+      warnedReplace: false,
+    });
+    el.dataset.active = String(w.active);
+    el.dataset.type = String(w.type);
+    el.dataset.target = w.target;
+    el.style.cursor = 'pointer';
+    el.addEventListener('click', () => {
+      if (!w.active) return;
+      if (!w.target) { layoutWarnings.push(`Navigator 点击：target 未设置（type=${w.type}）`); return; }
+      if (w.type === NavigationType.Back) {
+        (/** @type {any} */ (global)).__arkui_dom_back();
+        return;
+      }
+      (/** @type {any} */ (global)).__arkui_dom_navigatorParams = { target: w.target, params: w.params };
+      if (w.type === NavigationType.Replace) {
+        // "替换并销毁当前页"未建模：走同一清根重建通道，差异记诊断（每实例只记一次）
+        if (!w.warnedReplace) {
+          layoutWarnings.push('Navigator type=Replace：当前页销毁语义未建模，按 Push 通道处理');
+          w.warnedReplace = true;
+        }
+      }
+      (/** @type {any} */ (global)).__arkui_dom_navigate(w.target);
+    });
+    return el;
+  });
+
+  // ── PageTransitionEnter / PageTransitionExit ──
+  /** @type {any[]} */
+  const pageTransitionSpecs = [];
+  /**
+   * slide/translate 的起止偏移（enter 的"从哪来"、exit 的"到哪去"），单位 px。
+   * slide 优先（.d.ts：与 translate 同设时 slide 生效）；START/END 按 LTR 折算。
+   * @param {any} spec
+   * @param {HTMLElement} root
+   * @returns {{x: number, y: number}}
+   */
+  const pageTransOffset = (spec, root) => {
+    const r = root.getBoundingClientRect();
+    if (spec.slide !== null && spec.slide !== undefined) {
+      const s = Number(spec.slide);
+      if (s === SlideEffect.Right || s === SlideEffect.END) return { x: r.width, y: 0 };
+      if (s === SlideEffect.Top) return { x: 0, y: -r.height };
+      if (s === SlideEffect.Bottom) return { x: 0, y: r.height };
+      return { x: -r.width, y: 0 };                     // Left 与 START（LTR）都从左来
+    }
+    const t = spec.translate && typeof spec.translate === 'object' ? spec.translate : {};
+    return { x: Number(t.x) || 0, y: Number(t.y) || 0 };
+  };
+  /** @param {any} cb @param {number} rt @param {number} p */
+  const pageTransFrame = (cb, rt, p) => {
+    if (typeof cb !== 'function') return;
+    try { cb(rt, p); }
+    catch (e) { layoutWarnings.push(`PageTransition onEnter/onExit 回调抛错：${e && e.message}`); }
+  };
+  /**
+   * 页面转场驱动：对当前页面根按已登记规格播一次 enter/exit 动画，逐帧派发 onEnter/onExit。
+   * 返回 Web Animations 句柄（无匹配规格或无根时返回 null）。
+   * @param {string} kind 'enter' | 'exit'
+   * @param {any=} [routeType] RouteType（缺省 None=0：任意方向规格都命中）
+   */
+  const playPageTransition = (kind, routeType) => {
+    const rt = routeType === undefined ? RouteType.None : Number(routeType);
+    const spec = pageTransitionSpecs.find((s) => s.kind === kind && (s.type === RouteType.None || s.type === rt));
+    const root = currentRoot();
+    if (!spec || !root || !root.animate) return null;
+    const dur = Math.max(0, Number(spec.duration) || 0);
+    const delay = Math.max(0, Number(spec.delay) || 0);
+    // curve：字符串（Curve 枚举值与 CSS 关键字对齐）直接透传；ICurve 对象未实现 → linear
+    const easing = typeof spec.curve === 'string' && spec.curve ? spec.curve : 'linear';
+    const off = pageTransOffset(spec, root);
+    const op = spec.opacity === null || spec.opacity === undefined ? 1 : Number(spec.opacity);
+    const sc = spec.scale && typeof spec.scale === 'object' ? spec.scale : null;
+    const tf = (/** @type {number} */ sx, /** @type {number} */ sy) =>
+      `translate(${off.x * sx}px, ${off.y * sy}px)` + (sc ? ` scale(${Number(sc.x) || 1}, ${Number(sc.y) || 1})` : '');
+    const frames = kind === 'enter'
+      ? [{ transform: tf(1, 1), opacity: op }, { transform: 'none', opacity: 1 }]
+      : [{ transform: 'none', opacity: 1 }, { transform: tf(1, 1), opacity: op }];
+    const anim = root.animate(frames, { duration: dur, delay, easing, fill: 'none' });
+    // 逐帧回调：progress 0→1（含 delay；总时长为 0 时直接派发 1）
+    const total = delay + dur;
+    const t0 = performance.now();
+    const tick = (/** @type {number} */ now) => {
+      const p = total <= 0 ? 1 : Math.min(1, (now - t0) / total);
+      pageTransFrame(spec.cbs.frame, rt, p);
+      if (p < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+    return anim;
+  };
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
+  const PAGE_TRANSITION_ATTRS = {
+    slide: (n, v) => {
+      const w = /** @type {any} */ (n).__pageTransition;
+      if (!w) return;
+      w.slide = Number(resolveResource(v));
+      n.dataset.slide = String(w.slide);
+    },
+    translate: (n, v) => {
+      const w = /** @type {any} */ (n).__pageTransition;
+      if (w) w.translate = v;
+    },
+    scale: (n, v) => {
+      const w = /** @type {any} */ (n).__pageTransition;
+      if (w) w.scale = v;
+    },
+    opacity: (n, v) => {
+      const w = /** @type {any} */ (n).__pageTransition;
+      if (!w) return;
+      w.opacity = Number(v);
+      n.dataset.opacity = String(w.opacity);
+    },
+    onEnter: (n, v) => {
+      const w = /** @type {any} */ (n).__pageTransition;
+      if (!w) return;
+      if (w.kind !== 'enter') { layoutWarnings.push('onEnter 只属于 PageTransitionEnter，已在 Exit 上忽略'); return; }
+      w.cbs.frame = v;
+    },
+    onExit: (n, v) => {
+      const w = /** @type {any} */ (n).__pageTransition;
+      if (!w) return;
+      if (w.kind !== 'exit') { layoutWarnings.push('onExit 只属于 PageTransitionExit，已在 Enter 上忽略'); return; }
+      w.cbs.frame = v;
+    },
+  };
+  /** @param {string} kind */
+  const pageTransitionDom = (kind) => (/** @type {any[]} */ args) => {
+    const el = document.createElement('div');
+    (/** @type {any} */ (el)).__arkuiPageTransition = kind;
+    el.style.display = 'none';                 // 非可视声明组件：只做规格载体
+    const o = args && args[0] && typeof args[0] === 'object' ? args[0] : {};
+    const w = /** @type {any} */ (el).__pageTransition = /** @type {any} */ ({
+      kind,
+      type: o.type === undefined ? RouteType.None : Number(resolveResource(o.type)),
+      duration: o.duration === undefined ? 1000 : Number(o.duration),   // 默认 1000（.d.ts JSDoc）
+      curve: o.curve === undefined ? 'linear' : o.curve,                 // 默认 Curve.Linear
+      delay: o.delay === undefined ? 0 : Number(o.delay),
+      slide: null, translate: null, scale: null, opacity: null,
+      cbs: {},
+    });
+    el.dataset.pageTransition = kind;
+    el.dataset.type = String(w.type);
+    el.dataset.duration = String(w.duration);
+    pageTransitionSpecs.push(w);
+    return el;
+  };
+  const PageTransitionEnter = ensureComponent('PageTransitionEnter', pageTransitionDom('enter'));
+  const PageTransitionExit = ensureComponent('PageTransitionExit', pageTransitionDom('exit'));
+  // 自省/驱动入口走 defineProperty —— 不进 main.js 的 Object.assign 块（stats.mjs 按第一个
+  // assign 块统计 global 面，分片里再开一个 assign 块会污染统计口径）
+  Object.defineProperty(global, '__arkui_dom_pageTransitionSpecs', {
+    get: () => pageTransitionSpecs.slice(), configurable: true,
+  });
+  Object.defineProperty(global, '__arkui_dom_playPageTransition', {
+    get: () => playPageTransition, configurable: true,
+  });
+
+  // ── ToolBarItem（API 20；属性类为空 → 无 ATTRS 表，唯一参数是 create 的 options.placement）──
+  /** @param {any[]} args */
+  const ToolBarItem = ensureComponent('ToolBarItem', (args) => {
+    const el = document.createElement('div');
+    (/** @type {any} */ (el)).__arkuiToolBarItem = true;
+    el.style.display = 'inline-flex';
+    el.style.alignItems = 'center';
+    const o = args && args[0] && typeof args[0] === 'object' ? args[0] : {};
+    const placement = o.placement === undefined ? 0 : Number(resolveResource(o.placement));
+    el.dataset.placement = String(placement);   // 0=TOP_BAR_LEADING（默认）1=TOP_BAR_TRAILING
+    return el;
+  });
+
+  // ── UIPickerComponent ──
+  const UPX_DEFAULT_ROW_H = 40;      // .d.ts NOTE：选项高度固定 40vp（vp→px 1:1 近似）
+  const UPX_DEFAULT_ROWS = 7;        // .d.ts NOTE：最多显示 7 项
+  const UPX_IND_BG = '#f1f3f5';      // comp_background_tertiary 的近似色（拿不到资源表）
+  const UPX_IND_DIVIDER = '#e5e5e5'; // comp_divider 的近似色
+  /** LengthMetrics/Length → px 数值（vp/fp/lpx/px 一律 1:1 近似，本项目一贯做法） */
+  /** @param {any} v */
+  const upxLengthPx = (v) => {
+    const r = resolveResource(v);
+    if (typeof r === 'number') return r;
+    if (r && typeof r === 'object' && typeof r.value === 'number') return r.value;
+    const n = parseFloat(String(r));
+    return Number.isFinite(n) ? n : 0;
+  };
+  /** @param {any} el */
+  const upxApplyIndicator = (el) => {
+    const w = /** @type {any} */ (el).__picker;
+    const ind = w && w.indEl;
+    if (!w || !ind) return;
+    const mid = Math.floor(w.displayed / 2);
+    const rowH = w.itemHeight;
+    ind.style.top = mid * rowH + 'px';
+    ind.style.height = rowH + 'px';
+    ind.style.left = (w.indicator.startMargin || 0) + 'px';
+    ind.style.right = (w.indicator.endMargin || 0) + 'px';
+    if (w.indicator.type === PickerIndicatorType.DIVIDER) {
+      const sw = w.indicator.strokeWidth === undefined ? 2 : w.indicator.strokeWidth;
+      ind.style.background = 'transparent';
+      ind.style.borderTop = sw + 'px solid ' + colorOf(w.indicator.dividerColor === undefined || w.indicator.dividerColor === null ? UPX_IND_DIVIDER : w.indicator.dividerColor);
+      ind.style.borderBottom = ind.style.borderTop;
+      ind.style.borderRadius = '0';
+    } else {
+      ind.style.background = colorOf(w.indicator.backgroundColor === undefined || w.indicator.backgroundColor === null ? UPX_IND_BG : w.indicator.backgroundColor);
+      ind.style.borderTop = 'none';
+      ind.style.borderBottom = 'none';
+      ind.style.borderRadius = (w.indicator.borderRadius === undefined || w.indicator.borderRadius === null ? 12 : upxLengthPx(w.indicator.borderRadius)) + 'px';
+    }
+    ind.style.boxSizing = 'border-box';
+  };
+  /**
+   * 滚轮：在 wheelEl 里建 displayed 行（中行高亮、translateY 定位），步进后派发回调。
+   * 视觉与 TextPicker 的 tpxEngine 同族（R56），但行数/行高可配且回调签名是 (index: number)。
+   * @param {any} el
+   */
+  const upxBuildWheel = (el) => {
+    const w = /** @type {any} */ (el).__picker;
+    if (!w) return;
+    const wheel = document.createElement('div');
+    wheel.setAttribute('data-upx-wheel', '');
+    wheel.style.flex = '1';
+    wheel.style.position = 'relative';
+    wheel.style.overflow = 'hidden';
+    wheel.style.height = w.displayed * w.itemHeight + 'px';
+    const inner = document.createElement('div');
+    inner.style.position = 'absolute';
+    inner.style.left = '0';
+    inner.style.right = '0';
+    inner.style.willChange = 'transform';
+    const rows = /** @type {any[]} */ ([]);
+    const mid = Math.floor(w.displayed / 2);
+    for (let r = 0; r < w.displayed; r++) {
+      const row = document.createElement('div');
+      row.setAttribute('data-upx-row', String(r));
+      row.style.height = w.itemHeight + 'px';
+      row.style.display = 'flex';
+      row.style.alignItems = 'center';
+      row.style.justifyContent = 'center';
+      row.style.fontSize = r === mid ? '20px' : '16px';
+      row.style.fontWeight = r === mid ? '500' : 'normal';
+      row.style.color = r === mid ? 'rgb(0, 125, 255)' : 'rgb(24, 36, 49)';
+      inner.appendChild(row);
+      rows.push(row);
+    }
+    wheel.appendChild(inner);
+    /** @param {number} dir */
+    const step = (dir) => {
+      const n = w.items.length;
+      const next = Math.max(0, Math.min(n - 1, w.sel + dir));
+      if (next === w.sel) return;                     // 边界：不动不发（canLoop 未实现）
+      w.sel = next;
+      render();
+      el.dataset.selectedIndex = JSON.stringify([w.sel]);
+      const cb = w.cbs.change;
+      if (typeof cb === 'function') {
+        try { cb(w.sel); }
+        catch (e) { layoutWarnings.push(`UIPickerComponent.onChange 回调抛错：${e && e.message}`); }
+      }
+      // onScrollStop：步进即"一小段滚动结束"，用短去抖近似（连续滚只发最后一次）
+      if (w.stopTimer) clearTimeout(w.stopTimer);
+      w.stopTimer = setTimeout(() => {
+        const cb2 = w.cbs.stop;
+        if (typeof cb2 === 'function') {
+          try { cb2(w.sel); }
+          catch (e) { layoutWarnings.push(`UIPickerComponent.onScrollStop 回调抛错：${e && e.message}`); }
+        }
+      }, 60);
+    };
+    const render = () => {
+      for (let r = 0; r < w.displayed; r++) {
+        const oi = w.sel - mid + r;
+        rows[r].textContent = (oi >= 0 && oi < w.items.length) ? w.items[oi] : '';
+      }
+      inner.style.transform = `translateY(${(mid - w.sel) * w.itemHeight}px)`;
+    };
+    wheel.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      step(e.deltaY > 0 ? 1 : -1);
+    }, { passive: false });
+    wheel.addEventListener('click', (e) => {
+      const box = wheel.getBoundingClientRect();
+      step(e.clientY < box.top + box.height / 2 ? -1 : 1);
+    });
+    w.render = render;
+    w.step = step;
+    return wheel;
+  };
+  /** pop 时收割子项（Tabs 模式）：节点挪进隐藏 stash 保留复用，标签取 textContent 重建滚轮 */
+  /** @param {any} el */
+  const upxFinalize = (el) => {
+    const w = /** @type {any} */ (el).__picker;
+    if (!w) return;
+    // 收割：跳过指示器/滚轮/stash，其余直接子节点都是选项（Row 容器整体算一项）
+    for (const kid of Array.from(el.children)) {
+      const k = /** @type {any} */ (kid);
+      if (k === w.indEl || k === w.stash || k.hasAttribute('data-upx-wheel')) continue;
+      w.stash.appendChild(k);
+      k.style.display = 'none';
+    }
+    w.items = Array.from(w.stash.children).map((/** @type {any} */ k) => k.textContent || '');
+    if (!w.items.length) layoutWarnings.push('UIPickerComponent 内没有任何子组件，滚轮为空');
+    if (w.canLoop && w.items.length >= 8) {
+      layoutWarnings.push('UIPickerComponent canLoop=true：循环滚动未实现（当前按有界滚动处理）');
+    }
+    w.sel = Math.max(0, Math.min(w.items.length - 1, w.sel));
+    let wheel = /** @type {any} */ (el.querySelector('[data-upx-wheel]'));
+    if (wheel) wheel.remove();
+    wheel = upxBuildWheel(el);
+    if (wheel) el.insertBefore(wheel, w.stash);      // 滚轮在 stash（display:contents 不可见）之前
+    w.render();
+    upxApplyIndicator(el);
+    el.dataset.selectedIndex = JSON.stringify([w.sel]);
+    el.dataset.itemCount = String(w.items.length);
+  };
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
+  const UIPICKER_ATTRS = {
+    onChange: (n, v) => {
+      const w = /** @type {any} */ (n).__picker;
+      if (w) w.cbs.change = v;
+    },
+    onScrollStop: (n, v) => {
+      const w = /** @type {any} */ (n).__picker;
+      if (w) w.cbs.stop = v;
+    },
+    canLoop: (n, v) => {
+      const w = /** @type {any} */ (n).__picker;
+      if (!w) return;
+      w.canLoop = v !== false;                       // undefined 按缺省 true（.d.ts JSDoc）
+      n.dataset.canLoop = String(w.canLoop);
+    },
+    enableHapticFeedback: (n, v) => {
+      const w = /** @type {any} */ (n).__picker;
+      if (!w) return;
+      w.haptic = v !== false;
+      n.dataset.hapticFeedback = String(w.haptic);   // 震动依赖硬件，DOM 侧只落语义标记
+    },
+    selectionIndicator: (n, v) => {
+      const w = /** @type {any} */ (n).__picker;
+      if (!w) return;
+      const s = v && typeof v === 'object' ? v : {};
+      if (s.type !== undefined) w.indicator.type = Number(resolveResource(s.type));
+      if (s.strokeWidth !== undefined) w.indicator.strokeWidth = upxLengthPx(s.strokeWidth);
+      if (s.dividerColor !== undefined) w.indicator.dividerColor = s.dividerColor;
+      if (s.startMargin !== undefined) w.indicator.startMargin = upxLengthPx(s.startMargin);
+      if (s.endMargin !== undefined) w.indicator.endMargin = upxLengthPx(s.endMargin);
+      if (s.backgroundColor !== undefined) w.indicator.backgroundColor = s.backgroundColor;
+      if (s.borderRadius !== undefined) w.indicator.borderRadius = s.borderRadius;
+      n.dataset.indicatorType = String(w.indicator.type);
+      upxApplyIndicator(n);
+    },
+    itemHeight: (n, v) => {
+      const w = /** @type {any} */ (n).__picker;
+      if (!w) return;
+      const h = upxLengthPx(v);
+      if (h > 0) w.itemHeight = h;
+      n.dataset.itemHeight = String(w.itemHeight);
+      upxApplyIndicator(n);
+    },
+    displayedItemCount: (n, v) => {
+      const w = /** @type {any} */ (n).__picker;
+      if (!w) return;
+      const c = Math.floor(Number(resolveResource(v)));
+      if (Number.isFinite(c) && c >= 1) w.displayed = c;
+      n.dataset.displayedItemCount = String(w.displayed);
+      upxApplyIndicator(n);
+    },
+  };
+  /** @param {any[]} args */
+  const UIPickerComponent = ensureComponent('UIPickerComponent', (args) => {
+    const el = document.createElement('div');
+    (/** @type {any} */ (el)).__arkuiPicker = true;
+    el.style.display = 'flex';
+    el.style.justifyContent = 'center';
+    el.style.position = 'relative';
+    el.style.overflow = 'hidden';
+    const o = args && args[0] && typeof args[0] === 'object' ? args[0] : {};
+    const w = /** @type {any} */ (el).__picker = /** @type {any} */ ({
+      // selectedIndex 缺省 0；小数向下取整（.d.ts JSDoc 原文）
+      sel: o.selectedIndex === undefined ? 0 : Math.max(0, Math.floor(Number(o.selectedIndex) || 0)),
+      itemHeight: UPX_DEFAULT_ROW_H,
+      displayed: UPX_DEFAULT_ROWS,
+      canLoop: true,
+      haptic: true,
+      indicator: { type: PickerIndicatorType.BACKGROUND, strokeWidth: 2, dividerColor: undefined,
+        startMargin: 0, endMargin: 0, backgroundColor: undefined, borderRadius: undefined },
+      items: [], cbs: {}, stopTimer: null,
+    });
+    el.dataset.itemHeight = String(w.itemHeight);
+    el.dataset.displayedItemCount = String(w.displayed);
+    el.dataset.indicatorType = String(w.indicator.type);
+    // 选中项指示器：绝对定位横带，滚轮建好后按 itemHeight/displayed 定位
+    const ind = document.createElement('div');
+    ind.setAttribute('data-upx-indicator', '');
+    ind.style.position = 'absolute';
+    ind.style.pointerEvents = 'none';
+    el.appendChild(ind);
+    w.indEl = ind;
+    // 子项 stash：收割后的选项节点藏在这里（复用靠它——节点永不销毁）
+    const stash = document.createElement('div');
+    stash.setAttribute('data-upx-stash', '');
+    stash.style.display = 'none';
+    el.appendChild(stash);
+    w.stash = stash;
+    return el;
+  }, (/** @type {any} */ node, /** @type {any[]} */ args) => {
+    // 重渲染：create 选项里的 selectedIndex 变化 → 重定位（不发 onChange，与 TextPicker 同语义）
+    const o = args && args[0] && typeof args[0] === 'object' ? args[0] : null;
+    const w2 = node && node.__picker;
+    if (!o || !w2 || o.selectedIndex === undefined) return;
+    w2.sel = Math.max(0, Math.floor(Number(o.selectedIndex) || 0));
+    if (w2.render) w2.render();
+    node.dataset.selectedIndex = JSON.stringify([w2.sel]);
+  });
+  // pop 收尾：子组件此时才齐（Tabs 同款）。覆写实例 pop —— Proxy 无 set 陷阱，落到 target 上
+  {
+    const prevPop = UIPickerComponent.pop;
+    /** @param {...any} args */
+    UIPickerComponent.pop = function (...args) {
+      const top = ViewStackProcessor.top();
+      prevPop.apply(null, args);
+      if (top && /** @type {any} */ (top).__arkuiPicker) upxFinalize(top);
+    };
+  }
+
+  // ────────────────── R66 动效族 + 滚动条（7 件：Animator / ScrollBar / FrictionMotion /
+  // ────────────────── ScrollMotion / SpringMotion / SpringProp / GeometryView）──────────
+  //
+  // SDK 依据（本机 26.0.0.821 SDK）：
+  //   - build-tools/ets-loader/components/{animator,friction_motion,scroll_motion,
+  //     spring_motion,spring_prop,geometryView,scroll_bar}.json —— 组件存在性与属性清单。
+  //     前六者是 atomic 原子件（框架内部件）；ScrollBar 非 atomic（single:true），有公开 d.ts。
+  //   - component/scroll_bar.d.ts —— ScrollBarInterface{ scroller: Scroller（必填）,
+  //     direction?: ScrollBarDirection（默认 Vertical）, state?: BarState（默认 Auto）}；
+  //     属性 enableNestedScroll(boolean)（API14）/ scrollBarColor(ColorMetrics)（API20，
+  //     默认 ColorMetrics.numeric(0x66182431)=rgba(24,36,49,0.4)，仅无子组件时生效）；
+  //     "child nodes define the behavior style of the scrollbar"（有子组件则子组件即滑块）；
+  //     API12+ 无子组件时显示默认样式；与被绑容器方向一致才能滚动；一比一绑定。
+  //   - api/@ohos.animator.d.ts —— AnimatorOptions{ duration/easing/delay/fill/direction/
+  //     iterations/begin(默认0)/end(默认1) } + AnimatorResult{ play/pause/finish/cancel/
+  //     reverse + onFrame(progress)/onFinish/onCancel/onRepeat/onPause/onStart }。
+  //     ScrollBarDirection/PlayMode/FillMode 取值均按 .d.ts 声明顺序（Vertical=0/Horizontal=1；
+  //     Normal=0..AlternateReverse=3——PlayMode 全局已有；None=0/Forwards=1/Backwards=2/Both=3）。
+  //   - FrictionMotion / ScrollMotion / SpringMotion / SpringProp：atomic 且 attrs 为空，
+  //     无公开 d.ts（滚动惯性的物理模型内部件）；GeometryView：atomic（几何转场载体）。
+  //     DOM 侧没有可实现的公开语义——做惰性标记件，create 参数记 bag + data-*，
+  //     供 Animator.motion 引用与测试探针。
+  //
+  // DOM 映射：
+  //   Animator     → 不可见 div + setTimeout 逐帧引擎。R47 教训：不用 rAF（headless 虚拟时间
+  //                  下不确定）；生命周期回调延时派发（state 属性先于 onStart 应用，同步发会丢）；
+  //                  同值守卫防重渲染重置帧序（坑 88 同族）。state 取 AnimationStatus 口径
+  //                  （Initial=0/Running=1/Paused=2/Stopped=3，与 R47 ImageAnimator 同空间；
+  //                  atomic Animator 无公开 state 枚举，此处沿用运行时家族口径并注明）。
+  //   ScrollBar    → 覆盖层 div（Stack 里 gridArea 1/1 自动叠放）+ 绝对定位滑块。
+  //                  双向绑定 Scroller：观察目标容器 'scroll' 算滑块尺寸/位移；拖滑块反写
+  //                  scrollTop（并同步派发 'scroll'，与 Scroller.scrollBy 同口径）。
+  //                  防 _bind 抢绑：main.js:1045 的通用 create 绑定会把 scroller._el 抢成
+  //                  滚动条自身——包装 _bind，滚动条绑定改记 __sbEl，不覆盖容器 _el。
+  //   motion ×4 /  → display:none / display:contents 标记件（见上）。
+  //   GeometryView
+  //
+  // ⚠️ 命名：ANIMATOR_ATTRS / __arkuiAnimator 已被 R47 ImageAnimator 占用（animator.js:18,52；
+  //    area.js:281）——本片的 Animator 用 ANIM_COMP_ATTRS / __arkuiAnimComp，勿混。
+
+  // ── Animator 逐帧引擎 ──────────────────────────────────────────────
+  /** @type {number} */ const ANIM_FRAME_MS = 16;               // 帧步长（~60fps；setTimeout 确定性）
+  /** @type {Record<string, (number[]|null)>} */
+  const ANIM_EASE_PRESETS = {
+    linear: null,
+    ease: [0.25, 0.1, 0.25, 1],
+    'ease-in': [0.42, 0, 1, 1],
+    'ease-out': [0, 0, 0.58, 1],
+    'ease-in-out': [0.42, 0, 0.58, 1],
+  };
+  /** @type {Record<string, string>} */
+  const ANIM_FILL_MODE_CSS = { 0: 'none', 1: 'forwards', 2: 'backwards', 3: 'both' };  // FillMode 声明序
+
+  /** @param {number[]} b @param {number} x */
+  const animBezierAt = (b, x) => {
+    // 三次贝塞尔 y(x)：x 由 [x1,x2] 段二分解 t（24 轮收敛，确定性，无浮点库）
+    /** @param {number} t @param {number} p1 @param {number} p2 */
+    const axis = (t, p1, p2) => 3 * p1 * t * (1 - t) * (1 - t) + 3 * p2 * t * t * (1 - t) + t * t * t;
+    let lo = 0;
+    let hi = 1;
+    for (let i = 0; i < 24; i++) {
+      const mid = (lo + hi) / 2;
+      if (axis(mid, b[0], b[2]) < x) lo = mid; else hi = mid;
+    }
+    const t = (lo + hi) / 2;
+    return axis(t, b[1], b[3]);
+  };
+
+  /**
+   * curve → 贝塞尔参数（null=线性）。输入可为 CSS 关键字 / cubic-bezier(...) 串 /
+   * Curve 枚举数值（复用 R22 animCurveCss 归一，ICurve 对象在那里面已警告退化）。
+   * @param {any} curve
+   */
+  const animParseEase = (curve) => {
+    const css = animCurveCss(curve);
+    if (css === 'linear') return null;
+    if (ANIM_EASE_PRESETS[css] !== undefined) return ANIM_EASE_PRESETS[css];
+    const m = css.match(/cubic-bezier\(([^)]*)\)/);
+    if (m) {
+      const nums = m[1].split(',').map((/** @type {string} */ s) => Number(s.trim()));
+      if (nums.length === 4 && nums.every((/** @type {number} */ n) => !isNaN(n))) return nums;
+    }
+    return ANIM_EASE_PRESETS['ease'];                            // 未知关键字按 CSS 语义回落 ease
+  };
+
+  /** @param {any} w */
+  const animForwardOf = (w) => {
+    // PlayMode: Normal=0 Reverse=1 Alternate=2 AlternateReverse=3（animation.js:30）
+    if (w.playMode === 1) return false;
+    if (w.playMode === 2) return w.cycle % 2 === 0;
+    if (w.playMode === 3) return w.cycle % 2 === 1;
+    return true;
+  };
+
+  /** @param {any} w */
+  const animStopTimer = (w) => { if (w.timer) { clearTimeout(w.timer); w.timer = null; } };
+
+  /** @param {any} w @param {any} el @param {number} p */
+  const animEmit = (w, el, p) => {
+    w.last = p;
+    el.dataset.animProgress = String(p);
+    const cb = w.cbs.frame;
+    if (typeof cb === 'function') {
+      try { cb(p); }
+      catch (e) { layoutWarnings.push(`Animator.onFrame 回调抛错：${e && e.message}`); }
+    }
+  };
+
+  /** @param {any} w @param {any} el @param {string} name */
+  const animFire = (w, el, name) => {
+    // 延时派发：state 属性先于 onStart/onFinish 应用（产物顺序实测，R47 同坑），同步发会丢
+    setTimeout(() => {
+      const cb = w.cbs[name];
+      if (typeof cb === 'function') {
+        try { cb(); }
+        catch (e) { layoutWarnings.push(`Animator.${name} 回调抛错：${e && e.message}`); }
+      }
+    }, 0);
+  };
+
+  /** @param {any} w @param {any} el */
+  const animSchedule = (w, el) => {
+    animStopTimer(w);
+    if (w.state !== 1) return;
+    w.timer = setTimeout(() => animTick(w, el), ANIM_FRAME_MS);
+  };
+
+  /** @param {any} w @param {any} el */
+  const animTick = (w, el) => {
+    w.timer = null;
+    if (w.state !== 1) return;
+    const now = Date.now();
+    const total = now - w.t0 - w.delay;
+    if (total < 0) {                                             // delay 期：不派发 onFrame（fill 由
+      animSchedule(w, el); return;                               // fillMode 语义描述，无视觉载体）
+    }
+    const iter = Math.floor(total / w.duration);
+    if (w.iterations !== Infinity && iter >= w.iterations) {     // 播完：落 Stopped，保持末值
+      const lastIter = Math.max(0, w.iterations - 1);
+      const fwdLast = w.playMode === 1 ? false
+        : w.playMode === 2 ? lastIter % 2 === 0
+          : w.playMode === 3 ? lastIter % 2 === 1 : true;
+      w.cycle = lastIter;
+      animEmit(w, el, fwdLast ? w.end : w.begin);
+      w.state = 3;
+      el.dataset.animState = '3';
+      animFire(w, el, 'finish');
+      return;
+    }
+    if (iter > w.cycle) { w.cycle = iter; animFire(w, el, 'repeat'); }
+    const local = (total - iter * w.duration) / w.duration;
+    const t = animForwardOf(w) ? local : 1 - local;
+    const eased = w.ease ? animBezierAt(w.ease, t) : t;
+    animEmit(w, el, w.begin + (w.end - w.begin) * eased);
+    animSchedule(w, el);
+  };
+
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
+  const ANIM_COMP_ATTRS = {
+    state: (n, v) => { const w = n.__anim; if (w && n.__animApplyState) n.__animApplyState(v); },
+    duration: (n, v) => {
+      const w = n.__anim;
+      if (!w) return;
+      const d = Number(resolveResource(v));
+      if (d > 0) w.duration = d;          // ≤0 不落（@ohos 默认 0 会让引擎除零；沿用 R47 的 1000 兜底）
+      n.dataset.duration = String(w.duration);
+    },
+    curve: (n, v) => {
+      const w = n.__anim;
+      if (!w) return;
+      const css = animCurveCss(resolveResource(v));
+      w.ease = animParseEase(css);
+      n.dataset.curve = css;
+    },
+    delay: (n, v) => {
+      const w = n.__anim;
+      if (!w) return;
+      w.delay = Math.max(0, Number(resolveResource(v)) || 0);
+      n.dataset.delay = String(w.delay);
+    },
+    fillMode: (n, v) => {
+      const w = n.__anim;
+      if (!w) return;
+      const r = resolveResource(v);
+      w.fill = typeof r === 'string' ? r : (ANIM_FILL_MODE_CSS[Number(r)] || 'forwards');
+      n.dataset.fillMode = w.fill;
+    },
+    iterations: (n, v) => {
+      const w = n.__anim;
+      if (!w) return;
+      const i = Number(resolveResource(v));
+      w.iterations = i === -1 ? Infinity : (i >= 1 ? i : 1);
+      n.dataset.iterations = i === -1 ? '-1' : String(w.iterations);
+    },
+    playMode: (n, v) => {
+      const w = n.__anim;
+      if (!w) return;
+      w.playMode = Number(resolveResource(v)) || 0;
+      n.dataset.playMode = String(w.playMode);
+    },
+    motion: (n, v) => {
+      // motion 接动效参数（物理模型件实例/参数对象）：只记录——DOM 无物理惯性引擎
+      const w = n.__anim;
+      if (!w) return;
+      w.motion = v && v.__motionParams ? v.__motionParams : v;
+      try { n.dataset.motion = JSON.stringify(w.motion); }
+      catch { n.dataset.motion = String(w.motion); }
+      layoutWarnings.push('Animator.motion 的物理惯性插值无 DOM 对应（参数记 data-*，不模拟）');
+    },
+    onStart: (n, v) => { const w = n.__anim; if (w) w.cbs.start = v; },
+    onPause: (n, v) => { const w = n.__anim; if (w) w.cbs.pause = v; },
+    onRepeat: (n, v) => { const w = n.__anim; if (w) w.cbs.repeat = v; },
+    onCancel: (n, v) => { const w = n.__anim; if (w) w.cbs.cancel = v; },
+    onFinish: (n, v) => { const w = n.__anim; if (w) w.cbs.finish = v; },
+    onFrame: (n, v) => { const w = n.__anim; if (w) w.cbs.frame = v; },
+  };
+
+  const Animator = ensureComponent('Animator', (args) => {
+    const el = document.createElement('div');
+    (/** @type {any} */ (el)).__arkuiAnimComp = 'Animator';
+    el.dataset.animator = '';
+    el.dataset.animState = '0';
+    el.dataset.animProgress = '0';
+    const o = args && args[0] && typeof args[0] === 'object' ? args[0] : {};
+    const w = /** @type {any} */ (el).__anim = /** @type {any} */ ({
+      duration: o.duration > 0 ? Number(o.duration) : 1000,      // @ohos 默认 0；引擎兜底 1000（见上）
+      delay: Math.max(0, Number(o.delay) || 0),
+      ease: animParseEase(o.easing !== undefined ? o.easing : 'ease'),
+      fill: ANIM_FILL_MODE_CSS[Number(o.fill)] || (typeof o.fill === 'string' ? o.fill : 'forwards'),
+      playMode: Number(o.direction) || 0,                        // AnimatorOptions.direction ↔ PlayMode
+      iterations: o.iterations === -1 ? Infinity : (Number(o.iterations) >= 1 ? Number(o.iterations) : 1),
+      begin: o.begin != null ? Number(o.begin) : 0,              // @ohos.animator.d.ts:129 默认 0
+      end: o.end != null ? Number(o.end) : 1,                    // 同上 :143 默认 1
+      state: 0, started: false, cycle: 0, elapsed: 0, last: 0, t0: 0,
+      timer: /** @type {any} */ null, motion: null,
+      cbs: /** @type {any} */ ({}),
+    });
+    // state 属性可能先于回调注册应用（R47 同款包装），暴露 bag 供测试/复位直调
+    (/** @type {any} */ (el)).__animApplyState = (/** @type {any} */ nv) => {
+      nv = Number(resolveResource(nv));
+      if (nv === w.state) return;                                // 重渲染同值 → 无操作（坑 88 同族）
+      const prev = w.state;
+      w.state = nv;
+      el.dataset.animState = String(nv);
+      if (nv === 1) {                                            // → Running
+        if (!w.started) { w.started = true; animFire(w, el, 'start'); }
+        w.t0 = Date.now() - w.elapsed;                           // Paused 恢复：从已走时间续播
+        animSchedule(w, el);
+      } else if (nv === 2) {                                     // → Paused：停表保持当前值
+        if (prev === 1) {
+          w.elapsed = Date.now() - w.t0;
+          animStopTimer(w);
+          animFire(w, el, 'pause');
+        }
+      } else if (nv === 3) {                                     // → Stopped：停表回初值
+        animStopTimer(w);
+        if (prev === 1) animFire(w, el, 'cancel');
+        w.elapsed = 0; w.cycle = 0;
+        el.dataset.animProgress = String(w.begin);
+      } else {                                                   // → Initial：整体复位（重启再发 start）
+        animStopTimer(w);
+        w.elapsed = 0; w.cycle = 0; w.started = false; w.last = w.begin;
+        el.dataset.animProgress = String(w.begin);
+      }
+    };
+    return el;
+  });
+
+  // ── ScrollBar（scroll_bar.d.ts：唯一有公开 d.ts 的一件）────────────────
+  const ScrollBarDirection = { Vertical: 0, Horizontal: 1 };     // 声明顺序（scroll_bar.d.ts:38,48）
+
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
+  const SCROLLBAR_ATTRS = {
+    enableNestedScroll: (n, v) => {
+      const w = n.__sbar;
+      const on = !!resolveResource(v);
+      if (w) w.nested = on;
+      n.dataset.enableNestedScroll = String(on);                 // 默认 false（scroll_bar.d.ts:173）
+    },
+    scrollBarColor: (n, v) => {
+      const c = colorOf(v);
+      n.dataset.scrollBarColor = c;
+      const th = n.__sbar && n.__sbar.thumb;
+      if (th) th.style.background = c;                           // 仅无子组件时生效（d.ts:183）
+    },
+  };
+
+  /** @param {any} w */
+  const sbScheduleSync = (w) => {
+    if (w.syncScheduled) return;
+    w.syncScheduled = true;
+    setTimeout(() => { w.syncScheduled = false; sbSync(w); }, 0);
+  };
+
+  /** @param {any} w */
+  const sbEnsureDefaultThumb = (w) => {
+    // API12+ 无子组件时的默认滑块样式（scroll_bar.d.ts:62；默认色 0x66182431 = :186）
+    const el = w.el;
+    const th = document.createElement('div');
+    th.setAttribute('data-sb-thumb', 'default');
+    th.style.position = 'absolute';
+    th.style.pointerEvents = 'auto';                             // 只有滑块可拖（根覆盖层不收事件）
+    th.style.borderRadius = '2px';
+    th.style.background = 'rgba(24, 36, 49, 0.4)';
+    if (w.dir !== ScrollBarDirection.Horizontal) {
+      th.style.width = '4px'; th.style.right = '0'; th.style.top = '0';
+    } else {
+      th.style.height = '4px'; th.style.bottom = '0'; th.style.left = '0';
+    }
+    el.appendChild(th);
+    return th;
+  };
+
+  /** @param {any} w */
+  const sbSync = (w) => {
+    const el = w.el;
+    if (!el || !el.isConnected) return;
+    const vert = w.dir !== ScrollBarDirection.Horizontal;
+    // 子组件滑块模式：排除我方默认滑块后的首个元素子节点（d.ts："single child component"）
+    const kids = /** @type {any[]} */ (Array.prototype.filter.call(
+      el.children, (/** @type {any} */ c) => c.getAttribute && c.getAttribute('data-sb-thumb') === null));
+    const userThumb = kids.length ? /** @type {any} */ (kids[0]) : null;
+    let thumb = userThumb;
+    if (!thumb) {
+      thumb = /** @type {any} */ (el.querySelector('[data-sb-thumb="default"]') || sbEnsureDefaultThumb(w));
+    }
+    if (userThumb) {
+      if (!w.userPrepared) {                                     // 子组件即滑块：绝对定位 + 沿轴位移
+        w.userPrepared = true;
+        userThumb.style.position = 'absolute';
+        userThumb.style.pointerEvents = 'auto';
+        if (vert) { userThumb.style.right = '0'; userThumb.style.top = '0'; }
+        else { userThumb.style.left = '0'; userThumb.style.bottom = '0'; }
+      }
+    } else if (w.thumb !== thumb) {
+      w.thumb = thumb;                                           // 记住默认滑块（scrollBarColor 生效对象）
+    }
+    const target = w.scroller ? w.scroller._el : null;
+    if (!target) {                                               // 未绑到可滚容器：滑块停在起点
+      el.dataset.sbTarget = 'none';
+      el.style.opacity = w.state === 0 ? '0' : '1';
+      thumb.style.transform = vert ? 'translateY(0px)' : 'translateX(0px)';
+      return;
+    }
+    // 'scroll' 观察只挂一次（换绑才重挂——Scroller._el 理论上不换，防御性）
+    if (w.listened !== target) {
+      if (w.listened && w.onScrollEv) w.listened.removeEventListener('scroll', w.onScrollEv);
+      w.listened = target;
+      w.onScrollEv = () => sbScheduleSync(w);
+      target.addEventListener('scroll', w.onScrollEv);
+    }
+    const cs = getComputedStyle(target);
+    const canV = cs.overflowY === 'auto' || cs.overflowY === 'scroll';
+    const canH = cs.overflowX === 'auto' || cs.overflowX === 'scroll';
+    if (!w.warned && ((vert && !canV && canH) || (!vert && !canH && canV))) {
+      w.warned = true;                                           // 方向不一致：真机不可滚动（d.ts:57）
+      layoutWarnings.push('ScrollBar.direction 与被绑容器滚动轴不一致：真机语义下无法滚动该容器');
+    }
+    const scrollSize = vert ? target.scrollHeight : target.scrollWidth;
+    const clientSize = vert ? target.clientHeight : target.clientWidth;
+    const pos = vert ? target.scrollTop : target.scrollLeft;
+    el.dataset.sbTarget = vert ? 'v' : 'h';
+    // 轨道长 = 自身主轴长；未布局（clientHeight 还没量出来）时回落到被绑视口长——
+    // ScrollBar 常与 Scroll 同尺寸叠放（Stack gridArea 1/1），两者口径一致
+    const trackLen = vert
+      ? (el.clientHeight || target.clientHeight)
+      : (el.clientWidth || target.clientWidth);
+    if (!(scrollSize > clientSize) || trackLen <= 0) {           // 无可滚内容：真机不显示滚动条
+      el.style.opacity = '0';
+      el.dataset.sbOverflow = '0';
+      return;
+    }
+    el.dataset.sbOverflow = '1';
+    // 可见性：Off=0 常隐；On=2 常显；Auto=1 滚动时显、静默 600ms 淡出（d.ts:64 BarState 口径）
+    if (w.state === 0) el.style.opacity = '0';
+    else if (w.state === 2) el.style.opacity = '1';
+    else {
+      el.style.opacity = '1';
+      if (w.hideTimer) clearTimeout(w.hideTimer);
+      w.hideTimer = setTimeout(() => { if (w.state === 1) el.style.opacity = '0'; }, 600);
+    }
+    const maxScroll = scrollSize - clientSize;
+    const ratio = maxScroll > 0 ? pos / maxScroll : 0;
+    let thumbLen = vert ? thumb.offsetHeight : thumb.offsetWidth;
+    if (!thumbLen) thumbLen = Math.max(24, Math.round(trackLen * clientSize / scrollSize));
+    const offset = Math.round(ratio * Math.max(0, trackLen - thumbLen));
+    thumb.style.transform = vert ? `translateY(${offset}px)` : `translateX(${offset}px)`;
+    el.dataset.sbOffset = String(offset);
+  };
+
+  /** @param {any} w */
+  const sbBindDrag = (w) => {
+    const el = w.el;
+    // 拖滑块反写容器滚动（真机 ScrollBar 可交互；事件口径与 Scroller.scrollBy 一致：改完即派发）
+    el.addEventListener('pointerdown', (/** @type {any} */ ev) => {
+      const th = /** @type {any} */ (ev.target);
+      if (!th || th.parentNode !== el) return;                   // 只有滑块可拖（默认或用户子组件）
+      const target = w.scroller ? w.scroller._el : null;
+      if (!target) return;
+      const vert = w.dir !== ScrollBarDirection.Horizontal;
+      const scrollSize = vert ? target.scrollHeight : target.scrollWidth;
+      const clientSize = vert ? target.clientHeight : target.clientWidth;
+      const trackLen = vert ? el.clientHeight : el.clientWidth;
+      const thumbLen = vert ? th.offsetHeight : th.offsetWidth;
+      const maxScroll = Math.max(0, scrollSize - clientSize);
+      const travel = Math.max(1, trackLen - thumbLen);
+      const startPos = vert ? target.scrollTop : target.scrollLeft;
+      const startPt = vert ? ev.clientY : ev.clientX;
+      ev.preventDefault();
+      /** @param {any} mv */
+      const onMove = (mv) => {
+        const delta = (vert ? mv.clientY : mv.clientX) - startPt;
+        const val = startPos + (delta * maxScroll / travel);
+        if (vert) target.scrollTop = val; else target.scrollLeft = val;
+        target.dispatchEvent(new Event('scroll'));
+      };
+      /** @return {void} */
+      const onUp = () => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+      };
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+    });
+  };
+
+  const ScrollBar = ensureComponent('ScrollBar', (args) => {
+    const el = document.createElement('div');
+    (/** @type {any} */ (el)).__arkuiScrollBar = true;
+    el.dataset.scrollBar = '';
+    el.style.position = 'relative';
+    el.style.pointerEvents = 'none';                             // 覆盖层不挡内容；滑块单独放开
+    el.style.transition = 'opacity 0.2s';
+    const o = args && args[0] && typeof args[0] === 'object' ? args[0] : {};
+    const w = /** @type {any} */ (el).__sbar = /** @type {any} */ ({
+      el,
+      scroller: o.scroller && typeof o.scroller._bind === 'function' ? o.scroller : null,
+      dir: Number(resolveResource(o.direction != null ? o.direction : 0)) || 0,   // 默认 Vertical
+      state: o.state != null ? Number(resolveResource(o.state)) : 1,              // 默认 BarState.Auto
+      nested: false, warned: false, userPrepared: false, syncScheduled: false,
+      thumb: /** @type {any} */ null, hideTimer: /** @type {any} */ null,
+      listened: /** @type {any} */ null, onScrollEv: /** @type {any} */ null,
+    });
+    // _bind 抢绑防护：main.js:1045 对 {scroller} 选项的通用绑定会把 scroller._el 覆盖成
+    // 滚动条自身——滚动条要"观察"容器而不是"成为"容器。包装后：滚动条绑定记 __sbEl，
+    // 容器绑定照旧走原型方法（晚建 Scroll 也能补首同步）。
+    if (w.scroller && !w.scroller.__sbBindWrapped) {
+      w.scroller.__sbBindWrapped = true;
+      const protoBind = /** @type {any} */ (Object.getPrototypeOf(w.scroller))._bind;
+      /** @param {any} target */
+      w.scroller._bind = (target) => {
+        if (target && target.__arkuiScrollBar) {
+          w.scroller.__sbEl = target;
+          sbScheduleSync(w);
+          return;
+        }
+        protoBind.call(w.scroller, target);
+        sbScheduleSync(w);
+      };
+    }
+    sbBindDrag(w);
+    // 首同步延后一拍：等 builder 子组件/容器尺寸就绪（headless 下 setTimeout 确定性）
+    sbScheduleSync(w);
+    return el;
+  });
+
+  // ── 物理动效四件 + GeometryView（atomic 原子件：无公开 d.ts/attrs）──────
+  /**
+   * 惰性标记件：create 参数记 bag（__motionParams，供 Animator.motion 取用）+ data-*。
+   * @param {string} kind @param {any[]} args
+   */
+  const buildMotionEl = (kind, args) => {
+    const el = document.createElement('div');
+    (/** @type {any} */ (el)).__arkuiMotion = kind;
+    el.dataset[kind] = '';
+    el.style.display = 'none';                                   // 内部件：不参与布局、不可见
+    const o = args && args[0] && typeof args[0] === 'object' ? args[0] : null;
+    const params = o ? Object.assign({}, o)
+      : (args || []).filter((/** @type {any} */ a) => a !== undefined).map((/** @type {any} */ a) => Number(a));
+    (/** @type {any} */ (el)).__motionParams = params;
+    try { el.dataset.motionParams = JSON.stringify(params); }
+    catch { el.dataset.motionParams = String(params); }
+    return el;
+  };
+
+  const FrictionMotion = ensureComponent('FrictionMotion', (args) => buildMotionEl('frictionMotion', args));
+  const ScrollMotion = ensureComponent('ScrollMotion', (args) => buildMotionEl('scrollMotion', args));
+  const SpringMotion = ensureComponent('SpringMotion', (args) => buildMotionEl('springMotion', args));
+  const SpringProp = ensureComponent('SpringProp', (args) => buildMotionEl('springProp', args));
+
+  const GeometryView = ensureComponent('GeometryView', () => {
+    // 几何转场载体：display:contents —— 自身零布局参与，转场作用在其包裹的内容上
+    const el = document.createElement('div');
+    (/** @type {any} */ (el)).__arkuiGeometryView = true;
+    el.dataset.geometryView = '';
+    el.style.display = 'contents';
+    return el;
+  });
+
+  // ────────── 批量功能组件（R66）：Calendar / ContainerReader / IndicatorComponent /
+  // MenuItemGroup / Repeat / WithTheme ──────────
+  //
+  // 权威来源：
+  //   Repeat           component/repeat.d.ts（Repeat(arr) → .each/.key/.template/.templateId/
+  //                    .virtualScroll；each 是必填；templateId 未命中任何 template 时回落 each）
+  //   WithTheme        component/with_theme.d.ts（WithThemeOptions {theme?, colorMode?}；
+  //                    ThemeColorMode：SYSTEM=0 / LIGHT=1 / DARK=2，common.d.ts:6808）
+  //   MenuItemGroup    component/menu_item_group.d.ts（MenuItemGroupOptions {header?, footer?}，
+  //                    header/footer: ResourceStr | CustomBuilder；子组件只有 MenuItem）
+  //   IndicatorComponent component/indicatorcomponent.d.ts（create(controller?) + initialIndex/
+  //                    count/style/loop/vertical/onChange + IndicatorComponentController）
+  //   ContainerReader  api/@ohos.arkui.components.ContainerReader.d.ts（create({size,
+  //                    widthBreakpoint?, heightBreakpoint?}) + .breakpointConfig({width?[], height?[]})）
+  //   Calendar         【无 d.ts】——本 SDK 只发布了 CalendarPicker；Calendar 是 systemApi 老组件，
+  //                    声明文件未随 SDK 发布（component/index-full.d.ts 引用 ./calendar.d.ts 但文件
+  //                    缺失）。属性面取自 ets-loader/components/calendar.json（date/showLunar/
+  //                    startOfWeek/offDays/onSelectChange/onRequestData/currentData/preData/
+  //                    nextData/needSlide/showHoliday/direction + 五个样式对象）；无权威文本的
+  //                    语义（onRequestData 入参、CalendarDay 结构）按字段名近似，见各 handler 注释。
+  //
+  // 产物形态（ets-loader lib/process_component_build.js：recurseRepeatExpression 会给 Repeat
+  // 调用追加 this 实参；其余按 component_map 通用 create/attr 形态）：
+  //   Repeat.create(this.arr, this); Repeat.each((ri) => {…}); Repeat.key((item, i) => …);
+  //     Repeat.templateId(fn)?; Repeat.template('t', (ri) => {…})?; Repeat.virtualScroll({...})?;
+  //   Repeat.pop();
+  //   WithTheme.create({ colorMode: 1 }); …子组件…; WithTheme.pop();
+  //   MenuItemGroup.create({ header: '组一' }); …MenuItem…; MenuItemGroup.pop();
+  //   IndicatorComponent.create(this.ctrl); IndicatorComponent.count(3); …; IndicatorComponent.pop();
+  //   ContainerReader.create({ size: { width: 700, height: 500 } }); …; ContainerReader.pop();
+  //
+  // DOM 策略：
+  //   Repeat/WithTheme 是"逻辑容器"——Repeat 用 display:contents（同 ForEach，不引入盒子）；
+  //   WithTheme 用真块级盒（color-scheme 要作用到后代原生控件）。Item 渲染走 microtask 批处理：
+  //   属性方法在首渲染与每次重渲染都会重放（updateFunc 重跑），而 pop() 只在 initialRender 出现，
+  //   所以渲染触发点放【属性应用】上（同 ForEach 把 forEachUpdateFunction 放 updateFunc 内的思路），
+  //   用 scheduled 标记去重、lastSig 快照去重（数组没变就不重建）。
+
+  // ════════════════════ Repeat ════════════════════
+  /** @param {any[]} prev @param {any[]} next @param {number} n */
+  const repeatSigSame = (prev, next, n) => prev.length === n && next.length >= n
+    && prev.every((/** @type {any} */ v, /** @type {number} */ k) => Object.is(v, next[k]));
+
+  /** @param {any} st */
+  function repeatSchedule(st) {
+    if (st.scheduled) return;
+    st.scheduled = true;
+    Promise.resolve().then(() => {
+      st.scheduled = false;
+      repeatRender(st);
+    });
+  }
+
+  /** @param {any} st */
+  function repeatRender(st) {
+    // virtualScroll 的总数语义（repeat.d.ts VirtualScrollOptions JSDoc）：
+    //   totalCount ∈ (0, 数据源长度] → 只渲染 [0, totalCount-1]；=0 → 不渲染；
+    //   缺省/非法 → 数据源长度。onTotalCount() 与 totalCount 二选一，前者优先。
+    let total = st.arr.length;
+    if (st.vs && typeof st.vs === 'object') {
+      let want = null;
+      if (typeof st.vs.onTotalCount === 'function') {
+        try { want = Number(st.vs.onTotalCount()); } catch (e) {
+          warnOnce('Repeat.virtualScroll.onTotalCount 抛错：' + (e && e.message));
+        }
+      } else if (st.vs.totalCount !== undefined) {
+        want = Number(st.vs.totalCount);
+      }
+      if (want !== null && Number.isFinite(want) && want >= 0) total = Math.min(total, Math.floor(want));
+      if (!st.warnedVs) {
+        st.warnedVs = true;
+        // 如实：DOM 运行时不做真·懒加载（onLazyLoading 没有触发源——本实现从不渲染
+        // 超出数据源的项），只保留 totalCount 的"裁剪渲染条数"语义。
+        layoutWarnings.push('Repeat.virtualScroll 未实现真懒加载：onLazyLoading 不会触发，'
+          + 'totalCount/onTotalCount 仅用于裁剪渲染条数');
+      }
+    }
+    const n = Math.max(0, Math.min(st.arr.length, total));
+    if (st.lastSig && repeatSigSame(st.lastSig, st.arr, n)) return;
+    st.lastSig = st.arr.slice(0, n);
+
+    st.el.textContent = '';
+    purgeDetachedRecords();
+    let rendered = 0;
+    for (let i = 0; i < n; i++) {
+      const item = st.arr[i];
+      let b = st.eachB;
+      if (st.templateIdFn) {
+        let t = null;
+        try { t = st.templateIdFn(item, i); } catch (e) {
+          warnOnce('Repeat.templateId 抛错：' + (e && e.message));
+        }
+        if (t !== undefined && t !== null && st.templates[String(t)]) b = st.templates[String(t)];
+      }
+      if (typeof b !== 'function') {
+        if (!st.warnedEach) {
+          st.warnedEach = true;
+          // repeat.d.ts："The each property is mandatory. If it is omitted, runtime errors
+          // will occur." —— 真机直接报错；这里降级为警告 + 跳过该项，其余项照常渲染。
+          layoutWarnings.push('Repeat 缺少 .each 构建器（必填），未命中模板的项不会渲染');
+        }
+        continue;
+      }
+      // repeat.d.ts：itemGenerator 收到 RepeatItem {item, index}，且【不要解构】（保持可观测）
+      const ri = { item, index: i };
+      runBuilderInto(st.el, () => b(ri), 'Repeat.item' + i);
+      rendered++;
+    }
+    st.el.dataset.repeatCount = String(rendered);
+  }
+
+  // repeat.json 属性面：each/key/onMove/template/templateId/virtualScroll。
+  // 注意 main.js 通用代理只把 attr 前两个实参透传给 applyAttr（args[0]→v、args[1]→opts），
+  // 所以 template(type, itemBuilder, templateOptions?) 的【第三个参 cachedCount 到不了这里】
+  // ——如实记录：TemplateOptions.cachedCount 是缓存池容量（纯性能参数，不影响行为）。
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
+  const REPEAT_ATTRS = {
+    each: (n, v) => {
+      const st = (/** @type {any} */ (n)).__repeat;
+      if (!st) return;
+      st.eachB = typeof v === 'function' ? v : null;
+      repeatSchedule(st);
+    },
+    key: (n, v) => {
+      const st = (/** @type {any} */ (n)).__repeat;
+      if (!st) return;
+      st.keyFn = typeof v === 'function' ? v : null;
+      // 键生成器只服务 diff 复用；本实现是"数组变了整体重建"（同 ForEach 基线），键不参与
+      n.dataset.key = typeof v === 'function' ? 'custom' : 'default';
+    },
+    template: (n, v, opts) => {
+      const st = (/** @type {any} */ (n)).__repeat;
+      if (!st) return;
+      st.templates[String(v)] = typeof opts === 'function' ? opts : null;
+      repeatSchedule(st);
+    },
+    templateId: (n, v) => {
+      const st = (/** @type {any} */ (n)).__repeat;
+      if (!st) return;
+      st.templateIdFn = typeof v === 'function' ? v : null;
+      repeatSchedule(st);
+    },
+    virtualScroll: (n, v) => {
+      const st = (/** @type {any} */ (n)).__repeat;
+      if (!st) return;
+      st.vs = v && typeof v === 'object' ? v : null;
+      n.dataset.virtualScroll = st.vs ? 'on' : 'off';
+      repeatSchedule(st);
+    },
+    onMove: (n, v) => {
+      const st = (/** @type {any} */ (n)).__repeat;
+      if (!st) return;
+      st.onMove = typeof v === 'function' ? v : null;
+      n.dataset.onMove = st.onMove ? 'registered' : 'none';
+      if (st.onMove && !st.warnedMove) {
+        st.warnedMove = true;
+        // 如实：DOM 垫片没有列表拖拽排序的触发源（ArkUI 的拖拽排序由容器拖拽手势驱动），
+        // 回调只登记、不由本实现派发。
+        layoutWarnings.push('Repeat.onMove 已登记，但本实现没有拖拽排序触发源，回调不会被派发');
+      }
+    },
+  };
+
+  /** @param {any[]} args */
+  const Repeat = ensureComponent('Repeat', (args) => {
+    const el = document.createElement('div');
+    (/** @type {any} */ (el)).__arkuiRepeat = true;
+    el.setAttribute('data-arkui-repeat', '');
+    el.style.display = 'contents';              // 逻辑容器：不引入盒子（同 ForEach）
+    const st = /** @type {any} */ (el).__repeat = /** @type {any} */ ({
+      el,
+      arr: args && Array.isArray(args[0]) ? args[0] : [],
+      eachB: null, keyFn: null, templateIdFn: null,
+      /** @type {Record<string, any>} */ templates: {},
+      vs: null, onMove: null,
+      scheduled: false, lastSig: null,
+      warnedEach: false, warnedVs: false, warnedMove: false,
+    });
+    return st.el;
+  }, (/** @type {any} */ node, /** @type {any} */ args) => {
+    // 重渲染：Repeat.create(arr, this) 重放 → 只更新数据源；构建器由属性重放重新登记
+    const st = (/** @type {any} */ (node)).__repeat;
+    if (!st) return;
+    st.arr = args && Array.isArray(args[0]) ? args[0] : [];
+    repeatSchedule(st);
+  });
+
+  // ════════════════════ WithTheme ════════════════════
+  /** @param {HTMLElement} el @param {any} o @returns {any} */
+  function applyWithThemeOptions(el, o) {
+    const anyEl = /** @type {any} */ (el);
+    if (!o || typeof o !== 'object') return anyEl.__wtheme;
+    const st = anyEl.__wtheme || (anyEl.__wtheme = /** @type {any} */ ({
+      colorMode: 0, hasTheme: false, warnedTheme: false,
+    }));
+    if (o.colorMode !== undefined) {
+      // ThemeColorMode：SYSTEM=0 / LIGHT=1 / DARK=2（common.d.ts:6808 起）
+      const m = Number(resolveResource(o.colorMode)) || 0;
+      st.colorMode = m;
+      el.dataset.colorMode = String(m);
+      // DOM 对应物：CSS color-scheme 作用域（后代原生控件的浅/深色默认皮肤随之切换）
+      el.style.colorScheme = m === 2 ? 'dark' : (m === 1 ? 'light' : '');
+    }
+    if (o.theme !== undefined) {
+      st.hasTheme = o.theme !== null;
+      el.dataset.theme = st.hasTheme ? 'custom' : 'none';
+      if (st.hasTheme && !st.warnedTheme) {
+        st.warnedTheme = true;
+        // 如实：CustomTheme 是令牌表（@ohos.arkui.theme），没有到 CSS 变量的映射，只记录
+        layoutWarnings.push('WithTheme({theme}) 的 CustomTheme 令牌未映射到 DOM（仅记录 data-theme）；'
+          + 'colorMode 生效');
+      }
+    }
+    return st;
+  }
+
+  /** @param {any[]} args */
+  const WithTheme = ensureComponent('WithTheme', (args) => {
+    const el = document.createElement('div');
+    (/** @type {any} */ (el)).__arkuiWithTheme = true;
+    el.dataset.withTheme = '';
+    el.style.display = 'block';
+    applyWithThemeOptions(el, args && args[0]);
+    return el;
+  }, (/** @type {any} */ node, /** @type {any} */ args) => { applyWithThemeOptions(node, args && args[0]); });
+
+  // ════════════════════ MenuItemGroup ════════════════════
+  // header/footer: ResourceStr | CustomBuilder（menu_item_group.d.ts）。真机序是
+  // header → items → footer（同 ListItemGroup）；items 由框架在 create..pop 之间 appendChild，
+  // 会排在【DOM 里最后】的 footerWrap 之后 → 给 footerWrap 设 flex order:1（header/items 缺省 0，
+  // DOM 序先行），视觉序仍是 header → items → footer。
+  /** @param {HTMLElement} slot @param {any} v @param {string} what */
+  function applyMigSlot(slot, v, what) {
+    if (typeof v === 'function') {
+      runBuilderInto(slot, v, 'MenuItemGroup.' + what);
+      return;
+    }
+    slot.textContent = String(resolveResource(v));
+  }
+
+  /** @param {any[]} args */
+  const MenuItemGroup = ensureComponent('MenuItemGroup', (args) => {
+    const el = document.createElement('div');
+    (/** @type {any} */ (el)).__arkuiMenuItemGroup = true;
+    el.dataset.menuItemGroup = '';
+    el.style.display = 'flex';
+    el.style.flexDirection = 'column';
+    const st = /** @type {any} */ (el).__mig = /** @type {any} */ ({ header: null, footer: null });
+    const o = (args && typeof args[0] === 'object' && args[0] !== null) ? args[0] : {};
+    if (o.header !== undefined) st.header = o.header;
+    if (o.footer !== undefined) st.footer = o.footer;
+    const headerWrap = document.createElement('div');
+    headerWrap.setAttribute('data-arkui-mig-header', '');
+    el.appendChild(headerWrap);
+    if (st.header !== null) applyMigSlot(headerWrap, st.header, 'header');
+    const footerWrap = document.createElement('div');
+    footerWrap.setAttribute('data-arkui-mig-footer', '');
+    footerWrap.style.order = '1';
+    el.appendChild(footerWrap);
+    if (st.footer !== null) applyMigSlot(footerWrap, st.footer, 'footer');
+    return el;
+  });
+
+  // ════════════════════ IndicatorComponent ════════════════════
+  // 指示器条（indicatorcomponent.d.ts，since 15）：create(controller?)；属性 initialIndex/count/
+  // style/loop/vertical/onChange；控制器 showNext/showPrevious/changeIndex(i, useAnimation?)。
+  // DOM：一排圆点（flex row/column）；活动点由 loop 决定越界回卷或停在边界（同 Swiper 基线）。
+  let indicSeq = 0;
+
+  class IndicatorComponentController {
+    constructor() {
+      /** @type {number} */ this._id = ++indicSeq;
+      /** @type {any} */ this._state = null;
+    }
+    showNext() { return indicStep(this._state, 1); }
+    showPrevious() { return indicStep(this._state, -1); }
+    /** @param {number} i @param {boolean=} [useAnimation] */
+    changeIndex(i, useAnimation) {
+      if (useAnimation === true) {
+        warnOnce('IndicatorComponentController.changeIndex(useAnimation=true)：无动画实现，已忽略动画');
+      }
+      return indicStep(this._state, 0, Number(i));
+    }
+  }
+
+  /** @param {any} st @param {any} ctl */
+  function bindIndicController(st, ctl) {
+    if (!ctl || typeof ctl !== 'object') return;
+    if (typeof ctl.showNext !== 'function') {
+      layoutWarnings.push('IndicatorComponent.create 的参数不是 IndicatorComponentController');
+      return;
+    }
+    if (ctl._state && ctl._state !== st) {
+      layoutWarnings.push('同一个 IndicatorComponentController 被绑定到多个 IndicatorComponent（后绑定的生效）');
+    }
+    ctl._state = st;
+    st.controller = ctl;
+  }
+
+  /** @param {any} st @param {number} delta @param {number=} [absolute] */
+  function indicStep(st, delta, absolute) {
+    if (!st) {
+      layoutWarnings.push('IndicatorComponentController 尚未绑定到任何 IndicatorComponent');
+      return false;
+    }
+    const n = st.count;
+    if (!n) {
+      layoutWarnings.push('IndicatorComponent.count 为 0，无法切换指示点');
+      return false;
+    }
+    let next = (absolute !== undefined) ? absolute : st.index + delta;
+    if (st.loop) next = ((next % n) + n) % n;
+    return indicSetActive(st, next, true);
+  }
+
+  /** @param {any} st @param {number} i @param {boolean} fire */
+  function indicSetActive(st, i, fire) {
+    const n = st.count;
+    let idx = Number(i);
+    if (!st.loop && (idx < 0 || idx >= n)) {
+      layoutWarnings.push(`IndicatorComponent 切换越界（index=${i}，count=${n}，loop=false）`);
+      return false;
+    }
+    if (st.loop) idx = ((idx % n) + n) % n;
+    st.index = idx;
+    st.dots.forEach((/** @type {any} */ d, /** @type {number} */ k) => {
+      d.setAttribute('data-indic-active', k === idx ? 'true' : 'false');
+    });
+    if (fire) {
+      const cb = st.cbs.change;
+      if (typeof cb === 'function') {
+        try { cb(idx); } catch (e) { layoutWarnings.push(`IndicatorComponent.onChange 抛错：${e && e.message}`); }
+      }
+    }
+    return true;
+  }
+
+  /** @param {any} st */
+  function indicRender(st) {
+    const el = st.el;
+    el.textContent = '';
+    st.dots = [];
+    for (let k = 0; k < st.count; k++) {
+      const d = document.createElement('div');
+      d.setAttribute('data-indic-dot', String(k));
+      d.setAttribute('data-indic-active', 'false');
+      d.style.width = '8px';
+      d.style.height = '8px';
+      d.style.borderRadius = '50%';
+      d.style.background = '#bbb';
+      d.style.cursor = 'pointer';
+      d.addEventListener('click', () => indicSetActive(st, k, true));
+      el.appendChild(d);
+      st.dots.push(d);
+    }
+    if (st.count) indicSetActive(st, st.index, false);
+  }
+
+  /** @param {any} st */
+  function indicSchedule(st) {
+    if (st.scheduled) return;
+    st.scheduled = true;
+    Promise.resolve().then(() => {
+      st.scheduled = false;
+      indicRender(st);
+    });
+  }
+
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
+  const INDIC_ATTRS = {
+    initialIndex: (n, v) => {
+      const st = (/** @type {any} */ (n)).__indic;
+      if (st) st.index = Math.max(0, Number(resolveResource(v)) || 0);
+    },
+    count: (n, v) => {
+      const st = (/** @type {any} */ (n)).__indic;
+      if (!st) return;
+      st.count = Math.max(0, Math.floor(Number(resolveResource(v)) || 0));
+      indicSchedule(st);
+    },
+    style: (n, v) => {
+      const st = (/** @type {any} */ (n)).__indic;
+      if (!st) return;
+      n.dataset.style = 'custom';
+      if (!st.warnedStyle) {
+        st.warnedStyle = true;
+        // 与 Swiper.indicator 同一口径：DotIndicator/DigitIndicator 的配置读不到，退化为默认圆点
+        layoutWarnings.push('IndicatorComponent.style 只支持默认圆点；DotIndicator/DigitIndicator 的配置未实现');
+      }
+    },
+    loop: (n, v) => {
+      const st = (/** @type {any} */ (n)).__indic;
+      if (st) st.loop = !!v;
+      n.dataset.loop = String(!!v);
+    },
+    vertical: (n, v) => {
+      const st = (/** @type {any} */ (n)).__indic;
+      if (st) st.vertical = !!v;
+      n.style.flexDirection = v ? 'column' : 'row';
+      n.dataset.vertical = String(!!v);
+    },
+    onChange: (n, v) => {
+      const st = (/** @type {any} */ (n)).__indic;
+      if (st) st.cbs.change = v;
+    },
+  };
+
+  /** @param {any[]} args */
+  const IndicatorComponent = ensureComponent('IndicatorComponent', (args) => {
+    const el = document.createElement('div');
+    (/** @type {any} */ (el)).__arkuiIndicator = true;
+    el.dataset.indicator = '';
+    el.style.display = 'flex';
+    el.style.flexDirection = 'row';
+    el.style.justifyContent = 'center';
+    el.style.alignItems = 'center';
+    el.style.gap = '8px';
+    const st = /** @type {any} */ (el).__indic = /** @type {any} */ ({
+      el, index: 0, count: 0, loop: false, vertical: false,
+      cbs: {}, dots: [], controller: null,
+      scheduled: false, warnedStyle: false,
+    });
+    bindIndicController(st, args && args[0]);
+    return el;
+  }, (/** @type {any} */ node, /** @type {any} */ args) => {
+    const st = (/** @type {any} */ (node)).__indic;
+    if (st) bindIndicController(st, args && args[0]);
+  });
+
+  // ════════════════════ ContainerReader ════════════════════
+  // 容器断点读取（@ohos.arkui.components.ContainerReader.d.ts，since 26.0.0）：
+  //   create({size:{width,height}, widthBreakpoint?, heightBreakpoint?}) + .breakpointConfig(
+  //   {width?: number[], height?: number[]})。桶序 = 【不小于】阈值的连续个数（阈值升序）；
+  //   未配置阈值时透传 create 里的 WidthBreakpoint/HeightBreakpoint 枚举值。
+  /** @param {any[]} th @param {number} v @returns {number} */
+  function creaderBucket(th, v) {
+    const arr = [...th].sort((/** @type {number} */ a, /** @type {number} */ b) => a - b);
+    let i = 0;
+    while (i < arr.length && v >= arr[i]) i++;
+    return i;
+  }
+
+  /** @param {any} st */
+  function creaderApply(st) {
+    const w = (st.size && Number(st.size.width)) || 0;
+    const h = (st.size && Number(st.size.height)) || 0;
+    st.activeW = (st.cfg.width && st.cfg.width.length) ? creaderBucket(st.cfg.width, w) : st.widthBp;
+    st.activeH = (st.cfg.height && st.cfg.height.length) ? creaderBucket(st.cfg.height, h) : st.heightBp;
+    st.el.dataset.widthBp = String(st.activeW);
+    st.el.dataset.heightBp = String(st.activeH);
+  }
+
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
+  const CREADER_ATTRS = {
+    breakpointConfig: (n, v) => {
+      const st = (/** @type {any} */ (n)).__creader;
+      if (!st) return;
+      const o = v && typeof v === 'object' ? v : {};
+      st.cfg.width = Array.isArray(o.width) ? o.width.map(Number) : [];
+      st.cfg.height = Array.isArray(o.height) ? o.height.map(Number) : [];
+      n.dataset.bpWidth = JSON.stringify(st.cfg.width);
+      n.dataset.bpHeight = JSON.stringify(st.cfg.height);
+      creaderApply(st);
+    },
+  };
+
+  /** @param {any[]} args */
+  const ContainerReader = ensureComponent('ContainerReader', (args) => {
+    const el = document.createElement('div');
+    (/** @type {any} */ (el)).__arkuiCReader = true;
+    el.dataset.containerReader = '';
+    el.style.display = 'block';
+    const o = (args && typeof args[0] === 'object' && args[0] !== null) ? args[0] : {};
+    const st = /** @type {any} */ (el).__creader = /** @type {any} */ ({
+      el,
+      size: o.size && typeof o.size === 'object' ? o.size : { width: 0, height: 0 },
+      widthBp: Number(o.widthBreakpoint) || 0,
+      heightBp: Number(o.heightBreakpoint) || 0,
+      cfg: { width: [], height: [] },
+      activeW: 0, activeH: 0,
+    });
+    creaderApply(st);
+    return el;
+  }, (/** @type {any} */ node, /** @type {any} */ args) => {
+    // 重渲染：create({size}) 重放 → 只刷新 size 与断点（breakpointConfig 由属性重放重新应用）
+    const st = (/** @type {any} */ (node)).__creader;
+    if (!st) return;
+    const o = (args && typeof args[0] === 'object' && args[0] !== null) ? args[0] : {};
+    if (o.size && typeof o.size === 'object') st.size = o.size;
+    if (o.widthBreakpoint !== undefined) st.widthBp = Number(o.widthBreakpoint) || 0;
+    if (o.heightBreakpoint !== undefined) st.heightBp = Number(o.heightBreakpoint) || 0;
+    creaderApply(st);
+  });
+
+  // ════════════════════ Calendar（systemApi 老组件，无随包 d.ts）════════════════════
+  // 属性面 = ets-loader/components/calendar.json。无权威文本处按字段名近似（已标注）：
+  //   date：锚定月份 + 选中日（接受 Date/时间戳/'YYYY-MM-DD'）；
+  //   startOfWeek：0=周日（getDay 口径）；offDays：休息日 weekday 数组；
+  //   currentData：当月天数据（按 {year,month,day} 匹配标记，month 为 1 基的近似口径）；
+  //   preData/nextData：相邻月数据，只记条数（本实现不显示相邻月格子）；
+  //   onRequestData：挂载/翻月时回调 currentYearMonth（'YYYY-MM' 字符串——近似口径）；
+  //   needSlide：显示 ‹ › 翻月按钮（真机是手势滑动，DOM 近似为按钮）；
+  //   direction：Axis 竖排（周头条在上）/ 横排（周头条在左）；运行时全局 Axis 的取值是
+  //     'vertical'/'horizontal' 字符串（layout.js），SDK 枚举是 0/1，两者都认。
+  const CAL_WEEK_CN = ['日', '一', '二', '三', '四', '五', '六'];
+
+  /** @param {any} v @returns {Date} */
+  function calToDate(v) {
+    if (v instanceof Date) return v;
+    if (typeof v === 'number') return new Date(v);
+    if (typeof v === 'string') {
+      const m = v.match(/^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?/);
+      if (m) return new Date(Number(m[1]), Number(m[2]) - 1, m[3] ? Number(m[3]) : 1);
+    }
+    return new Date();
+  }
+
+  /** @param {Date} d @returns {string} */
+  function calKeyOf(d) {
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0')
+      + '-' + String(d.getDate()).padStart(2, '0');
+  }
+
+  /** @param {Date} d @returns {string} */
+  function calMonthKeyOf(d) {
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  }
+
+  /** @param {HTMLElement} c @param {any} s */
+  function calApplyTextStyle(c, s) {
+    if (!s || typeof s !== 'object') return;
+    // CalendarDayStyle 近似字段面：dayColor/dayFontSize/dayFontWeight/dayFontFamily 作用到
+    // 【公历】文本；lunarColor 等 Lunar 系字段没有对应渲染物（本实现不排农历），只落 data-*
+    if (s.dayColor !== undefined) c.style.color = colorOf(s.dayColor);
+    if (s.dayFontSize !== undefined) c.style.fontSize = toCssSize(s.dayFontSize);
+    if (s.dayFontWeight !== undefined) c.style.fontWeight = String(resolveResource(s.dayFontWeight));
+    if (s.dayFontFamily !== undefined) c.style.fontFamily = String(resolveResource(s.dayFontFamily));
+    if (s.lunarColor !== undefined) (/** @type {any} */ (c)).__lunarColor = colorOf(s.lunarColor);
+  }
+
+  /** @param {any} st */
+  function calSchedule(st) {
+    if (st.scheduled) return;
+    st.scheduled = true;
+    Promise.resolve().then(() => {
+      st.scheduled = false;
+      calRender(st);
+    });
+  }
+
+  /** @param {any} st */
+  function calRender(st) {
+    const el = st.el;
+    const anchor = st.anchor;
+    const y = anchor.getFullYear();
+    const m = anchor.getMonth();
+
+    // 头部：‹ YYYY-MM ›（needSlide=false 时隐藏按钮）
+    const label = el.querySelector('[data-cal-month]');
+    if (label) label.textContent = calMonthKeyOf(anchor);
+    const prevBtn = el.querySelector('[data-cal-prev]');
+    const nextBtn = el.querySelector('[data-cal-next]');
+    if (prevBtn) (/** @type {HTMLElement} */ (prevBtn)).style.display = st.needSlide ? '' : 'none';
+    if (nextBtn) (/** @type {HTMLElement} */ (nextBtn)).style.display = st.needSlide ? '' : 'none';
+
+    // 周头条（按 startOfWeek 旋起）；横排方向时整条变竖列
+    const weeksEl = /** @type {HTMLElement} */ (el.querySelector('[data-cal-weeks]'));
+    weeksEl.textContent = '';
+    weeksEl.style.display = st.horizontal ? 'flex' : 'grid';
+    if (!st.horizontal) {
+      weeksEl.style.gridTemplateColumns = 'repeat(7, 1fr)';
+    }
+    for (let k = 0; k < 7; k++) {
+      const wd = (st.startOfWeek + k) % 7;
+      const c = document.createElement('div');
+      c.setAttribute('data-cal-week', String(wd));
+      c.textContent = CAL_WEEK_CN[wd];
+      c.style.textAlign = 'center';
+      calApplyTextStyle(c, st.styles.weekStyle);
+      weeksEl.appendChild(c);
+    }
+
+    // 日格：首列按 startOfWeek 对齐；前导补空位；选中/今天/休息日/已登记数据落 data-*
+    const gridEl = /** @type {HTMLElement} */ (el.querySelector('[data-cal-grid]'));
+    gridEl.textContent = '';
+    gridEl.style.display = 'grid';
+    gridEl.style.gridTemplateColumns = 'repeat(7, 1fr)';
+    const first = new Date(y, m, 1);
+    const lead = (first.getDay() - st.startOfWeek + 7) % 7;
+    for (let p = 0; p < lead; p++) {
+      const pad = document.createElement('div');
+      pad.setAttribute('data-cal-pad', String(p));
+      gridEl.appendChild(pad);
+    }
+    const days = new Date(y, m + 1, 0).getDate();
+    const today = new Date();
+    const tKey = calKeyOf(today);
+    // currentData 的标记索引（近似口径：{year,month,day}，month 为 1 基）
+    /** @type {Record<string, any>} */
+    const marks = {};
+    for (const e of (st.dataCur || [])) {
+      if (e && typeof e === 'object' && e.year !== undefined && e.day !== undefined) {
+        const key = Number(e.year) + '-' + String(Number(e.month || (m + 1))).padStart(2, '0')
+          + '-' + String(Number(e.day)).padStart(2, '0');
+        marks[key] = e;
+      }
+    }
+    for (let d = 1; d <= days; d++) {
+      const date = new Date(y, m, d);
+      const key = calKeyOf(date);
+      const c = document.createElement('div');
+      c.setAttribute('data-cal-day', String(d));
+      c.setAttribute('data-date', key);
+      c.textContent = String(d);
+      c.style.textAlign = 'center';
+      c.style.cursor = 'pointer';
+      const wd = date.getDay();
+      if (st.offDays.indexOf(wd) >= 0) {
+        c.setAttribute('data-off-day', 'true');
+        calApplyTextStyle(c, st.styles.workStateStyle);
+      } else {
+        calApplyTextStyle(c, st.styles.currentDayStyle);
+      }
+      if (key === tKey) {
+        c.setAttribute('data-today', 'true');
+        calApplyTextStyle(c, st.styles.todayStyle);
+      }
+      if (st.selected && calKeyOf(st.selected) === key) c.setAttribute('data-selected', 'true');
+      if (marks[key]) {
+        c.setAttribute('data-marked', 'true');
+        const mk = marks[key].mark || (marks[key].status && marks[key].status.mark);
+        if (mk !== undefined && mk !== null) c.setAttribute('data-mark', String(mk));
+      }
+      c.addEventListener('click', () => {
+        st.selected = date;
+        calMarkSelection(st);
+        const cb = st.cbs.select;
+        if (typeof cb === 'function') {
+          try { cb(new Date(y, m, d)); } catch (e) {
+            layoutWarnings.push(`Calendar.onSelectChange 抛错：${e && e.message}`);
+          }
+        }
+      });
+      gridEl.appendChild(c);
+    }
+    el.dataset.currentCount = String(st.dataCur ? st.dataCur.length : 0);
+    if (!st.requested) {
+      st.requested = true;
+      const cb = st.cbs.request;
+      if (typeof cb === 'function') {
+        try { cb(calMonthKeyOf(anchor)); } catch (e) {
+          layoutWarnings.push(`Calendar.onRequestData 抛错：${e && e.message}`);
+        }
+      }
+    }
+  }
+
+  /** @param {any} st */
+  function calMarkSelection(st) {
+    const gridEl = st.el.querySelector('[data-cal-grid]');
+    if (!gridEl) return;
+    const sel = st.selected ? calKeyOf(st.selected) : null;
+    [...gridEl.children].forEach((/** @type {any} */ c) => {
+      if (c.getAttribute('data-cal-day') === null) return;
+      const on = sel !== null && c.getAttribute('data-date') === sel;
+      if (on) c.setAttribute('data-selected', 'true');
+      else c.removeAttribute('data-selected');
+    });
+  }
+
+  /** @param {any} st @param {number} delta */
+  function calShiftMonth(st, delta) {
+    const a = st.anchor;
+    st.anchor = new Date(a.getFullYear(), a.getMonth() + delta, 1);
+    calRender(st);
+    const cb = st.cbs.request;
+    if (typeof cb === 'function') {
+      try { cb(calMonthKeyOf(st.anchor)); } catch (e) {
+        layoutWarnings.push(`Calendar.onRequestData 抛错：${e && e.message}`);
+      }
+    }
+  }
+
+  // 应用 create 选项 / 属性共用的入口（键面与 calendar.json 一致 + selected/lunar 等别名）
+  /** @param {any} st @param {any} o */
+  function applyCalOptions(st, o) {
+    if (!o || typeof o !== 'object') return;
+    if (o.date !== undefined || o.selected !== undefined) {
+      const d = calToDate(o.date !== undefined ? o.date : o.selected);
+      st.anchor = new Date(d.getFullYear(), d.getMonth(), 1);
+      st.selected = d;
+    }
+    if (o.showLunar !== undefined) {
+      st.showLunar = !!o.showLunar;
+      if (st.showLunar && !st.warnedLunar) {
+        st.warnedLunar = true;
+        // 如实：农历换算没有实现，showLunar=true 只落标记、不排农历文本
+        layoutWarnings.push('Calendar.showLunar 已记录，但本实现不排农历文本（无农历换算）');
+      }
+    }
+    if (o.startOfWeek !== undefined) {
+      st.startOfWeek = Math.min(6, Math.max(0, Math.floor(Number(resolveResource(o.startOfWeek)) || 0)));
+    }
+    if (o.offDays !== undefined) {
+      st.offDays = Array.isArray(o.offDays) ? o.offDays.map((/** @type {any} */ x) => Number(x) % 7) : [];
+    }
+    if (o.onSelectChange !== undefined) st.cbs.select = o.onSelectChange;
+    if (o.onRequestData !== undefined) st.cbs.request = o.onRequestData;
+    if (o.currentData !== undefined) st.dataCur = Array.isArray(o.currentData) ? o.currentData : [];
+    if (o.preData !== undefined) {
+      st.el.dataset.preCount = String(Array.isArray(o.preData) ? o.preData.length : 0);
+    }
+    if (o.nextData !== undefined) {
+      st.el.dataset.nextCount = String(Array.isArray(o.nextData) ? o.nextData.length : 0);
+    }
+    if (o.needSlide !== undefined) st.needSlide = !!o.needSlide;
+    if (o.showHoliday !== undefined) {
+      st.showHoliday = !!o.showHoliday;
+      if (st.showHoliday && !st.warnedHoliday) {
+        st.warnedHoliday = true;
+        layoutWarnings.push('Calendar.showHoliday 已记录，但本实现无节假日数据，不显示节假日名');
+      }
+    }
+    if (o.direction !== undefined) st.horizontal = isHorizontalAxis(o.direction);
+    const styleKeys = ['currentDayStyle', 'nonCurrentDayStyle', 'todayStyle', 'weekStyle', 'workStateStyle'];
+    for (const k of styleKeys) {
+      if (o[k] !== undefined) st.styles[k] = o[k];
+    }
+    calSchedule(st);
+  }
+
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
+  const CALGRID_ATTRS = {
+    date: (n, v) => {
+      const st = (/** @type {any} */ (n)).__calgrid;
+      if (st) applyCalOptions(st, { date: v });
+    },
+    showLunar: (n, v) => {
+      const st = (/** @type {any} */ (n)).__calgrid;
+      if (st) applyCalOptions(st, { showLunar: v });
+      n.dataset.showLunar = String(!!v);
+    },
+    startOfWeek: (n, v) => {
+      const st = (/** @type {any} */ (n)).__calgrid;
+      if (st) applyCalOptions(st, { startOfWeek: v });
+    },
+    offDays: (n, v) => {
+      const st = (/** @type {any} */ (n)).__calgrid;
+      if (st) applyCalOptions(st, { offDays: v });
+    },
+    onSelectChange: (n, v) => {
+      const st = (/** @type {any} */ (n)).__calgrid;
+      if (st) st.cbs.select = v;
+    },
+    onRequestData: (n, v) => {
+      const st = (/** @type {any} */ (n)).__calgrid;
+      if (st) st.cbs.request = v;
+    },
+    currentData: (n, v) => {
+      const st = (/** @type {any} */ (n)).__calgrid;
+      if (st) applyCalOptions(st, { currentData: v });
+    },
+    preData: (n, v) => {
+      const st = (/** @type {any} */ (n)).__calgrid;
+      if (st) applyCalOptions(st, { preData: v });
+    },
+    nextData: (n, v) => {
+      const st = (/** @type {any} */ (n)).__calgrid;
+      if (st) applyCalOptions(st, { nextData: v });
+    },
+    needSlide: (n, v) => {
+      const st = (/** @type {any} */ (n)).__calgrid;
+      if (st) {
+        st.needSlide = !!v;
+        calSchedule(st);
+      }
+      n.dataset.needSlide = String(!!v);
+    },
+    showHoliday: (n, v) => {
+      const st = (/** @type {any} */ (n)).__calgrid;
+      if (st) applyCalOptions(st, { showHoliday: v });
+      n.dataset.showHoliday = String(!!v);
+    },
+    direction: (n, v) => {
+      const st = (/** @type {any} */ (n)).__calgrid;
+      if (st) {
+        st.horizontal = isHorizontalAxis(v);
+        n.dataset.direction = st.horizontal ? 'horizontal' : 'vertical';
+        calSchedule(st);
+      }
+    },
+    currentDayStyle: (n, v) => {
+      const st = (/** @type {any} */ (n)).__calgrid;
+      if (st) applyCalOptions(st, { currentDayStyle: v });
+    },
+    nonCurrentDayStyle: (n, v) => {
+      const st = (/** @type {any} */ (n)).__calgrid;
+      if (st) applyCalOptions(st, { nonCurrentDayStyle: v });
+    },
+    todayStyle: (n, v) => {
+      const st = (/** @type {any} */ (n)).__calgrid;
+      if (st) applyCalOptions(st, { todayStyle: v });
+    },
+    weekStyle: (n, v) => {
+      const st = (/** @type {any} */ (n)).__calgrid;
+      if (st) applyCalOptions(st, { weekStyle: v });
+    },
+    workStateStyle: (n, v) => {
+      const st = (/** @type {any} */ (n)).__calgrid;
+      if (st) applyCalOptions(st, { workStateStyle: v });
+    },
+  };
+
+  /** @param {any[]} args */
+  const Calendar = ensureComponent('Calendar', (args) => {
+    const el = document.createElement('div');
+    (/** @type {any} */ (el)).__arkuiCalendar = true;
+    el.dataset.calendar = '';
+    el.style.display = 'flex';
+    el.style.flexDirection = 'column';
+    const st = /** @type {any} */ (el).__calgrid = /** @type {any} */ ({
+      el,
+      anchor: new Date(),
+      selected: null,
+      startOfWeek: 0,
+      offDays: [],
+      showLunar: false, showHoliday: false, needSlide: true,
+      horizontal: false,
+      dataCur: [],
+      styles: {},
+      cbs: {},
+      scheduled: false, requested: false,
+      warnedLunar: false, warnedHoliday: false,
+    });
+
+    const head = document.createElement('div');
+    head.setAttribute('data-cal-head', '');
+    head.style.display = 'flex';
+    head.style.flexDirection = 'row';
+    head.style.alignItems = 'center';
+    head.style.justifyContent = 'center';
+    head.style.gap = '8px';
+    const prev = document.createElement('div');
+    prev.setAttribute('data-cal-prev', '');
+    prev.textContent = '‹';
+    prev.style.cursor = 'pointer';
+    prev.addEventListener('click', () => calShiftMonth(st, -1));
+    const label = document.createElement('div');
+    label.setAttribute('data-cal-month', '');
+    const next = document.createElement('div');
+    next.setAttribute('data-cal-next', '');
+    next.textContent = '›';
+    next.style.cursor = 'pointer';
+    next.addEventListener('click', () => calShiftMonth(st, 1));
+    head.appendChild(prev);
+    head.appendChild(label);
+    head.appendChild(next);
+    el.appendChild(head);
+
+    const body = document.createElement('div');
+    body.setAttribute('data-cal-body', '');
+    body.style.display = 'flex';
+    body.style.flexDirection = 'row';
+    body.style.gap = '4px';
+    const weeks = document.createElement('div');
+    weeks.setAttribute('data-cal-weeks', '');
+    weeks.style.flex = 'none';
+    const grid = document.createElement('div');
+    grid.setAttribute('data-cal-grid', '');
+    grid.style.flex = '1 1 auto';
+    body.appendChild(weeks);
+    body.appendChild(grid);
+    el.appendChild(body);
+
+    applyCalOptions(st, args && args[0]);
+    return el;
+  }, (/** @type {any} */ node, /** @type {any} */ args) => {
+    const st = (/** @type {any} */ (node)).__calgrid;
+    if (st) applyCalOptions(st, args && args[0]);
+  });
+
+  // ════════════════════ 安装全局 ════════════════════
+  // 产物里这些名字是【自由变量】引用（不走 import）。registerGeneratedComponents 只给
+  // 【生成骨架】装全局；手写组件如果只进 components 注册表而不上 global，页面一跑就是
+  // ReferenceError —— 所以这里按 main.js Object.assign 的同一口径自己装上。
+  (/** @type {any} */ (global)).Calendar = Calendar;
+  (/** @type {any} */ (global)).ContainerReader = ContainerReader;
+  (/** @type {any} */ (global)).IndicatorComponent = IndicatorComponent;
+  (/** @type {any} */ (global)).IndicatorComponentController = IndicatorComponentController;
+  (/** @type {any} */ (global)).MenuItemGroup = MenuItemGroup;
+  (/** @type {any} */ (global)).Repeat = Repeat;
+  (/** @type {any} */ (global)).WithTheme = WithTheme;
+
   // ── 由 tools/gen-components.mjs 生成的 149 个组件骨架 ──
   // 手写实现（上面那些，已被测试覆盖）优先；生成的只补缺口。
   // 骨架保证"能建出正确的 DOM 标签 + 基础样式"，精细化布局语义按需手补（见 docs）。
@@ -9865,6 +13820,14 @@
     AlphabetIndexer,
     // R65：RichEditor（富文本编辑器）/ Video（视频播放器）
     RichEditor, RichEditorController, Video, VideoController,
+    // 批量媒体分片（batch-media）：ContainerSpan/ImageSpan/RichText/SymbolGlyph/SymbolSpan/Web。
+    // 常量本体都在分片内定义，这里只挂 global —— 产物里 `Web.create(...)`、`new WebController()`、
+    // `SymbolEffectStrategy.NONE` 等全是自由变量引用，不挂直接 ReferenceError
+    ContainerSpan, ImageSpan, RichText, SymbolGlyph, SymbolSpan, Web, WebController,
+    ImageSpanAlignment, SymbolRenderingStrategy, SymbolEffectStrategy,
+    EffectScope, EffectDirection, EffectFillStyle, ReplaceEffectType,
+    SymbolEffect, ScaleSymbolEffect, HierarchicalSymbolEffect, AppearSymbolEffect,
+    DisappearSymbolEffect, BounceSymbolEffect, ReplaceSymbolEffect, PulseSymbolEffect,
     // R61：SideBarContainer（侧边栏容器）
     SideBarContainer, SideBarContainerType: { Embed: 0, Overlay: 1 },
     // R62：RowSplit/ColumnSplit（分隔容器）
@@ -9873,6 +13836,34 @@
     GridRow, GridCol,
     // R63：Panel（底部滑出面板）+ PanelMode
     Panel, PanelMode: { Mini: 0, Half: 1, Full: 2 },
+    // 批量导航分片（batch-nav）。枚举定义在分片内，值照 .d.ts 声明顺序：
+    // NavRouteMode PUSH_WITH_RECREATE=0/PUSH=1/REPLACE=2；NavigationType Push=0/Back=1/Replace=2；
+    // RouteType None=0/Push=1/Pop=2；SlideEffect 0..3,5,6；ToolBarItemPlacement 0/1；
+    // PickerIndicatorType 0/1。__arkui_dom_pageTransitionSpecs / __arkui_dom_playPageTransition
+    // 由分片自带 Object.defineProperty(global) 挂载，刻意不走本 assign 块
+    //（防 stats.mjs 的 assignBlock 正则误吸分片段）
+    NavRouter, Navigator, PageTransitionEnter, PageTransitionExit, ToolBarItem,
+    UIPickerComponent, NavRouteMode, NavigationType, RouteType, SlideEffect,
+    ToolBarItemPlacement, PickerIndicatorType,
+    // 批量布局分片（batch-layout）。SizeType/NodeRenderType 是 fixture 产物的运行期自由变量
+    // （必需）；XComponentType/Alignment 已有导出（R32/安装全局），勿重复
+    FolderStack, GridContainer, Section, Sheet, UnionEffectContainer, XComponentNode,
+    FoldStatus, AppRotation, SizeType, NodeRenderType,
+    // 批量输入收官（batch-input）：CheckboxGroup/ColorPicker/ColorPickerDialog/Option/
+    // PatternLock/SelectionContainer。generated-components.js 骨架表虽有这些名字，但其注册
+    // 循环对手写已注册名 continue 跳过且因此不挂 global —— 不追加这里，产物里
+    // `ColorPicker()`、`new PatternLockController()`、`CopyOptions.InApp`、`CheckBoxShape.CIRCLE`
+    // 等自由变量引用直接 ReferenceError
+    CheckboxGroup, ColorPicker, ColorPickerDialog, Option, PatternLock, SelectionContainer,
+    PatternLockController, SelectionContainerController, PatternLockChallengeResult,
+    SelectionContainerTextJoinStyle, CopyOptions, CheckBoxShape, SelectStatus,
+    // 批量动效分片（batch-motion）。BarState/PlayMode/AnimationStatus 已挂过勿重复；
+    // FillMode 不需要 —— 分片内 ANIM_FILL_MODE_CSS 按值映射 0..3
+    Animator, ScrollBar, ScrollBarDirection, FrictionMotion, ScrollMotion,
+    SpringMotion, SpringProp, GeometryView,
+    // 批量函数组件收官（batch-func）：Repeat/Calendar/ContainerReader/Indicator + Menu/Theme 件
+    Calendar, ContainerReader, IndicatorComponent, IndicatorComponentController,
+    MenuItemGroup, Repeat, WithTheme,
     // R57：Grid/GridItem（CSS grid 同构基座 + 滚动事件族）
     Grid, GridItem,
     // R50：Refresh + RefreshStatus（声明顺序：Inactive=0/Drag=1/OverDrag=2/Refresh=3/Done=4，
