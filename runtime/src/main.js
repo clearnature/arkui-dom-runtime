@@ -1254,6 +1254,7 @@
     }
 
     if (name === 'Gauge') {
+      /** @param {...any} args */
       C.create = function (...args) {
         const rec = elmtRecords.get(currentNodeElmtId);
         const o = args && args[0];
@@ -1751,8 +1752,10 @@
   class SubscriberManager {
     constructor() { this._subs = new Map(); }
     static Get() {
-      if (!global.__arkui_dom_sm) global.__arkui_dom_sm = new SubscriberManager();
-      return global.__arkui_dom_sm;
+      if (!(/** @type {any} */ (global)).__arkui_dom_sm) {
+        (/** @type {any} */ (global)).__arkui_dom_sm = new SubscriberManager();
+      }
+      return (/** @type {any} */ (global)).__arkui_dom_sm;
     }
     /** @param {any} id */
     delete(id) { this._subs.delete(id); }

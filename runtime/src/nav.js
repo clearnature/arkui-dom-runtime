@@ -917,6 +917,7 @@
   }
 
   // 弹出 [from, from+count)：从【栈顶向下】处理，保证生命周期顺序
+  /** @param {any} stack @param {number} from @param {number} count @param {any} result @param {any=} [animated] */
   function navPopRange(stack, from, count, result, animated) {
     const st = stack._nav;
     if (count <= 0) return;

@@ -480,6 +480,7 @@
   }
   const TransitionEdge = { Top: 0, Bottom: 1, Left: 2, Right: 3 };
   // 自省用的"偏离态"文本（断言据此核对 translate/scale/opacity 真的被算进去了）
+  /** @param {any} off */
   function _offText(off) {
     /** @type {string[]} */
     const parts = [];
@@ -3375,6 +3376,7 @@
   }
 
   // 弹出 [from, from+count)：从【栈顶向下】处理，保证生命周期顺序
+  /** @param {any} stack @param {number} from @param {number} count @param {any} result @param {any=} [animated] */
   function navPopRange(stack, from, count, result, animated) {
     const st = stack._nav;
     if (count <= 0) return;
@@ -4001,9 +4003,10 @@
   //     【非 @Entry 的嵌套 @Component】；带链式属性的自定义组件会被编译器包一层 `__Common__`。
   const areaMeta = new WeakMap();     // 元素 → 上次派发的面积（用于 old/new 与"只在变化时触发"）
 
+  /** @param {HTMLElement} el @param {string} kind */
   const edgesOf = (el, kind) => {
     const cs = getComputedStyle(el);
-    const pick = (side) => parseFloat(cs[kind + side]) || 0;
+    const pick = (/** @type {string} */ side) => parseFloat((/** @type {any} */ (cs))[kind + side]) || 0;
     return { top: pick('Top'), right: pick('Right'), bottom: pick('Bottom'), left: pick('Left') };
   };
   const areaOf = (el) => {
@@ -4725,6 +4728,7 @@
     }
 
     if (name === 'Gauge') {
+      /** @param {...any} args */
       C.create = function (...args) {
         const rec = elmtRecords.get(currentNodeElmtId);
         const o = args && args[0];
@@ -8336,8 +8340,10 @@
   class SubscriberManager {
     constructor() { this._subs = new Map(); }
     static Get() {
-      if (!global.__arkui_dom_sm) global.__arkui_dom_sm = new SubscriberManager();
-      return global.__arkui_dom_sm;
+      if (!(/** @type {any} */ (global)).__arkui_dom_sm) {
+        (/** @type {any} */ (global)).__arkui_dom_sm = new SubscriberManager();
+      }
+      return (/** @type {any} */ (global)).__arkui_dom_sm;
     }
     /** @param {any} id */
     delete(id) { this._subs.delete(id); }

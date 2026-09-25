@@ -171,6 +171,7 @@
   }
   const TransitionEdge = { Top: 0, Bottom: 1, Left: 2, Right: 3 };
   // 自省用的"偏离态"文本（断言据此核对 translate/scale/opacity 真的被算进去了）
+  /** @param {any} off */
   function _offText(off) {
     /** @type {string[]} */
     const parts = [];

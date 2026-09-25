@@ -12,9 +12,10 @@
   //     【非 @Entry 的嵌套 @Component】；带链式属性的自定义组件会被编译器包一层 `__Common__`。
   const areaMeta = new WeakMap();     // 元素 → 上次派发的面积（用于 old/new 与"只在变化时触发"）
 
+  /** @param {HTMLElement} el @param {string} kind */
   const edgesOf = (el, kind) => {
     const cs = getComputedStyle(el);
-    const pick = (side) => parseFloat(cs[kind + side]) || 0;
+    const pick = (/** @type {string} */ side) => parseFloat((/** @type {any} */ (cs))[kind + side]) || 0;
     return { top: pick('Top'), right: pick('Right'), bottom: pick('Bottom'), left: pick('Left') };
   };
   const areaOf = (el) => {
