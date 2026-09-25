@@ -4,18 +4,22 @@
   //
   // ⚠️ 实测更正：API 26 SDK 里【没有】onAbilityResult（全 SDK grep 0 命中），
   // stage 模型的结果只走 startAbilityForResult 的 Promise / AsyncCallback —— 见 docs/ROADMAP R20。
+  /** @type {any[]} */
   const abilityStack = [];
   // @type 档位：history 不写会推成 never[]
   // @type 档位：history 不写会推成 never[]（属性位置的 JSDoc 在 TS4.9 不生效，整袋收）
   const abilityWindowStats = /** @type {any} */ ({ created: 0, closed: 0, history: [] });
-  let abilityClassForChildren = null;     // 同一进程内再起实例时用的类（不按 abilityName 路由）
+  /** @type {any} */ let abilityClassForChildren = null;     // 同一进程内再起实例时用的类（不按 abilityName 路由）
 
+  /** @param {any} rec */
   function abilityLog(rec) {
     (global.__arkui_dom_logs = global.__arkui_dom_logs || []).push(rec);
   }
+  /** @param {number} code @param {string} message */
   function bizError(code, message) { return Object.assign(new Error(message), { code }); }
   const okRes = () => ({ code: 0, message: '' });
 
+  /** @param {any} entry */
   function makeAbilityWindow(entry) {
     const el = document.createElement('div');
     el.setAttribute('data-arkui-ability-window', entry.name);
@@ -29,6 +33,7 @@
     return el;
   }
 
+  /** @param {any} entry */
   function closeAbilityWindow(entry) {
     const el = entry.windowEl;
     if (!el) return;
@@ -46,6 +51,7 @@
   // loadRoute 用的是单例 rootNode/pageStack：起子 ability 时切成它的窗口，跑完切回来。
   // 已知限制：子 ability 的【异步】重渲染不在支持范围（它必须在自己生命周期内完成渲染）——
   // 见 docs/ARCHITECTURE §4.14。
+  /** @param {any} entry @param {() => any} fn */
   function withAbilityWindow(entry, fn) {
     const savedRoot = rootNode;
     const savedStack = pageStack.slice();
@@ -60,8 +66,10 @@
     }
   }
 
+  /** @param {any} entry */
   function makeWindowStage(entry) {
     return {
+      /** @param {string} page @param {any} cb */
       loadContent(page, cb) {
         abilityLog({ t: 'loadContent', page, ability: entry.name });
         let err = null;
@@ -82,6 +90,7 @@
   }
 
   // AsyncCallback：一律【异步】回调（同步回调会让"回调晚于后续同步代码"的假设悄悄不成立）
+  /** @param {Promise<any>} promise @param {any=} [cb] */
   function withCallback(promise, cb) {
     if (typeof cb !== 'function') return promise;
     promise.then(
@@ -91,6 +100,7 @@
     return undefined;
   }
 
+  /** @param {any} want @param {any} parent @param {any=} [onResult] */
   function spawnChildAbility(want, parent, onResult) {
     if (!want || typeof want !== 'object') {
       throw bizError(401, 'startAbilityForResult: 缺少必填参数 want（BusinessError 401）');
@@ -121,6 +131,7 @@
 
   // parameter 为空 = terminateSelf()：.d.ts 没规定"不带结果结束"时结果是什么 →
   // 本实现取 resultCode 0（见 docs 已知限制），并保证调用方【不会挂住】
+  /** @param {any} entry @param {any=} [parameter] */
   function terminateEntry(entry, parameter) {
     if (entry.terminated) return undefined;      // 幂等：重复 terminateSelf 不重复交结果
     entry.terminated = true;
@@ -142,22 +153,28 @@
     return undefined;
   }
 
+  /** @param {any} entry */
   function makeAbilityContext(entry) {
     const appContext = {
+      /** @param {any} mode */
       setColorMode(mode) { abilityLog({ t: 'setColorMode', mode }); },
       getApplicationContext() { return appContext; },
     };
     return {
       getApplicationContext: () => appContext,
       resourceManager: {
+        /** @param {any} k */
         getStringSync: (k) => k,
+        /** @param {any} k */
         getStringByNameSync: (k) => k,
       },
+      /** @param {any} want @param {any} optionsOrCb @param {any=} [cbMaybe] */
       startAbility(want, optionsOrCb, cbMaybe) {
         const cb = typeof optionsOrCb === 'function' ? optionsOrCb : cbMaybe;
         return withCallback(Promise.resolve().then(() => { spawnChildAbility(want, entry, null); }), cb);
       },
       // Promise 形态与 AsyncCallback 形态（want, cb）/（want, options, cb）
+      /** @param {any} want @param {any} optionsOrCb @param {any=} [cbMaybe] */
       startAbilityForResult(want, optionsOrCb, cbMaybe) {
         const cb = typeof optionsOrCb === 'function' ? optionsOrCb : cbMaybe;
         const started = new Promise((resolve, reject) => {
@@ -165,9 +182,11 @@
         });
         return withCallback(started, cb);
       },
+      /** @param {any=} [cb] */
       terminateSelf(cb) {
         return withCallback(Promise.resolve().then(() => terminateEntry(entry, null)), cb);
       },
+      /** @param {any} parameter @param {any=} [cb] */
       terminateSelfWithResult(parameter, cb) {
         return withCallback(Promise.resolve().then(() => terminateEntry(entry, parameter)), cb);
       },
@@ -175,6 +194,7 @@
   }
 
   // 扮演"框架"启动 ability：onCreate → onWindowStageCreate(loadContent 真的渲染页面) → onForeground
+  /** @param {any} AbilityClass @param {any=} [opts] */
   function startAbility(AbilityClass, opts) {
     const { rootEl, want = {} } = opts || {};
     const logs = (global.__arkui_dom_logs = global.__arkui_dom_logs || []);
