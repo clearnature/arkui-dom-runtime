@@ -17,6 +17,7 @@
   const DP_COLOR_DIS = 'rgb(24, 36, 49)';
   const DP_COLOR_SEL = 'rgb(0, 125, 255)';
   const dpDaysInMonth = (y, m) => new Date(y, m, 0).getDate();   // m=1..12
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
   const DATEPICKER_ATTRS = {
     lunar: (n, v) => {
       n.dataset.dpLunar = String(!!resolveResource(v));

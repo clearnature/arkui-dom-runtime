@@ -14,12 +14,14 @@
   // onReady 的派发时机：create → .width/.height 应用完 → setTimeout(0)（坑 ⑧：不用 rAF），
   // 因为 onReady 同步派发时画布还没有尺寸。
   const CanvasRenderingContext2D = class {
+    /** @param {any} settings */
     constructor(settings) {
-      this.__arkuiSettings = settings;       // antialias/alpha 在浏览器 2D 里无对应开关（取舍已记录）
-      this.__arkuiCanvas = null;
-      this.__arkuiNative = null;
+      /** @type {any} */ this.__arkuiSettings = settings;   // antialias/alpha 在浏览器 2D 里无对应开关（取舍已记录）
+      /** @type {any} */ this.__arkuiCanvas = null;
+      /** @type {any} */ this.__arkuiNative = null;
     }
     // Canvas 组件绑定时调用：把原生 2D context 借给它
+    /** @param {any} canvasEl */
     __arkuiAttach(canvasEl) {
       this.__arkuiCanvas = canvasEl;
       this.__arkuiNative = canvasEl.getContext('2d');
@@ -35,20 +37,31 @@
     set lineWidth(v) { if (this.__arkuiNative) this.__arkuiNative.lineWidth = Number(v); }
     get globalAlpha() { return this.__arkuiNative ? this.__arkuiNative.globalAlpha : undefined; }
     set globalAlpha(v) { if (this.__arkuiNative) this.__arkuiNative.globalAlpha = Number(v); }
+    /** @param {number} x @param {number} y @param {number} w @param {number} h */
     fillRect(x, y, w, h) { if (this.__arkuiNative) this.__arkuiNative.fillRect(x, y, w, h); }
+    /** @param {number} x @param {number} y @param {number} w @param {number} h */
     strokeRect(x, y, w, h) { if (this.__arkuiNative) this.__arkuiNative.strokeRect(x, y, w, h); }
+    /** @param {number} x @param {number} y @param {number} w @param {number} h */
     clearRect(x, y, w, h) { if (this.__arkuiNative) this.__arkuiNative.clearRect(x, y, w, h); }
+    /** @param {any} t @param {number} x @param {number} y @param {number=} [w] */
     fillText(t, x, y, w) { if (this.__arkuiNative) this.__arkuiNative.fillText(String(t), x, y, w); }
+    /** @param {any} t @param {number} x @param {number} y @param {number=} [w] */
     strokeText(t, x, y, w) { if (this.__arkuiNative) this.__arkuiNative.strokeText(String(t), x, y, w); }
     beginPath() { if (this.__arkuiNative) this.__arkuiNative.beginPath(); }
     closePath() { if (this.__arkuiNative) this.__arkuiNative.closePath(); }
+    /** @param {number} x @param {number} y */
     moveTo(x, y) { if (this.__arkuiNative) this.__arkuiNative.moveTo(x, y); }
+    /** @param {number} x @param {number} y */
     lineTo(x, y) { if (this.__arkuiNative) this.__arkuiNative.lineTo(x, y); }
+    /** @param {number} x @param {number} y @param {number} r @param {number} a0 @param {number} a1 */
     arc(x, y, r, a0, a1) { if (this.__arkuiNative) this.__arkuiNative.arc(x, y, r, a0, a1); }
     fill() { if (this.__arkuiNative) this.__arkuiNative.fill(); }
     stroke() { if (this.__arkuiNative) this.__arkuiNative.stroke(); }
+    /** @param {number} sx @param {number} sy @param {number} sw @param {number} sh */
     getImageData(sx, sy, sw, sh) { return this.__arkuiNative ? this.__arkuiNative.getImageData(sx, sy, sw, sh) : null; }
+    /** @param {any} img @param {number} x @param {number} y */
     putImageData(img, x, y) { if (this.__arkuiNative) this.__arkuiNative.putImageData(img, x, y); }
+    /** @param {string=} [type] @param {number=} [quality] */
     toDataURL(type, quality) {
       return this.__arkuiCanvas ? this.__arkuiCanvas.toDataURL(type, quality) : '';
     }

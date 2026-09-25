@@ -5070,6 +5070,7 @@
     .join(' ');
 
   // 属性分派表：applyAttr 里 `node.__shapeEl && SHAPE_ATTRS[prop]` 一分支全收
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
   const SHAPE_ATTRS = {
     fill: (n, v) => n.__shapeEl.setAttribute('fill', colorOf(v)),
     fillOpacity: (n, v) => n.__shapeEl.setAttribute('fill-opacity', String(v)),
@@ -5778,12 +5779,14 @@
   // onReady 的派发时机：create → .width/.height 应用完 → setTimeout(0)（坑 ⑧：不用 rAF），
   // 因为 onReady 同步派发时画布还没有尺寸。
   const CanvasRenderingContext2D = class {
+    /** @param {any} settings */
     constructor(settings) {
-      this.__arkuiSettings = settings;       // antialias/alpha 在浏览器 2D 里无对应开关（取舍已记录）
-      this.__arkuiCanvas = null;
-      this.__arkuiNative = null;
+      /** @type {any} */ this.__arkuiSettings = settings;   // antialias/alpha 在浏览器 2D 里无对应开关（取舍已记录）
+      /** @type {any} */ this.__arkuiCanvas = null;
+      /** @type {any} */ this.__arkuiNative = null;
     }
     // Canvas 组件绑定时调用：把原生 2D context 借给它
+    /** @param {any} canvasEl */
     __arkuiAttach(canvasEl) {
       this.__arkuiCanvas = canvasEl;
       this.__arkuiNative = canvasEl.getContext('2d');
@@ -5799,20 +5802,31 @@
     set lineWidth(v) { if (this.__arkuiNative) this.__arkuiNative.lineWidth = Number(v); }
     get globalAlpha() { return this.__arkuiNative ? this.__arkuiNative.globalAlpha : undefined; }
     set globalAlpha(v) { if (this.__arkuiNative) this.__arkuiNative.globalAlpha = Number(v); }
+    /** @param {number} x @param {number} y @param {number} w @param {number} h */
     fillRect(x, y, w, h) { if (this.__arkuiNative) this.__arkuiNative.fillRect(x, y, w, h); }
+    /** @param {number} x @param {number} y @param {number} w @param {number} h */
     strokeRect(x, y, w, h) { if (this.__arkuiNative) this.__arkuiNative.strokeRect(x, y, w, h); }
+    /** @param {number} x @param {number} y @param {number} w @param {number} h */
     clearRect(x, y, w, h) { if (this.__arkuiNative) this.__arkuiNative.clearRect(x, y, w, h); }
+    /** @param {any} t @param {number} x @param {number} y @param {number=} [w] */
     fillText(t, x, y, w) { if (this.__arkuiNative) this.__arkuiNative.fillText(String(t), x, y, w); }
+    /** @param {any} t @param {number} x @param {number} y @param {number=} [w] */
     strokeText(t, x, y, w) { if (this.__arkuiNative) this.__arkuiNative.strokeText(String(t), x, y, w); }
     beginPath() { if (this.__arkuiNative) this.__arkuiNative.beginPath(); }
     closePath() { if (this.__arkuiNative) this.__arkuiNative.closePath(); }
+    /** @param {number} x @param {number} y */
     moveTo(x, y) { if (this.__arkuiNative) this.__arkuiNative.moveTo(x, y); }
+    /** @param {number} x @param {number} y */
     lineTo(x, y) { if (this.__arkuiNative) this.__arkuiNative.lineTo(x, y); }
+    /** @param {number} x @param {number} y @param {number} r @param {number} a0 @param {number} a1 */
     arc(x, y, r, a0, a1) { if (this.__arkuiNative) this.__arkuiNative.arc(x, y, r, a0, a1); }
     fill() { if (this.__arkuiNative) this.__arkuiNative.fill(); }
     stroke() { if (this.__arkuiNative) this.__arkuiNative.stroke(); }
+    /** @param {number} sx @param {number} sy @param {number} sw @param {number} sh */
     getImageData(sx, sy, sw, sh) { return this.__arkuiNative ? this.__arkuiNative.getImageData(sx, sy, sw, sh) : null; }
+    /** @param {any} img @param {number} x @param {number} y */
     putImageData(img, x, y) { if (this.__arkuiNative) this.__arkuiNative.putImageData(img, x, y); }
+    /** @param {string=} [type] @param {number=} [quality] */
     toDataURL(type, quality) {
       return this.__arkuiCanvas ? this.__arkuiCanvas.toDataURL(type, quality) : '';
     }
@@ -6379,6 +6393,7 @@
   const DP_COLOR_DIS = 'rgb(24, 36, 49)';
   const DP_COLOR_SEL = 'rgb(0, 125, 255)';
   const dpDaysInMonth = (y, m) => new Date(y, m, 0).getDate();   // m=1..12
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
   const DATEPICKER_ATTRS = {
     lunar: (n, v) => {
       n.dataset.dpLunar = String(!!resolveResource(v));
@@ -6529,6 +6544,7 @@
   // 列：hour(0..23) + minute(0..59) + second(0..59，仅 HOUR_MINUTE_SECOND 格式)。
   // 状态机/事件/步进与 DatePicker 共用模式（wheel 同步单步）。
   const TimePickerFormat = { HOUR_MINUTE: 0, HOUR_MINUTE_SECOND: 1 };
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
   const TIMEPICKER_ATTRS = {
     useMilitaryTime: (n, v) => {
       n.__tp.military = !!resolveResource(v);
@@ -7121,28 +7137,38 @@
   //   （edgeAlign START/CENTER/END → left/居中/right，缺省 END .d.ts:198）；网格 7 列 grid，
   //   前置空格 = 首日 getDay()（周日=0）；语言取 zh（本项目夹具环境，标注）。
   const CALP_WEEK = ['日', '一', '二', '三', '四', '五', '六'];   // 首列周日（真机同序）
+  /** @param {number} y @param {number} m */
   const calpDaysIn = (y, m) => new Date(y, m + 1, 0).getDate();
+  /** @param {any} p */
   const calpDateOf = (p) => new Date(p.y, p.m, p.d);
+  /** @param {Date} date */
   const calpPartsOf = (date) => ({ y: date.getFullYear(), m: date.getMonth(), d: date.getDate() });
+  /** @param {any} a @param {any} b */
   const calpLe = (a, b) => calpDateOf(a).getTime() <= calpDateOf(b).getTime();
+  /** @param {any} a @param {any} b */
   const calpLt = (a, b) => calpDateOf(a).getTime() < calpDateOf(b).getTime();
+  /** @param {any} a @param {any} b */
   const calpEq = (a, b) => !!a && !!b && a.y === b.y && a.m === b.m && a.d === b.d;
   // AdjustDateToRange（calendar_picker_model_ng.cpp:98）：夹入 [start,end]
+  /** @param {any} p @param {any} start @param {any} end */
   const calpAdjust = (p, start, end) => {
     if (start && calpLt(p, start)) return Object.assign({}, start);   // p 在 start 前 → 抬到 start
     if (end && calpLt(end, p)) return Object.assign({}, end);         // p 在 end 后 → 压到 end
     return p;
   };
   // hintRadius（.d.ts:73-83）：0=直角矩形、(0,16)=圆角 px、负数或>16=回落缺省 16（圆形 → 50%）
+  /** @param {any} hr */
   const calpRadius = (hr) => (hr === undefined || hr === null || hr < 0 || hr > 16)
     ? '50%' : (hr === 0 ? '0px' : `${hr}px`);
   // 禁用判定：越 [start,end] 边界，或落在任一 disabledDateRange 区间内
+  /** @param {any} p @param {any} st */
   const calpDisabled = (p, st) => {
     if (st.start && !calpLe(st.start, p)) return true;
     if (st.end && !calpLe(p, st.end)) return true;
     return (st.dis || []).some((r) => calpLe(r.start, p) && calpLe(p, r.end));
   };
   // GetAvailableNextDay（:563-566）：从 p 沿 dir 找第一个可用日；无可到日返 null（=真机 year<=0 哨兵）
+  /** @param {any} p @param {number} dir @param {any} st */
   const calpNextAvail = (p, dir, st) => {
     let cur = Object.assign({}, p);
     for (let i = 0; i < 4000; i++) {
@@ -7152,6 +7178,7 @@
     }
     return null;
   };
+  /** @param {HTMLElement} el */
   const calpRender = (el) => {
     const st = /** @type {any} */ (el).__calp;
     el.querySelectorAll('[data-cal-seg]').forEach((s) => {
@@ -7159,6 +7186,7 @@
       s.textContent = k === 'year' ? `${st.sel.y}年` : k === 'month' ? `${st.sel.m + 1}月` : `${st.sel.d}日`;
     });
   };
+  /** @param {HTMLElement} el @param {Date} date */
   const calpFire = (el, date) => {
     const st = /** @type {any} */ (el).__calp;
     if (typeof st.cbs.change !== 'function') return;
@@ -7166,6 +7194,7 @@
     catch (e) { layoutWarnings.push(`CalendarPicker.onChange 回调抛错：${e && e.message}`); }
   };
   // 入口 +/-（真机 HandleAddButtonClick/HandleSubButtonClick 全流程）
+  /** @param {HTMLElement} el @param {number} dir */
   const calpStep = (el, dir) => {
     const st = /** @type {any} */ (el).__calp;
     let cand;
@@ -7204,6 +7233,7 @@
     onChange: (n, v) => { (/** @type {any} */ (n).__calp).cbs.change = v; },
   };
   // 弹层网格（组件弹层与静态 Dialog 共用）：首列周日、前置空格、选中/禁用/今天标记
+  /** @param {HTMLElement} grid @param {any} st @param {(d: Date) => void=} [onChangeTap] */
   const calpBuildGrid = (grid, st, onChangeTap) => {
     grid.style.display = 'grid';
     grid.style.gridTemplateColumns = 'repeat(7, 1fr)';
@@ -7244,6 +7274,7 @@
     render();
     return render;
   };
+  /** @param {HTMLElement} el */
   const calpOpenDialog = (el) => {
     const st = /** @type {any} */ (el).__calp;
     if (st.dlg && el.contains(st.dlg)) return;               // IsDialogShow 守卫（:536）
@@ -7292,6 +7323,7 @@
       document.addEventListener('click', st.outside);
     }, 0);
   };
+  /** @param {HTMLElement} el */
   const calpCloseDialog = (el) => {
     const st = /** @type {any} */ (el).__calp;
     if (st.dlg && st.dlg.parentNode) st.dlg.parentNode.removeChild(st.dlg);
@@ -7354,6 +7386,7 @@
     calpRender(el);
     return el;
   });
+  /** @param {Date} date */
   const calpIso = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
   // CalendarPickerDialog.show（静态弹层）：带 OK/Cancel（onAccept/onCancel，.d.ts:332-344）。
   // 与组件弹层共用 calpBuildGrid；面板 fixed 居中（DOM 无 OverlayManager 弹簧动画，标注）。

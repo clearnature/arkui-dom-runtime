@@ -43,6 +43,7 @@
     .join(' ');
 
   // 属性分派表：applyAttr 里 `node.__shapeEl && SHAPE_ATTRS[prop]` 一分支全收
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
   const SHAPE_ATTRS = {
     fill: (n, v) => n.__shapeEl.setAttribute('fill', colorOf(v)),
     fillOpacity: (n, v) => n.__shapeEl.setAttribute('fill-opacity', String(v)),

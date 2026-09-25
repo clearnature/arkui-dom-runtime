@@ -6,6 +6,7 @@
   // 列：hour(0..23) + minute(0..59) + second(0..59，仅 HOUR_MINUTE_SECOND 格式)。
   // 状态机/事件/步进与 DatePicker 共用模式（wheel 同步单步）。
   const TimePickerFormat = { HOUR_MINUTE: 0, HOUR_MINUTE_SECOND: 1 };
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
   const TIMEPICKER_ATTRS = {
     useMilitaryTime: (n, v) => {
       n.__tp.military = !!resolveResource(v);
