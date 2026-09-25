@@ -33,6 +33,7 @@
         "pages/CalendarPickerDemo",
         "pages/TextPickerDemo",
         "pages/GridDemo",
-        "pages/TextTimeDemo"
+        "pages/TextTimeDemo",
+        "pages/AlphabetIndexerDemo"
     ]
 }

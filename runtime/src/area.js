@@ -306,6 +306,11 @@
       TEXTTIMER_ATTRS[prop](node, value);
       return;
     }
+    // AlphabetIndexer（R60）：selected/itemSize/配色/onSelect 是语义属性
+    if (node.__arkuiAlphabetIndexer && AIX_ATTRS[prop]) {
+      AIX_ATTRS[prop](node, value);
+      return;
+    }
     // Grid（R57）/ GridItem（R57）：columnsTemplate/事件族与跨行跨列是语义属性
     if (node.__arkuiGrid && GRID_ATTRS[prop]) {
       GRID_ATTRS[prop](node, value);

@@ -972,6 +972,27 @@ auto-placement 行为一致，按实测修正预期而非"修"实现。
 `tools/stats.mjs`（手写 61→63）、`fixtures/pages/GridDemo.ts`、`test/griddemo.html`、
 `run.sh`、`electron/run.sh`
 
+### R60 — AlphabetIndexer 字母索引条 ✅（2026-09-25）
+
+alphabetindexer.js（第 28 个分片）。**声明面**（alphabet_indexer.d.ts）：`create({arrayValue,
+selected})`；`selected(index)` 属性（:473，程序化选中，重放不发 onSelect）；`itemSize` 方格
+边长（缺省 24）；`selectedColor/selectedBackgroundColor` 选中配色；`onSelect(index)`（:427，
+点击触发）。**实现**：纵向 flex 条 + 每项 button；点击 → `w.select(i, true)` 高亮迁移 +
+onSelect(index)；`selected` 属性重放 → `w.select(idx, false)`（程序化不发 onSelect）；
+usingPopup 记警告。**新坑 97（编译产物缺 .pop()）**：AlphabetIndexer 的编译产物没有
+`.pop()` 调用（编译器视作自动弹出），运行时栈不弹出导致后续兄弟 Button 挂进索引条内部
+——`parentOfTop()` 增加 leaf 自动弹出：`__arkuiLeaf = true` 标记 + 挂载时循环 pop。
+测试侧：click 助手改为同时接受元素与选择器。
+
+**验收**：`bash run.sh alphabetindexerdemo`（8 条断言：基座 3/点击 3/属性选中 2）双端通过。
+**破坏验证（1 处）**：onSelect cb 调用摘除 → **4 红**。还原后 grep BROKEN 无残留。
+
+**触及**：`runtime/src/alphabetindexer.js`（新，第 28 个分片）、`runtime/src/area.js`、
+`runtime/src/main.js`（@include + AlphabetIndexer 挂 global + parentOfTop leaf 弹出）、
+`runtime/src/runtime.d.ts`（+__arkuiLeaf）、`tools/stats.mjs`（手写 65→66）、
+`fixtures/pages/AlphabetIndexerDemo.ts`、`test/alphabetindexerdemo.html`、
+`run.sh`、`electron/run.sh`
+
 ### R59 — TextClock/TextTimer 时间文本双件 ✅（2026-09-25）
 
 一片双组件（texttime.js，第 27 个分片）+ 双控制器。**TextClock**：format 令牌子集

@@ -66,6 +66,8 @@ const HANDWRITTEN = ['Text', 'Button', 'Column', 'Row', 'Stack', 'List', 'ListIt
   'Grid', 'GridItem',
   // R59：TextClock/TextTimer（时间文本双件）
   'TextClock', 'TextTimer',
+  // R60：AlphabetIndexer（字母索引条）
+  'AlphabetIndexer',
   // 补账：R33/R34 已手写实现但漏登记（QRCode 编码器为真机 WASM，R41）
   'TextInput', 'TextArea', 'Search', 'Hyperlink', 'QRCode'];
 const CONTROL_FLOW = ['If', 'ForEach', 'LazyForEach'];   // 不在 149 注册表内，单独实现

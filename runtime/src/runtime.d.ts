@@ -88,6 +88,9 @@ interface Element {
   __tclock?: any;
   __arkuiTextTimer?: boolean;
   __ttimer?: any;
+  __arkuiAlphabetIndexer?: boolean;
+  __aix?: any;
+  __arkuiLeaf?: boolean;
   __lig?: any;
   __an?: any;
   __anCbs?: any;

@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R60：AlphabetIndexer 字母索引条（点击 onSelect / selected 属性 / 高亮）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 360px; }
+  #root [data-arkui-comp="AlphabetIndexer"] { border: 1px solid #ddd; width: 32px; }
+  #root [data-arkui-comp="AlphabetIndexer"] button { border: 0; background: transparent; cursor: pointer; }
+  #root button { margin-right: 6px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R60：AlphabetIndexer（A~E / 点击 onSelect / selected 属性重放 / 选中高亮）</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/alphabetindexerdemo-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const el = (id) => root.querySelector('#' + id);
+    const txt = (id) => String(el(id) ? el(id).textContent : '<缺>');
+    const click = async (target) => {
+      const n = typeof target === 'string' ? root.querySelector(target) : target;
+      if (!n) { check(false, '要点击的节点不存在：' + target); return; }
+      n.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      await tick(30);
+    };
+    const group = async (name, fn) => {
+      try { await fn(); } catch (e) {
+        allPass = false;
+        lines.push(`FAIL [${name}] 抛出异常：${e && e.stack ? String(e.stack).split('\n')[0] : e}`);
+      }
+    };
+
+    try {
+      __arkui_dom_requireModule('AlphabetIndexerDemo');
+      __arkui_dom_loadRoute('pages/AlphabetIndexerDemo', root);
+      await tick(120);
+      const aix = el('aix');
+      const items = () => [...aix.querySelectorAll('button')];
+
+      // ══════════ ① 基座（3 条） ══════════
+      await group('基座', async () => {
+        check(!!aix && items().length === 5 && items().map((b) => b.textContent).join('') === 'ABCDE',
+          `A~E 五格渲染（实际 '${items().map((b) => b.textContent).join('')}'；toC Button 须挂到 Column 而非叶内）`);
+        check(aix.dataset.itemSize === '24' && items()[0].offsetWidth === 24 && items()[0].offsetHeight === 24,
+          `itemSize(24) → 每格 24×24（实际 ${aix.dataset.itemSize}/${items()[0].offsetWidth}x${items()[0].offsetHeight}）`);
+        check(items()[0].hasAttribute('data-selected'),
+          `create selected=0 → 首格高亮（data-selected）`);
+      });
+
+      // ══════════ ② 点击 onSelect（3 条） ══════════
+      await group('点击', async () => {
+        await click(items()[3]);
+        check(txt('aix-log') === 'SEL3;' && items()[3].hasAttribute('data-selected'),
+          `点 'D' → onSelect(3) 记 idx 且高亮迁移（实际 '${txt('aix-log')}'）`);
+        check(txt('aix-idx') === '3', `@State idx 同步 = 3（实际 '${txt('aix-idx')}'）`);
+        await click(items()[1]);
+        check(txt('aix-log') === 'SEL3;SEL1;' && items()[1].hasAttribute('data-selected') && !items()[3].hasAttribute('data-selected'),
+          `再点 'B'：高亮迁移且旧项熄灭（实际 '${txt('aix-log')}'）`);
+      });
+
+      // ══════════ ③ selected 属性程序化选中（2 条） ══════════
+      await group('属性选中', async () => {
+        await click('#btn-toc');                        // idx=2 → rerender 重放 selected(2)
+        await tick(30);
+        check(items()[2].hasAttribute('data-selected') && !items()[1].hasAttribute('data-selected'),
+          `btn-toc → @State idx=2 → selected 属性重放高亮 'C'`);
+        check(txt('aix-log') === 'SEL3;SEL1;',
+          `程序化选中不发 onSelect（真机 onSelect 走点击；实际 '${txt('aix-log')}'）`);
+      });
+
+      lines.push(`LOG='${txt('aix-log')}'`);
+      lines.push(`ELMT ${__arkui_dom_elmtRecords.size}`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+
+  })();
+  </script>
+</body>
+</html>
