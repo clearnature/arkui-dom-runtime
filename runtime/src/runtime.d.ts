@@ -79,6 +79,7 @@ interface Element {
   __arkuiTextPick?: boolean;
   __txp?: any;
   __txpStep?: (dir: number) => void;
+  __txpStepCol?: (c: number, dir: number) => void;
   __arkuiGrid?: boolean;
   __grid?: any;
   __gridCbs?: any;

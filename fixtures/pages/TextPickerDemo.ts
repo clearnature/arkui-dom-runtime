@@ -78,6 +78,60 @@ class TextPickerDemo extends ViewPU {
         // ③ 对象形态 range（TextPickerRangeContent[]）：取 .text
         TextPicker.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
+            // ④ 多列：2 列独立滚轮，selected [1,0]
+            TextPicker.create({ range: [['春', '秋'], ['早', '晚']], selected: [1, 0] });
+            // ④ 多列：2 列独立滚轮，selected [1,0]
+            TextPicker.id('tx4');
+            // ④ 多列：2 列独立滚轮，selected [1,0]
+            TextPicker.onChange((value: string | string[], index: number | number[]) => {
+                const v = Array.isArray(value) ? value.join('/') : String(value);
+                const i = Array.isArray(index) ? index.join('/') : String(index);
+                this.log = this.log + 'M' + v + ':' + i + ';';
+            });
+        }, TextPicker);
+        // ④ 多列：2 列独立滚轮，selected [1,0]
+        TextPicker.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            // ⑤ 级联：父变 → 子列选项联动重置
+            TextPicker.create({
+                range: [
+                    { text: '菜', children: [{ text: '鱼' }, { text: '肉' }] },
+                    { text: '果', children: [{ text: '桃' }] }
+                ]
+            });
+            // ⑤ 级联：父变 → 子列选项联动重置
+            TextPicker.id('tx5');
+            // ⑤ 级联：父变 → 子列选项联动重置
+            TextPicker.onChange((value: string | string[], index: number | number[]) => {
+                const v = Array.isArray(value) ? value.join('/') : String(value);
+                const i = Array.isArray(index) ? index.join('/') : String(index);
+                this.log = this.log + 'C' + v + ':' + i + ';';
+            });
+        }, TextPicker);
+        // ⑤ 级联：父变 → 子列选项联动重置
+        TextPicker.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            // ⑥ 静态弹层
+            Button.createWithLabel('dlg');
+            // ⑥ 静态弹层
+            Button.id('btn-dlg');
+            // ⑥ 静态弹层
+            Button.onClick(() => {
+                TextPickerDialog.show({
+                    range: ['甲', '乙', '丙'],
+                    selected: 1,
+                    onAccept: (result: TextPickerResult) => {
+                        this.log = this.log + 'ACC' + result.value + ':' + result.index + ';';
+                    },
+                    onCancel: () => {
+                        this.log = this.log + 'CAN;';
+                    }
+                });
+            });
+        }, Button);
+        // ⑥ 静态弹层
+        Button.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
             Text.create(this.log);
             Text.id('tx-log');
             Text.fontSize(12);

@@ -1949,8 +1949,8 @@
     // R51：DatePicker + 枚举（DatePickerMode 声明在 date_picker.d.ts 而非 enums.d.ts）
     DatePicker, DatePickerMode: { DATE: 0, YEAR_AND_MONTH: 1, MONTH_AND_DAY: 2 },
     TimePicker, TimePickerFormat: { HOUR_MINUTE: 0, HOUR_MINUTE_SECOND: 1 },
-    // R56：TextPicker（选择器三部曲收官）
-    TextPicker,
+    // R56：TextPicker（选择器三部曲收官）+ R58 静态弹层
+    TextPicker, TextPickerDialog,
     // R57：Grid/GridItem（CSS grid 同构基座 + 滚动事件族）
     Grid, GridItem,
     // R50：Refresh + RefreshStatus（声明顺序：Inactive=0/Drag=1/OverDrag=2/Refresh=3/Done=4，

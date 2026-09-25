@@ -931,6 +931,24 @@ md5 一致。
 `runtime/src/runtime.d.ts`、`tools/stats.mjs`（手写 49→50）、
 `fixtures/pages/DatePickerDemo.ts`、`test/datepickerdemo.html`、`run.sh`、`electron/run.sh`
 
+### R58 — TextPicker 收尾：多列/级联 + TextPickerDialog ✅（2026-09-25）
+
+R56 的两块待办补齐。**多列**：range string[][] → N 列独立滚轮（selected/onChange 出入都是
+数组形态）；**级联**（TextCascadePickerRangeContent children，.d.ts:64-77）：colCount 按
+sel 链深动态计算，父变 → 截断 sel、下游从 0 重计、重建子列（选项联动为所选父的 children）。
+**TextPickerDialog.show**：fixed 居中面板 + OK/Cancel（onAccept/onCancel 走
+TextPickerResult {value,index}；onChange 逐次回调；DOM 无 OverlayManager 弹簧动画，标注），
+与组件滚轮共用 tpxEngine。引擎重构：tpxEngine(hostEl, norm, sel0, rowH, fire) 统一支撑
+单列/多列/级联三态与弹层；`__txpStep(dir)` 单列兼容保留，多列用 `__txpStepCol(col,dir)`。
+
+**验收**：`bash run.sh textpickerdemo` 扩到 **19 条断言**（单列 10 + 多列 3 + 级联 3 +
+弹层 3）双端通过。**破坏验证（1 处）**：级联 build() 摘除 → 父变后子列仍显示旧选项
+**1 红**。还原后 grep BROKEN 无残留。
+
+**新坑实录**：①多代理并行期间 fixtures 与 .ets 漂移——test 读的是旧冻结件，tx4/tx5 全
+null（probe 一查便知）；②引擎重构后 `__txp` 从 st 变 engine 包装，旧 handler 写 `cbs`
+路径失效（单测当场红）；③dataset.selectedIndex 从字符串变 JSON 数组——R56 断言同步更新。
+
 ### R57 — Grid/GridItem 网格 ✅（2026-09-25）
 
 CSS grid 与 ArkUI 轨道模板**天然同构**的代表性实现（grid.js，第 26 个分片）：
@@ -967,7 +985,7 @@ index: number|number[])`（**联合类型签名，夹具窄签名被 ArkTS 编�
 `__txpStep(dir)` 暴露给测试；多列/级联 range 只取第一列并记警告；TextPickerDialog 静态弹层
 未实现（记 ROADMAP 待办）。
 
-**验收**：`bash run.sh textpickerdemo`（11 条断言：基础 4/覆盖 2/步进事件 4/wheel 1）双端通过。
+**验收**：`bash run.sh textpickerdemo` 双端通过（R56 时 11 条；R58 扩到 19 条，当前口径见 R58 条目）。
 **破坏验证（合并跑 2 红）**：边界不动不发摘除 → 重复 'CHG冬:3;' 红；selectedIndex 覆盖摘除 →
 tx2 变 '0' 红。**首跑 4 红的根因是坑 87 再演**：onChange 同步发但 `@State`→DOM 批量重渲染
 滞后，断言前缺 `tick(30)`（测试缺陷，实现无需改）。

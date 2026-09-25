@@ -1661,7 +1661,7 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   属性元数据总数       509（平均 3.4／组件，最多 Web=55）
 
 == 运行时 API ==
-  global 导出        308 个
+  global 导出        309 个
   状态类            ObservedPropertySimplePU ObservedPropertyObjectPU SynchedPropertySimpleOneWayPU SynchedPropertySimpleTwoWayPU SynchedPropertyNesedObjectPU
   内置组件          Text Button Column Row Stack List ListItem If ForEach LazyForEach RelativeContainer Tabs TabContent Swiper Navigation NavDestination Progress Gauge DataPanel Rating
   内部钩子 __arkui_dom_*  32 个
@@ -1684,16 +1684,16 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   fixtures 转换产物  54 个：AnimDemo AnimatorDemo AsyncIO CalendarPickerDemo Callee CanvasDemo DatePickerDemo Detail DrawDemo GestureDemo GestureGroupDemo GridDemo Home ImageDemo Index InputDemo Layout Lazy LazyVar ListGroupDemo MeasArea MeasImage MeasNotify Measure MediaDemo NavBarDemo NavDemo NavTransDemo NetFile Observe PopDemo PromptAct Provide QrDemo RefreshDemo RelDemo Rich ScrollDemo ShapeDemo ShowDemo SmallDemo StepDemo SwiperDemo TabsGrid TextDemo TextMeasure TextPickerDemo TimePickerDemo TransitionDemo UiContextDemo V2 WaterFlowDemo Widgets XCompDemo
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          711.6 KB
-  runtime(src)     565.9 KB
-  test             687.3 KB
+  runtime          718.9 KB
+  runtime(src)     573.3 KB
+  test             689.8 KB
   tools            58.0 KB
   electron(src)    24.5 KB
-  docs             643.4 KB
-  fixtures         404.1 KB
+  docs             645.0 KB
+  fixtures         406.6 KB
 
 == 逐文件（文档"文件职责"表的来源）==
-  runtime/arkui-dom-runtime.js          468872 B  457.9 KB
+  runtime/arkui-dom-runtime.js          476374 B  465.2 KB
   runtime/generated-components.js        57617 B  56.3 KB
   runtime/ohos-shims.js                  61848 B  60.4 KB
   tools/extract.mjs                       6563 B  6.4 KB
@@ -1712,10 +1712,10 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   .gitignore                               757 B  0.7 KB
   README.md                             157245 B  153.6 KB
   THIRD-PARTY-NOTICES.md                 10718 B  10.5 KB
-  docs/ARCHITECTURE.md                  148355 B  144.9 KB
-  docs/CAPABILITY.md                     60866 B  59.4 KB
+  docs/ARCHITECTURE.md                  148356 B  144.9 KB
+  docs/CAPABILITY.md                     61012 B  59.6 KB
   docs/DEVELOPING.md                     66055 B  64.5 KB
-  docs/ROADMAP.md                       139680 B  136.4 KB
+  docs/ROADMAP.md                       141136 B  137.8 KB
   docs/surface-measurement.md             6496 B  6.3 KB
   docs/SESSION-2026-09-20.md             12842 B  12.5 KB
   runtime/src/.mimosa                     4096 B  4.0 KB
@@ -1732,16 +1732,16 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   runtime/src/image.js                    7000 B  6.8 KB
   runtime/src/input.js                   10663 B  10.4 KB
   runtime/src/layout.js                  18442 B  18.0 KB
-  runtime/src/main.js                   106187 B  103.7 KB
+  runtime/src/main.js                   106223 B  103.7 KB
   runtime/src/nav.js                     56681 B  55.4 KB
   runtime/src/popup.js                    5042 B  4.9 KB
   runtime/src/refresh.js                  8193 B  8.0 KB
-  runtime/src/runtime.d.ts                6204 B  6.1 KB
+  runtime/src/runtime.d.ts                6255 B  6.1 KB
   runtime/src/scroll.js                   6346 B  6.2 KB
   runtime/src/shape.js                    7525 B  7.3 KB
   runtime/src/show.js                    18856 B  18.4 KB
   runtime/src/small.js                   11885 B  11.6 KB
-  runtime/src/textpicker.js               6476 B  6.3 KB
+  runtime/src/textpicker.js              13942 B  13.6 KB
   runtime/src/timepicker.js               5159 B  5.0 KB
   runtime/src/v2.js                      13962 B  13.6 KB
   runtime/src/waterflow.js               19719 B  19.3 KB
@@ -1791,7 +1791,7 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   fixtures/pages/TabsGrid.ts             10513 B  10.3 KB
   fixtures/pages/TextDemo.ts              5686 B  5.6 KB
   fixtures/pages/TextMeasure.ts          11625 B  11.4 KB
-  fixtures/pages/TextPickerDemo.ts        4304 B  4.2 KB
+  fixtures/pages/TextPickerDemo.ts        6912 B  6.8 KB
   fixtures/pages/TimePickerDemo.ts        3417 B  3.3 KB
   fixtures/pages/TransitionDemo.ts       14311 B  14.0 KB
   fixtures/pages/UiContextDemo.ts         3791 B  3.7 KB
@@ -1848,7 +1848,7 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   test/tabgrid.html                      10096 B  9.9 KB
   test/textdemo.html                      5921 B  5.8 KB
   test/textmeasure.html                   9021 B  8.8 KB
-  test/textpickerdemo.html                5272 B  5.1 KB
+  test/textpickerdemo.html                7766 B  7.6 KB
   test/timepickerdemo.html                5151 B  5.0 KB
   test/transitiondemo.html               16996 B  16.6 KB
   test/uictxdemo.html                     4532 B  4.4 KB

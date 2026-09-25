@@ -2,17 +2,18 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<title>R56：TextPicker 文本选择器（单列滚轮 / selectedIndex / onChange）</title>
+<title>R56/R58：TextPicker（单列/多列/级联/静态弹层）</title>
 <style>
   body { font-family: system-ui, sans-serif; margin: 16px; }
-  #root { width: 360px; }
+  #root { width: 400px; }
   #root [data-arkui-comp="TextPicker"] { border: 1px solid #ddd; margin-bottom: 6px; width: 240px; }
+  #root [data-arkui-tpx-static] { background: #fff; border: 1px solid #bbb; padding: 12px; }
   #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
   .pass { color: #2e7d32; } .fail { color: #c62828; }
 </style>
 </head>
 <body>
-  <h3>R56：TextPicker（range / selected / selectedIndex 覆盖 / 对象 range / 步进事件）</h3>
+  <h3>R56/R58：TextPicker（单列 / selectedIndex / 多列 / 级联 / 静态弹层）</h3>
   <div id="root"></div>
   <div id="result">running…</div>
 
@@ -29,6 +30,11 @@
     const root = document.getElementById('root');
     const el = (id) => root.querySelector('#' + id);
     const txt = (id) => String(el(id) ? el(id).textContent : '<缺>');
+    const selOf = (n) => JSON.parse(n.dataset.selectedIndex || '[]');
+    const click = async (n) => {
+      n.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      await tick(30);
+    };
     const group = async (name, fn) => {
       try { await fn(); } catch (e) {
         allPass = false;
@@ -43,55 +49,89 @@
       const tx1 = el('tx1');
       const tx2 = el('tx2');
       const tx3 = el('tx3');
+      const tx4 = el('tx4');
+      const tx5 = el('tx5');
 
-      // ══════════ ① 基础（4 条） ══════════
-      await group('基础', async () => {
+      // ══════════ ① 单列基础（4 条） ══════════
+      await group('单列基础', async () => {
         check(!!tx1 && JSON.parse(tx1.dataset.txRange).join(',') === '春,夏,秋,冬',
           `range 归一化进 dataset（实际 '${tx1.dataset.txRange}'）`);
-        check(tx1.dataset.selectedIndex === '1',
-          `create selected=1（实际 '${tx1.dataset.selectedIndex}'）`);
+        check(selOf(tx1)[0] === 1, `create selected=1（实际 '${tx1.dataset.selectedIndex}'）`);
         const st = /** @type {any} */ (tx1).__txp;
-        check(st.rows[2].textContent === '夏',
-          `选中行显示 '夏'（实际 '${st.rows[2].textContent}'）`);
+        check(st.colEls[0].rows[2].textContent === '夏',
+          `选中行显示 '夏'（实际 '${st.colEls[0].rows[2].textContent}'）`);
         check(tx1.dataset.rowHeight === '40' && tx1.style.height === '200px',
-          `defaultPickerItemHeight(40)：行高 40、总高 200（实际 ${tx1.dataset.rowHeight}/${tx1.style.height}）`);
+          `defaultPickerItemHeight(40)（实际 ${tx1.dataset.rowHeight}/${tx1.style.height}）`);
       });
 
-      // ══════════ ② selectedIndex 覆盖 + 对象 range（2 条） ══════════
+      // ══════════ ② 覆盖 + 对象 range（2 条） ══════════
       await group('覆盖', async () => {
-        check(tx2.dataset.selectedIndex === '2',
+        check(selOf(tx2)[0] === 2,
           `tx2：selectedIndex(2) 属性压过 create selected=0（实际 '${tx2.dataset.selectedIndex}'）`);
         check(tx3.dataset.txRange === '["红","绿"]',
           `tx3 对象形态 range 取 .text（实际 '${tx3.dataset.txRange}'）`);
       });
 
-      // ══════════ ③ 步进 + 事件（4 条） ══════════
-      await group('步进', async () => {
-        (/** @type {any} */ (tx1)).__txpStep(1);
-        await tick(30);                                 // 坑 87：@State 写入 ≠ DOM 已变，断言前 tick
-        check(txt('tx-log') === 'CHG秋:2;' && tx1.dataset.selectedIndex === '2',
-          `+1 → onChange('秋',2)（真机 FireChangeEvent(value,index)；实际 '${txt('tx-log')}'）`);
+      // ══════════ ③ 单列步进 + 事件（4 条） ══════════
+      await group('单列步进', async () => {
         (/** @type {any} */ (tx1)).__txpStep(1);
         await tick(30);
-        check(txt('tx-log') === 'CHG秋:2;CHG冬:3;' && tx1.dataset.selectedIndex === '3',
-          `+1 → 'CHG冬:3;'（实际 '${txt('tx-log')}'）`);
+        check(txt('tx-log') === 'CHG秋:2;' && selOf(tx1)[0] === 2,
+          `+1 → onChange('秋',2)（实际 '${txt('tx-log')}'）`);
         (/** @type {any} */ (tx1)).__txpStep(1);
         await tick(30);
-        check(txt('tx-log') === 'CHG秋:2;CHG冬:3;' && tx1.dataset.selectedIndex === '3',
-          `末行再 +1：不动不发（实际 '${txt('tx-log')}' idx '${tx1.dataset.selectedIndex}'）`);
+        check(txt('tx-log') === 'CHG秋:2;CHG冬:3;', `+1 → 'CHG冬:3;'（实际 '${txt('tx-log')}'）`);
+        (/** @type {any} */ (tx1)).__txpStep(1);
+        await tick(30);
+        check(txt('tx-log') === 'CHG秋:2;CHG冬:3;' && selOf(tx1)[0] === 3,
+          `末行再 +1：不动不发（实际 '${txt('tx-log')}'）`);
         (/** @type {any} */ (tx1)).__txpStep(-1);
         await tick(30);
-        check(txt('tx-log').endsWith('CHG秋:2;'),
-          `-1 回退 → 'CHG秋:2;'（实际 '${txt('tx-log').slice(-12)}'）`);
+        check(txt('tx-log').endsWith('CHG秋:2;'), `-1 回退（实际 '${txt('tx-log').slice(-12)}'）`);
       });
 
-      // ══════════ ④ wheel 驱动（1 条） ══════════
-      await group('wheel', async () => {
-        const col = tx1.querySelector('[data-tpx-col]');
-        col.dispatchEvent(new WheelEvent('wheel', { deltaY: 120, cancelable: true }));
+      // ══════════ ④ 多列（3 条） ══════════
+      await group('多列', async () => {
+        check(tx4.querySelectorAll('[data-tpx-col]').length === 2 && selOf(tx4).join(',') === '1,0',
+          `两列渲染 + selected [1,0]（实际列数 ${tx4.querySelectorAll('[data-tpx-col]').length} idx '${tx4.dataset.selectedIndex}'）`);
+        (/** @type {any} */ (tx4)).__txpStepCol(0, -1);
         await tick(30);
-        check(tx1.dataset.selectedIndex === '3',
-          `wheel 下滚 → 同步单步回 3（实际 '${tx1.dataset.selectedIndex}'）`);
+        check(txt('tx-log').endsWith('M春/早:0/0;') && selOf(tx4).join(',') === '0,0',
+          `列0 -1 → onChange(['春','早'],[0,0])（实际 '${txt('tx-log').slice(-16)}'）`);
+        (/** @type {any} */ (tx4)).__txpStepCol(1, 1);
+        await tick(30);
+        check(txt('tx-log').endsWith('M春/晚:0/1;'),
+          `列1 +1 → ['春','晚']:[0,1]（实际 '${txt('tx-log').slice(-16)}'）`);
+      });
+
+      // ══════════ ⑤ 级联（3 条） ══════════
+      await group('级联', async () => {
+        check(tx5.querySelectorAll('[data-tpx-col]').length === 2,
+          `级联初始两列（实际 ${tx5.querySelectorAll('[data-tpx-col]').length}）`);
+        (/** @type {any} */ (tx5)).__txpStepCol(0, 1);
+        await tick(30);
+        const col1rows = tx5.querySelectorAll('[data-tpx-col]')[1].textContent;
+        check(txt('tx-log').endsWith('C果/桃:1/0;') && col1rows.indexOf('桃') >= 0 && col1rows.indexOf('鱼') < 0,
+          `父列切到 '果' → 子列选项联动为 ['桃'] 且 onChange(['果','桃'],[1,0])（实际 '${txt('tx-log').slice(-14)}' 列1='${col1rows}'）`);
+        (/** @type {any} */ (tx5)).__txpStepCol(1, -1);
+        await tick(30);
+        check(txt('tx-log').endsWith('C果/桃:1/0;'), `子列在顶再 -1：不动不发（实际 '${txt('tx-log').slice(-14)}'）`);
+      });
+
+      // ══════════ ⑥ 静态弹层（3 条） ══════════
+      await group('静态弹层', async () => {
+        await click(el('btn-dlg'));
+        const dlg = document.body.querySelector('[data-arkui-tpx-static]');
+        check(!!dlg && !!dlg.querySelector('[data-tpx-ok]') && !!dlg.querySelector('[data-tpx-cancel]'),
+          `TextPickerDialog.show：面板 + OK/Cancel`);
+        await click(dlg.querySelector('[data-tpx-ok]'));
+        check(!document.body.querySelector('[data-arkui-tpx-static]') && txt('tx-log').endsWith('ACC乙:1;'),
+          `OK → 关层 + onAccept({value:'乙', index:1})（实际 '${txt('tx-log').slice(-10)}'）`);
+        await click(el('btn-dlg'));
+        const dlg2 = document.body.querySelector('[data-arkui-tpx-static]');
+        await click(dlg2.querySelector('[data-tpx-cancel]'));
+        check(!document.body.querySelector('[data-arkui-tpx-static]') && txt('tx-log').endsWith('CAN;'),
+          `Cancel → 关层 + onCancel（实际 '${txt('tx-log').slice(-6)}'）`);
       });
 
       lines.push(`LOG='${txt('tx-log')}'`);
