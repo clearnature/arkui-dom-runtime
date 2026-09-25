@@ -228,15 +228,17 @@
 
   // @ObjectLink：子组件持有父侧 @Observed 实例的【引用】，只订阅、不复制值。
   class SynchedPropertyNesedObjectPU {
+    /** @param {any} source @param {any} owner @param {string} name */
     constructor(source, owner, name) {
-      this._owner = owner; this._name = name; this._source = undefined;
-      this._cell = null;
+      /** @type {any} */ this._owner = owner; this._name = name; /** @type {any} */ this._source = undefined;
+      /** @type {any} */ this._cell = null;
       this.set(source);
     }
     get() {
       if (this._cell) recordDep(this._cell);   // 读对象 = 依赖它的字段变更
       return this._source;
     }
+    /** @param {any} source */
     set(source) {
       const nextCell = observedCellOf(source);
       if (!nextCell && source !== undefined && source !== null) {
@@ -250,6 +252,7 @@
       // 换成了另一个对象：让原先的依赖者重渲染一次以便重新记录依赖
       if (prev && prev !== nextCell) markDependentsDirty(prev);
     }
+    /** @param {number} elmtId */
     purgeDependencyOnElmtId(elmtId) {
       if (this._cell) { const s = propDeps.get(this._cell); if (s) s.delete(elmtId); }
     }
@@ -1680,6 +1683,7 @@
   // 'grid-template-columns: 100 1fr'，浏览器整条声明作废（不报错、只是没生效，最难查）。
   // 归一化：vp/fp/lpx → px；裸数字 → px；1fr/auto/%/minmax()/repeat() 原样保留。
   // 注：vp→px 是 1:1 近似（本项目一贯做法，密度≠1 的设备上会有偏差）。
+  /** @param {any} v */
   const normalizeTrackList = (v) => String(v === undefined || v === null ? '' : v)
     .replace(/(\d+(?:\.\d+)?)(vp|fp|lpx)\b/g, '$1px')
     .replace(/(?<![\w.%-])(\d+(?:\.\d+)?)(?![\w.%-])/g, '$1px');
@@ -2976,6 +2980,7 @@
     return builderIds.get(fn);
   };
 
+  /** @param {HTMLElement} node */
   function syncOneNav(node) {
     const st = node.__navState;
     if (!st || !st.barEl || !st.barEl.isConnected) return;
@@ -3123,6 +3128,7 @@
     return null;
   }
 
+  /** @param {any=} [rootEl] */
   function syncNavChrome(rootEl) {
     const scope = rootEl || document;
     if (scope.__navState) syncOneNav(scope);
@@ -3134,6 +3140,7 @@
   }
 
 
+  /** @param {any} st @param {any} stack */
   function bindNavStack(st, stack) {
     if (!stack || typeof stack.pushPathByName !== 'function') {
       layoutWarnings.push('Navigation.create 的第一个参数不是 NavPathStack');
@@ -3225,6 +3232,7 @@
     }, NAV_TRANS_MS + 30);
   }
 
+  /** @param {any} stack @param {any} info @param {any} animated */
   function navPushRec(stack, info, animated) {
     const st = stack._nav;
     if (!st) { layoutWarnings.push('NavPathStack 尚未绑定到任何 Navigation'); return false; }

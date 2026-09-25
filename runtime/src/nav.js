@@ -517,6 +517,7 @@
     return builderIds.get(fn);
   };
 
+  /** @param {HTMLElement} node */
   function syncOneNav(node) {
     const st = node.__navState;
     if (!st || !st.barEl || !st.barEl.isConnected) return;
@@ -664,6 +665,7 @@
     return null;
   }
 
+  /** @param {any=} [rootEl] */
   function syncNavChrome(rootEl) {
     const scope = rootEl || document;
     if (scope.__navState) syncOneNav(scope);
@@ -675,6 +677,7 @@
   }
 
 
+  /** @param {any} st @param {any} stack */
   function bindNavStack(st, stack) {
     if (!stack || typeof stack.pushPathByName !== 'function') {
       layoutWarnings.push('Navigation.create 的第一个参数不是 NavPathStack');
@@ -766,6 +769,7 @@
     }, NAV_TRANS_MS + 30);
   }
 
+  /** @param {any} stack @param {any} info @param {any} animated */
   function navPushRec(stack, info, animated) {
     const st = stack._nav;
     if (!st) { layoutWarnings.push('NavPathStack 尚未绑定到任何 Navigation'); return false; }
