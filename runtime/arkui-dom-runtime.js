@@ -39,17 +39,21 @@
   //（stack 不写 @type 会被推成 never[]，push 全红）
   const ViewStackProcessor = {
     /** @type {any[]} */ stack: [],
+    /** @param {any} n */
     push(n) { this.stack.push(n); return n; },
     pop() { return this.stack.pop(); },
     top() { return this.stack.length ? this.stack[this.stack.length - 1] : null; },
     snapshot() { return this.stack.slice(); },
+    /** @param {any[]} snap */
     restore(snap) { this.stack.length = 0; for (const n of snap) this.stack.push(n); },
+    /** @param {number} elmtId */
     StartGetAccessRecordingFor(elmtId) { this._recording = elmtId; currentNodeElmtId = elmtId; },
     StopGetAccessRecording() { this._recording = null; },
   };
 
   const parentOfTop = () => ViewStackProcessor.top() || rootNode;
 
+  /** @param {any} prop */
   function recordDep(prop) {
     if (currentNodeElmtId == null) return;
     let s = propDeps.get(prop);
@@ -57,6 +61,7 @@
     s.add(currentNodeElmtId);
   }
 
+  /** @param {number} elmtId */
   function dropPropDeps(elmtId) {
     for (const [prop, s] of propDeps) s.delete(elmtId);
   }
@@ -64,69 +69,91 @@
   // ─────────────────── 状态管理（4 个类） ───────────────────
   // 共同协议：get / set / reset(可选) / resetSource(可选) / purgeDependencyOnElmtId / aboutToBeDeleted
   class ObservedPropertySimplePU {
+    /** @param {any} value @param {any} owner @param {string} name */
     constructor(value, owner, name) {
-      this._value = value; this._owner = owner; this._name = name; this._watches = [];
+      /** @type {any} */ this._value = value; /** @type {any} */ this._owner = owner;
+      this._name = name; /** @type {any[]} */ this._watches = [];
     }
     get() { recordDep(this); return this._value; }
+    /** @param {any} v */
     set(v) {
       if (Object.is(this._value, v)) return;
       this._value = v;
       markDependentsDirty(this);
       this._fireWatches();                       // @Watch：值变了才回调（同一属性名作为入参）
     }
+    /** @param {any} v */
     reset(v) { this.set(v); }
+    /** @param {any} cb */
     watch(cb) { this._watches.push(cb); }        // declareWatch 挂载点
     _fireWatches() { for (const cb of this._watches) cb(this._name); }
+    /** @param {number} elmtId */
     purgeDependencyOnElmtId(elmtId) { const s = propDeps.get(this); if (s) s.delete(elmtId); }
     aboutToBeDeleted() { propDeps.delete(this); }
   }
 
   // @State 用于对象/数组类型
   class ObservedPropertyObjectPU {
+    /** @param {any} value @param {any} owner @param {string} name */
     constructor(value, owner, name) {
-      this._value = value; this._owner = owner; this._name = name; this._watches = [];
+      /** @type {any} */ this._value = value; /** @type {any} */ this._owner = owner;
+      this._name = name; /** @type {any[]} */ this._watches = [];
     }
     get() { recordDep(this); return this._value; }
+    /** @param {any} v */
     set(v) {
       if (Object.is(this._value, v)) return;
       this._value = v;
       markDependentsDirty(this);
       this._fireWatches();
     }
+    /** @param {any} v */
     reset(v) { this.set(v); }
+    /** @param {any} cb */
     watch(cb) { this._watches.push(cb); }
     _fireWatches() { for (const cb of this._watches) cb(this._name); }
+    /** @param {number} elmtId */
     purgeDependencyOnElmtId(elmtId) { const s = propDeps.get(this); if (s) s.delete(elmtId); }
     aboutToBeDeleted() { propDeps.delete(this); }
   }
 
   // @Prop：单向。父通过 updateStateVarsOfChildByElmtId → reset(新值)
   class SynchedPropertySimpleOneWayPU {
+    /** @param {any} value @param {any} owner @param {string} name */
     constructor(value, owner, name) {
-      this._value = value; this._owner = owner; this._name = name; this._deps = new Set();
+      /** @type {any} */ this._value = value; /** @type {any} */ this._owner = owner;
+      this._name = name; /** @type {Set<number>} */ this._deps = new Set();
     }
     get() {
       if (currentNodeElmtId != null) this._deps.add(currentNodeElmtId);
       return this._value;
     }
+    /** @param {any} v */
     set(v) { this.reset(v); }
+    /** @param {any} v */
     reset(v) {
       if (Object.is(this._value, v)) return;
       this._value = v;
       for (const id of [...this._deps]) markDirty(id);
     }
+    /** @param {number} elmtId */
     purgeDependencyOnElmtId(elmtId) { this._deps.delete(elmtId); }
     aboutToBeDeleted() { this._deps.clear(); }
   }
 
   // @Link：双向。父把自己的状态实例传进来，双方共享同一数据源
   class SynchedPropertySimpleTwoWayPU {
+    /** @param {any} source @param {any} owner @param {string} name */
     constructor(source, owner, name) {
-      this._source = source; this._owner = owner; this._name = name;
+      /** @type {any} */ this._source = source; /** @type {any} */ this._owner = owner;
+      this._name = name;
     }
     get() { return this._source.get(); }        // 依赖记在 source 上（父 set 能触发子的 elmtId）
+    /** @param {any} v */
     set(v) { this._source.set(v); }             // 写回 source（双向）
+    /** @param {any} source */
     resetSource(source) { this._source = source; }
+    /** @param {number} elmtId */
     purgeDependencyOnElmtId(elmtId) {
       if (this._source && this._source.purgeDependencyOnElmtId) {
         this._source.purgeDependencyOnElmtId(elmtId);
