@@ -2489,13 +2489,20 @@
   const animOf = (v) => (typeof v === 'boolean' ? v : !!(v && typeof v === 'object' && v.animated));
 
   class NavPathStack {
-    constructor() { this._nav = null; this._paths = []; this._noAnim = false; }
+    constructor() {
+      /** @type {any} */ this._nav = null;
+      /** @type {any[]} */ this._paths = [];
+      /** @type {boolean} */ this._noAnim = false;
+    }
 
     // ── 查询 ──
     size() { return this._paths.length; }
     getAllPathName() { return this._paths.map((p) => p.name); }
+    /** @param {number} i */
     getParamByIndex(i) { const p = this._paths[i]; return p ? p.param : undefined; }
+    /** @param {string} name */
     getParamByName(name) { return this._paths.filter((p) => p.name === name).map((p) => p.param); }
+    /** @param {string} name */
     getIndexByName(name) {
       const out = [];
       this._paths.forEach((p, i) => { if (p.name === name) out.push(i); });
@@ -2507,16 +2514,19 @@
       return undefined;
     }
     setInterception() { layoutWarnings.push('NavPathStack.setInterception 未实现（路由拦截未建模）'); }
+    /** @param {any=} [paths] */
     setPathStack(paths) {
       navClearAll(this);
-      (paths || []).forEach((p) => navPushRec(this, { name: p.name, param: p.param, onPop: p.onPop }, false));
+      (paths || []).forEach((/** @type {any} */ p) => navPushRec(this, { name: p.name, param: p.param, onPop: p.onPop }, false));
       navSyncVisibility(this._nav);
     }
 
     // ── 压栈 ──（animated 一律透传原值，默认 true 的解释在 navWantAnim）
+    /** @param {any} info @param {any=} [options] */
     pushPath(info, options) {
       navPushRec(this, info || {}, options && typeof options === 'object' ? options.animated : options);
     }
+    /** @param {string} name @param {any} param @param {any=} [a3] @param {any=} [a4] */
     pushPathByName(name, param, a3, a4) {
       // .d.ts 重载：(name, param, animated?) / (name, param, onPop, animated?)。
       // a3 是函数 → a4 才是 animated；a3 是布尔 → a3 就是 animated（三参形态）；
@@ -2525,10 +2535,12 @@
       const animated = typeof a3 === 'function' ? a4 : (typeof a3 === 'boolean' ? a3 : a4);
       navPushRec(this, { name, param, onPop }, animated);
     }
+    /** @param {any} info */
     pushDestination(info) {
       navPushRec(this, info || {}, info && typeof info === 'object' ? info.animated : undefined);
       return Promise.resolve();
     }
+    /** @param {string} name @param {any} param */
     pushDestinationByName(name, param) {
       navPushRec(this, { name, param }, arguments[2]);
       return Promise.resolve();
@@ -2537,6 +2549,7 @@
     // ── 弹栈 ──
     // .d.ts 重载：pop(animated?) / pop(result, animated?)；popToName/Index(name, result?, animated?)
     // 都有 "Whether to enable the transition animation ... Default value: true"
+    /** @param {any=} [a1] @param {any=} [a2] */
     pop(a1, a2) {
       if (!this._paths.length) return undefined;
       const result = a1 !== undefined && typeof a1 !== 'boolean' ? a1 : undefined;
@@ -2545,6 +2558,7 @@
       navPopRange(this, this._paths.length - 1, 1, result, animated);
       return { name: rec.name, param: rec.param };
     }
+    /** @param {string} name @param {any=} [a2] @param {any=} [a3] */
     popToName(name, a2, a3) {
       const idx = this.getIndexByName(name);
       if (!idx.length) {
@@ -2557,6 +2571,7 @@
       navPopRange(this, target + 1, this._paths.length - target - 1, result, animated);
       return target;
     }
+    /** @param {number} index @param {any=} [a2] @param {any=} [a3] */
     popToIndex(index, a2, a3) {
       const n = this._paths.length;
       if (!Number.isInteger(index) || index < 0 || index >= n) {
@@ -2569,9 +2584,13 @@
     }
 
     // ── 改写 ──
+    /** @param {any} info @param {any=} [options] */
     replacePath(info, options) { navReplaceTop(this, info || {}, animOf(options)); }
+    /** @param {string} name @param {any} param */
     replacePathByName(name, param) { navReplaceTop(this, { name, param }, animOf(arguments[2])); }
+    /** @param {any} info */
     replaceDestination(info) { navReplaceTop(this, info || {}, animOf(arguments[1])); return Promise.resolve(); }
+    /** @param {string} name */
     removeByName(name) {
       const idx = [];
       this._paths.forEach((p, i) => { if (p.name === name) idx.push(i); });
@@ -2579,8 +2598,9 @@
       idx.slice().reverse().forEach((i) => navPopRange(this, i, 1, undefined));
       return idx.length;
     }
+    /** @param {any=} [indexes] */
     removeByIndexes(indexes) {
-      const valid = (indexes || []).filter((i) => Number.isInteger(i) && i >= 0 && i < this._paths.length);
+      const valid = (indexes || []).filter((/** @type {number} */ i) => Number.isInteger(i) && i >= 0 && i < this._paths.length);
       valid.slice().sort((a, b) => b - a).forEach((i) => navPopRange(this, i, 1, undefined));
       return valid.length;
     }
@@ -2588,6 +2608,7 @@
       layoutWarnings.push('NavPathStack.removeByNavDestinationId 未实现（本实现没有 NavDestination id 概念）');
       return 0;
     }
+    /** @param {string} name */
     moveToTop(name) {
       const idx = this.getIndexByName(name);
       if (!idx.length) {
@@ -2601,12 +2622,14 @@
       navSyncVisibility(this._nav);
       return this._paths.length - 1;
     }
+    /** @param {number} index */
     moveIndexToTop(index) {
       const rec = this._paths[index];
       if (!rec) { layoutWarnings.push(`NavPathStack.moveIndexToTop(${index})：越界`); return; }
       this.moveToTop(rec.name);
     }
     clear() { navClearAll(this); navSyncVisibility(this._nav); }
+    /** @param {any} value */
     disableAnimation(value) { this._noAnim = !!value; }
   }
 
@@ -2626,6 +2649,7 @@
   // ⚠️ CustomBuilder 也是以 **{ builder } 对象** 传进来的（loader 会把 CustomBuilder 归一化成对象），
   //    所以"是不是自定义标题"看的是【有没有 builder 字段】，不是实参类型。
 
+  /** @param {any} v */
   function navParseTitle(v) {
     if (v === undefined || v === null) return null;
     if (typeof v === 'object' && typeof v.builder === 'function') {
@@ -2639,6 +2663,7 @@
 
   // 标题栏高度（px）。NavigationCustomTitle.height 优先 —— .d.ts 原文：
   // "When the NavigationCustomTitle type is used to set the height, titleMode does not take effect."
+  /** @param {any} spec @param {any} titleMode */
   function navTitleBarH(spec, titleMode) {
     if (spec && spec.height !== undefined && spec.height !== null) {
       if (typeof spec.height === 'number' && TITLE_HEIGHT_VALUE[spec.height] !== undefined) {
@@ -2659,6 +2684,7 @@
   //   ② NavigationCustomTitle.height 显式给过就不联动 —— "When the NavigationCustomTitle type
   //      is used to set the height, titleMode does not take effect."
   //   ③ 标题栏整个藏了（hideTitleBar）自然没有联动。
+  /** @param {any} st */
   function navCollapseAllowed(st) {
     return st.titleMode === NavigationTitleMode.Free && !st.hideTitleBar
       && !(st.titleSpec && st.titleSpec.height !== undefined && st.titleSpec.height !== null);
@@ -2669,8 +2695,9 @@
   // 滚动距离与收缩进度线性，滚满 (Full−Mini) px 收到底 —— 该换算是本实现的选择
   //（.d.ts 只说 "the main title shrinks as the content scrolls down ... and restores
   // as the content scrolls up to the top"，没给阈值）。
+  /** @param {any} st @param {Event} e */
   function navOnContentScroll(st, e) {
-    const t = e.target;
+    const t = /** @type {any} */ (e.target);
     if (!t || t === st.node) return;
     if (st.areaEl && (t === st.areaEl || st.areaEl.contains(t))) return;   // 目的地自己滚不算
     if (!navCollapseAllowed(st)) return;
@@ -2694,6 +2721,7 @@
   }
 
   // 把 builder 建出来的节点收进 host（复用 NavDestination 深渲染那套：压栈 + 保存/还原 elmtId）
+  /** @param {HTMLElement} host @param {any} builder @param {string} what */
   function runBuilderInto(host, builder, what) {
     const saved = ViewStackProcessor.snapshot();
     const savedElmt = currentNodeElmtId;
@@ -2705,13 +2733,14 @@
     currentNodeElmtId = savedElmt;
   }
 
+  /** @param {any=} [items] */
   function navMenuBar(items) {
     const wrap = document.createElement('div');
     wrap.setAttribute('data-arkui-nav-menus', '');
     wrap.style.display = 'flex';
     wrap.style.alignItems = 'center';
     wrap.style.gap = '8px';
-    (items || []).forEach((m, i) => {
+    (items || []).forEach((/** @type {any} */ m, /** @type {number} */ i) => {
       const el = document.createElement('div');
       el.setAttribute('data-arkui-nav-menu', String(i));
       el.style.cursor = 'pointer';
@@ -3418,6 +3447,7 @@
   }
 
   // Navigation 的语义属性
+  /** @type {Record<string, (st: any, v: any, opts?: any) => void>} */
   const NAV_ATTRS = {
     navDestination: (st, v) => {
       const b = v && typeof v === 'object' ? v.builder : v;
@@ -3454,6 +3484,7 @@
   };
 
   // NavDestination 的标题栏 / 工具栏属性
+  /** @type {Record<string, (node: any, v: any, opts?: any) => void>} */
   const NAVDEST_ATTRS = {
     title: (node, v, opts) => {
       node.__navDest.titleSpec = navParseTitle(v);

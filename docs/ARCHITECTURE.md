@@ -1684,8 +1684,8 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   fixtures 转换产物  52 个：AnimDemo AnimatorDemo AsyncIO CalendarPickerDemo Callee CanvasDemo DatePickerDemo Detail DrawDemo GestureDemo GestureGroupDemo Home ImageDemo Index InputDemo Layout Lazy LazyVar ListGroupDemo MeasArea MeasImage MeasNotify Measure MediaDemo NavBarDemo NavDemo NavTransDemo NetFile Observe PopDemo PromptAct Provide QrDemo RefreshDemo RelDemo Rich ScrollDemo ShapeDemo ShowDemo SmallDemo StepDemo SwiperDemo TabsGrid TextDemo TextMeasure TimePickerDemo TransitionDemo UiContextDemo V2 WaterFlowDemo Widgets XCompDemo
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          677.2 KB
-  runtime(src)     429.8 KB
+  runtime          678.6 KB
+  runtime(src)     431.2 KB
   test             676.3 KB
   tools            57.6 KB
   electron(src)    24.0 KB
@@ -1693,7 +1693,7 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   fixtures         392.8 KB
 
 == 逐文件（文档"文件职责"表的来源）==
-  runtime/arkui-dom-runtime.js          433638 B  423.5 KB
+  runtime/arkui-dom-runtime.js          435052 B  424.9 KB
   runtime/generated-components.js        57617 B  56.3 KB
   runtime/ohos-shims.js                  61848 B  60.4 KB
   tools/extract.mjs                       6563 B  6.4 KB
@@ -1731,7 +1731,7 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   runtime/src/input.js                   10336 B  10.1 KB
   runtime/src/layout.js                  18320 B  17.9 KB
   runtime/src/main.js                    99309 B  97.0 KB
-  runtime/src/nav.js                     53595 B  52.3 KB
+  runtime/src/nav.js                     55009 B  53.7 KB
   runtime/src/popup.js                    4905 B  4.8 KB
   runtime/src/refresh.js                  7983 B  7.8 KB
   runtime/src/runtime.d.ts                6034 B  5.9 KB
