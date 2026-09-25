@@ -4413,6 +4413,16 @@
       AIX_ATTRS[prop](node, value);
       return;
     }
+    // RichEditor（R65）：placeholder/onReady/onSelect 是语义属性
+    if (node.__arkuiRichEditor && RICHEDITOR_ATTRS[prop]) {
+      RICHEDITOR_ATTRS[prop](node, value);
+      return;
+    }
+    // Video（R65）：controls/autoPlay/muted/loop/生命周期回调是语义属性
+    if (node.__arkuiVideo && VIDEO_ATTRS[prop]) {
+      VIDEO_ATTRS[prop](node, value);
+      return;
+    }
     // SideBarContainer（R61）：showSideBar/sideBarWidth/controlButton/onChange 是语义属性
     if (node.__arkuiSideBar && SIDEBAR_ATTRS[prop]) {
       SIDEBAR_ATTRS[prop](node, value);
@@ -7399,6 +7409,161 @@
     return el;
   });
 
+  // ────────────────── RichEditor 富文本编辑器（R65）──────────────────
+  //
+  // 产物形态（实测 fixtures/pages/RichVideoDemo.ts）：
+  //   RichEditor.create({controller}); RichEditor.placeholder('edit here');
+  //   RichEditor.onReady(() => …);
+  //
+  // 真机语义（rich_editor.d.ts）：基于 contenteditable 的富文本编辑器；onReady 在组件
+  //   通用部分构建完成后触发；placeholder 占位文本（无内容时显示）。
+  // DOM：div[contenteditable=true] 原生编辑器。
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
+  const RICHEDITOR_ATTRS = {
+    placeholder: (n, v) => {
+      n.dataset.placeholder = String(resolveResource(v));
+    },
+    onReady: (n, v) => {
+      const w = /** @type {any} */ (n).__rich;
+      if (w) w.cbs.ready = v;
+    },
+    onSelect: (n, v) => {
+      const w = /** @type {any} */ (n).__rich;
+      if (w) w.cbs.select = v;
+    },
+  };
+  /** @param {any[]} args */
+  const RichEditor = ensureComponent('RichEditor', (args) => {
+    const el = document.createElement('div');
+    el.__arkuiRichEditor = true;
+    el.dataset.richEditor = '';
+    el.setAttribute('contenteditable', 'true');
+    el.style.minHeight = '40px';
+    const o = (args && typeof args[0] === 'object' && args[0] !== null) ? args[0] : {};
+    const w = /** @type {any} */ (el).__rich = /** @type {any} */ ({ cbs: {} });
+    // onReady 在下一帧触发（真机：通用部分构建完成后）
+    setTimeout(() => {
+      const cb = w.cbs.ready;
+      if (typeof cb === 'function') {
+        try { cb(); }
+        catch (e) { layoutWarnings.push(`RichEditor.onReady 回调抛错：${e && e.message}`); }
+      }
+    }, 0);
+    return el;
+  });
+  const RichEditorController = class {
+    constructor() { this._el = null; }
+    /** @param {any} el */
+    _bind(el) { this._el = el; }
+  };
+
+  // ────────────────── Video 视频播放器（R65）：HTML <video> 原生垫片 ──────────────────
+  //
+  // 产物形态（实测 fixtures/pages/RichVideoDemo.ts）：
+  //   Video.create({src: 'video-test.mp4', controller});
+  //   Video.controls(false); Video.autoPlay(false); Video.muted(true);
+  //
+  // 真机语义（video.d.ts）：src 视频源；controls 显示原生控制条（缺省 true）；
+  //   autoPlay 自动播放（缺省 false）；muted 静音（缺省 false）；loop 循环（缺省 false）。
+  //   onPrepared/onStart/onPause/onFinish/onUpdate 生命周期回调。
+  //   VideoController start/pause/stop/requestFullscreen/exitFullscreen。
+  // DOM：<video> 原生元素（controls/autoPlay/muted/loop CSS 属性直通）；src → src 属性。
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
+  const VIDEO_ATTRS = {
+    controls: (n, v) => {
+      const w = /** @type {any} */ (n).__video;
+      const native = w && w.native;
+      if (native) native.controls = v === true;
+      n.dataset.controls = String(v === true);
+    },
+    muted: (n, v) => {
+      const w = /** @type {any} */ (n).__video;
+      const native = w && w.native;
+      if (native) native.muted = v === true;
+      n.dataset.muted = String(v === true);
+    },
+    autoPlay: (n, v) => {
+      const w = /** @type {any} */ (n).__video;
+      const native = w && w.native;
+      if (native) native.autoplay = v === true;
+      n.dataset.autoPlay = String(v === true);
+    },
+    loop: (n, v) => {
+      const w = /** @type {any} */ (n).__video;
+      const native = w && w.native;
+      if (native) native.loop = v === true;
+      n.dataset.loop = String(v === true);
+    },
+    onStart: (n, v) => {
+      const w = /** @type {any} */ (n).__video;
+      if (w) w.cbs.start = v;
+    },
+    onPause: (n, v) => {
+      const w = /** @type {any} */ (n).__video;
+      if (w) w.cbs.pause = v;
+    },
+    onFinish: (n, v) => {
+      const w = /** @type {any} */ (n).__video;
+      if (w) w.cbs.finish = v;
+    },
+    onPrepared: (n, v) => {
+      const w = /** @type {any} */ (n).__video;
+      if (w) w.cbs.prepared = v;
+    },
+    onUpdate: (n, v) => {
+      const w = /** @type {any} */ (n).__video;
+      if (w) w.cbs.update = v;
+    },
+  };
+  /** @param {any[]} args */
+  const Video = ensureComponent('Video', (args) => {
+    const el = document.createElement('div');
+    el.__arkuiVideo = true;
+    el.dataset.video = '';
+    el.style.position = 'relative';
+    // 原生 <video> 元素垫片
+    const o = (args && typeof args[0] === 'object' && args[0] !== null) ? args[0] : {};
+    const native = document.createElement('video');
+    native.style.width = '100%';
+    native.style.height = '100%';
+    native.style.display = 'block';
+    if (o.src) native.src = String(o.src);
+    el.appendChild(native);
+    const w = /** @type {any} */ (el).__video = /** @type {any} */ ({ native, cbs: {}, controller: null });
+    // 生命周期桥接：原生 <video> 事件 → ArkUI 回调
+    native.addEventListener('play', () => {
+      const cb = w.cbs.start;
+      if (typeof cb === 'function') { try { cb(); } catch (e) { /* 容错 */ } }
+    });
+    native.addEventListener('pause', () => {
+      const cb = w.cbs.pause;
+      if (typeof cb === 'function') { try { cb(); } catch (e) { /* 容错 */ } }
+    });
+    native.addEventListener('ended', () => {
+      const cb = w.cbs.finish;
+      if (typeof cb === 'function') { try { cb(); } catch (e) { /* 容错 */ } }
+    });
+    // VideoController 绑定
+    if (o.controller && typeof o.controller._bind === 'function') {
+      o.controller._bind({
+        play() { try { native.play(); } catch (e) { /* 容错 */ } },
+        pause() { try { native.pause(); } catch (e) { /* 容错 */ } },
+        stop() { try { native.pause(); native.currentTime = 0; } catch (e) { /* 容错 */ } },
+      });
+    }
+    return el;
+  });
+  class VideoController {
+    constructor() { this._api = null; }
+    /** @param {any} api */
+    _bind(api) { this._api = api; }
+    start() { if (this._api) this._api.play(); }
+    pause() { if (this._api) this._api.pause(); }
+    stop() { if (this._api) this._api.stop(); }
+    requestFullscreen() { layoutWarnings.push('VideoController.requestFullscreen 未实现'); }
+    exitFullscreen() { layoutWarnings.push('VideoController.exitFullscreen 未实现'); }
+  }
+
   // ────────────────── AlphabetIndexer 字母索引条（R60）──────────────────
   //
   // 产物形态（实测 fixtures/pages/AlphabetIndexerDemo.ts）：
@@ -9698,6 +9863,8 @@
     TextClock, TextClockController, TextTimer, TextTimerController,
     // R60：AlphabetIndexer（字母索引条）
     AlphabetIndexer,
+    // R65：RichEditor（富文本编辑器）/ Video（视频播放器）
+    RichEditor, RichEditorController, Video, VideoController,
     // R61：SideBarContainer（侧边栏容器）
     SideBarContainer, SideBarContainerType: { Embed: 0, Overlay: 1 },
     // R62：RowSplit/ColumnSplit（分隔容器）

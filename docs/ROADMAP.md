@@ -986,6 +986,22 @@ backgroundMask/customHeight/onChange/onHeightChange）；`Panel.create(show?: bo
 Panel/PanelMode 挂 global）、`runtime/src/runtime.d.ts`、`tools/stats.mjs`（手写 69→70）、
 `fixtures/pages/PanelDemo.ts`、`test/paneldemo.html`、`run.sh`、`electron/run.sh`
 
+### R65 — RichEditor + Video 双件 ✅（2026-09-26）
+
+richeditor.js（第 33 个分片）+ video.js（第 34 个分片）。**RichEditor**：contenteditable
+基座 + placeholder + onReady（setTimeout(0) 延迟触发）；RichEditorController 空壳绑定。
+**Video**：`<video>` 原生元素垫片——src/controls/autoPlay/muted/loop 直通原生属性；
+生命周期桥接（play→onStart, pause→onPause, ended→onFinish）；VideoController
+start/pause/stop/requestFullscreen/exitFullscreen；onPrepared/onUpdate 回调登记。
+**编译器拒**：`RichEditor()` 无参调用被 10605999 拒——需要 `{controller}` 参数。
+
+**验收**：`bash run.sh richvideodemo`（6 条断言：RichEditor 3/Video 3）双端通过。
+
+**触及**：`runtime/src/richeditor.js`（新，第 33 个分片）、`runtime/src/video.js`（新，
+第 34 个分片）、`runtime/src/main.js`（@include×2 + 四组件挂 global）、
+`runtime/src/runtime.d.ts`、`tools/stats.mjs`（手写 72→74）、
+`fixtures/pages/RichVideoDemo.ts`、`test/richvideodemo.html`、`run.sh`、`electron/run.sh`
+
 ### R60 — AlphabetIndexer 字母索引条 ✅（2026-09-25）
 
 alphabetindexer.js（第 28 个分片）。**声明面**（alphabet_indexer.d.ts）：`create({arrayValue,

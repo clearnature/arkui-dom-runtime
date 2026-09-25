@@ -38,6 +38,7 @@
         "pages/SideBarDemo",
         "pages/SplitDemo",
         "pages/PanelDemo",
-        "pages/GridRowDemo"
+        "pages/GridRowDemo",
+        "pages/RichVideoDemo"
     ]
 }

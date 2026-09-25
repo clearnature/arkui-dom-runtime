@@ -1708,6 +1708,10 @@
 
   // @include texttime
 
+  // @include richeditor
+
+  // @include video
+
   // @include alphabetindexer
 
   // @include panel
@@ -1972,6 +1976,8 @@
     TextClock, TextClockController, TextTimer, TextTimerController,
     // R60：AlphabetIndexer（字母索引条）
     AlphabetIndexer,
+    // R65：RichEditor（富文本编辑器）/ Video（视频播放器）
+    RichEditor, RichEditorController, Video, VideoController,
     // R61：SideBarContainer（侧边栏容器）
     SideBarContainer, SideBarContainerType: { Embed: 0, Overlay: 1 },
     // R62：RowSplit/ColumnSplit（分隔容器）

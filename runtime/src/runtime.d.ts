@@ -91,6 +91,10 @@ interface Element {
   __arkuiAlphabetIndexer?: boolean;
   __aix?: any;
   __arkuiLeaf?: boolean;
+  __arkuiRichEditor?: boolean;
+  __rich?: any;
+  __arkuiVideo?: boolean;
+  __video?: any;
   __arkuiSideBar?: boolean;
   __sbc?: any;
   __sbcApply?: () => void;

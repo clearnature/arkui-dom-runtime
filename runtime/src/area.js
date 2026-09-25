@@ -311,6 +311,16 @@
       AIX_ATTRS[prop](node, value);
       return;
     }
+    // RichEditor（R65）：placeholder/onReady/onSelect 是语义属性
+    if (node.__arkuiRichEditor && RICHEDITOR_ATTRS[prop]) {
+      RICHEDITOR_ATTRS[prop](node, value);
+      return;
+    }
+    // Video（R65）：controls/autoPlay/muted/loop/生命周期回调是语义属性
+    if (node.__arkuiVideo && VIDEO_ATTRS[prop]) {
+      VIDEO_ATTRS[prop](node, value);
+      return;
+    }
     // SideBarContainer（R61）：showSideBar/sideBarWidth/controlButton/onChange 是语义属性
     if (node.__arkuiSideBar && SIDEBAR_ATTRS[prop]) {
       SIDEBAR_ATTRS[prop](node, value);
