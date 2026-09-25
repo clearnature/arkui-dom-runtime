@@ -32,11 +32,14 @@
   // .d.ts 声明顺序即取值：Sequence / Parallel / Exclusive
   const GestureMode = { Sequence: 0, Parallel: 1, Exclusive: 2 };
 
-  const gestureScopes = [];              // Gesture.create/pop 的作用域栈
-  const gestureBuild = [];               // 正在构建的手势记录栈（各手势 + 手势组的 create/pop）
+  /** @type {any[]} */                   // Gesture.create/pop 的作用域栈
+  const gestureScopes = [];
+  /** @type {any[]} */                   // 正在构建的手势记录栈（各手势 + 手势组的 create/pop）
+  const gestureBuild = [];
   const TAP_SLOP_PX = 10;                // 超过这个位移就不算 tap（ArkUI 内部也有类似的容差）
   const TAP_WINDOW_MS = 300;             // 连续点击的归组窗口
 
+  /** @param {any} [extra] */
   function gestureEvent(extra) {
     // GestureEvent 的字段（.d.ts）：repeat/fingerList/offsetX/offsetY/angle/speed/scale/
     // pinchCenterX/pinchCenterY/velocityX/velocityY/velocity + BaseEvent 的 timestamp
@@ -67,6 +70,7 @@
   const ARB_BLOCK = 'block', ARB_HIGH = 'high', ARB_PARALLEL = 'parallel', ARB_LOW = 'low';
   const gestureSessions = new Map();   // pointerId -> {chain:[el], ownerEl, ownerClass, captureEl}
 
+  /** @param {any[]} records */
   function gestureArbClass(records) {
     let high = false, par = false, block = false;
     for (const r of records) {
@@ -77,6 +81,7 @@
     return block ? ARB_BLOCK : (high ? ARB_HIGH : (par ? ARB_PARALLEL : ARB_LOW));
   }
 
+  /** @param {HTMLElement} el @param {any} st @param {PointerEvent} ev */
   function participate(el, st, ev) {
     let s = gestureSessions.get(ev.pointerId);
     if (!s) {
@@ -105,6 +110,7 @@
 
   // 元素对外的仲裁结论（也是内省用的口径）：
   //   owner=本次会话归它 / parallel=并列参战 / suppressed=被压制 / idle=没有活跃会话
+  /** @param {any} st */
   function gestureArbState(st) {
     let seen = false;
     for (const s of gestureSessions.values()) {
@@ -118,6 +124,7 @@
 
   // 会话只能由【冒泡路径上最后参战的那个元素】来删：pointerup 会继续往外冒泡，
   // 外层元素还要读同一份仲裁结论。若最内层先删，被压制的祖先就会查不到结论而误触发。
+  /** @param {any} st @param {PointerEvent} ev */
   function isSessionTail(st, ev) {
     const s = gestureSessions.get(ev.pointerId);
     return !s || s.chain[s.chain.length - 1] === st.el;
@@ -131,6 +138,7 @@
   const GESTURE_MODE_NAME = ['Sequence', 'Parallel', 'Exclusive'];
   const GESTURE_MASK_NAME = ['Normal', 'IgnoreInternal'];
 
+  /** @param {any[]} records @param {any[]=} [out] @returns {any[]} */
   function flattenGestures(records, out) {
     const acc = out || [];
     for (const r of records) {
@@ -140,6 +148,7 @@
     return acc;
   }
 
+  /** @param {any} g */
   function fireGroupCancel(g) {
     if (typeof g.onCancel !== 'function') return;
     try { g.onCancel(); } catch (e) {
@@ -151,6 +160,7 @@
   //  · Sequence 没走完 = 「某一步没认出 → 后面的不再认」，按文档触发该组 onCancel；
   //  · 指针被 pointercancel 掉、而该组已认出过成员 → 也触发 onCancel。
   // 无论是否触发，都把组状态归零，免得下一次手势继承了上一次的 winner/stage。
+  /** @param {any} st @param {boolean} cancelled */
   function settleGroups(st, cancelled) {
     for (const g of st.gestures) {
       if (!g.__isGroup) continue;
@@ -164,6 +174,7 @@
 
   // 返回值 = 这次回调【有没有被仲裁放行】。识别器只在这个返回 true 时才推进内部状态：
   // 否则会出现"手势标成已开始、但 start 从没发出去"的错位（Sequence 的门控尤其致命）。
+  /** @param {any} st @param {any} rec @param {string} kind @param {PointerEvent|ReturnType<typeof gestureEvent>} ev */
   function fireGesture(st, rec, kind, ev) {
     if (!rec) return false;
     if (gestureArbState(st) === 'suppressed') return false;  // ① 元素级（父子链）
@@ -190,6 +201,7 @@
     return true;
   }
 
+  /** @param {any} rec @param {number} dx @param {number} dy */
   function gestureDirOk(rec, dx, dy) {
     const d = (rec.params.direction === undefined || rec.params.direction === null)
       ? null : Number(rec.params.direction);
@@ -205,6 +217,7 @@
       default: return true;
     }
   }
+  /** @param {any} rec @param {number} dx @param {number} dy */
   function swipeDirOk(rec, dx, dy) {
     const d = (rec.params.direction === undefined || rec.params.direction === null)
       ? SwipeDirection.All : Number(rec.params.direction);
@@ -221,14 +234,18 @@
   //    reference axis, clockwise rotation ranges from 0 to 180 degrees, and counterclockwise ... 0 to -180"
   // 屏幕坐标 y 向下，故 atan2 的顺时针为正，正好对上；归一化到 [−180, 180]。
   const RAD2DEG = 180 / Math.PI;
+  /** @param {{x: number, y: number}} p @param {{x: number, y: number}} q */
   const lineDeg = (p, q) => Math.atan2(q.y - p.y, q.x - p.x) * RAD2DEG;
+  /** @param {number} a */
   const norm180 = (a) => ((((a + 180) % 360) + 360) % 360) - 180;
+  /** @param {any} startLine @param {{x: number, y: number}} p0 @param {{x: number, y: number}} p1 */
   function rotationDeltaDeg(startLine, p0, p1) {
     if (!startLine) return 0;
     return norm180(lineDeg(p0, p1) - lineDeg({ x: startLine.x1, y: startLine.y1 },
       { x: startLine.x2, y: startLine.y2 }));
   }
 
+  /** @param {any} el */
   function detachGestures(el) {
     const st = el && el.__arkuiGestureState;
     if (!st) return;
@@ -237,19 +254,22 @@
     if (st.tapTimer) clearTimeout(st.tapTimer);
     el.__arkuiGestureState = null;
   }
+  /** @param {any} el @returns {any[]} */
   function gestureTypes(el) {
     const st = el && el.__arkuiGestureState;
-    return st ? st.gestures.map((g) => (g.__isGroup ? 'group' : g.type)) : [];
+    return st ? st.gestures.map((/** @type {any} */ g) => (g.__isGroup ? 'group' : g.type)) : [];
   }
+  /** @param {any} el @returns {any[]} */
   function gestureGroups(el) {
     const st = el && el.__arkuiGestureState;
     if (!st) return [];
-    return st.gestures.filter((g) => g.__isGroup).map((g) => ({
+    return st.gestures.filter((/** @type {any} */ g) => g.__isGroup).map((/** @type {any} */ g) => ({
       mode: GESTURE_MODE_NAME[g.mode] || String(g.mode),
-      members: flattenGestures(g.gestures).map((x) => x.type),
+      members: flattenGestures(g.gestures).map((/** @type {any} */ x) => x.type),
     }));
   }
 
+  /** @param {HTMLElement} el @param {any[]} gestures @returns {any} */
   function attachGestures(el, gestures) {
     detachGestures(el);
     // @type 档位：listeners/longPress 不写会推成 never[]，push 全红；tapTimer null↔number 摆动；
@@ -263,6 +283,7 @@
     // 识别循环一律跑【摊平后】的手势表：组只是登记层，识别与回调仍在元素这一层做
     const flat = flattenGestures(st.gestures);
     el.__arkuiGestureState = st;
+    /** @param {string} k @param {(ev: PointerEvent) => void} fn */
     const on = (k, fn) => { el.addEventListener(k, fn); st.listeners.push([k, fn]); };
     const primary = () => {
       let best = null;
@@ -274,6 +295,7 @@
       st.longPress = [];
     };
 
+    /** @param {PointerEvent} ev */
     const onDown = (ev) => {
       if (ev.pointerType === 'mouse' && ev.button !== 0) return;
       st.ptrs.set(ev.pointerId, {
@@ -298,7 +320,7 @@
           // 否则第一帧的移动会被当成基准，scale 永远从 1 开始（实测踩到）
           let d0 = 0;
           if (st.ptrs.size >= 2) {
-            const arr = [...st.ptrs.values()].sort((a, b) => a.seq - b.seq);
+            const arr = [...st.ptrs.values()].sort((/** @type {any} */ a, /** @type {any} */ b) => a.seq - b.seq);
             d0 = Math.hypot(arr[1].x - arr[0].x, arr[1].y - arr[0].y);
           }
           st.recState.set(rec, { started: false, d0 });
@@ -310,7 +332,7 @@
           //   两者差异的上界恰好就是 angle 阈值本身。）
           let startLine = null;
           if (st.ptrs.size >= 2) {
-            const arr = [...st.ptrs.values()].sort((a, b) => a.seq - b.seq);
+            const arr = [...st.ptrs.values()].sort((/** @type {any} */ a, /** @type {any} */ b) => a.seq - b.seq);
             startLine = { x1: arr[0].x, y1: arr[0].y, x2: arr[1].x, y2: arr[1].y };
           }
           st.recState.set(rec, { started: false, startLine });
@@ -318,6 +340,7 @@
       }
     };
 
+    /** @param {PointerEvent} ev */
     const onMove = (ev) => {
       const p = st.ptrs.get(ev.pointerId);
       if (!p) return;
@@ -342,7 +365,7 @@
             fireGesture(st, rec, 'onActionUpdate', gestureEvent({ offsetX: dx, offsetY: dy }));
           }
         } else if (rec.type === 'pinch' && st.ptrs.size >= 2) {
-          const arr = [...st.ptrs.values()].sort((a, b) => a.seq - b.seq);
+          const arr = [...st.ptrs.values()].sort((/** @type {any} */ a, /** @type {any} */ b) => a.seq - b.seq);
           const d = Math.hypot(arr[1].x - arr[0].x, arr[1].y - arr[0].y);
           const rs = st.recState.get(rec) || { started: false, d0: 0 };
           st.recState.set(rec, rs);
@@ -363,7 +386,7 @@
             }));
           }
         } else if (rec.type === 'rotation' && st.ptrs.size >= 2) {
-          const arr = [...st.ptrs.values()].sort((a, b) => a.seq - b.seq);
+          const arr = [...st.ptrs.values()].sort((/** @type {any} */ a, /** @type {any} */ b) => a.seq - b.seq);
           const rs = st.recState.get(rec) || { started: false, startLine: null };
           st.recState.set(rec, rs);
           if (!rs.startLine) {
@@ -383,6 +406,7 @@
       }
     };
 
+    /** @param {PointerEvent} ev */
     const onUp = (ev) => {
       const p = st.ptrs.get(ev.pointerId);
       if (!p) return;
@@ -439,6 +463,7 @@
       if (isLast && isSessionTail(st, ev)) gestureSessions.delete(ev.pointerId);
     };
 
+    /** @param {PointerEvent} ev */
     const onCancel = (ev) => {
       const p = st.ptrs.get(ev.pointerId);
       if (p) st.ptrs.delete(ev.pointerId);
@@ -469,6 +494,7 @@
   // 收一个手势/手势组：归入【最近一层容器】——有手势组就进组，否则进当前手势作用域。
   // 产物里组是嵌套的（组内 `XxxGesture.pop()` 之后才 `GestureGroup.pop()`），
   // 所以要从栈顶往下找最近的组，而不是只看栈顶。
+  /** @param {any} rec */
   function pushGestureRecord(rec) {
     if (!rec) return;
     for (let i = gestureBuild.length - 1; i >= 0; i--) {
@@ -484,9 +510,11 @@
     scope.list.push(rec);
   }
 
+  /** @param {string} name */
   function makeGestureBuilder(name) {
     const type = GESTURE_TYPES[name];
     const impl = {
+      /** @param {any} params */
       create(params) {
         const rec = { type, name, params: (params && typeof params === 'object') ? params : {}, seq: gestureSeq++ };
         gestureBuild.push(rec);
@@ -503,6 +531,7 @@
         if (typeof key === 'symbol') return undefined;
         let fn = target['__' + String(key)];
         if (!fn) {
+          /** @param {any} cb */
           fn = function (cb) {
             const rec = gestureBuild[gestureBuild.length - 1];
             if (!rec) {
@@ -522,6 +551,7 @@
   //   GestureGroup.create(mode) → GestureGroup.onCancel(cb) → 组内各手势 create/on*/pop → GestureGroup.pop()
   // 组状态（winner/stage/anyRecognized）挂在组记录上，识别时由 rec.__group 反查（见 fireGesture）。
   const GestureGroup = new Proxy({
+    /** @param {any} mode */
     create(mode) {
       const g = {
         __isGroup: true, name: 'GestureGroup', type: 'group',
@@ -554,6 +584,7 @@
       if (typeof key === 'symbol') return undefined;
       let fn = target['__' + String(key)];
       if (!fn) {
+        /** @param {any} cb */
         fn = function (cb) {
           const g = gestureBuild[gestureBuild.length - 1];
           if (!g || !g.__isGroup) {
@@ -569,11 +600,13 @@
     },
   });
   let gestureSeq = 0;
+  /** @type {Record<string, any>} */
   const gestureBuilders = {};
   for (const name of Object.keys(GESTURE_TYPES)) gestureBuilders[name] = makeGestureBuilder(name);
 
   const Gesture = {
     // 产物是两参形式：Gesture.create(GesturePriority.Low|High|Parallel[, GestureMask.Xxx])
+    /** @param {any} [priority] @param {any=} [mask] */
     create(priority, mask) {
       gestureScopes.push({
         priority: priority === undefined ? GesturePriority.Low : priority,
@@ -589,7 +622,7 @@
       }
       const el = ViewStackProcessor.top();
       if (!el) {
-        layoutWarnings.push(`Gesture.pop() 时组件栈是空的 —— 手势（${scope.list.map((g) => g.type).join(',')}）无处可挂`);
+        layoutWarnings.push(`Gesture.pop() 时组件栈是空的 —— 手势（${scope.list.map((/** @type {any} */ g) => g.type).join(',')}）无处可挂`);
         return;
       }
       scheduleGestureAttach(el, scope.list);
@@ -601,6 +634,7 @@
   // 而"下一次渲染"是【替换】（否则重渲染会把回调叠成两份，回调被触发两次）。
   const pendingGestureAttach = new Map();
   let pendingAttachScheduled = false;
+  /** @param {any} el @param {any[]} records */
   function scheduleGestureAttach(el, records) {
     const list = pendingGestureAttach.get(el) || [];
     for (const r of records) list.push(r);
@@ -616,4 +650,3 @@
       pendingGestureAttach.clear();
     });
   }
-

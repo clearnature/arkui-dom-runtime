@@ -3,6 +3,7 @@
   // 三类相对定位、bias 插值、文本截断与叠放对齐，并保留 warnings 以暴露未支持项（不是静默忽略）。
   const layoutWarnings = (global.__arkui_dom_layout_warnings = []);
   // 锚点解析会在不动点迭代里跑多趟，同一问题只该留一条痕（否则一条缺失锚点会变成 12 条）
+  /** @param {string} msg */
   const warnOnce = (msg) => { if (!layoutWarnings.includes(msg)) layoutWarnings.push(msg); };
 
   // Guideline 的方向（轴）。两者极易记反，以 .d.ts 的 JSDoc 为准：
@@ -11,19 +12,24 @@
   //   错轴使用 → 值恒为 0（JSDoc："the value is 0 when it is used as the anchor in the …"）
   // enums.d.ts 里枚举顺序是 Vertical=0 / Horizontal=1，所以也接受数字。
   const Axis = { Vertical: 'vertical', Horizontal: 'horizontal' };
+  /** @param {any} v */
   const isHorizontalAxis = (v) => v === 'horizontal' || v === 1;
 
   // 注意：ArkUI 有两套对齐词汇 —— 水平是 start/end 或 left/right，垂直是 top/bottom。
   // 两者都映射到 0/0.5/1 的分数，同时 dx/dy 的判定也要认这两种写法（踩过的坑）。
   const ALIGN_FRAC = { start: 0, top: 0, center: 0.5, end: 1, bottom: 1 };
+  /** @param {any} a */
   const isStart = (a) => a === 'start' || a === 'top';
+  /** @param {any} a */
   const isEnd = (a) => a === 'end' || a === 'bottom';
+  /** @param {number} base @param {number} size @param {any} align */
   const edgeAt = (base, size, align) => base + size * (ALIGN_FRAC[align] !== undefined ? ALIGN_FRAC[align] : 0);
   // 键 → 轴。LocalizedAlignRuleOptions 用 start/end/middle（水平）+ top/bottom/center（垂直）；
   // 老版 AlignRuleOption 用 left/right/middle + top/bottom/center。两套都认（否则 start/end 会漏支持）。
   const H_KEYS = new Set(['left', 'start', 'middle', 'right', 'end']);
 
   // Dimension → px：number 是 vp，字符串可带 %（'30%' 按容器对应尺寸换算）
+  /** @param {any} v @param {number} total */
   function dimOf(v, total) {
     if (v === undefined || v === null) return 0;
     const s = String(resolveResource(v));
@@ -34,10 +40,12 @@
 
   // 容器里所有 Guideline 的位置（相对容器）。只依赖容器尺寸，所以每轮 sync 重算一次即可。
   // ⚠️ 本 SDK 的 GuideLinePosition 只有 start/end（没有旧版的 percent）。
+  /** @param {any} container */
   function applyGuideLines(container) {
     const specs = container.__guideLines;
     if (!specs) return;
     const pw = container.offsetWidth, ph = container.offsetHeight;
+    /** @type {Record<string, any>} */
     const map = {};
     for (const g of specs) {
       if (!g || !g.id) { warnOnce('guideLine: 缺少 id，已跳过'); continue; }
@@ -59,20 +67,22 @@
   }
 
   // 锚点解析：'__container__' / Guideline / 兄弟组件，三种
+  /** @param {HTMLElement} parent @param {any} anchor @param {string} key @param {number} pw @param {number} ph */
   function alignBoxOf(parent, anchor, key, pw, ph) {
     if (!anchor || anchor === '__container__') return { x: 0, y: 0, w: pw, h: ph };
-    const g = parent.__guideLineBoxes && parent.__guideLineBoxes[anchor];
+    const g = /** @type {any} */ (parent.__guideLineBoxes && parent.__guideLineBoxes[anchor]);
     if (g) {
       const needAxis = H_KEYS.has(key) ? 'v' : 'h';   // 要定水平位置 → 需要【竖线】
       if (g.axis !== needAxis) return { x: 0, y: 0, w: 0, h: 0 };   // 错轴：值恒为 0
       return g;
     }
     const sel = (global.CSS && CSS.escape) ? CSS.escape(anchor) : anchor;
-    const sib = parent.querySelector('#' + sel);
+    const sib = /** @type {HTMLElement|null} */ (parent.querySelector('#' + sel));
     if (!sib) return null;
     return { x: sib.offsetLeft, y: sib.offsetTop, w: sib.offsetWidth, h: sib.offsetHeight };
   }
 
+  /** @param {HTMLElement} el */
   function applyAlignRules(el) {
     const rules = el.__alignRules;
     const parent = el.parentElement;
@@ -132,9 +142,11 @@
   // 语义原话："ratio of the distance to the left/upper anchor to the total distance between anchors"。
   // 只锚一侧时 CSS 本身就有唯一解，bias 无意义（不记警告）。
   // 注：JSDoc 只要求 >= 0，所以 >1 会外推到锚点之外——按原文只做下界钳制。
+  /** @param {HTMLElement} el @param {any} bias @param {number} pw @param {number} ph
+   *  @param {number|null} leftVal @param {number|null} rightVal @param {number|null} topVal @param {number|null} bottomVal */
   function applyBias(el, bias, pw, ph, leftVal, rightVal, topVal, bottomVal) {
     const bt = bias && typeof bias === 'object' ? bias : {};
-    const ratio = (v) => (v === undefined ? 0.5 : Math.max(0, Number(v) || 0));
+    const ratio = (/** @type {any} */ v) => (v === undefined ? 0.5 : Math.max(0, Number(v) || 0));
     if (leftVal !== null && rightVal !== null) {
       const lo = leftVal, hi = (pw - rightVal) - el.offsetWidth;      // 左边缘的可行区间
       el.style.left = (lo + ratio(bt.horizontal) * (hi - lo)) + 'px';
@@ -150,12 +162,13 @@
   // 首渲染与每次重渲染后同步一遍：兄弟锚点要等兄弟有几何信息才能算。
   // 锚链可能是【逆序声明】的（c 锚 b、b 锚 a，而 c 写在最前），单趟解析会读到兄弟的旧位置
   // —— 所以反复扫到不动点为止（链长 N 需要 N 趟）。
+  /** @param {any=} [rootEl] */
   function syncAlignRules(rootEl) {
     const r = rootEl || rootNode;
     if (!r || !r.querySelectorAll) return;
     const all = [...r.querySelectorAll('*')];
     for (const c of all) if (c.__guideLines) applyGuideLines(c);
-    const targets = all.filter((el) => el.__alignRules);
+    const targets = /** @type {any[]} */ (all.filter((/** @type {any} */ el) => el.__alignRules));
     if (!targets.length) return;
     const snap = () => targets.map((el) => el.offsetLeft + ',' + el.offsetTop).join('|');
     const maxPass = Math.min(targets.length + 2, 12);
@@ -169,8 +182,10 @@
     warnOnce(`alignRules: 锚链在 ${maxPass} 趟内未收敛（可能存在环状锚定），结果可能不正确`);
   }
 
+  /** @type {Record<string, string>} */
   const TEXT_OVERFLOW_CSS = { none: 'clip', clip: 'clip', ellipsis: 'ellipsis', marquee: 'clip' };
 
+  /** @param {HTMLElement} node @param {number} maxLines @param {any} overflow */
   function applyTextClamp(node, maxLines, overflow) {
     if (maxLines === 1) {
       node.style.overflow = 'hidden';
@@ -192,6 +207,7 @@
     BottomStart: 'bottom-start', Bottom: 'bottom', BottomEnd: 'bottom-end',
   };
 
+  /** @param {HTMLElement} node @param {any} v */
   function applyAlignment(node, v) {
     const s = String(v || 'center');
     const vertical = s.indexOf('top') === 0 ? 'start' : s.indexOf('bottom') === 0 ? 'end' : 'center';
@@ -205,8 +221,15 @@
   const lazyMeta = new Map();
   let scrollerSeq = 0;
   class Scroller {
-    constructor() { this._id = ++scrollerSeq; this._el = null; }
+    constructor() {
+      /** @type {number} */
+      this._id = ++scrollerSeq;
+      /** @type {HTMLElement|null} */
+      this._el = null;
+    }
+    /** @param {HTMLElement} el */
     _bind(el) { this._el = el; }
+    /** @param {number} i @param {boolean=} [smooth] */
     scrollToIndex(i, smooth) {
       const el = this._el;
       if (!el) { layoutWarnings.push(`Scroller.scrollToIndex(${i}): 未绑定容器`); return; }
@@ -222,7 +245,7 @@
       const meta = holder && lazyMeta.get(holder);
       const win = meta && meta.window;
       const k = win ? i - win[0] : i;
-      const target = (k >= 0 && k < items.length) ? items[k] : null;
+      const target = (k >= 0 && k < items.length) ? /** @type {HTMLElement} */ (items[k]) : null;
       if (target) {
         el.scrollTop = target.offsetTop;
         el.dispatchEvent(new Event('scroll'));   // R53：与 scrollBy/scrollEdge 同款同步派发（确定性）；
@@ -239,6 +262,7 @@
       }
       if (smooth) el.scrollTo({ top: el.scrollTop, behavior: 'smooth' });
     }
+    /** @param {any} opt */
     scrollTo(opt) {
       if (!this._el || !opt) return;
       // R46：Scroll 的官方形参是 {xOffset, yOffset, animation?}（scroll.d.ts）；List 侧的
@@ -253,6 +277,7 @@
       }
     }
     // R46：Scroll 族补面（scroll.d.ts Scroller）。滚动事件由基座 'scroll' 派发（见 scroll.js）
+    /** @param {any} dx @param {any} dy */
     scrollBy(dx, dy) {
       const el = this._el;
       if (!el) { layoutWarnings.push('Scroller.scrollBy: 未绑定容器'); return; }
@@ -260,6 +285,7 @@
       el.scrollTop += Number(resolveResource(dy)) || 0;
       el.dispatchEvent(new Event('scroll'));   // 同步派发（确定性；scrollTo 同理依赖它）
     }
+    /** @param {any} edge */
     scrollEdge(edge) {
       const el = this._el;
       if (!el) { layoutWarnings.push('Scroller.scrollEdge: 未绑定容器'); return; }
@@ -273,6 +299,7 @@
       else layoutWarnings.push(`Scroller.scrollEdge(${String(edge)}): 该档位未实现（记警告）`);
       el.dispatchEvent(new Event('scroll'));
     }
+    /** @param {any=} [opt] */
     scrollPage(opt) {
       const el = this._el;
       if (!el) { layoutWarnings.push('Scroller.scrollPage: 未绑定容器'); return; }
@@ -294,6 +321,7 @@
   }
 
   // 统一的挂载点：记录 elmtId→节点，处理 Stack 叠放，并给节点打上可查询的组件标记
+  /** @param {HTMLElement} node @param {any=} [rec] */
   function mountNode(node, rec) {
     const parentEl = parentOfTop();
     if (node.__arkuiComp) node.setAttribute('data-arkui-comp', node.__arkuiComp);
