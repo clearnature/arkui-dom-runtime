@@ -32,6 +32,7 @@
         "pages/WaterFlowDemo",
         "pages/CalendarPickerDemo",
         "pages/TextPickerDemo",
-        "pages/GridDemo"
+        "pages/GridDemo",
+        "pages/TextTimeDemo"
     ]
 }

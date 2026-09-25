@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R59：TextClock/TextTimer（时间文本双件）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 360px; }
+  #root [data-arkui-comp="TextClock"], #root [data-arkui-comp="TextTimer"] {
+    border: 1px solid #ddd; margin-bottom: 6px; padding: 4px 8px;
+    font-family: ui-monospace, monospace; font-size: 20px;
+  }
+  #root button { margin-right: 6px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R59：TextClock（format 渲染）/ TextTimer（倒计时·正计时·start/pause/reset·onTimer）</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/texttimedemo-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const el = (id) => root.querySelector('#' + id);
+    const txt = (id) => String(el(id) ? el(id).textContent : '<缺>');
+    const click = async (sel) => {
+      const n = root.querySelector(sel);
+      if (!n) { check(false, '要点击的节点不存在：' + sel); return; }
+      n.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      await tick(30);
+    };
+    const group = async (name, fn) => {
+      try { await fn(); } catch (e) {
+        allPass = false;
+        lines.push(`FAIL [${name}] 抛出异常：${e && e.stack ? String(e.stack).split('\n')[0] : e}`);
+      }
+    };
+
+    try {
+      __arkui_dom_requireModule('TextTimeDemo');
+      __arkui_dom_loadRoute('pages/TextTimeDemo', root);
+      await tick(120);
+      const tck = el('tck');
+      const ttd = el('ttd');
+      const ttu = el('ttu');
+
+      // ══════════ ① TextClock 结构（2 条） ══════════
+      await group('TextClock', async () => {
+        check(!!tck && /^\d{2}:\d{2}:\d{2}$/.test(txt('tck')),
+          `format('HH:mm:ss') 渲染当前时间（实际 '${txt('tck')}'；结构性断言不锁墙钟值）`);
+        check((/** @type {any} */ (tck)).__tclock.timer !== null,
+          '缺省自动走时（setInterval 挂载中）');
+      });
+
+      // ══════════ ② TextTimer 倒计时（6 条） ══════════
+      await group('倒计时', async () => {
+        check(txt('ttd') === '00:00:05.00',
+          `countDown 初始显 startTime=5000 → '00:00:05.00'（实际 '${txt('ttd')}'）`);
+        await click('#btn-start');
+        await tick(1200);
+        const mid = txt('ttd');
+        check(/^00:00:0[34]\.\d{2}$/.test(mid),
+          `start 1.2s 后走到 03~04 区间（实际 '${mid}'）`);
+        check(txt('tt-log').indexOf('TD') >= 0, `onTimer 每 tick 触发（log '${txt('tt-log').slice(-24)}'）`);
+        await click('#btn-pause');
+        await tick(30);
+        const frozen = txt('ttd');
+        const tdCount = (txt('tt-log').match(/TD/g) || []).length;
+        await tick(400);
+        check(txt('ttd') === frozen && (txt('tt-log').match(/TD/g) || []).length === tdCount,
+          `pause 后数值冻结、onTimer 停发（'${frozen}' 不变）`);
+        await click('#btn-reset');
+        await tick(30);
+        check(txt('ttd') === '00:00:05.00' && (txt('tt-log').match(/TD/g) || []).length === tdCount,
+          `reset → 回 startTime 且停发（实际 '${txt('ttd')}'）`);
+      });
+
+      // ══════════ ③ TextTimer 正计时（3 条） ══════════
+      await group('正计时', async () => {
+        check(ttu.textContent === '00:00.00',
+          `countUp 初始 '00:00.00'（实际 '${ttu.textContent}'）`);
+        (/** @type {any} */ (ttu)).__ttimer.start();
+        await tick(1300);
+        const shown = ttu.textContent;
+        check(/^00:0[01]\.\d{2}$/.test(shown),
+          `start 1.3s 后走 00~01 区间（实际 '${shown}'）`);
+        check((txt('tt-log').match(/TU/g) || []).length >= 10,
+          `10ms 粒度下 onTimer 高频触发（TU 计数 ${(txt('tt-log').match(/TU/g) || []).length}）`);
+      });
+
+      lines.push(`LOG='${txt('tt-log').slice(-60)}'`);
+      lines.push(`ELMT ${__arkui_dom_elmtRecords.size}`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+
+  })();
+  </script>
+</body>
+</html>

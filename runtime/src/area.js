@@ -297,6 +297,15 @@
       TEXTPICKER_ATTRS[prop](node, value);
       return;
     }
+    // TextClock/TextTimer（R59）：format/onClockChange/onTimer 是语义属性
+    if (node.__arkuiTextClock && TEXTCLOCK_ATTRS[prop]) {
+      TEXTCLOCK_ATTRS[prop](node, value);
+      return;
+    }
+    if (node.__arkuiTextTimer && TEXTTIMER_ATTRS[prop]) {
+      TEXTTIMER_ATTRS[prop](node, value);
+      return;
+    }
     // Grid（R57）/ GridItem（R57）：columnsTemplate/事件族与跨行跨列是语义属性
     if (node.__arkuiGrid && GRID_ATTRS[prop]) {
       GRID_ATTRS[prop](node, value);

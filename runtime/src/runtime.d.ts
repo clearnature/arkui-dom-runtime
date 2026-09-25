@@ -84,6 +84,10 @@ interface Element {
   __grid?: any;
   __gridCbs?: any;
   __arkuiGridItem?: boolean;
+  __arkuiTextClock?: boolean;
+  __tclock?: any;
+  __arkuiTextTimer?: boolean;
+  __ttimer?: any;
   __lig?: any;
   __an?: any;
   __anCbs?: any;

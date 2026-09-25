@@ -1701,6 +1701,8 @@
 
   // @include textpicker
 
+  // @include texttime
+
   // @include scroll
 
   // @include grid
@@ -1951,6 +1953,8 @@
     TimePicker, TimePickerFormat: { HOUR_MINUTE: 0, HOUR_MINUTE_SECOND: 1 },
     // R56：TextPicker（选择器三部曲收官）+ R58 静态弹层
     TextPicker, TextPickerDialog,
+    // R59：TextClock/TextTimer（时间文本双件）+ 双控制器
+    TextClock, TextClockController, TextTimer, TextTimerController,
     // R57：Grid/GridItem（CSS grid 同构基座 + 滚动事件族）
     Grid, GridItem,
     // R50：Refresh + RefreshStatus（声明顺序：Inactive=0/Drag=1/OverDrag=2/Refresh=3/Done=4，

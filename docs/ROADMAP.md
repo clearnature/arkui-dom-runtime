@@ -972,6 +972,28 @@ auto-placement 行为一致，按实测修正预期而非"修"实现。
 `tools/stats.mjs`（手写 61→63）、`fixtures/pages/GridDemo.ts`、`test/griddemo.html`、
 `run.sh`、`electron/run.sh`
 
+### R59 — TextClock/TextTimer 时间文本双件 ✅（2026-09-25）
+
+一片双组件（texttime.js，第 27 个分片）+ 双控制器。**TextClock**：format 令牌子集
+（HH/mm/ss；SS 与 a 记警告）、每秒 setInterval 刷新、TextClockController
+start/pause/stop、onClockChange 每 tick 触发——**走真实系统时间，断言只锁格式形状
+（^\d{2}:\d{2}:\d{2}$），不锁墙钟值**（结构性断言）。**TextTimer**：startTime/endTime/
+isCountDown；format 含 .SS → 步进 10ms，否则 100ms 平滑；**elapsed 由 setInterval 累积
+驱动，headless 虚拟时间下确定性最好**；countDown 显 startTime-elapsed（到 endTime 停）、
+countUp 显 startTime+elapsed（有 endTime 则到点停）；onTimer(utc, elapsedTime) 每 tick
+触发；TextTimerController start/pause/reset（reset 停表回 startTime；重复 start 幂等）。
+controller 经 options 传入后 _bind 双向绑定（Scroller 同款）。
+
+**验收**：`bash run.sh texttimedemo`（10 条断言：TextClock 结构 2/倒计时 5/正计时 3）
+双端通过。**破坏验证（1 处）**：countDown 方向反转摘除 → 初始/区间/reset 三断言 **3 红**。
+还原后 grep BROKEN 无残留。
+
+**触及**：`runtime/src/texttime.js`（新，第 27 个分片）、`runtime/src/area.js`、
+`runtime/src/main.js`（@include + TextClock/TextClockController/TextTimer/
+TextTimerController 挂 global）、`runtime/src/runtime.d.ts`、`tools/stats.mjs`
+（手写 63→65）、`fixtures/pages/TextTimeDemo.ts`、`test/texttimedemo.html`、
+`run.sh`、`electron/run.sh`
+
 ### R56 — TextPicker 文本选择器 ✅（2026-09-25）
 
 选择器三部曲收官（DatePicker R51 / TimePicker R52 / TextPicker R56）。**声明面**（本机

@@ -1652,16 +1652,16 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
 ```
 == 组件库 ==
   ets-loader 注册名    149
-  手写实现（真布局语义）62：Text Button Column Row Stack List ListItem RelativeContainer Tabs TabContent Swiper Navigation NavDestination Progress Gauge DataPanel Rating Circle Ellipse Rect Line Path Polygon Polyline Shape Checkbox Radio Toggle Slider Badge Counter Divider Marquee Select Menu MenuItem Canvas XComponent Flex Span LoadingProgress Blank Stepper StepperItem Image Scroll ImageAnimator ListItemGroup Refresh DatePicker TimePicker WaterFlow FlowItem CalendarPicker TextPicker Grid GridItem TextInput TextArea Search Hyperlink QRCode
+  手写实现（真布局语义）64：Text Button Column Row Stack List ListItem RelativeContainer Tabs TabContent Swiper Navigation NavDestination Progress Gauge DataPanel Rating Circle Ellipse Rect Line Path Polygon Polyline Shape Checkbox Radio Toggle Slider Badge Counter Divider Marquee Select Menu MenuItem Canvas XComponent Flex Span LoadingProgress Blank Stepper StepperItem Image Scroll ImageAnimator ListItemGroup Refresh DatePicker TimePicker WaterFlow FlowItem CalendarPicker TextPicker Grid GridItem TextClock TextTimer TextInput TextArea Search Hyperlink QRCode
   控制流宏（非组件）    3：If ForEach LazyForEach
   骨架·有 DOM 画像     14（容器 9 / 叶子 5）
-  骨架·仅 data-*       73
+  骨架·仅 data-*       71
   ⇒ 可建出的组件名      149 / 149
   原生输入类控件       0
-  属性元数据总数       509（平均 3.4／组件，最多 Web=55）
+  属性元数据总数       491（平均 3.3／组件，最多 Web=55）
 
 == 运行时 API ==
-  global 导出        309 个
+  global 导出        313 个
   状态类            ObservedPropertySimplePU ObservedPropertyObjectPU SynchedPropertySimpleOneWayPU SynchedPropertySimpleTwoWayPU SynchedPropertyNesedObjectPU
   内置组件          Text Button Column Row Stack List ListItem If ForEach LazyForEach RelativeContainer Tabs TabContent Swiper Navigation NavDestination Progress Gauge DataPanel Rating
   内部钩子 __arkui_dom_*  32 个
@@ -1678,51 +1678,51 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   15 个：app.ability.AbilityConstant app.ability.ConfigurationConstant app.ability.UIAbility app.ability.Want data.preferences file.fs hilog measure multimedia.image multimedia.media net.http notificationManager promptAction router window
 
 == 用例矩阵 ==
-  浏览器 run.sh     56 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify measure lazy provide v2 observe async ability promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo mediademo smalldemo stepdemo imagedemo scrolldemo animatordemo listitemgroup refreshdemo datepickerdemo timepickerdemo waterflowdemo calendarpickerdemo textpickerdemo griddemo router netfile persist
-  Electron          55 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo mediademo smalldemo stepdemo imagedemo scrolldemo animatordemo listitemgroup refreshdemo datepickerdemo timepickerdemo waterflowdemo calendarpickerdemo textpickerdemo griddemo measure lazy provide async v2 observe
-  测试页            56 个
-  fixtures 转换产物  54 个：AnimDemo AnimatorDemo AsyncIO CalendarPickerDemo Callee CanvasDemo DatePickerDemo Detail DrawDemo GestureDemo GestureGroupDemo GridDemo Home ImageDemo Index InputDemo Layout Lazy LazyVar ListGroupDemo MeasArea MeasImage MeasNotify Measure MediaDemo NavBarDemo NavDemo NavTransDemo NetFile Observe PopDemo PromptAct Provide QrDemo RefreshDemo RelDemo Rich ScrollDemo ShapeDemo ShowDemo SmallDemo StepDemo SwiperDemo TabsGrid TextDemo TextMeasure TextPickerDemo TimePickerDemo TransitionDemo UiContextDemo V2 WaterFlowDemo Widgets XCompDemo
+  浏览器 run.sh     57 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify measure lazy provide v2 observe async ability promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo mediademo smalldemo stepdemo imagedemo scrolldemo animatordemo listitemgroup refreshdemo datepickerdemo timepickerdemo waterflowdemo calendarpickerdemo textpickerdemo griddemo texttimedemo router netfile persist
+  Electron          56 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo mediademo smalldemo stepdemo imagedemo scrolldemo animatordemo listitemgroup refreshdemo datepickerdemo timepickerdemo waterflowdemo calendarpickerdemo textpickerdemo griddemo texttimedemo measure lazy provide async v2 observe
+  测试页            57 个
+  fixtures 转换产物  55 个：AnimDemo AnimatorDemo AsyncIO CalendarPickerDemo Callee CanvasDemo DatePickerDemo Detail DrawDemo GestureDemo GestureGroupDemo GridDemo Home ImageDemo Index InputDemo Layout Lazy LazyVar ListGroupDemo MeasArea MeasImage MeasNotify Measure MediaDemo NavBarDemo NavDemo NavTransDemo NetFile Observe PopDemo PromptAct Provide QrDemo RefreshDemo RelDemo Rich ScrollDemo ShapeDemo ShowDemo SmallDemo StepDemo SwiperDemo TabsGrid TextDemo TextMeasure TextPickerDemo TextTimeDemo TimePickerDemo TransitionDemo UiContextDemo V2 WaterFlowDemo Widgets XCompDemo
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          718.9 KB
-  runtime(src)     573.3 KB
-  test             689.8 KB
+  runtime          726.2 KB
+  runtime(src)     580.6 KB
+  test             694.7 KB
   tools            58.0 KB
-  electron(src)    24.5 KB
-  docs             645.0 KB
-  fixtures         406.6 KB
+  electron(src)    24.7 KB
+  docs             646.8 KB
+  fixtures         411.2 KB
 
 == 逐文件（文档"文件职责"表的来源）==
-  runtime/arkui-dom-runtime.js          476374 B  465.2 KB
+  runtime/arkui-dom-runtime.js          483813 B  472.5 KB
   runtime/generated-components.js        57617 B  56.3 KB
   runtime/ohos-shims.js                  61848 B  60.4 KB
   tools/extract.mjs                       6563 B  6.4 KB
   tools/gen-components.mjs                7775 B  7.6 KB
   tools/serve.py                          3887 B  3.8 KB
-  tools/stats.mjs                        16143 B  15.8 KB
+  tools/stats.mjs                        16226 B  15.8 KB
   tools/assert-counts.mjs                 7476 B  7.3 KB
   tools/preflight.mjs                     5422 B  5.3 KB
   tools/check-all.sh                      4053 B  4.0 KB
   tools/build-runtime.mjs                 5138 B  5.0 KB
-  run.sh                                 26537 B  25.9 KB
-  electron/run.sh                        15828 B  15.5 KB
+  run.sh                                 26971 B  26.3 KB
+  electron/run.sh                        16046 B  15.7 KB
   electron/main.js                        7025 B  6.9 KB
   electron/preload.js                     1961 B  1.9 KB
   package.json                            1366 B  1.3 KB
   .gitignore                               757 B  0.7 KB
   README.md                             157245 B  153.6 KB
   THIRD-PARTY-NOTICES.md                 10718 B  10.5 KB
-  docs/ARCHITECTURE.md                  148356 B  144.9 KB
+  docs/ARCHITECTURE.md                  148586 B  145.1 KB
   docs/CAPABILITY.md                     61086 B  59.7 KB
   docs/DEVELOPING.md                     66055 B  64.5 KB
-  docs/ROADMAP.md                       141136 B  137.8 KB
+  docs/ROADMAP.md                       142724 B  139.4 KB
   docs/surface-measurement.md             6496 B  6.3 KB
   docs/SESSION-2026-09-20.md             12842 B  12.5 KB
   runtime/src/.mimosa                     4096 B  4.0 KB
   runtime/src/ability.js                 10229 B  10.0 KB
   runtime/src/animation.js               29450 B  28.8 KB
   runtime/src/animator.js                 6308 B  6.2 KB
-  runtime/src/area.js                    25838 B  25.2 KB
+  runtime/src/area.js                    26161 B  25.5 KB
   runtime/src/calendarpicker.js          17806 B  17.4 KB
   runtime/src/canvas.js                  10679 B  10.4 KB
   runtime/src/datepicker.js               8770 B  8.6 KB
@@ -1732,16 +1732,17 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   runtime/src/image.js                    7000 B  6.8 KB
   runtime/src/input.js                   10663 B  10.4 KB
   runtime/src/layout.js                  18442 B  18.0 KB
-  runtime/src/main.js                   106223 B  103.7 KB
+  runtime/src/main.js                   106386 B  103.9 KB
   runtime/src/nav.js                     56681 B  55.4 KB
   runtime/src/popup.js                    5042 B  4.9 KB
   runtime/src/refresh.js                  8193 B  8.0 KB
-  runtime/src/runtime.d.ts                6255 B  6.1 KB
+  runtime/src/runtime.d.ts                6351 B  6.2 KB
   runtime/src/scroll.js                   6346 B  6.2 KB
   runtime/src/shape.js                    7525 B  7.3 KB
   runtime/src/show.js                    18856 B  18.4 KB
   runtime/src/small.js                   11885 B  11.6 KB
   runtime/src/textpicker.js              13942 B  13.6 KB
+  runtime/src/texttime.js                 6976 B  6.8 KB
   runtime/src/timepicker.js               5159 B  5.0 KB
   runtime/src/v2.js                      13962 B  13.6 KB
   runtime/src/waterflow.js               19719 B  19.3 KB
@@ -1792,6 +1793,7 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   fixtures/pages/TextDemo.ts              5686 B  5.6 KB
   fixtures/pages/TextMeasure.ts          11625 B  11.4 KB
   fixtures/pages/TextPickerDemo.ts        6912 B  6.8 KB
+  fixtures/pages/TextTimeDemo.ts          4740 B  4.6 KB
   fixtures/pages/TimePickerDemo.ts        3417 B  3.3 KB
   fixtures/pages/TransitionDemo.ts       14311 B  14.0 KB
   fixtures/pages/UiContextDemo.ts         3791 B  3.7 KB
@@ -1849,6 +1851,7 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   test/textdemo.html                      5921 B  5.8 KB
   test/textmeasure.html                   9021 B  8.8 KB
   test/textpickerdemo.html                7766 B  7.6 KB
+  test/texttimedemo.html                  5075 B  5.0 KB
   test/timepickerdemo.html                5151 B  5.0 KB
   test/transitiondemo.html               16996 B  16.6 KB
   test/uictxdemo.html                     4532 B  4.4 KB
