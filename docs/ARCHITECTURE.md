@@ -1713,7 +1713,7 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   README.md                             157245 B  153.6 KB
   THIRD-PARTY-NOTICES.md                 10718 B  10.5 KB
   docs/ARCHITECTURE.md                  148356 B  144.9 KB
-  docs/CAPABILITY.md                     61012 B  59.6 KB
+  docs/CAPABILITY.md                     61086 B  59.7 KB
   docs/DEVELOPING.md                     66055 B  64.5 KB
   docs/ROADMAP.md                       141136 B  137.8 KB
   docs/surface-measurement.md             6496 B  6.3 KB
