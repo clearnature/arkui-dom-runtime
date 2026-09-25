@@ -1515,6 +1515,7 @@
     }
 
     // ── @Provide / @Consume（按名字沿视图链解析） ──
+    /** @param {string} name @param {any} prop @param {any} allowOverride */
     addProvidedVar(name, prop, allowOverride) {
       if (!this.__providedVars) this.__providedVars = new Map();
       if (this.__providedVars.has(name) && !allowOverride) {
@@ -1522,6 +1523,7 @@
       }
       this.__providedVars.set(name, prop);
     }
+    /** @param {string} name */
     _findProvided(name) {
       let v = this.__parent;                 // 从父视图向上找（@Consume 必须位于后代）
       while (v) {
@@ -1530,6 +1532,7 @@
       }
       return null;
     }
+    /** @param {string} name @param {string} propName */
     initializeConsume(name, propName) {
       const found = this._findProvided(name);
       if (found) return found;               // 关键：返回的【就是提供者的属性实例】→ 依赖追踪天然生效
@@ -1538,6 +1541,7 @@
       this['__' + propName] = fallback;
       return fallback;
     }
+    /** @param {string} name @param {string} propName */
     reInitializeConsume__Internal(name, propName) {
       const found = this._findProvided(name);
       if (found) this['__' + propName] = found;
@@ -1545,6 +1549,7 @@
     }
 
     // ── @Watch（把回调挂到属性实例上，set 时触发） ──
+    /** @param {string} propName @param {any} cb */
     declareWatch(propName, cb) {
       const prop = this['__' + propName];
       if (prop && typeof prop.watch === 'function') prop.watch(cb.bind(this));
@@ -1552,6 +1557,7 @@
     }
 
     // if/else：同一 elmtId 下按 branchId 换子树，切换时销毁旧分支
+    /** @param {number} branchId @param {() => void} branchFunc */
     ifElseBranchUpdateFunction(branchId, branchFunc) {
       const elmtId = currentNodeElmtId;
       const rec = elmtRecords.get(elmtId);
@@ -1642,6 +1648,7 @@
     return typeof r === 'number' ? r + 'px' : String(r);
   };
 
+  /** @type {Record<string, string>} */
   const cssPropSize = {
     fontSize: 'fontSize', fontColor: 'color', backgroundColor: 'backgroundColor',
     width: 'width', height: 'height', borderWidth: 'borderWidth',
@@ -1650,11 +1657,13 @@
     // Grid 的双向间距（Length → px）。缺这两个时它们只会落进 data-*，版式静默错。
     columnsGap: 'columnGap', rowsGap: 'rowGap',
   };
+  /** @type {Record<string, string>} */
   const cssPropRaw = {
     fontWeight: 'fontWeight', opacity: 'opacity', zIndex: 'zIndex',
     flexGrow: 'flexGrow', flexShrink: 'flexShrink', aspectRatio: 'aspectRatio',
   };
   // 枚举类属性：取值为枚举（FlexAlign/TextAlign/HorizontalAlign…），枚举值本身就是 CSS 值，原样透传
+  /** @type {Record<string, string>} */
   const cssPropEnum = {
     justifyContent: 'justifyContent', alignItems: 'alignItems', alignSelf: 'alignSelf',
     alignContent: 'alignContent', textAlign: 'textAlign', fontStyle: 'fontStyle',
@@ -8319,13 +8328,16 @@
     delete(id) { this._subs.delete(id); }
   }
 
+  /** @type {Map<string, any>} */
   const routes = new Map();
+  /** @param {() => any} factory @param {string=} [_name] @param {any=} [info] */
   function registerNamedRoute(factory, _name, info) {
     if (info && info.pagePath) routes.set(info.pagePath, factory);
   }
 
   // 页面栈：[{path, view}] —— ArkUI 的 router 会【保留页面实例】，back 回去时 @State 不丢
   //（这也是 onPageShow 与 aboutToAppear 存在的区别：前者每次显示都调，后者只首次）
+  /** @type {any[]} */
   const pageStack = [];
   function currentRoot() { return rootNode; }
 
