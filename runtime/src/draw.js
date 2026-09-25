@@ -13,6 +13,7 @@
   const isCirclePanel = (v) => v === 'circle' || v === 1;
 
   const SVG_NS = 'http://www.w3.org/2000/svg';
+  /** @param {string} tag @param {any=} [attrs] */
   const svgEl = (tag, attrs) => {
     const el = document.createElementNS(SVG_NS, tag);
     for (const k of Object.keys(attrs || {})) el.setAttribute(k, String(attrs[k]));
@@ -361,6 +362,7 @@
   }
 
   // 绘制类组件的属性：值要进 state / 重绘，而不是落 data-*
+  /** @type {Record<string, Record<string, (n: any, v: any, opts?: any) => void>>} */
   const DRAW_ATTRS = {
     Progress: {
       value: (node, v) => applyProgressValue(node, v, node.__drawOpts.total),

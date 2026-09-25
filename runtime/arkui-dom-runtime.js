@@ -361,16 +361,26 @@
   const TRANSITION_DIR_NAME = { [TransitionType.All]: 'All', [TransitionType.Insert]: 'Insert', [TransitionType.Delete]: 'Delete' };
 
   class TransitionEffect {
-    constructor(kind, value) { this.kind = kind; this.value = value; this.anim = undefined; this.next = null; }
+    /** @param {string} kind @param {any} value */
+    constructor(kind, value) {
+      /** @type {string} */ this.kind = kind; /** @type {any} */ this.value = value;
+      /** @type {any} */ this.anim = undefined; /** @type {any} */ this.next = null;
+    }
     static get IDENTITY() { return new TransitionEffect('identity', undefined); }
     static get OPACITY() { return new TransitionEffect('opacity', 0); }
     static get SLIDE() { return new TransitionEffect('slide', undefined); }
     static get SLIDE_SWITCH() { return new TransitionEffect('slideSwitch', undefined); }
+    /** @param {any} o */
     static translate(o) { return new TransitionEffect('translate', o); }
+    /** @param {any} o */
     static rotate(o) { return new TransitionEffect('rotate', o); }
+    /** @param {any} o */
     static scale(o) { return new TransitionEffect('scale', o); }
+    /** @param {any} a */
     static opacity(a) { return new TransitionEffect('opacity', a); }
+    /** @param {any} e */
     static move(e) { return new TransitionEffect('move', e); }
+    /** @param {any} appear @param {any} disappear */
     static asymmetric(appear, disappear) { return new TransitionEffect('asymmetric', { appear: appear, disappear: disappear }); }
     // `.animation()` / `.combine()` 都返回**新实例**：静态常量（OPACITY/SLIDE…）是共享的，
     // 若就地改会把别的页面用到的同一个常量污染掉。两者都必须**整链深拷贝** ——
@@ -386,7 +396,9 @@
       }
       return head;
     }
+    /** @param {any} p */
     animation(p) { const c = this._deepCopy(); c.anim = p; return c; }
+    /** @param {any} e */
     combine(e) {
       const head = this._deepCopy();
       let tail = head;
@@ -395,8 +407,11 @@
       return head;
     }
   }
+  /** @param {any} e @returns {any[]} */
   function _effectChain(e) { const out = []; for (let t = e; t; t = t.next) out.push(t); return out; }
+  /** @param {any} e */
   function _effectAnim(e) { for (const n of _effectChain(e)) if (n.anim) return n.anim; return undefined; }
+  /** @param {any} e */
   function _effectSummary(e) { return _effectChain(e).map((n) => n.kind).join('+'); }
 
   const transitionRegistered = [];         // 登记过的 transition（自省用）
@@ -3561,6 +3576,7 @@
   const isCirclePanel = (v) => v === 'circle' || v === 1;
 
   const SVG_NS = 'http://www.w3.org/2000/svg';
+  /** @param {string} tag @param {any=} [attrs] */
   const svgEl = (tag, attrs) => {
     const el = document.createElementNS(SVG_NS, tag);
     for (const k of Object.keys(attrs || {})) el.setAttribute(k, String(attrs[k]));
@@ -3909,6 +3925,7 @@
   }
 
   // 绘制类组件的属性：值要进 state / 重绘，而不是落 data-*
+  /** @type {Record<string, Record<string, (n: any, v: any, opts?: any) => void>>} */
   const DRAW_ATTRS = {
     Progress: {
       value: (node, v) => applyProgressValue(node, v, node.__drawOpts.total),
