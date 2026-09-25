@@ -1684,16 +1684,16 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   fixtures 转换产物  52 个：AnimDemo AnimatorDemo AsyncIO CalendarPickerDemo Callee CanvasDemo DatePickerDemo Detail DrawDemo GestureDemo GestureGroupDemo Home ImageDemo Index InputDemo Layout Lazy LazyVar ListGroupDemo MeasArea MeasImage MeasNotify Measure MediaDemo NavBarDemo NavDemo NavTransDemo NetFile Observe PopDemo PromptAct Provide QrDemo RefreshDemo RelDemo Rich ScrollDemo ShapeDemo ShowDemo SmallDemo StepDemo SwiperDemo TabsGrid TextDemo TextMeasure TimePickerDemo TransitionDemo UiContextDemo V2 WaterFlowDemo Widgets XCompDemo
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          687.6 KB
-  runtime(src)     440.3 KB
+  runtime          697.6 KB
+  runtime(src)     551.7 KB
   test             676.3 KB
-  tools            57.6 KB
+  tools            57.8 KB
   electron(src)    24.0 KB
-  docs             636.8 KB
+  docs             638.8 KB
   fixtures         392.8 KB
 
 == 逐文件（文档"文件职责"表的来源）==
-  runtime/arkui-dom-runtime.js          444336 B  433.9 KB
+  runtime/arkui-dom-runtime.js          454512 B  443.9 KB
   runtime/generated-components.js        57617 B  56.3 KB
   runtime/ohos-shims.js                  61848 B  60.4 KB
   tools/extract.mjs                       6563 B  6.4 KB
@@ -1712,36 +1712,37 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   .gitignore                               757 B  0.7 KB
   README.md                             157245 B  153.6 KB
   THIRD-PARTY-NOTICES.md                 10718 B  10.5 KB
-  docs/ARCHITECTURE.md                  147859 B  144.4 KB
+  docs/ARCHITECTURE.md                  147918 B  144.5 KB
   docs/CAPABILITY.md                     60130 B  58.7 KB
   docs/DEVELOPING.md                     66055 B  64.5 KB
-  docs/ROADMAP.md                       134199 B  131.1 KB
+  docs/ROADMAP.md                       136111 B  132.9 KB
   docs/surface-measurement.md             6496 B  6.3 KB
   docs/SESSION-2026-09-20.md             12842 B  12.5 KB
-  runtime/src/ability.js                 10137 B  9.9 KB
-  runtime/src/animation.js               28595 B  27.9 KB
-  runtime/src/animator.js                 6251 B  6.1 KB
-  runtime/src/area.js                    24550 B  24.0 KB
-  runtime/src/calendarpicker.js          17571 B  17.2 KB
-  runtime/src/canvas.js                  10556 B  10.3 KB
-  runtime/src/datepicker.js               8542 B  8.3 KB
-  runtime/src/draw.js                    18533 B  18.1 KB
-  runtime/src/gesture.js                 31626 B  30.9 KB
-  runtime/src/image.js                    6893 B  6.7 KB
-  runtime/src/input.js                   10532 B  10.3 KB
-  runtime/src/layout.js                  18312 B  17.9 KB
-  runtime/src/main.js                   101812 B  99.4 KB
-  runtime/src/nav.js                     55304 B  54.0 KB
-  runtime/src/popup.js                    4975 B  4.9 KB
-  runtime/src/refresh.js                  8053 B  7.9 KB
+  runtime/src/.mimosa                     4096 B  4.0 KB
+  runtime/src/ability.js                 10229 B  10.0 KB
+  runtime/src/animation.js               29450 B  28.8 KB
+  runtime/src/animator.js                 6308 B  6.2 KB
+  runtime/src/area.js                    25305 B  24.7 KB
+  runtime/src/calendarpicker.js          17806 B  17.4 KB
+  runtime/src/canvas.js                  10679 B  10.4 KB
+  runtime/src/datepicker.js               8770 B  8.6 KB
+  runtime/src/draw.js                    19240 B  18.8 KB
+  runtime/src/gesture.js                 31744 B  31.0 KB
+  runtime/src/image.js                    7000 B  6.8 KB
+  runtime/src/input.js                   10663 B  10.4 KB
+  runtime/src/layout.js                  18442 B  18.0 KB
+  runtime/src/main.js                   105979 B  103.5 KB
+  runtime/src/nav.js                     56681 B  55.4 KB
+  runtime/src/popup.js                    5042 B  4.9 KB
+  runtime/src/refresh.js                  8193 B  8.0 KB
   runtime/src/runtime.d.ts                6034 B  5.9 KB
-  runtime/src/scroll.js                   6287 B  6.1 KB
-  runtime/src/shape.js                    7412 B  7.2 KB
-  runtime/src/show.js                    18738 B  18.3 KB
-  runtime/src/small.js                   11786 B  11.5 KB
-  runtime/src/timepicker.js               5010 B  4.9 KB
-  runtime/src/v2.js                      13770 B  13.4 KB
-  runtime/src/waterflow.js               19562 B  19.1 KB
+  runtime/src/scroll.js                   6346 B  6.2 KB
+  runtime/src/shape.js                    7525 B  7.3 KB
+  runtime/src/show.js                    18856 B  18.4 KB
+  runtime/src/small.js                   11885 B  11.6 KB
+  runtime/src/timepicker.js               5159 B  5.0 KB
+  runtime/src/v2.js                      13962 B  13.6 KB
+  runtime/src/waterflow.js               19719 B  19.3 KB
   fixtures/pages/AnimDemo.ts              6451 B  6.3 KB
   fixtures/pages/AnimatorDemo.ts          4050 B  4.0 KB
   fixtures/pages/AsyncIO.ts               6206 B  6.1 KB

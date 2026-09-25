@@ -32,6 +32,7 @@
     };
     el.__tpCbs = el.__tp.cbs;
     const tp = el.__tp;
+    /** @param {string} label */
     const mk = (label) => {
       const wrap = document.createElement('div');
       wrap.dataset['tpCol'] = label;
@@ -57,6 +58,7 @@
       el.appendChild(wrap);
       return { wrap, inner, rows: [...inner.children] };
     };
+    /** @type {Record<string, any>} */
     const cols = { hour: mk('hour'), minute: mk('minute') };
     if (hasSec) cols.second = mk('second');
     /** @param {number} v */
@@ -89,6 +91,7 @@
         catch (e) { layoutWarnings.push(`TimePicker.onChange 抛错：${e && e.message}`); }
       }
     };
+    /** @param {string} col @param {number} dir */
     el.__tpStep = tp.step = (col, dir) => {
       const max = col === 'hour' ? 23 : 59;
       const cur = col === 'hour' ? tp.hour : col === 'minute' ? tp.minute : tp.second;
@@ -102,7 +105,7 @@
       tp.fireChange();
     };
     for (const col of ['hour', 'minute'].concat(hasSec ? ['second'] : [])) {
-      cols[col].wrap.addEventListener('wheel', (e) => {
+      cols[col].wrap.addEventListener('wheel', (/** @type {WheelEvent} */ e) => {
         e.preventDefault();
         tp.step(col, e.deltaY < 0 ? 1 : -1);
       }, { passive: false });

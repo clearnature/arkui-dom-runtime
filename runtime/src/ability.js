@@ -13,7 +13,7 @@
 
   /** @param {any} rec */
   function abilityLog(rec) {
-    (global.__arkui_dom_logs = global.__arkui_dom_logs || []).push(rec);
+    ((/** @type {any} */ (global)).__arkui_dom_logs = (/** @type {any} */ (global)).__arkui_dom_logs || []).push(rec);
   }
   /** @param {number} code @param {string} message */
   function bizError(code, message) { return Object.assign(new Error(message), { code }); }
@@ -197,7 +197,7 @@
   /** @param {any} AbilityClass @param {any=} [opts] */
   function startAbility(AbilityClass, opts) {
     const { rootEl, want = {} } = opts || {};
-    const logs = (global.__arkui_dom_logs = global.__arkui_dom_logs || []);
+    const logs = ((/** @type {any} */ (global)).__arkui_dom_logs = (/** @type {any} */ (global)).__arkui_dom_logs || []);
     abilityClassForChildren = AbilityClass;
 
     // @type 档位：windowEl/context/ability 是 null↔对象 摆动（同 child entry）

@@ -131,6 +131,7 @@
   }
 
   // "识别完成"对应的回调名（Exclusive 靠它判先后、Sequence 靠它推进阶段）
+  /** @type {Record<string, string>} */
   const GESTURE_RECOG_KIND = {
     tap: 'onAction', longPress: 'onAction', pan: 'onActionStart',
     pinch: 'onActionStart', rotation: 'onActionStart', swipe: 'onAction',
@@ -487,6 +488,7 @@
   }
 
   // 手势构建器：`XxxGesture.create(params)` → `.on*（cb）` → `.pop()`
+  /** @type {Record<string, string>} */
   const GESTURE_TYPES = {
     TapGesture: 'tap', LongPressGesture: 'longPress', PanGesture: 'pan',
     SwipeGesture: 'swipe', PinchGesture: 'pinch', RotationGesture: 'rotation',
@@ -526,7 +528,7 @@
     };
     // 未列举的 on* 方法一律当"回调 setter"（onAction/onActionStart/onActionUpdate/onActionEnd/onActionCancel）
     return new Proxy(impl, {
-      get(target, key) {
+      get(/** @type {any} */ target, key) {
         if (key in target) return target[key];
         if (typeof key === 'symbol') return undefined;
         let fn = target['__' + String(key)];
@@ -579,7 +581,7 @@
       scope.list.push(g);
     },
   }, {
-    get(target, key) {
+    get(/** @type {any} */ target, key) {
       if (key in target) return target[key];
       if (typeof key === 'symbol') return undefined;
       let fn = target['__' + String(key)];

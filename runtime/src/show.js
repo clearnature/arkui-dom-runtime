@@ -258,12 +258,14 @@
   // 颜色变化 → 整幅重画。
   // ArkUI 的 8 位颜色字面量是【ARGB】（'#ff000000' = 不透明黑，JSDoc 原文默认），CSS 是 RRGGBBAA
   // ——位数歧义必须归一，否则默认前景画成全透明（首跑当场抓住：解码 null）。
+  /** @param {any} c */
   const qrColor = (c) => {
     const s = colorOf(c);
     return s[0] === '#' && s.length === 9 ? '#' + s.slice(3) + s.slice(1, 3) : s;
   };
+  /** @param {any} el */
   function redrawQr(el) {
-    if (!global.ArkuiQrcodegen || typeof global.ArkuiQrcodegen.encode !== 'function') {
+    if (!(/** @type {any} */ (global)).ArkuiQrcodegen || typeof (/** @type {any} */ (global)).ArkuiQrcodegen.encode !== 'function') {
       layoutWarnings.push('QRCode 编码器 vendor 未加载（runtime/vendor/arkui-qrcodegen.js）——降级为不渲染');
       delete el.__arkuiQrPending;
       return;
@@ -279,7 +281,7 @@
       const native = el.getContext('2d');
       // 真机编码器：arkui_qrcodegen 的 QrcodeImageEncodeString，ECC 恒 MEDIUM(0)
       //（qrcode_modifier.cpp:44 硬编码）。返回 {version,width,data}，data[i]&1 = 暗格。
-      const matrix = global.ArkuiQrcodegen.encode(value, 0);
+      const matrix = (/** @type {any} */ (global)).ArkuiQrcodegen.encode(value, 0);
       if (!matrix) return;                                    // 编码失败（内容非法）
       // R44 照真机守卫（qrcode_modifier.cpp:55）：组件尺寸小于矩阵模块数 → 拒绝绘制
       //（真机：LessNotEqual(qrCodeSize, qrWidth) 即记错误返回；我们含 quiet zone，

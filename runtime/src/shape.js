@@ -21,11 +21,13 @@
   // fill 表现属性能通过 CSS 继承进【没显式 fill】的子形状（子形状自己的属性永远赢过继承）。
   // 生成的骨架只有裸 `<circle>` 之类（零属性语义），本节在生成注册之前手写登记，手写优先。
   // SVG_NS 复用 draw.js 里的同名常量（同一 IIFE，draw 分片在本节之前）
+  /** @param {any} v */
   const shapeDim = (v) => {
     const n = dimOf(v, 0);
     return Number.isFinite(n) && n > 0 ? n : 0;   // .d.ts：无效值（undefined/null/NaN/Infinity）按默认 0
   };
 
+  /** @param {string} tag @param {number} w @param {number} h */
   function shapeRoot(tag, w, h) {
     const svg = document.createElementNS(SVG_NS, 'svg');
     const el = document.createElementNS(SVG_NS, tag);
@@ -38,6 +40,7 @@
     return svg;
   }
 
+  /** @param {any} v */
   const pointsAttr = (v) => (Array.isArray(v) ? v : [])
     .map((p) => `${Number(resolveResource(p[0]))},${Number(resolveResource(p[1]))}`)
     .join(' ');

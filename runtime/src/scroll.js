@@ -14,6 +14,7 @@
   // 离开后再到才再发）；onScrollStart/onScrollEnd 是真机手势语义——DOM 化为"滚动静默 80ms
   // 收口"（近似，标注）；onScrollStop 与 onScrollEnd 同源（DOM 无 fling/停止之分）。
   // Scroller 侧（scrollBy/scrollEdge/scrollPage）改 scrollTop 后同步派发 'scroll'（确定性）。
+  /** @type {Record<string, string>} */
   const SCROLLABLE_CSS = { 0: 'auto', 1: 'auto', 2: 'auto', 3: 'hidden' };  // Vertical/Horizontal/Free/None
   if (!document.getElementById('arkui-scroll-style')) {
     const st = document.createElement('style');
@@ -79,7 +80,7 @@
     el.style.overflowY = 'auto';
     el.__scrollCbs = {};
     let lastEdge = '';
-    let settleTimer = null;
+    /** @type {any} */ let settleTimer = null;
     let scrolling = false;
     // create 单参：scroller 直接就是 Scroller 实例（.d.ts："(scroller?: Scroller)"——不是
     // {scroller} 选项对象）。手写接管骨架后不走 applyCreateArgs 的通用绑定，必须在工厂里

@@ -16,6 +16,7 @@
   const DP_ROWS = 5;
   const DP_COLOR_DIS = 'rgb(24, 36, 49)';
   const DP_COLOR_SEL = 'rgb(0, 125, 255)';
+  /** @param {number} y @param {number} m */
   const dpDaysInMonth = (y, m) => new Date(y, m, 0).getDate();   // m=1..12
   /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
   const DATEPICKER_ATTRS = {
@@ -93,6 +94,7 @@
     if (mode === 2) cols.year.wrap.style.display = 'none';      // MONTH_AND_DAY
     el.dataset.dpMode = String(mode);
     // 渲染一列：围绕 idx 显示 5 行（idx-2..idx+2）
+    /** @param {string} col @param {any[]} options @param {number} idx @param {(v: any) => string} fmt */
     const renderCol = (col, options, idx, fmt) => {
       const c = cols[col];
       for (let r = 0; r < DP_ROWS; r++) {
@@ -127,6 +129,7 @@
         catch (e) { layoutWarnings.push(`DatePicker.onDateChange 抛错：${e && e.message}`); }
       }
     };
+    /** @param {string} col @param {number} dir */
     dp.step = (col, dir) => {
       // dir: +1 = 值+1（wheel deltaY<0），-1 = 值−1
       const opts = col === 'year' ? getYears() : col === 'month' ? getMonths() : getDays(dp.year, dp.month);
@@ -154,7 +157,7 @@
     };
     // wheel 步进（deltaY<0 = 上/值+1；deltaY>0 = 下/值−1）
     for (const col of ['year', 'month', 'day']) {
-      cols[col].wrap.addEventListener('wheel', (e) => {
+      cols[col].wrap.addEventListener('wheel', (/** @type {WheelEvent} */ e) => {
         e.preventDefault();
         dp.step(col, e.deltaY < 0 ? 1 : -1);
       }, { passive: false });

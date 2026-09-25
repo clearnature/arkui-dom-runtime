@@ -49,7 +49,7 @@
   const calpDisabled = (p, st) => {
     if (st.start && !calpLe(st.start, p)) return true;
     if (st.end && !calpLe(p, st.end)) return true;
-    return (st.dis || []).some((r) => calpLe(r.start, p) && calpLe(p, r.end));
+    return (st.dis || []).some((/** @type {any} */ r) => calpLe(r.start, p) && calpLe(p, r.end));
   };
   // GetAvailableNextDay（:563-566）：从 p 沿 dir 找第一个可用日；无可到日返 null（=真机 year<=0 哨兵）
   /** @param {any} p @param {number} dir @param {any} st */
@@ -95,6 +95,7 @@
     calpRender(el);
     calpFire(el, calpDateOf(st.sel));
   };
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
   const CALPICK_ATTRS = {
     edgeAlign: (n, v) => {
       const a = Number(resolveResource(v));                  // START=0 CENTER=1 END=2（.d.ts 显式）
@@ -104,7 +105,7 @@
     textStyle: (n, v) => {
       const o = v || {};
       n.dataset.textStyle = 'set';
-      n.querySelectorAll('[data-cal-seg]').forEach((s) => {
+      n.querySelectorAll('[data-cal-seg]').forEach((/** @type {any} */ s) => {
         if (o.color !== undefined) s.style.color = colorOf(o.color);
         if (o.font && o.font.size !== undefined) s.style.fontSize = toCssSize(o.font.size);
         if (o.font && o.font.weight !== undefined) s.style.fontWeight = String(resolveResource(o.font.weight));
@@ -201,7 +202,7 @@
     el.appendChild(dlg);
     st.dlg = dlg;
     setTimeout(() => {                                       // 开层这一笔点击不能自己关自己
-      st.outside = (ev) => {
+      st.outside = (/** @type {any} */ ev) => {
         if (!el.contains(ev.target)) calpCloseDialog(el);
       };
       document.addEventListener('click', st.outside);
@@ -233,8 +234,8 @@
     if (o.end instanceof Date) { st.end = calpPartsOf(o.end); el.dataset.end = calpIso(o.end); }
     if (Array.isArray(o.disabledDateRange)) {
       st.dis = o.disabledDateRange
-        .filter((r) => r && r.start instanceof Date && r.end instanceof Date)
-        .map((r) => ({ start: calpPartsOf(r.start), end: calpPartsOf(r.end) }));
+        .filter((/** @type {any} */ r) => r && r.start instanceof Date && r.end instanceof Date)
+        .map((/** @type {any} */ r) => ({ start: calpPartsOf(r.start), end: calpPartsOf(r.end) }));
       el.dataset.disabledRange = String(st.dis.length);
     }
     st.sel = o.selected instanceof Date
@@ -275,6 +276,7 @@
   // CalendarPickerDialog.show（静态弹层）：带 OK/Cancel（onAccept/onCancel，.d.ts:332-344）。
   // 与组件弹层共用 calpBuildGrid；面板 fixed 居中（DOM 无 OverlayManager 弹簧动画，标注）。
   const CalendarPickerDialog = {
+    /** @param {any} options */
     show(options) {
       const o = options || {};
       const host = document.createElement('div');
@@ -291,8 +293,8 @@
         end: o.end instanceof Date ? calpPartsOf(o.end) : null,
         dis: Array.isArray(o.disabledDateRange)
           ? o.disabledDateRange
-            .filter((r) => r && r.start instanceof Date && r.end instanceof Date)
-            .map((r) => ({ start: calpPartsOf(r.start), end: calpPartsOf(r.end) }))
+            .filter((/** @type {any} */ r) => r && r.start instanceof Date && r.end instanceof Date)
+            .map((/** @type {any} */ r) => ({ start: calpPartsOf(r.start), end: calpPartsOf(r.end) }))
           : [],
         hr: o.hintRadius !== undefined ? Number(resolveResource(o.hintRadius)) : undefined,
         align: 1, markToday: o.markToday === true, seg: 'day',

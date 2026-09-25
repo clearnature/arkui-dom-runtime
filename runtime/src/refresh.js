@@ -61,16 +61,19 @@
       refreshing: false, lastOffset: -1,
     };
     const childOf = () => (/** @type {HTMLElement} */ (el.firstElementChild));
+    /** @param {number} y */
     const setTranslate = (y) => {
       const c = childOf();
       if (c) c.style.transform = y ? `translateY(${y}px)` : '';
     };
+    /** @param {string} kind @param {any=} [a] */
     const fire = (kind, a) => {
       const cb = el.__rfCbs && el.__rfCbs[kind];
       if (typeof cb !== 'function') return;
       try { cb(a); }
       catch (e) { layoutWarnings.push(`Refresh.on${kind[0].toUpperCase() + kind.slice(1)} 回调抛错：${e && e.message}`); }
     };
+    /** @param {number} s */
     const setState = (s) => {
       if (el.__rf.state === s) return;           // 同值不重复发（真机 NearEqual 守卫同族）
       el.__rf.state = s;
@@ -154,6 +157,7 @@
   // 重渲染时处理 refreshing 选项变化（应用设置 refreshing=false 是结束刷新的唯一通道）
   {
     const prevCreate = Refresh.create;
+    /** @param {...any} args */
     Refresh.create = function (...args) {
       const node = prevCreate.apply(null, args);
       const o = args && args[0] && typeof args[0] === 'object' ? args[0] : {};

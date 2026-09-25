@@ -58,6 +58,7 @@
   const wfdShareTracks = (defs, cross, gap, fixedOverride) => {
     let fr = 0;
     let fixed = 0;
+    /** @type {Record<string, number>} */
     const fixedPx = {};
     defs.forEach((d, i) => {
       const f = fixedOverride && fixedOverride[i] !== undefined ? fixedOverride[i]
@@ -312,7 +313,7 @@
   /** @param {HTMLElement} root @returns {HTMLElement[]} */
   const wfdItems = (root) => /** @type {HTMLElement[]} */ (Array.prototype.filter.call(
     root.querySelectorAll('[data-arkui-comp="FlowItem"]'),
-    (c) => { const w = c.closest('[data-arkui-comp="WaterFlow"]'); return !w || w === root; }));
+    (/** @type {Element} */ c) => { const w = c.closest('[data-arkui-comp="WaterFlow"]'); return !w || w === root; }));
   // FlowItem：WaterFlow 专属子项（.d.ts 'can be used only as a child of WaterFlow'，无专有属性）
   const FlowItem = ensureComponent('FlowItem', () => {
     const el = document.createElement('div');
@@ -323,16 +324,16 @@
   });
   // WaterFlowSections shim（water_flow.d.ts:148-236）：itemsCount 必须非负，非法 push/splice 返 false
   class WaterFlowSections {
-    constructor() { this._secs = []; }
+    constructor() { this._secs = /** @type {any[]} */ ([]); }
     /** @param {any} s */
     _valid(s) { return !!s && typeof s.itemsCount === 'number' && s.itemsCount >= 0; }
     /** @param {any} section */
     push(section) { if (!this._valid(section)) return false; this._secs.push(Object.assign({}, section)); return true; }
-    /** @returns {boolean} */
+    /** @param {number} start @param {number} deleteCount @returns {boolean} */
     splice(start, deleteCount) {
       const add = Array.prototype.slice.call(arguments, 2);
       for (let i = 0; i < add.length; i++) { if (!this._valid(add[i])) return false; }
-      this._secs.splice.apply(this._secs, [start, deleteCount].concat(add.map((s) => Object.assign({}, s))));
+      this._secs.splice.apply(this._secs, [start, deleteCount].concat(add.map((/** @type {any} */ s) => Object.assign({}, s))));
       return true;
     }
     /**

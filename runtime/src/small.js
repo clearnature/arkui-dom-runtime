@@ -19,6 +19,7 @@
     el.textContent = args && args[0] !== undefined ? String(resolveResource(args[0])) : '';
     return el;
   });
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
   const SPAN_ATTRS = {
     fontColor: (n, v) => { n.style.color = colorOf(v); },
     fontSize: (n, v) => { n.style.fontSize = `${dimOf(v, 16)}px`; },
@@ -172,6 +173,7 @@
       goTo(p2);
     };
     // 纯切页：显隐 + label 汇入 + index 更新，不发任何事件（与真机 swiper 桥一致）
+    /** @param {number} i */
     const goTo = (i) => {
       const items = /** @type {NodeListOf<HTMLElement>} */ (el.querySelectorAll('[data-stepper-item]'));
       if (i < 0 || i >= items.length) return;

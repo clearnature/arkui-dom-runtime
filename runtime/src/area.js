@@ -18,6 +18,7 @@
     const pick = (/** @type {string} */ side) => parseFloat((/** @type {any} */ (cs))[kind + side]) || 0;
     return { top: pick('Top'), right: pick('Right'), bottom: pick('Bottom'), left: pick('Left') };
   };
+  /** @param {HTMLElement} el */
   const areaOf = (el) => {
     const r = el.getBoundingClientRect();
     return {
@@ -28,6 +29,7 @@
     };
   };
   // 渲染后按【真实几何】派发 onAreaChange：只在面积真的变了（或首次）时触发
+  /** @param {any} rootEl */
   function syncAreas(rootEl) {
     const r = rootEl || rootNode;
     if (!r || !r.querySelectorAll) return;
@@ -51,8 +53,10 @@
   }
 
   const customLayoutMeta = new WeakMap();
+  /** @param {any} el @param {any} con @param {any} log */
   function measureChild(el, con, log) {
     const c = con || {};
+    /** @param {string} prop @param {any} v */
     const set = (prop, v) => {
       el.style[prop] = (v === undefined || v === null) ? '' : (typeof v === 'number' ? v + 'px' : String(v));
     };
@@ -67,6 +71,7 @@
   // 自定义布局：组件的"子节点" = 该组件 builder 直接产出的元素（在 container 里）。
   // 返回的尺寸施加在 host（= 带 .id() 的那一层，可能是编译器合成的 __Common__ 包装器）上，
   // 因为 ArkUI 里 onMeasureSize 回的就是"组件自身"的尺寸，二者必须是同一个盒子。
+  /** @param {any} view @param {any} container @param {any} host */
   function runCustomLayout(view, container, host) {
     const kids = [...container.children];
     const hostEl = host || container;
@@ -77,9 +82,9 @@
     const ph = parentEl.clientHeight - (parseFloat(pcs.paddingTop) || 0) - (parseFloat(pcs.paddingBottom) || 0);
     const constraint = { minWidth: 0, maxWidth: Math.max(0, pw), minHeight: 0, maxHeight: Math.max(0, ph) };
     const log = { measures: [], layoutCalls: 0, passes: 0 };
-    const measurables = kids.map((el, i) => ({
+    const measurables = kids.map((/** @type {any} */ el, /** @type {number} */ i) => ({
       uniqueId: i,
-      measure: (c) => measureChild(el, c, log),
+      measure: (/** @type {any} */ c) => measureChild(el, c, log),
       getMargin: () => edgesOf(el, 'margin'),
       getPadding: () => edgesOf(el, 'padding'),
       getBorderWidth: () => edgesOf(el, 'borderWidth'),
@@ -105,10 +110,10 @@
       hostEl.style.height = h + 'px';
     }
     if (typeof view.onPlaceChildren === 'function') {
-      const layoutables = kids.map((el, i) => ({
+      const layoutables = kids.map((/** @type {any} */ el, /** @type {number} */ i) => ({
         uniqueId: i,
         measureResult: el.__lastMeasure || { width: el.offsetWidth, height: el.offsetHeight },
-        layout: (position) => {
+        layout: (/** @type {any} */ position) => {
           const x = Number((position && position.x) || 0);
           const y = Number((position && position.y) || 0);
           el.style.position = 'absolute';
@@ -137,6 +142,7 @@
     });
   }
 
+  /** @param {any} node @param {any} prop @param {any} value @param {any} extra */
   function applyAttr(node, prop, value, extra) {
     if (!node) return;
     // R22 收口：`.transition(options|effect[, onFinish])` 也是**属性**（产物走 builder 栈），
@@ -175,7 +181,7 @@
         // ⚠️ 包装器带【target 校验】：实测（inputdemo 排查）rd 的包装器会被错误地挂到
         // 其他 input 节点上（tg1/sl1 的 change 也会带起 rd 回调）—— 根因在组件栈复用，
         // 先用"事件目标必须是自己"兜住错投：change 目标不是这个节点就不算它的选中态变化。
-        const wrapper = (e) => {
+        const wrapper = (/** @type {Event} */ e) => {
           if (e.target !== node) return;
           try { value(!!node.checked); }
           catch (err) { layoutWarnings.push(`输入类 onChange 派发抛错：${err && err.message}`); }
@@ -184,7 +190,7 @@
           if (node.type === 'radio' && node.checked && typeof radioGroups !== 'undefined') {
             const members = radioGroups.get(node.name);
             if (members) {
-              members.forEach((m) => {
+              members.forEach((/** @type {any} */ m) => {
                 if (m !== node && m.__arkuiRadioOn && m.__arkuiEv && m.__arkuiEv.change) {
                   m.__arkuiRadioOn = false;
                   m.__arkuiEv.change({ target: m, type: 'change' });
@@ -219,12 +225,12 @@
       }
       if (node.__arkuiInput === 'slider' && prop === 'onChange') {
         // 覆盖语义同上：input→Moving(1)，change→End(2)；target 校验同上（防错投）
-        const onInput = (e) => {
+        const onInput = (/** @type {Event} */ e) => {
           if (e.target !== node) return;
           try { value(Number(node.value), 1); }
           catch (err) { layoutWarnings.push(`Slider.onChange 派发抛错：${err && err.message}`); }
         };
-        const onChangeEv = (e) => {
+        const onChangeEv = (/** @type {Event} */ e) => {
           if (e.target !== node) return;
           try { value(Number(node.value), 2); }
           catch (err) { layoutWarnings.push(`Slider.onChange 派发抛错：${err && err.message}`); }
@@ -267,8 +273,8 @@
     }
     // CalendarPicker（R54）：edgeAlign/markToday/textStyle/onChange 是语义属性；onChange
     // 与 DOM 原生 change 事件同名，必须拦在通用 on* 规则之前（坑 86）
-    if (node.__arkuiCalPick && CALPICK_ATTRS[prop]) {
-      CALPICK_ATTRS[prop](node, value);
+    if (node.__arkuiCalPick && (/** @type {Record<string, any>} */ (CALPICK_ATTRS))[prop]) {
+      (/** @type {Record<string, any>} */ (CALPICK_ATTRS))[prop](node, value);
       return;
     }
     // ImageAnimator（R47）：images/state/事件是语义属性，抢在通用落点之前
@@ -361,8 +367,8 @@
       return;
     }
     // NavDestination 的生命周期回调同理：由栈操作派发，不能变成 'willappear' 监听器
-    if (node.__navDestCbs && NAVDEST_LIFECYCLE[prop]) {
-      const kind = NAVDEST_LIFECYCLE[prop];
+    if (node.__navDestCbs && (/** @type {Record<string, any>} */ (NAVDEST_LIFECYCLE))[prop]) {
+      const kind = (/** @type {Record<string, any>} */ (NAVDEST_LIFECYCLE))[prop];
       if (kind === 'backPressed') {
         node.__navDestCbs[kind] = value;
         layoutWarnings.push('NavDestination.onBackPressed 已登记，但本运行时没有系统返回键触发源'
@@ -395,8 +401,8 @@
     if (node.__navState && NAV_ATTRS[prop]) { NAV_ATTRS[prop](node.__navState, value, extra); return; }
     if (node.__navDest && NAVDEST_ATTRS[prop]) { NAVDEST_ATTRS[prop](node, value, extra); return; }
     // Grid 轨道模板要过单位归一化，所以不能走 cssPropEnum 的原样透传
-    if (GRID_TRACK_PROPS[prop]) {
-      node.style[GRID_TRACK_PROPS[prop]] = normalizeTrackList(resolveResource(value));
+    if ((/** @type {Record<string, any>} */ (GRID_TRACK_PROPS))[prop]) {
+      node.style[(/** @type {Record<string, any>} */ (GRID_TRACK_PROPS))[prop]] = normalizeTrackList(resolveResource(value));
       return;
     }
     // 未实现的 Grid/Tabs/Swiper/Navigation 语义项：不 return，继续落 data-*，但同时留下诊断

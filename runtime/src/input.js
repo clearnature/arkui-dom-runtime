@@ -58,6 +58,7 @@
     if (o.isOn !== undefined) el.checked = !!o.isOn;
   });
   const Slider = inputComponent('Slider', 'range', (el, o) => {
+    /** @param {any} v @param {number} d */
     const num = (v, d) => { const n = Number(resolveResource(v)); return Number.isFinite(n) ? n : d; };
     el.min = String(num(o.min, 0));                       // .d.ts 默认：min 0、max 100
     el.max = String(num(o.max, 100));
@@ -78,7 +79,9 @@
   // TextInputController：caretPosition/caretAnimationTime 等按需补面（本轮只挂基座 + 绑定）
   const TextInputControllerBase = class {
     constructor() { this.__arkuiEditable = null; }
+    /** @param {any} el */
     __arkuiBindEditable(el) { this.__arkuiEditable = el; }
+    /** @param {number} pos */
     caretPosition(pos) {
       if (this.__arkuiEditable) this.__arkuiEditable.setSelectionRange(pos, pos);
     }
@@ -147,7 +150,7 @@
       // enterKey 未设时取 Done(6)（.d.ts 默认值原文："Default value: EnterKeyType.Done"）。
       // （R38 修复：此前的 wrapper 里写的是 `value(...)`——未定义标识符，Enter 一按就
       // ReferenceError 且被本 try/catch 吞掉，表现为"派发未打通"之谜；tsc --checkJs 抓出。）
-      const wrapper = (e) => {
+      const wrapper = (/** @type {KeyboardEvent} */ e) => {
         if (e.target !== n) return;
         const key = n.getAttribute('data-enter-key');
         const enterKey = key !== null ? Number(key) : EnterKeyType.Done;

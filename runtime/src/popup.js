@@ -18,7 +18,7 @@
     const el = document.createElement('select');
     el.style.display = 'inline-block';
     el.__arkuiPopup = 'Select';
-    (Array.isArray(args && args[0]) ? args[0] : []).forEach((opt) => {
+    (Array.isArray(args && args[0]) ? args[0] : []).forEach(/** @param {any} opt */ (opt) => {
       const o = document.createElement('option');
       const text = String(resolveResource(opt && opt.value === undefined ? '' : opt.value));
       o.value = text;
@@ -84,6 +84,7 @@
 
   // Select.onSelect 的双参派发（特殊签名，拦在通用 on* 规则之前）：change 事件 → (index, value)。
   // 编程改 selectedIndex 不派发（DOM 语义取舍已记录）；测试用 dispatchEvent('change') 驱动。
+  /** @param {any} node @param {any} cb */
   function popupBindSelect(node, cb) {
     node.addEventListener('change', () => {
       const i = node.selectedIndex;

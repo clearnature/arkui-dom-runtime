@@ -15,9 +15,11 @@
     'Linear', 'Ease', 'EaseIn', 'EaseOut', 'EaseInOut', 'FastOutSlowIn', 'LinearOutSlowIn',
     'FastOutLinearIn', 'ExtremeDeceleration', 'Sharp', 'Rhythm', 'Smooth', 'Friction',
   ];
+  /** @type {Record<string, number>} */
   const Curve = {};
   CURVE_NAMES.forEach((n, i) => { Curve[n] = i; });
   // ArkUI 的曲线名 → CSS 等价物（名字对得上的直接透传）
+  /** @type {Record<string, string>} */
   const CURVE_CSS = {
     Linear: 'linear', Ease: 'ease', EaseIn: 'ease-in', EaseOut: 'ease-out', EaseInOut: 'ease-in-out',
     FastOutSlowIn: 'cubic-bezier(0.4, 0, 0.2, 1)', LinearOutSlowIn: 'cubic-bezier(0, 0, 0.2, 1)',
@@ -55,7 +57,8 @@
     /** @param {string} kind @param {any} value */
     constructor(kind, value) {
       /** @type {string} */ this.kind = kind; /** @type {any} */ this.value = value;
-      /** @type {any} */ this.anim = undefined; /** @type {any} */ this.next = null;
+      /** @type {any} */ this.anim = undefined;
+      /** @type {any} */ this.next = null;
     }
     static get IDENTITY() { return new TransitionEffect('identity', undefined); }
     static get OPACITY() { return new TransitionEffect('opacity', 0); }
@@ -113,6 +116,7 @@
   let transitionRunSeq = 0;
 
   // 偏离态 → CSS（ArkUI 的裸数字 = vp，这里 1vp=1px，与项目其它地方一致）
+  /** @param {any} effectOrOptions @param {boolean} isEffect */
   function _offStyleOf(effectOrOptions, isEffect) {
     // @type 档位：opacity 是 number|undefined（初值 undefined 是"未提及"语义，后面会赋数字）、
     // 两个数组不写 @type 会被推成 never[]，push 全红
@@ -181,6 +185,7 @@
   }
 
   // 把一次 transition 解析成"某方向要不要动、怎么动、多久"
+  /** @param {any} el @param {string} dir */
   function transitionPlanFor(el, dir) {          // dir: 'enter' | 'exit'
     const spec = el && el.__arkuiTransition;
     if (!spec) return null;
@@ -224,11 +229,13 @@
   }
 
   const transitionTimers = new Set();
+  /** @param {HTMLElement} el @param {any} run */
   function _transitionWitness(el, run) {         // 与 animateTo 一样：transitionend 只当"见证"，不当收口依据
     const fn = () => { run.sawTransitionEnd = true; };
     el.addEventListener('transitionend', fn, { once: true });
     return () => el.removeEventListener('transitionend', fn);
   }
+  /** @param {any} el @param {any} run @param {any} plan @param {() => void} cleanup */
   function _finishTransitionRun(el, run, plan, cleanup) {
     run.endedBy = 'timer';
     cleanup();
@@ -242,6 +249,7 @@
       catch (e) { layoutWarnings.push(`transition 的 onFinish 抛错：${e && e.message}`); }
     }
   }
+  /** @param {any} el @param {any} plan */
   function runEnterTransition(el, plan) {
     // @type 档位：endedBy 初值 null 终值 string；不写会推成 null 型，赋 'timer'/'transitionend' 全红
     const run = /** @type {{seq: number, dir: string, id: any, target: string, duration: number,
@@ -273,6 +281,7 @@
       Math.max(0, plan.duration + plan.delay) + 30);
     transitionTimers.add(timer);
   }
+  /** @param {any} el @param {any} plan */
   function runExitTransition(el, plan) {
     // @type 同 runEnterTransition 的 run（endedBy 初值 null 终值 string）
     const run = /** @type {{seq: number, dir: string, id: any, target: string, duration: number,
@@ -304,6 +313,7 @@
   }
 
   // 拆容器时：带"消失过渡"的子节点留在 DOM 里把动画走完，其余立刻摘
+  /** @param {HTMLElement} container */
   function detachChildren(container) {
     if (!container) return;
     for (const child of [...container.children]) {
@@ -314,6 +324,7 @@
   }
 
   // 登记：属性管线把 `.transition(...)` 的实参原样交过来
+  /** @param {any} node @param {any} value @param {any} onFinish */
   function registerTransition(node, value, onFinish) {
     if (!node) return;
     // @type 档位：spec 的字段在两个分支里形状不同，且 onFinish/seq 是后挂的动态字段
@@ -361,11 +372,13 @@
     };
   }
 
-  let animWindow = null;                 // 当前开着的动画窗口（rerenderElmt 会往里收集节点）
+  /** @type {any} */ let animWindow = null;              // 当前开着的动画窗口（rerenderElmt 会往里收集节点）
+  /** @type {any[]} */
   const animHistory = [];
   let animSeq = 0;
   let onFinishCount = 0;
 
+  /** @param {any} curve */
   function animCurveCss(curve) {
     if (typeof curve === 'string' && curve) return curve;      // CSS 关键字 / cubic-bezier(...)
     if (typeof curve === 'number' && CURVE_NAMES[curve] !== undefined) {
@@ -378,6 +391,7 @@
     }
     return 'ease-in-out';                                      // .d.ts 默认 Curve.EaseInOut
   }
+  /** @param {any} curve */
   function animCurveName(curve) {
     if (typeof curve === 'number' && CURVE_NAMES[curve] !== undefined) return CURVE_NAMES[curve];
     if (typeof curve === 'string' && curve) return curve;
@@ -385,6 +399,7 @@
     return 'EaseInOut(默认)';
   }
 
+  /** @param {any} win */
   function animFireFinish(win) {
     onFinishCount++;
     if (typeof win.onFinish !== 'function') return;
@@ -396,6 +411,7 @@
     });
   }
 
+  /** @param {any} win @param {string} how */
   function animFinish(win, how) {
     if (!win || win.done) return;
     win.done = true;
@@ -417,6 +433,7 @@
     animFireFinish(win);
   }
 
+  /** @param {any} param @param {any} fn @param {string} api */
   function runExplicitAnimation(param, fn, api) {
     if (typeof fn !== 'function') {
       // .d.ts: animateTo(value: AnimateParam, event: () => void) —— event 是必填
@@ -495,7 +512,7 @@
       el.style.transitionTimingFunction = rec.curveCss;
       el.style.transitionDelay = delay + 'ms';
       el.setAttribute('data-arkui-anim', String(win.seq));
-      const onEnd = (ev) => {
+      const onEnd = (/** @type {Event} */ ev) => {
         if (ev && ev.target === el) win.sawTransitionEnd = true;   // 浏览器真的跑了过渡（无头环境下可能不来）
       };
       el.addEventListener('transitionend', onEnd);
@@ -509,9 +526,9 @@
   }
 
   const Context = {
-    animateTo: (param, fn) => runExplicitAnimation(param, fn, 'animateTo'),
+    animateTo: (/** @type {any} */ param, /** @type {any} */ fn) => runExplicitAnimation(param, fn, 'animateTo'),
     // animateToImmediately 与 animateTo 在 DOM 里等价：CSS transition 本来就是"下一帧开始"。
     // 真机差异（不等 vsync 立即投递）在 CSS 里没有对应物，见 docs 已知限制。
-    animateToImmediately: (param, fn) => runExplicitAnimation(param, fn, 'animateToImmediately'),
+    animateToImmediately: (/** @type {any} */ param, /** @type {any} */ fn) => runExplicitAnimation(param, fn, 'animateToImmediately'),
   };
 

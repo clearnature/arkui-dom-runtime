@@ -64,7 +64,7 @@
     el.__an = {
       frames: [], framesKey: '', duration: 1000, iterations: 1, reverse: false, fixedSize: true,
       state: 0, idx: 0, cycle: 0, timer: null, started: false,
-      show: (i) => {
+      show: /** @param {number} i */ (i) => {
         el.__an.idx = i;
         const f = el.__an.frames[i];
         if (f && f.src != null) img.src = String(resolveResource(f.src));
@@ -72,6 +72,7 @@
       },
     };
     const an = el.__an;
+    /** @param {string} name */
     const fire = (name) => {
       // 延时派发：state 属性先于 onStart/onFinish 应用（产物顺序实测），同步发会丢
       setTimeout(() => {

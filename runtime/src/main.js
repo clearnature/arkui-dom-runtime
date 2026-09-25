@@ -31,9 +31,9 @@
                                    //            activeBranch, forEachSnapshot}
   const deepRendering = new Set(); // 正在执行 deepRender 的 elmtId，防止递归再进入
   const propDeps = new Map();      // ObservedProperty -> Set<elmtId>
-  let currentNodeElmtId = null;    // 正在执行哪个 elmtId 的渲染（依赖追踪 + If/ForEach 归属）
-  let rootNode = null;
-  let viewSeq = 0;
+  /** @type {any} */ let currentNodeElmtId = null;    // 正在执行哪个 elmtId 的渲染（依赖追踪 + If/ForEach 归属）
+  /** @type {any} */ let rootNode = null;
+  /** @type {number} */ let viewSeq = 0;
 
   // 组件栈：官方命名，产物里的 ViewStackProcessor.StartGetAccessRecordingFor/Stop… 由它承载
   //（stack 不写 @type 会被推成 never[]，push 全红）
@@ -47,8 +47,8 @@
     /** @param {any[]} snap */
     restore(snap) { this.stack.length = 0; for (const n of snap) this.stack.push(n); },
     /** @param {number} elmtId */
-    StartGetAccessRecordingFor(elmtId) { this._recording = elmtId; currentNodeElmtId = elmtId; },
-    StopGetAccessRecording() { this._recording = null; },
+    StartGetAccessRecordingFor(elmtId) { (/** @type {any} */ (this))._recording = elmtId; currentNodeElmtId = elmtId; },
+    StopGetAccessRecording() { (/** @type {any} */ (this))._recording = null; },
   };
 
   const parentOfTop = () => ViewStackProcessor.top() || rootNode;
@@ -56,7 +56,7 @@
   /** @param {any} prop */
   function recordDep(prop) {
     if (currentNodeElmtId == null) return;
-    let s = propDeps.get(prop);
+    /** @type {any} */ let s = propDeps.get(prop);
     if (!s) propDeps.set(prop, (s = new Set()));
     s.add(currentNodeElmtId);
   }
@@ -72,7 +72,7 @@
     /** @param {any} value @param {any} owner @param {string} name */
     constructor(value, owner, name) {
       /** @type {any} */ this._value = value; /** @type {any} */ this._owner = owner;
-      this._name = name; /** @type {any[]} */ this._watches = [];
+      this._name = name; this._watches = /** @type {any[]} */ ([]);
     }
     get() { recordDep(this); return this._value; }
     /** @param {any} v */
@@ -97,7 +97,7 @@
     /** @param {any} value @param {any} owner @param {string} name */
     constructor(value, owner, name) {
       /** @type {any} */ this._value = value; /** @type {any} */ this._owner = owner;
-      this._name = name; /** @type {any[]} */ this._watches = [];
+      this._name = name; this._watches = /** @type {any[]} */ ([]);
     }
     get() { recordDep(this); return this._value; }
     /** @param {any} v */
@@ -186,6 +186,7 @@
   const OBSERVED_CELL = Symbol('arkui.observedCell');
   const OBSERVED_TAG = Symbol('arkui.isObserved');
 
+  /** @param {any} target */
   function makeObservedProxy(target) {
     const cell = { __observed: true, __name: target && target.constructor ? target.constructor.name : '?' };
     const proxy = new Proxy(target, {
@@ -209,8 +210,10 @@
 
   // 类装饰器：__decorate([Observed], Cls) 只有 2 个实参 → 助手把返回值当作类本身，
   // 所以这里【必须返回一个类】。用子类把构造返回值换成 Proxy。
+  /** @param {any} Base */
   function Observed(Base) {
-    const ObservedClass = class extends Base {
+    /** @type {any} */ const ObservedClass = class extends Base {
+      /** @param {...any} args */
       constructor(...args) {
         super(...args);
         return makeObservedProxy(this);
@@ -221,6 +224,7 @@
     return ObservedClass;
   }
 
+  /** @param {any} obj */
   function observedCellOf(obj) {
     if (obj === null || typeof obj !== 'object') return null;
     return observedCells.get(obj) || null;
@@ -263,10 +267,12 @@
   const dirty = new Set();
   let flushScheduled = false;
 
+  /** @param {any} prop */
   function markDependentsDirty(prop) {
     const s = propDeps.get(prop);
     if (s) for (const id of [...s]) markDirty(id);
   }
+  /** @param {number} elmtId */
   function markDirty(elmtId) {
     dirty.add(elmtId);
     if (flushScheduled) return;
@@ -279,6 +285,7 @@
     for (const id of ids) rerenderElmt(id);
   }
 
+  /** @param {number} elmtId */
   function rerenderElmt(elmtId) {
     const rec = elmtRecords.get(elmtId);
     if (!rec || !rec.updateFunc || !rec.node) return;
@@ -314,6 +321,7 @@
   // @include gesture
   // ─────────────────────────── ViewPU ───────────────────────────
   class ViewPU {
+    /** @param {any} parent @param {any} localStorage @param {any} elmtId @param {any=} [extraInfo] */
     constructor(parent, localStorage, elmtId = -1, extraInfo) {
       this.__viewId = ++viewSeq;
       this.__parent = parent;
@@ -329,6 +337,7 @@
     updateDirtyElements() { flush(); }
     rerender() { this.updateDirtyElements(); }
 
+    /** @param {any} updateFunc @param {any} componentClassOrName */
     observeComponentCreation2(updateFunc, componentClassOrName) {
       const elmtId = ++elmtIdSeq;
       const parent = parentOfTop();
@@ -347,6 +356,7 @@
     }
 
     // 自定义组件：父重渲染时把新参数推给子视图
+    /** @param {number} elmtId @param {any} params */
     updateStateVarsOfChildByElmtId(elmtId, params) {
       const rec = elmtRecords.get(elmtId);
       if (rec && rec.childView && typeof rec.childView.updateStateVars === 'function') {
@@ -378,20 +388,20 @@
       if (found) return found;               // 关键：返回的【就是提供者的属性实例】→ 依赖追踪天然生效
       layoutWarnings.push(`@Consume('${name}') 未找到祖先 @Provide，退化为本地占位属性`);
       const fallback = new ObservedPropertySimplePU(undefined, this, propName);
-      this['__' + propName] = fallback;
+      (/** @type {any} */ (this))['__' + propName] = fallback;
       return fallback;
     }
     /** @param {string} name @param {string} propName */
     reInitializeConsume__Internal(name, propName) {
       const found = this._findProvided(name);
-      if (found) this['__' + propName] = found;
+      if (found) (/** @type {any} */ (this))['__' + propName] = found;
       else layoutWarnings.push(`@Consume('${name}') 重绑定时未找到祖先 @Provide`);
     }
 
     // ── @Watch（把回调挂到属性实例上，set 时触发） ──
     /** @param {string} propName @param {any} cb */
     declareWatch(propName, cb) {
-      const prop = this['__' + propName];
+      const prop = (/** @type {any} */ (this))['__' + propName];
       if (prop && typeof prop.watch === 'function') prop.watch(cb.bind(this));
       else layoutWarnings.push(`@Watch('${propName}') 未找到属性实例，回调未挂载`);
     }
@@ -419,13 +429,14 @@
     }
 
     // ForEach：数组变化才整体重建（键级 diff 留待后续优化）
+    /** @param {number} elmtId @param {any[]} arr @param {any} itemGenFunc @param {any} keyGenFunc */
     forEachUpdateFunction(elmtId, arr, itemGenFunc, keyGenFunc) {
       const rec = elmtRecords.get(elmtId);
       if (!rec || !rec.node) return;
       const snap = (arr || []).slice();
       const changed = !rec.forEachSnapshot
         || rec.forEachSnapshot.length !== snap.length
-        || rec.forEachSnapshot.some((v, i) => !Object.is(v, snap[i]));
+        || rec.forEachSnapshot.some((/** @type {any} */ v, /** @type {number} */ i) => !Object.is(v, snap[i]));
       if (changed && rec.forEachSnapshot) {
         // 同理：列表重建时，带"消失过渡"的项先把动画走完（R22 收口）
         detachChildren(rec.node);
@@ -446,6 +457,7 @@
     }
 
     // 自定义组件挂载：把子视图渲染到当前父位置
+    /** @param {any} childView */
     static create(childView) {
       const elmtId = childView.__elmtId;
       const rec = elmtRecords.get(elmtId) || { node: null };
@@ -475,14 +487,16 @@
   }
 
   // ────────────────────── 属性映射 ──────────────────────
+  /** @param {any} v */
   const resolveResource = (v) => {
     if (v && typeof v === 'object' && 'id' in v && 'type' in v) {
-      const table = global.__arkui_dom_resources || {};
+      const table = (/** @type {any} */ (global)).__arkui_dom_resources || {};
       return table[v.id] !== undefined ? table[v.id] : DEFAULT_RESOURCES[v.type];
     }
     return v;
   };
-  const DEFAULT_RESOURCES = { 10002: 16, 10003: '' };
+  /** @type {Record<string, any>} */ const DEFAULT_RESOURCES = { 10002: 16, 10003: '' };
+  /** @param {any} v */
   const toCssSize = (v) => {
     const r = resolveResource(v);
     return typeof r === 'number' ? r + 'px' : String(r);
@@ -526,12 +540,14 @@
   const GRID_UNSUPPORTED = new Set(['cellLength', 'maxCount', 'minCount', 'layoutDirection']);
 
   // 切多面板：只显示 active 那一项（Tabs 与后续 Swiper 共用）
+  /** @param {any} entries @param {number} active */
   const onlyOneVisible = (entries, active) => {
-    entries.forEach((e, k) => { e.el.style.display = k === active ? 'block' : 'none'; });
+    entries.forEach((/** @type {any} */ e, /** @type {number} */ k) => { e.el.style.display = k === active ? 'block' : 'none'; });
   };
 
 
   // create({ space: n }) —— ArkUI 容器的 space 语义映射为 flex gap
+  /** @param {any} node @param {any} args */
   function applyCreateArgs(node, args) {
     const a = args && args[0];
     if (!a || typeof a !== 'object') return;
@@ -549,6 +565,7 @@
   }
 
   // 生成组件的"原生控件参数"映射：把 create({...}) 的常用键落到真实控件属性上
+  /** @param {any} el @param {any} args @param {any} meta */
   function applyNativeArgs(el, args, meta) {
     const a = args && args[0];
     const tag = (meta && meta.tag) || '';
@@ -587,12 +604,12 @@
   // ViewV2 extends ViewPU，@ComponentV2 组件同样继承 getUIContext。
   function makeUIContext() {
     return {
-      animateTo: (param, fn) => runExplicitAnimation(param, fn, 'animateTo'),
+      animateTo: (/** @type {any} */ param, /** @type {any} */ fn) => runExplicitAnimation(param, fn, 'animateTo'),
       // 与 Context.animateToImmediately 同理：DOM 里两者等价（CSS transition 本来就"下一帧开始"）
-      animateToImmediately: (param, fn) => runExplicitAnimation(param, fn, 'animateToImmediately'),
+      animateToImmediately: (/** @type {any} */ param, /** @type {any} */ fn) => runExplicitAnimation(param, fn, 'animateToImmediately'),
       getRouter: () => ohosRequire('@ohos:router'),
       getPromptAction: () => ohosRequire('@ohos:promptAction'),
-      runScopedTask: (cb) => {
+      runScopedTask: (/** @type {any} */ cb) => {
         try { cb(); }
         catch (e) { layoutWarnings.push(`runScopedTask 回调抛错：${e && e.message}`); }
       },
@@ -631,7 +648,8 @@
 
   let tabsSeq = 0;
   class TabsController {
-    constructor() { this._id = ++tabsSeq; this._state = null; }
+    constructor() { this._id = ++tabsSeq; this._state = /** @type {any} */ (null); }
+    /** @param {number} i */
     changeIndex(i) {
       const st = this._state;
       if (!st) { layoutWarnings.push('TabsController.changeIndex: 尚未绑定到任何 Tabs'); return false; }
@@ -643,6 +661,7 @@
     }
   }
 
+  /** @param {HTMLElement} node @param {any} opt */
   function createTabsState(node, opt) {
     // @type 档位：contents/onChange 不写会推成 never[]；barEl/contentEl null↔Element 摆动
     const st = /** @type {any} */ ({
@@ -672,6 +691,7 @@
     return st;
   }
 
+  /** @param {any} st @param {any} opt */
   function applyTabsOptions(st, opt) {
     if (!opt || typeof opt !== 'object') return;
     if (opt.barPosition !== undefined) {
@@ -688,6 +708,7 @@
     }
   }
 
+  /** @param {any} st @param {number} i @param {boolean} fire */
   function setActiveTab(st, i, fire) {
     const n = st.contents.length;
     if (!n || !Number.isInteger(i) || i < 0 || i >= n) {
@@ -708,6 +729,7 @@
   }
 
   // Tabs.pop() 之后才知道有几个 TabContent、各自的标签是什么 → 那时才建 bar
+  /** @param {any} st */
   function finalizeTabs(st) {
     const n = st.node;
     if (st.barPosition === 'end') {
@@ -716,7 +738,7 @@
       n.insertBefore(st.barEl, st.contentEl);
     }
     st.barEl.textContent = '';                       // 重建（重渲染时不会残留旧项）
-    st.contents.forEach((c, i) => {
+    st.contents.forEach((/** @type {any} */ c, /** @type {number} */ i) => {
       const item = document.createElement('div');
       item.setAttribute('data-arkui-tabbar-item', String(i));
       item.setAttribute('data-arkui-tabbar-active', 'false');
@@ -735,10 +757,11 @@
     setActiveTab(st, idx, false);
   }
 
+  /** @param {any} node @param {any} value */
   function applyTabBar(node, value) {
     const st = node.__tabContentOf;
     if (!st) { layoutWarnings.push('TabContent.tabBar: 未找到所属 Tabs'); return; }
-    const entry = st.contents.find((c) => c.el === node);
+    const entry = st.contents.find((/** @type {any} */ c) => c.el === node);
     if (typeof value === 'string' || typeof value === 'number') {
       const label = String(resolveResource(value));
       node.__tabBarLabel = label;             // 同时记在节点上，供重渲染后补登记
@@ -752,6 +775,7 @@
   }
 
   // TabContent 挂载：认领所属 Tabs 的内容区（不压栈——压栈由 create 统一收尾，与 ListItem 一致）
+  /** @param {any} rec */
   function mountTabContent(rec) {
     let node = rec && rec.node && rec.node.__arkuiComp === 'TabContent' ? rec.node : null;
     if (!node) {
@@ -772,7 +796,7 @@
     }
     // Tabs 重渲染会清空 contents，此处在复用路径上补登记，避免标签/可见性丢失
     const st = node.__tabContentOf;
-    if (st && !st.contents.some((c) => c.el === node)) {
+    if (st && !st.contents.some((/** @type {any} */ c) => c.el === node)) {
       st.contents.push({ el: node, label: node.__tabBarLabel === undefined ? '' : node.__tabBarLabel });
     }
     return node;
@@ -846,6 +870,7 @@
     return st;
   }
 
+  /** @param {any} st @param {number} i @param {boolean} fire */
   function setActiveSwiper(st, i, fire) {
     const n = st.entries.length;
     if (!n) { layoutWarnings.push('Swiper 内没有任何子组件，无法确定当前页'); return false; }
@@ -859,7 +884,7 @@
     }
     st.index = idx;
     onlyOneVisible(st.entries, idx);
-    st.dots.forEach((d, k) => d.setAttribute('data-arkui-swiper-dot-active', k === idx ? 'true' : 'false'));
+    st.dots.forEach((/** @type {any} */ d, /** @type {number} */ k) => d.setAttribute('data-arkui-swiper-dot-active', k === idx ? 'true' : 'false'));
     if (fire) {
       for (const cb of st.onChange) {
         try { cb(idx); } catch (e) { layoutWarnings.push(`Swiper.onChange 抛错：${e && e.message}`); }
@@ -869,6 +894,7 @@
   }
 
   // showNext / showPrevious：loop=false 且在边界时【停住】（这是合法语义，所以不记 warning）
+  /** @param {any} st @param {number} delta */
   function stepSwiper(st, delta) {
     if (!st) { layoutWarnings.push('SwiperController 尚未绑定到任何 Swiper'); return false; }
     const n = st.entries.length;
@@ -878,6 +904,7 @@
     return setActiveSwiper(st, next, true);
   }
 
+  /** @param {any} st */
   function startSwiperAutoPlay(st) {
     if (st.timer) { clearInterval(st.timer); st.timer = 0; }
     if (!st.autoPlay) return;
@@ -889,6 +916,7 @@
   }
 
   // Swiper.pop() 之后才知道有几页、每页是谁
+  /** @param {any} st */
   function finalizeSwiper(st) {
     const kids = [...st.node.children].filter((el) => !el.hasAttribute('data-arkui-swiper-indicator'));
     for (const el of kids) {
@@ -916,6 +944,7 @@
     startSwiperAutoPlay(st);
   }
 
+  /** @param {any} st */
   function buildSwiperIndicator(st) {
     const wrap = document.createElement('div');
     wrap.setAttribute('data-arkui-swiper-indicator', '');
@@ -927,7 +956,7 @@
     wrap.style.flexDirection = 'row';
     wrap.style.justifyContent = 'center';
     wrap.style.gap = '4px';
-    st.dots = st.entries.map((_e, k) => {
+    st.dots = st.entries.map((/** @type {any} */ _e, /** @type {number} */ k) => {
       const d = document.createElement('div');
       d.setAttribute('data-arkui-swiper-dot', String(k));
       d.setAttribute('data-arkui-swiper-dot-active', 'false');
@@ -966,8 +995,9 @@
   // @include area
 
   // ────────────────────── 组件注册表 ──────────────────────
-  const components = {};
+  /** @type {Record<string, any>} */ const components = {};
 
+  /** @param {string} tag @param {Record<string, string>} style */
   const defaultDom = (tag, style) => () => {
     const el = document.createElement(tag);
     Object.assign(el.style, style || {});
@@ -975,6 +1005,7 @@
   };
 
   // 组件声明的已知工厂方法（官方工厂名不统一，先显式登记，其余以 /^create/ 兜底）
+  /** @type {Record<string, string[]>} */
   const FACTORIES = {
     Button: ['create', 'createWithLabel', 'createWithIcon', 'createWithChild'],
   };
@@ -985,13 +1016,15 @@
     const C = function () {};
     C.componentName = name;
     const declared = FACTORIES[name] || ['create'];
-    const methods = {};
+    /** @type {Record<string, any>} */ const methods = {};
 
+    /** @param {any} key */
     const isFactory = (key) => declared.includes(key) || /^create/.test(key) || key === 'pop';
 
+    /** @param {...any} args */
     C.create = function (...args) {
       const rec = elmtRecords.get(currentNodeElmtId);
-      let node;
+      /** @type {any} */ let node;
       if (rec && rec.node && rec.node.__arkuiComp === name) {
         node = rec.node;
         if (contentUpdater) contentUpdater(node, args);
@@ -1014,10 +1047,11 @@
 
     // deepRender：ListItem.create(deepFn, true) 首次渲染要展开子树，但不能递归再进入
     if (name === 'ListItem' || name === 'GridItem') {
+      /** @param {any} deepFn @param {any} isDeep */
       C.create = function (deepFn, isDeep) {
         const elmtId = currentNodeElmtId;
         const rec = elmtRecords.get(elmtId);
-        let node;
+        /** @type {any} */ let node;
         if (rec && rec.node) {
           node = rec.node;
         } else {
@@ -1044,9 +1078,10 @@
     // Tabs：DOM 结构见 createTabsState。栈顶是【包装元素】，所以 Tabs.width/height/onChange
     // 全部作用在整体上；TabContent 由 mountTabContent 认领内容区。
     if (name === 'Tabs') {
+      /** @param {...any} args */
       C.create = function (...args) {
         const rec = elmtRecords.get(currentNodeElmtId);
-        let node;
+        /** @type {any} */ let node;
         if (rec && rec.node && rec.node.__arkuiComp === 'Tabs') {
           node = rec.node;
           node.__tabsState.contents = [];        // 重渲染：子项会重新登记，bar 在 pop 时重建
@@ -1075,9 +1110,10 @@
     // （gap 会连 header/首项也拉开，违反 d.ts"not spacing between the header and list
     // items"）——间距/divider 在 pop 时按 item 间 margin+::before 落。
     if (name === 'ListItemGroup') {
+      /** @param {...any} args */
       C.create = function (...args) {
         const rec = elmtRecords.get(currentNodeElmtId);
-        let node;
+        /** @type {any} */ let node;
         if (rec && rec.node && rec.node.__arkuiComp === 'ListItemGroup') {
           node = rec.node;
         } else {
@@ -1132,7 +1168,7 @@
         const bw = st.divider ? Math.max(0, Number(st.divider.strokeWidth) || 0) : 0;
         const gap = st.spaceWidth != null ? Math.max(0, Number(st.spaceWidth) || 0)
           : Math.max(st.space, bw);
-        items.forEach((item, k) => {
+        items.forEach((/** @type {any} */ item, /** @type {number} */ k) => {
           if (k > 0) item.style.marginTop = `${gap}px`;
           if (st.divider && k > 0) {
             item.setAttribute('data-arkui-lig-div', '');
@@ -1148,6 +1184,7 @@
 
     // TabContent：子构建器是【构造参数】，首次构建时立即展开（同 ListItem 的深渲染，防递归再入）
     if (name === 'TabContent') {
+      /** @param {any} deepFn */
       C.create = function (deepFn) {
         const elmtId = currentNodeElmtId;
         const rec = elmtRecords.get(elmtId);
@@ -1174,9 +1211,10 @@
     // Swiper：create 的参数是【控制器实例】；子项直接挂进 Swiper 元素（栈顶即它），
     // 所以 Swiper.width/height/onChange 都作用在整体上，指示点在 pop 时作为覆盖层追加。
     if (name === 'Swiper') {
+      /** @param {...any} args */
       C.create = function (...args) {
         const rec = elmtRecords.get(currentNodeElmtId);
-        let node;
+        /** @type {any} */ let node;
         if (rec && rec.node && rec.node.__arkuiComp === 'Swiper') {
           node = rec.node;
           node.__swiperState.entries = [];        // 重渲染：页会在 pop 时重新收集
@@ -1202,9 +1240,10 @@
     // Navigation：栈顶是【Navigation 元素本身】（所以 width/height/mode/navDestination 都作用于整体），
     // 根内容子组件直接挂进来；目标区在 pop 时作为覆盖层创建，push 时由 navBuildDest 往里面建树。
     if (name === 'Navigation') {
+      /** @param {...any} args */
       C.create = function (...args) {
         const rec = elmtRecords.get(currentNodeElmtId);
-        let node;
+        /** @type {any} */ let node;
         if (rec && rec.node && rec.node.__arkuiComp === 'Navigation') {
           node = rec.node;
           updateNavStack(node.__navState, args && args[0]);
@@ -1228,6 +1267,7 @@
     // NavDestination：由 NavPathStack 的压栈操作驱动创建（builder 里），不在页面 initialRender 中。
     // 子构建器同样是【构造参数】（同 TabContent），首次构建时立即展开。
     if (name === 'NavDestination') {
+      /** @param {any} deepFn */
       C.create = function (deepFn) {
         const elmtId = currentNodeElmtId;
         const rec = elmtRecords.get(elmtId);
@@ -1240,10 +1280,11 @@
     // 绘制类四件套：形状/数据来自 create 选项，尺寸来自 .width/.height ——
     // 所以弧的真正绘制要等渲染后（见 syncDrawings），create 时只是先建出骨架。
     if (name === 'Progress') {
+      /** @param {...any} args */
       C.create = function (...args) {
         const rec = elmtRecords.get(currentNodeElmtId);
         const o = args && args[0];
-        let node;
+        /** @type {any} */ let node;
         if (rec && rec.node && rec.node.__drawKind === 'Progress') {
           node = rec.node;
           node.__drawOpts = o || {};
@@ -1262,7 +1303,7 @@
       C.create = function (...args) {
         const rec = elmtRecords.get(currentNodeElmtId);
         const o = args && args[0];
-        let node;
+        /** @type {any} */ let node;
         if (rec && rec.node && rec.node.__drawKind === 'Gauge') {
           node = rec.node;
           node.__drawOpts = o || {};
@@ -1278,10 +1319,11 @@
     }
 
     if (name === 'DataPanel') {
+      /** @param {...any} args */
       C.create = function (...args) {
         const rec = elmtRecords.get(currentNodeElmtId);
         const o = args && args[0];
-        let node;
+        /** @type {any} */ let node;
         if (rec && rec.node && rec.node.__drawKind === 'DataPanel') {
           node = rec.node;
           node.__drawOpts = o || {};
@@ -1299,10 +1341,11 @@
     }
 
     if (name === 'Rating') {
+      /** @param {...any} args */
       C.create = function (...args) {
         const rec = elmtRecords.get(currentNodeElmtId);
         const o = args && args[0];
-        let node;
+        /** @type {any} */ let node;
         if (rec && rec.node && rec.node.__drawKind === 'Rating') {
           node = rec.node;
           node.__rating = Number(o && o.rating) || 0;
@@ -1318,14 +1361,16 @@
     }
 
     components[name] = new Proxy(C, {
+      /** @param {any} target @param {any} key */
       get(target, key) {
         if (key in target) return target[key];
         if (typeof key === 'symbol') return undefined;
         if (isFactory(key)) {
           if (!methods[key]) {
+            /** @param {...any} args */
             methods[key] = function (...args) {
               const rec = elmtRecords.get(currentNodeElmtId);
-              let node;
+              /** @type {any} */ let node;
               if (rec && rec.node) { node = rec.node; if (contentUpdater) contentUpdater(node, args); }
               else {
                 node = domFactory(args);
@@ -1344,6 +1389,7 @@
         if (!methods[key]) {
           // 属性方法要把**所有**实参透传：`transition(effect, onFinish)` 是两参重载，
           // 只传第一个会把 onFinish 静默丢掉（实测产物确实这么调）
+          /** @param {...any} args */
           methods[key] = function (...args) { applyAttr(ViewStackProcessor.top(), key, args[0], args[1]); };
         }
         return methods[key];
@@ -1353,6 +1399,7 @@
   }
 
   // ────────────────────── 具体组件 ──────────────────────
+  /** @param {any} node @param {any} args */
   const textLike = (node, args) => {
     if (args && args[0] !== undefined) node.textContent = String(resolveResource(args[0]));
   };
@@ -1434,6 +1481,7 @@
   // 产物形式（与 ForEach 不同，view/dataSource 直接传进 create）：
   //   LazyForEach.create("1", this, this.source, itemGen, keyGen); LazyForEach.pop();
   // 只渲染视口内的项 + overscan，用上下 spacer 撑出总高度；滚动/数据变更时重算窗口。
+  /** @param {HTMLElement} startEl */
   function nearestScrollable(startEl) {
     let p = startEl.parentElement;
     while (p) {
@@ -1444,6 +1492,7 @@
     return startEl.parentElement;
   }
 
+  /** @param {any} id @param {any} view @param {any} source @param {any} itemGen @param {any} keyGen */
   function createLazyForEach(id, view, source, itemGen, keyGen) {
     const holder = document.createElement('div');
     holder.setAttribute('data-arkui-lazyforeach', String(id));
@@ -1473,6 +1522,7 @@
     // advance 取整：布局最终落在整像素上（spacer 的 px 高度会被浏览器取整），
     // 模型若保留小数，累积到几千像素后会与真实 DOM 差出零点几到一像素。
     // 估计值本身保留小数（均值更准），只在"一步前进多少"这一步取整。
+    /** @param {number} i */
     const advanceOf = (i) => Math.round((state.heights.has(i) ? state.heights.get(i) : state.estItemH) + state.gap);
     function rebuildPrefix() {
       const p = new Float64Array(state.total + 1);
@@ -1480,6 +1530,7 @@
       state.prefix = p;
       state.prefixDirty = false;
     }
+    /** @param {number} i */
     const offsetOf = (i) => {
       if (state.prefixDirty || !state.prefix || state.prefix.length !== state.total + 1) rebuildPrefix();
       const k = Math.max(0, Math.min(state.total, i | 0));
@@ -1488,6 +1539,7 @@
     // 总高：最后一项后面没有 gap
     const totalHOf = () => offsetOf(state.total) - (state.total ? state.gap : 0);
     // 二分：最大的 i 使 offset(i) <= y
+    /** @param {number} y */
     function indexAt(y) {
       if (state.prefixDirty || !state.prefix) rebuildPrefix();
       const p = state.prefix;
@@ -1502,6 +1554,7 @@
     state.totalHOf = totalHOf;
     state.indexAt = indexAt;
 
+    /** @param {number=} [depth] */
     function renderWindow(depth) {
       const d = depth || 0;
       if (!state.scrollEl) state.scrollEl = nearestScrollable(holder);
@@ -1614,8 +1667,8 @@
       state.scrollEl.addEventListener('scroll', state.onScroll);
     }
     // 注意：logs 由 ohos-shims.js 创建，未加载时不能假设它存在
-    if (global.__arkui_dom_logs) {
-      global.__arkui_dom_logs.push({ t: 'lazyForEach.mounted', id: String(id), total: state.total, estItemH: state.estItemH });
+    if ((/** @type {any} */ (global)).__arkui_dom_logs) {
+      (/** @type {any} */ (global)).__arkui_dom_logs.push({ t: 'lazyForEach.mounted', id: String(id), total: state.total, estItemH: state.estItemH });
     }
     return holder;
   }
@@ -1659,7 +1712,7 @@
   // 骨架保证"能建出正确的 DOM 标签 + 基础样式"，精细化布局语义按需手补（见 docs）。
   let generatedRegistered = false;
   function registerGeneratedComponents() {
-    const reg = global.__ARKUI_COMPONENTS;
+    const reg = (/** @type {any} */ (global)).__ARKUI_COMPONENTS;
     if (!reg || generatedRegistered) return 0;
     let n = 0;
     const overwritten = [];
@@ -1680,12 +1733,12 @@
       // 必须装成全局：产物里是 `Scroll.create(...)` 这类【自由变量】引用，不走 import。
       // 代价是可能覆盖同名浏览器全局（Image/Range/Text 之类）——记录下来以便排查。
       if (Object.prototype.hasOwnProperty.call(global, name)) overwritten.push(name);
-      global[name] = comp;
+      (/** @type {any} */ (global))[name] = comp;
       n++;
     }
     generatedRegistered = true;
     if (overwritten.length) {
-      global.__arkui_dom_overwrittenGlobals = overwritten;
+      (/** @type {any} */ (global)).__arkui_dom_overwrittenGlobals = overwritten;
       if (global.console && console.debug) {
         console.debug('[arkui-dom] 组件骨架覆盖了同名浏览器全局:', overwritten.join(', '));
       }
@@ -1698,6 +1751,7 @@
   // ────────────────────── @ohos:* 模块别名层（④） ──────────────────────
   // 产物里的 `import X from "@ohos:xxx"` 经 CommonJS 转译后是 require("@ohos:xxx").default
   const ohosModules = new Map();
+  /** @param {any} name @param {any} impl */
   function defineOhosModule(name, impl) {
     // 同时接受 @ohos:x 与 x 两种写法；require 返回 {default, ...impl} 以兼容 TS 的 default interop
     const ns = Object.assign({}, impl);
@@ -1706,6 +1760,7 @@
     ohosModules.set('@ohos:' + name, ns);
     ohosModules.set(name, ns);
   }
+  /** @param {any} spec */
   function ohosRequire(spec) {
     if (ohosModules.has(spec)) return ohosModules.get(spec);
     const known = [...ohosModules.keys()].filter((k) => !k.startsWith('@ohos:')).sort();
@@ -1719,7 +1774,9 @@
   // 已注册的 CommonJS 模块（由 tools/extract.mjs --register 生成的文件调用 define）
   const cjsModules = new Map();
   const cjsCache = new Map();
+  /** @param {any} id @param {any} factory */
   function defineCommonJS(id, factory) { cjsModules.set(id, factory); }
+  /** @param {any} id */
   function requireModule(id) {
     if (cjsCache.has(id)) return cjsCache.get(id);
     const factory = cjsModules.get(id);
@@ -1794,6 +1851,7 @@
     }
   }
 
+  /** @param {any} view */
   function renderView(view) {
     ViewStackProcessor.restore([]);
     if (typeof view.aboutToAppear === 'function' && !view.__aboutToAppearDone) {
@@ -1810,6 +1868,7 @@
     return view;
   }
 
+  /** @param {string} pagePath @param {HTMLElement} rootEl */
   function loadRoute(pagePath, rootEl) {
     if (rootEl) rootNode = rootEl;
     const view = createPage(pagePath);
@@ -1817,6 +1876,7 @@
     return renderView(view);
   }
 
+  /** @param {string} pagePath */
   function navigateTo(pagePath) {
     clearRoot();
     return loadRoute(pagePath, currentRoot());
@@ -1830,6 +1890,7 @@
     return renderView(prev.view);                    // 状态因此保留
   }
 
+  /** @param {string} pagePath */
   function pushRoute(pagePath) { return loadRoute(pagePath, currentRoot()); }
 
   // ────────────────────── 安装全局 ──────────────────────
@@ -1928,16 +1989,16 @@
     PanGesture: gestureBuilders.PanGesture, SwipeGesture: gestureBuilders.SwipeGesture,
     PinchGesture: gestureBuilders.PinchGesture, RotationGesture: gestureBuilders.RotationGesture,
     // 手势自省：证明手势真的挂到了哪个元素上（而不是只登记了一堆回调）＋ 分组登记 ＋ 仲裁结论
-    __arkui_dom_gestures: (el) => {
+    __arkui_dom_gestures: (/** @type {any} */ el) => {
       const st = el && el.__arkuiGestureState;
       return {
         types: gestureTypes(el),
         attachCount: gestureAttachCount,
         dragState: st ? st.gestures.length : 0,
         groups: gestureGroups(el),
-        priority: st ? [...new Set(st.gestures.map((r) => (r.__priority === GesturePriority.High ? 'high'
+        priority: st ? [...new Set(st.gestures.map((/** @type {any} */ r) => (r.__priority === GesturePriority.High ? 'high'
           : (r.__priority === GesturePriority.Parallel ? 'parallel' : 'low'))))] : [],
-        masks: st ? [...new Set(st.gestures.map((r) => GESTURE_MASK_NAME[r.__mask] || String(r.__mask)))] : [],
+        masks: st ? [...new Set(st.gestures.map((/** @type {any} */ r) => GESTURE_MASK_NAME[r.__mask] || String(r.__mask)))] : [],
         arbClass: st ? st.arbClass : 'idle',
         arb: st ? gestureArbState(st) : 'idle',
       };
@@ -1945,17 +2006,17 @@
     // 动画自省：证明"过渡真的挂在被重渲染的节点上、到点真的清掉了"，而不是只看某次 style 非空
     __arkui_dom_animations: () => ({
       active: animWindow ? { seq: animWindow.seq, duration: animWindow.duration, els: animWindow.els.length } : null,
-      history: animHistory.map((h) => Object.assign({}, h)),
+      history: animHistory.map((/** @type {any} */ h) => Object.assign({}, h)),
       onFinishCount,
     }),
     // DataPanel 自省：证明"段占比真按 values/max 算出来了"，而不只看某个背景串。
-    __arkui_dom_dataPanel: (el) => {
+    __arkui_dom_dataPanel: (/** @type {any} */ el) => {
       if (!el || el.__drawKind !== 'DataPanel') return null;
       const g = panelGeometry(el);
       return { type: el.__panelType, segments: g.segs, stops: g.stops, max: el.__panelMax };
     },
     // Rating 自省：区分"满星/半星"（渲染上只是个位数，机制上要能证明）
-    __arkui_dom_rating: (el) => {
+    __arkui_dom_rating: (/** @type {any} */ el) => {
       if (!el || el.__drawKind !== 'Rating') return null;
       const { lit, full, half } = ratingLit(el);
       return {
@@ -1964,7 +2025,7 @@
       };
     },
     // 虚拟列表自省：证明"偏移是真的按实测高度算出来的"，而不只看某个 scrollTop 数字
-    __arkui_dom_lazyInfo: (el) => {
+    __arkui_dom_lazyInfo: (/** @type {any} */ el) => {
       const st = el && lazyMeta.get(el);
       if (!st) return null;
       return {
@@ -1976,11 +2037,11 @@
         totalH: st.totalHOf ? st.totalHOf() : 0,
         window: st.window.slice(),
         passes: st.passes,
-        offsetOf: (i) => (st.offsetOf ? st.offsetOf(i) : 0),
+        offsetOf: (/** @type {any} */ i) => (st.offsetOf ? st.offsetOf(i) : 0),
       };
     },
     // 自定义布局自省：证明"measure() 真的量了、layout() 真的摆了"，而不只看最终矩形
-    __arkui_dom_customLayout: (el) => {
+    __arkui_dom_customLayout: (/** @type {any} */ el) => {
       const m = el && customLayoutMeta.get(el);
       return m ? JSON.parse(JSON.stringify(m)) : null;
     },
@@ -2005,9 +2066,9 @@
     __arkui_dom_abilityWindows: () => ({
       created: abilityWindowStats.created,
       closed: abilityWindowStats.closed,
-      open: abilityStack.filter((e) => e.windowEl).length,
+      open: abilityStack.filter((/** @type {any} */ e) => e.windowEl).length,
       depth: abilityStack.length,
-      history: abilityWindowStats.history.map((h) => ({ ability: h.ability, page: h.page, text: h.text })),
+      history: abilityWindowStats.history.map((/** @type {any} */ h) => ({ ability: h.ability, page: h.page, text: h.text })),
     }),
     // 组件骨架（生成）
     __arkui_dom_registerGenerated: registerGeneratedComponents,
@@ -2020,23 +2081,23 @@
     __arkui_dom_decorators: decorators,
     // V1 深度观测自省：断言"@Observed 确实产出了可观测代理"，而不只看渲染结果。
     // （Meta 这类非 @Observed 的嵌套对象必须返回 false —— 这是负向断言的依据。）
-    __arkui_dom_isObserved: (v) => !!observedCells.get(v),
+    __arkui_dom_isObserved: (/** @type {any} */ v) => !!observedCells.get(v),
     // Tabs 自省：证明"控制器真绑上了、标签真来自 tabBar、活动索引真的变了"，
     // 而不是只看"某个 div 的 display 恰好是 none"。
-    __arkui_dom_tabsState: (el) => {
+    __arkui_dom_tabsState: (/** @type {any} */ el) => {
       const st = el && el.__tabsState;
       if (!st) return null;
       return {
         index: st.index,
         count: st.contents.length,
-        labels: st.contents.map((c) => c.label),
+        labels: st.contents.map((/** @type {any} */ c) => c.label),
         barPosition: st.barPosition,
         hasController: !!st.controller,
         controller: st.controller,
       };
     },
     // Swiper 自省：证明"控制器真绑上了、loop/autoPlay 真生效"，而不只看某个 div 的 display。
-    __arkui_dom_swiperState: (el) => {
+    __arkui_dom_swiperState: (/** @type {any} */ el) => {
       const st = el && el.__swiperState;
       if (!st) return null;
       return {
@@ -2050,20 +2111,20 @@
       };
     },
     // Navigation 自省：证明"builder 真登记了、栈真在走动"，而不只看某个 div 的 display。
-    __arkui_dom_navState: (el) => {
+    __arkui_dom_navState: (/** @type {any} */ el) => {
       const st = el && el.__navState;
       if (!st) return null;
       return {
         size: st.paths.length,
-        names: st.paths.map((p) => p.name),
-        params: st.paths.map((p) => p.param),
+        names: st.paths.map((/** @type {any} */ p) => p.name),
+        params: st.paths.map((/** @type {any} */ p) => p.param),
         hasBuilder: typeof st.builder === 'function',
         mode: st.mode,
         stack: st.stack,
       };
     },
     // R12 收口自省：标题栏 / 工具栏 / 分栏的【实际形态】（断言读这个，而不是读 style 字符串猜）
-    __arkui_dom_navChrome: (el) => {
+    __arkui_dom_navChrome: (/** @type {any} */ el) => {
       if (!el) return null;
       const nav = el.__navState;
       if (nav) {
@@ -2112,23 +2173,23 @@
       return null;
     },
     // Guideline 自省：证明"参考线真的按 start/end 与轴向算出了位置"，而不只看子项恰好落在那儿。
-    __arkui_dom_guideLines: (el) => {
+    __arkui_dom_guideLines: (/** @type {any} */ el) => {
       const m = el && el.__guideLineBoxes;
       if (!m) return null;
-      const out = {};
+      /** @type {Record<string, any>} */ const out = {};
       for (const k of Object.keys(m)) out[k] = { x: m[k].x, y: m[k].y, axis: m[k].axis };
       return out;
     },
     // 只读自省：供测试断言"装饰器确实在原型上装了访问器"，而不是只看渲染结果。
     // 注意 v2ProtoMeta 是 WeakMap（不可枚举，没有 keys()），所以只按类查询。
     __arkui_dom_v2Introspect: () => ({
-      observedOf: (cls) => v2Collect({ __proto__: cls.prototype }, (info, out) => {
+      observedOf: (/** @type {any} */ cls) => v2Collect({ __proto__: cls.prototype }, (/** @type {any} */ info, /** @type {any} */ out) => {
         for (const k of info.observed) out.push(k);
       }),
-      monitorsOf: (cls) => v2Collect({ __proto__: cls.prototype }, (info, out) => {
+      monitorsOf: (/** @type {any} */ cls) => v2Collect({ __proto__: cls.prototype }, (/** @type {any} */ info, /** @type {any} */ out) => {
         for (const [k, s] of info.monitors) out.push(`${k}→${[...s].join('|')}`);
       }),
-      computedOf: (cls) => v2Collect({ __proto__: cls.prototype }, (info, out) => {
+      computedOf: (/** @type {any} */ cls) => v2Collect({ __proto__: cls.prototype }, (/** @type {any} */ info, /** @type {any} */ out) => {
         for (const k of info.computed) out.push(k);
       }),
     }),

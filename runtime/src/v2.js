@@ -115,6 +115,7 @@
     const entries = [{ path: key, now: value, before }];
     const monitor = {
       dirty: entries.map((e) => e.path),
+      /** @param {string=} [path] */
       value(path) {
         const want = path === undefined ? entries[0].path : path;
         const e = entries.find((x) => x.path === want);
@@ -208,11 +209,11 @@
 
     // ── 产物契约：initParam / updateParam / resetParam ──
     /** @param {string} name @param {any} value */
-    initParam(name, value) { this[name] = value; }
+    initParam(name, value) { (/** @type {any} */ (this))[name] = value; }
     /** @param {string} name @param {any} value */
-    updateParam(name, value) { this[name] = value; }
+    updateParam(name, value) { (/** @type {any} */ (this))[name] = value; }
     /** @param {string} name @param {any} value */
-    resetParam(name, value) { this[name] = value; }
+    resetParam(name, value) { (/** @type {any} */ (this))[name] = value; }
 
     /** @param {string} fieldKey @param {any} fallback */
     resetConsumer(fieldKey, fallback) {
@@ -221,8 +222,8 @@
         if (n) out.push(n);
       })[0] || fieldKey;
       // 直接写槽，绕过 setter（此刻尚未绑定，走 setter 会平白触发一次通知）
-      if (fallback !== undefined && this[v2Slot(fieldKey)] === undefined) {
-        this[v2Slot(fieldKey)] = fallback;
+      if (fallback !== undefined && (/** @type {any} */ (this))[v2Slot(fieldKey)] === undefined) {
+        (/** @type {any} */ (this))[v2Slot(fieldKey)] = fallback;
       }
       if (!this.__v2consumerBind) this.__v2consumerBind = new Map();
       this.bindConsumer(fieldKey, provName, true);
@@ -252,13 +253,13 @@
       const provs = v2Collect(this, (info, out) => { for (const [k, n] of info.providers) out.push([k, n]); });
       for (const [key, name] of provs) {
         if (!this.__providedVars) this.__providedVars = new Map();
-        const inst = this;
+        const inst = /** @type {any} */ (this);
         // 同时提供 get/set：这样 V1 的 @Consume（initializeConsume 期望拿到 prop 对象）
         // 也能消费 V2 的 @Provider，反之亦然。
         this.__providedVars.set(name, {
           __v2provider: true, inst, key,
           get() { return inst[key]; },
-          set(v) { inst[key] = v; },
+          set(/** @type {any} */ v) { inst[key] = v; },
           purgeDependencyOnElmtId() {},
           aboutToBeDeleted() {},
         });

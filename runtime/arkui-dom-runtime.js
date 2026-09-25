@@ -31,9 +31,9 @@
                                    //            activeBranch, forEachSnapshot}
   const deepRendering = new Set(); // 正在执行 deepRender 的 elmtId，防止递归再进入
   const propDeps = new Map();      // ObservedProperty -> Set<elmtId>
-  let currentNodeElmtId = null;    // 正在执行哪个 elmtId 的渲染（依赖追踪 + If/ForEach 归属）
-  let rootNode = null;
-  let viewSeq = 0;
+  /** @type {any} */ let currentNodeElmtId = null;    // 正在执行哪个 elmtId 的渲染（依赖追踪 + If/ForEach 归属）
+  /** @type {any} */ let rootNode = null;
+  /** @type {number} */ let viewSeq = 0;
 
   // 组件栈：官方命名，产物里的 ViewStackProcessor.StartGetAccessRecordingFor/Stop… 由它承载
   //（stack 不写 @type 会被推成 never[]，push 全红）
@@ -47,8 +47,8 @@
     /** @param {any[]} snap */
     restore(snap) { this.stack.length = 0; for (const n of snap) this.stack.push(n); },
     /** @param {number} elmtId */
-    StartGetAccessRecordingFor(elmtId) { this._recording = elmtId; currentNodeElmtId = elmtId; },
-    StopGetAccessRecording() { this._recording = null; },
+    StartGetAccessRecordingFor(elmtId) { (/** @type {any} */ (this))._recording = elmtId; currentNodeElmtId = elmtId; },
+    StopGetAccessRecording() { (/** @type {any} */ (this))._recording = null; },
   };
 
   const parentOfTop = () => ViewStackProcessor.top() || rootNode;
@@ -56,7 +56,7 @@
   /** @param {any} prop */
   function recordDep(prop) {
     if (currentNodeElmtId == null) return;
-    let s = propDeps.get(prop);
+    /** @type {any} */ let s = propDeps.get(prop);
     if (!s) propDeps.set(prop, (s = new Set()));
     s.add(currentNodeElmtId);
   }
@@ -72,7 +72,7 @@
     /** @param {any} value @param {any} owner @param {string} name */
     constructor(value, owner, name) {
       /** @type {any} */ this._value = value; /** @type {any} */ this._owner = owner;
-      this._name = name; /** @type {any[]} */ this._watches = [];
+      this._name = name; this._watches = /** @type {any[]} */ ([]);
     }
     get() { recordDep(this); return this._value; }
     /** @param {any} v */
@@ -97,7 +97,7 @@
     /** @param {any} value @param {any} owner @param {string} name */
     constructor(value, owner, name) {
       /** @type {any} */ this._value = value; /** @type {any} */ this._owner = owner;
-      this._name = name; /** @type {any[]} */ this._watches = [];
+      this._name = name; this._watches = /** @type {any[]} */ ([]);
     }
     get() { recordDep(this); return this._value; }
     /** @param {any} v */
@@ -186,6 +186,7 @@
   const OBSERVED_CELL = Symbol('arkui.observedCell');
   const OBSERVED_TAG = Symbol('arkui.isObserved');
 
+  /** @param {any} target */
   function makeObservedProxy(target) {
     const cell = { __observed: true, __name: target && target.constructor ? target.constructor.name : '?' };
     const proxy = new Proxy(target, {
@@ -209,8 +210,10 @@
 
   // 类装饰器：__decorate([Observed], Cls) 只有 2 个实参 → 助手把返回值当作类本身，
   // 所以这里【必须返回一个类】。用子类把构造返回值换成 Proxy。
+  /** @param {any} Base */
   function Observed(Base) {
-    const ObservedClass = class extends Base {
+    /** @type {any} */ const ObservedClass = class extends Base {
+      /** @param {...any} args */
       constructor(...args) {
         super(...args);
         return makeObservedProxy(this);
@@ -221,6 +224,7 @@
     return ObservedClass;
   }
 
+  /** @param {any} obj */
   function observedCellOf(obj) {
     if (obj === null || typeof obj !== 'object') return null;
     return observedCells.get(obj) || null;
@@ -263,10 +267,12 @@
   const dirty = new Set();
   let flushScheduled = false;
 
+  /** @param {any} prop */
   function markDependentsDirty(prop) {
     const s = propDeps.get(prop);
     if (s) for (const id of [...s]) markDirty(id);
   }
+  /** @param {number} elmtId */
   function markDirty(elmtId) {
     dirty.add(elmtId);
     if (flushScheduled) return;
@@ -279,6 +285,7 @@
     for (const id of ids) rerenderElmt(id);
   }
 
+  /** @param {number} elmtId */
   function rerenderElmt(elmtId) {
     const rec = elmtRecords.get(elmtId);
     if (!rec || !rec.updateFunc || !rec.node) return;
@@ -327,9 +334,11 @@
     'Linear', 'Ease', 'EaseIn', 'EaseOut', 'EaseInOut', 'FastOutSlowIn', 'LinearOutSlowIn',
     'FastOutLinearIn', 'ExtremeDeceleration', 'Sharp', 'Rhythm', 'Smooth', 'Friction',
   ];
+  /** @type {Record<string, number>} */
   const Curve = {};
   CURVE_NAMES.forEach((n, i) => { Curve[n] = i; });
   // ArkUI 的曲线名 → CSS 等价物（名字对得上的直接透传）
+  /** @type {Record<string, string>} */
   const CURVE_CSS = {
     Linear: 'linear', Ease: 'ease', EaseIn: 'ease-in', EaseOut: 'ease-out', EaseInOut: 'ease-in-out',
     FastOutSlowIn: 'cubic-bezier(0.4, 0, 0.2, 1)', LinearOutSlowIn: 'cubic-bezier(0, 0, 0.2, 1)',
@@ -367,7 +376,8 @@
     /** @param {string} kind @param {any} value */
     constructor(kind, value) {
       /** @type {string} */ this.kind = kind; /** @type {any} */ this.value = value;
-      /** @type {any} */ this.anim = undefined; /** @type {any} */ this.next = null;
+      /** @type {any} */ this.anim = undefined;
+      /** @type {any} */ this.next = null;
     }
     static get IDENTITY() { return new TransitionEffect('identity', undefined); }
     static get OPACITY() { return new TransitionEffect('opacity', 0); }
@@ -425,6 +435,7 @@
   let transitionRunSeq = 0;
 
   // 偏离态 → CSS（ArkUI 的裸数字 = vp，这里 1vp=1px，与项目其它地方一致）
+  /** @param {any} effectOrOptions @param {boolean} isEffect */
   function _offStyleOf(effectOrOptions, isEffect) {
     // @type 档位：opacity 是 number|undefined（初值 undefined 是"未提及"语义，后面会赋数字）、
     // 两个数组不写 @type 会被推成 never[]，push 全红
@@ -493,6 +504,7 @@
   }
 
   // 把一次 transition 解析成"某方向要不要动、怎么动、多久"
+  /** @param {any} el @param {string} dir */
   function transitionPlanFor(el, dir) {          // dir: 'enter' | 'exit'
     const spec = el && el.__arkuiTransition;
     if (!spec) return null;
@@ -536,11 +548,13 @@
   }
 
   const transitionTimers = new Set();
+  /** @param {HTMLElement} el @param {any} run */
   function _transitionWitness(el, run) {         // 与 animateTo 一样：transitionend 只当"见证"，不当收口依据
     const fn = () => { run.sawTransitionEnd = true; };
     el.addEventListener('transitionend', fn, { once: true });
     return () => el.removeEventListener('transitionend', fn);
   }
+  /** @param {any} el @param {any} run @param {any} plan @param {() => void} cleanup */
   function _finishTransitionRun(el, run, plan, cleanup) {
     run.endedBy = 'timer';
     cleanup();
@@ -554,6 +568,7 @@
       catch (e) { layoutWarnings.push(`transition 的 onFinish 抛错：${e && e.message}`); }
     }
   }
+  /** @param {any} el @param {any} plan */
   function runEnterTransition(el, plan) {
     // @type 档位：endedBy 初值 null 终值 string；不写会推成 null 型，赋 'timer'/'transitionend' 全红
     const run = /** @type {{seq: number, dir: string, id: any, target: string, duration: number,
@@ -585,6 +600,7 @@
       Math.max(0, plan.duration + plan.delay) + 30);
     transitionTimers.add(timer);
   }
+  /** @param {any} el @param {any} plan */
   function runExitTransition(el, plan) {
     // @type 同 runEnterTransition 的 run（endedBy 初值 null 终值 string）
     const run = /** @type {{seq: number, dir: string, id: any, target: string, duration: number,
@@ -616,6 +632,7 @@
   }
 
   // 拆容器时：带"消失过渡"的子节点留在 DOM 里把动画走完，其余立刻摘
+  /** @param {HTMLElement} container */
   function detachChildren(container) {
     if (!container) return;
     for (const child of [...container.children]) {
@@ -626,6 +643,7 @@
   }
 
   // 登记：属性管线把 `.transition(...)` 的实参原样交过来
+  /** @param {any} node @param {any} value @param {any} onFinish */
   function registerTransition(node, value, onFinish) {
     if (!node) return;
     // @type 档位：spec 的字段在两个分支里形状不同，且 onFinish/seq 是后挂的动态字段
@@ -673,11 +691,13 @@
     };
   }
 
-  let animWindow = null;                 // 当前开着的动画窗口（rerenderElmt 会往里收集节点）
+  /** @type {any} */ let animWindow = null;              // 当前开着的动画窗口（rerenderElmt 会往里收集节点）
+  /** @type {any[]} */
   const animHistory = [];
   let animSeq = 0;
   let onFinishCount = 0;
 
+  /** @param {any} curve */
   function animCurveCss(curve) {
     if (typeof curve === 'string' && curve) return curve;      // CSS 关键字 / cubic-bezier(...)
     if (typeof curve === 'number' && CURVE_NAMES[curve] !== undefined) {
@@ -690,6 +710,7 @@
     }
     return 'ease-in-out';                                      // .d.ts 默认 Curve.EaseInOut
   }
+  /** @param {any} curve */
   function animCurveName(curve) {
     if (typeof curve === 'number' && CURVE_NAMES[curve] !== undefined) return CURVE_NAMES[curve];
     if (typeof curve === 'string' && curve) return curve;
@@ -697,6 +718,7 @@
     return 'EaseInOut(默认)';
   }
 
+  /** @param {any} win */
   function animFireFinish(win) {
     onFinishCount++;
     if (typeof win.onFinish !== 'function') return;
@@ -708,6 +730,7 @@
     });
   }
 
+  /** @param {any} win @param {string} how */
   function animFinish(win, how) {
     if (!win || win.done) return;
     win.done = true;
@@ -729,6 +752,7 @@
     animFireFinish(win);
   }
 
+  /** @param {any} param @param {any} fn @param {string} api */
   function runExplicitAnimation(param, fn, api) {
     if (typeof fn !== 'function') {
       // .d.ts: animateTo(value: AnimateParam, event: () => void) —— event 是必填
@@ -807,7 +831,7 @@
       el.style.transitionTimingFunction = rec.curveCss;
       el.style.transitionDelay = delay + 'ms';
       el.setAttribute('data-arkui-anim', String(win.seq));
-      const onEnd = (ev) => {
+      const onEnd = (/** @type {Event} */ ev) => {
         if (ev && ev.target === el) win.sawTransitionEnd = true;   // 浏览器真的跑了过渡（无头环境下可能不来）
       };
       el.addEventListener('transitionend', onEnd);
@@ -821,10 +845,10 @@
   }
 
   const Context = {
-    animateTo: (param, fn) => runExplicitAnimation(param, fn, 'animateTo'),
+    animateTo: (/** @type {any} */ param, /** @type {any} */ fn) => runExplicitAnimation(param, fn, 'animateTo'),
     // animateToImmediately 与 animateTo 在 DOM 里等价：CSS transition 本来就是"下一帧开始"。
     // 真机差异（不等 vsync 立即投递）在 CSS 里没有对应物，见 docs 已知限制。
-    animateToImmediately: (param, fn) => runExplicitAnimation(param, fn, 'animateToImmediately'),
+    animateToImmediately: (/** @type {any} */ param, /** @type {any} */ fn) => runExplicitAnimation(param, fn, 'animateToImmediately'),
   };
 
   // ────────────────────── 手势（R23） ──────────────────────
@@ -960,6 +984,7 @@
   }
 
   // "识别完成"对应的回调名（Exclusive 靠它判先后、Sequence 靠它推进阶段）
+  /** @type {Record<string, string>} */
   const GESTURE_RECOG_KIND = {
     tap: 'onAction', longPress: 'onAction', pan: 'onActionStart',
     pinch: 'onActionStart', rotation: 'onActionStart', swipe: 'onAction',
@@ -1316,6 +1341,7 @@
   }
 
   // 手势构建器：`XxxGesture.create(params)` → `.on*（cb）` → `.pop()`
+  /** @type {Record<string, string>} */
   const GESTURE_TYPES = {
     TapGesture: 'tap', LongPressGesture: 'longPress', PanGesture: 'pan',
     SwipeGesture: 'swipe', PinchGesture: 'pinch', RotationGesture: 'rotation',
@@ -1355,7 +1381,7 @@
     };
     // 未列举的 on* 方法一律当"回调 setter"（onAction/onActionStart/onActionUpdate/onActionEnd/onActionCancel）
     return new Proxy(impl, {
-      get(target, key) {
+      get(/** @type {any} */ target, key) {
         if (key in target) return target[key];
         if (typeof key === 'symbol') return undefined;
         let fn = target['__' + String(key)];
@@ -1408,7 +1434,7 @@
       scope.list.push(g);
     },
   }, {
-    get(target, key) {
+    get(/** @type {any} */ target, key) {
       if (key in target) return target[key];
       if (typeof key === 'symbol') return undefined;
       let fn = target['__' + String(key)];
@@ -1481,6 +1507,7 @@
   }
   // ─────────────────────────── ViewPU ───────────────────────────
   class ViewPU {
+    /** @param {any} parent @param {any} localStorage @param {any} elmtId @param {any=} [extraInfo] */
     constructor(parent, localStorage, elmtId = -1, extraInfo) {
       this.__viewId = ++viewSeq;
       this.__parent = parent;
@@ -1496,6 +1523,7 @@
     updateDirtyElements() { flush(); }
     rerender() { this.updateDirtyElements(); }
 
+    /** @param {any} updateFunc @param {any} componentClassOrName */
     observeComponentCreation2(updateFunc, componentClassOrName) {
       const elmtId = ++elmtIdSeq;
       const parent = parentOfTop();
@@ -1514,6 +1542,7 @@
     }
 
     // 自定义组件：父重渲染时把新参数推给子视图
+    /** @param {number} elmtId @param {any} params */
     updateStateVarsOfChildByElmtId(elmtId, params) {
       const rec = elmtRecords.get(elmtId);
       if (rec && rec.childView && typeof rec.childView.updateStateVars === 'function') {
@@ -1545,20 +1574,20 @@
       if (found) return found;               // 关键：返回的【就是提供者的属性实例】→ 依赖追踪天然生效
       layoutWarnings.push(`@Consume('${name}') 未找到祖先 @Provide，退化为本地占位属性`);
       const fallback = new ObservedPropertySimplePU(undefined, this, propName);
-      this['__' + propName] = fallback;
+      (/** @type {any} */ (this))['__' + propName] = fallback;
       return fallback;
     }
     /** @param {string} name @param {string} propName */
     reInitializeConsume__Internal(name, propName) {
       const found = this._findProvided(name);
-      if (found) this['__' + propName] = found;
+      if (found) (/** @type {any} */ (this))['__' + propName] = found;
       else layoutWarnings.push(`@Consume('${name}') 重绑定时未找到祖先 @Provide`);
     }
 
     // ── @Watch（把回调挂到属性实例上，set 时触发） ──
     /** @param {string} propName @param {any} cb */
     declareWatch(propName, cb) {
-      const prop = this['__' + propName];
+      const prop = (/** @type {any} */ (this))['__' + propName];
       if (prop && typeof prop.watch === 'function') prop.watch(cb.bind(this));
       else layoutWarnings.push(`@Watch('${propName}') 未找到属性实例，回调未挂载`);
     }
@@ -1586,13 +1615,14 @@
     }
 
     // ForEach：数组变化才整体重建（键级 diff 留待后续优化）
+    /** @param {number} elmtId @param {any[]} arr @param {any} itemGenFunc @param {any} keyGenFunc */
     forEachUpdateFunction(elmtId, arr, itemGenFunc, keyGenFunc) {
       const rec = elmtRecords.get(elmtId);
       if (!rec || !rec.node) return;
       const snap = (arr || []).slice();
       const changed = !rec.forEachSnapshot
         || rec.forEachSnapshot.length !== snap.length
-        || rec.forEachSnapshot.some((v, i) => !Object.is(v, snap[i]));
+        || rec.forEachSnapshot.some((/** @type {any} */ v, /** @type {number} */ i) => !Object.is(v, snap[i]));
       if (changed && rec.forEachSnapshot) {
         // 同理：列表重建时，带"消失过渡"的项先把动画走完（R22 收口）
         detachChildren(rec.node);
@@ -1613,6 +1643,7 @@
     }
 
     // 自定义组件挂载：把子视图渲染到当前父位置
+    /** @param {any} childView */
     static create(childView) {
       const elmtId = childView.__elmtId;
       const rec = elmtRecords.get(elmtId) || { node: null };
@@ -1642,14 +1673,16 @@
   }
 
   // ────────────────────── 属性映射 ──────────────────────
+  /** @param {any} v */
   const resolveResource = (v) => {
     if (v && typeof v === 'object' && 'id' in v && 'type' in v) {
-      const table = global.__arkui_dom_resources || {};
+      const table = (/** @type {any} */ (global)).__arkui_dom_resources || {};
       return table[v.id] !== undefined ? table[v.id] : DEFAULT_RESOURCES[v.type];
     }
     return v;
   };
-  const DEFAULT_RESOURCES = { 10002: 16, 10003: '' };
+  /** @type {Record<string, any>} */ const DEFAULT_RESOURCES = { 10002: 16, 10003: '' };
+  /** @param {any} v */
   const toCssSize = (v) => {
     const r = resolveResource(v);
     return typeof r === 'number' ? r + 'px' : String(r);
@@ -1693,12 +1726,14 @@
   const GRID_UNSUPPORTED = new Set(['cellLength', 'maxCount', 'minCount', 'layoutDirection']);
 
   // 切多面板：只显示 active 那一项（Tabs 与后续 Swiper 共用）
+  /** @param {any} entries @param {number} active */
   const onlyOneVisible = (entries, active) => {
-    entries.forEach((e, k) => { e.el.style.display = k === active ? 'block' : 'none'; });
+    entries.forEach((/** @type {any} */ e, /** @type {number} */ k) => { e.el.style.display = k === active ? 'block' : 'none'; });
   };
 
 
   // create({ space: n }) —— ArkUI 容器的 space 语义映射为 flex gap
+  /** @param {any} node @param {any} args */
   function applyCreateArgs(node, args) {
     const a = args && args[0];
     if (!a || typeof a !== 'object') return;
@@ -1716,6 +1751,7 @@
   }
 
   // 生成组件的"原生控件参数"映射：把 create({...}) 的常用键落到真实控件属性上
+  /** @param {any} el @param {any} args @param {any} meta */
   function applyNativeArgs(el, args, meta) {
     const a = args && args[0];
     const tag = (meta && meta.tag) || '';
@@ -1744,7 +1780,8 @@
   // ─────────────── 布局：alignRules / Guideline / bias / 文本截断 / 叠放 / Scroller ───────────────
   // ArkUI 的 measure/layout 规则在 DOM 上无法 1:1 复刻；这里实现"容器锚点 + 兄弟锚点 + Guideline"
   // 三类相对定位、bias 插值、文本截断与叠放对齐，并保留 warnings 以暴露未支持项（不是静默忽略）。
-  const layoutWarnings = (global.__arkui_dom_layout_warnings = []);
+  /** @type {any[]} */
+  const layoutWarnings = ((/** @type {any} */ (global)).__arkui_dom_layout_warnings = []);
   // 锚点解析会在不动点迭代里跑多趟，同一问题只该留一条痕（否则一条缺失锚点会变成 12 条）
   /** @param {string} msg */
   const warnOnce = (msg) => { if (!layoutWarnings.includes(msg)) layoutWarnings.push(msg); };
@@ -1760,6 +1797,7 @@
 
   // 注意：ArkUI 有两套对齐词汇 —— 水平是 start/end 或 left/right，垂直是 top/bottom。
   // 两者都映射到 0/0.5/1 的分数，同时 dx/dy 的判定也要认这两种写法（踩过的坑）。
+  /** @type {Record<string, number>} */
   const ALIGN_FRAC = { start: 0, top: 0, center: 0.5, end: 1, bottom: 1 };
   /** @param {any} a */
   const isStart = (a) => a === 'start' || a === 'top';
@@ -2033,6 +2071,7 @@
       const el = this._el;
       if (!el) { layoutWarnings.push('Scroller.scrollEdge: 未绑定容器'); return; }
       // Edge: Top=0 Center=1 Bottom=2 Baseline=3 Start=4 Middle=5 End=6
+      /** @type {Record<string, string>} */
       const E = { 0: 'top', 2: 'bottom', 4: 'left', 6: 'right' };
       const side = typeof edge === 'number' ? E[edge] : edge;
       if (side === 'top') el.scrollTop = 0;
@@ -2089,12 +2128,12 @@
   // ViewV2 extends ViewPU，@ComponentV2 组件同样继承 getUIContext。
   function makeUIContext() {
     return {
-      animateTo: (param, fn) => runExplicitAnimation(param, fn, 'animateTo'),
+      animateTo: (/** @type {any} */ param, /** @type {any} */ fn) => runExplicitAnimation(param, fn, 'animateTo'),
       // 与 Context.animateToImmediately 同理：DOM 里两者等价（CSS transition 本来就"下一帧开始"）
-      animateToImmediately: (param, fn) => runExplicitAnimation(param, fn, 'animateToImmediately'),
+      animateToImmediately: (/** @type {any} */ param, /** @type {any} */ fn) => runExplicitAnimation(param, fn, 'animateToImmediately'),
       getRouter: () => ohosRequire('@ohos:router'),
       getPromptAction: () => ohosRequire('@ohos:promptAction'),
-      runScopedTask: (cb) => {
+      runScopedTask: (/** @type {any} */ cb) => {
         try { cb(); }
         catch (e) { layoutWarnings.push(`runScopedTask 回调抛错：${e && e.message}`); }
       },
@@ -2133,7 +2172,8 @@
 
   let tabsSeq = 0;
   class TabsController {
-    constructor() { this._id = ++tabsSeq; this._state = null; }
+    constructor() { this._id = ++tabsSeq; this._state = /** @type {any} */ (null); }
+    /** @param {number} i */
     changeIndex(i) {
       const st = this._state;
       if (!st) { layoutWarnings.push('TabsController.changeIndex: 尚未绑定到任何 Tabs'); return false; }
@@ -2145,6 +2185,7 @@
     }
   }
 
+  /** @param {HTMLElement} node @param {any} opt */
   function createTabsState(node, opt) {
     // @type 档位：contents/onChange 不写会推成 never[]；barEl/contentEl null↔Element 摆动
     const st = /** @type {any} */ ({
@@ -2174,6 +2215,7 @@
     return st;
   }
 
+  /** @param {any} st @param {any} opt */
   function applyTabsOptions(st, opt) {
     if (!opt || typeof opt !== 'object') return;
     if (opt.barPosition !== undefined) {
@@ -2190,6 +2232,7 @@
     }
   }
 
+  /** @param {any} st @param {number} i @param {boolean} fire */
   function setActiveTab(st, i, fire) {
     const n = st.contents.length;
     if (!n || !Number.isInteger(i) || i < 0 || i >= n) {
@@ -2210,6 +2253,7 @@
   }
 
   // Tabs.pop() 之后才知道有几个 TabContent、各自的标签是什么 → 那时才建 bar
+  /** @param {any} st */
   function finalizeTabs(st) {
     const n = st.node;
     if (st.barPosition === 'end') {
@@ -2218,7 +2262,7 @@
       n.insertBefore(st.barEl, st.contentEl);
     }
     st.barEl.textContent = '';                       // 重建（重渲染时不会残留旧项）
-    st.contents.forEach((c, i) => {
+    st.contents.forEach((/** @type {any} */ c, /** @type {number} */ i) => {
       const item = document.createElement('div');
       item.setAttribute('data-arkui-tabbar-item', String(i));
       item.setAttribute('data-arkui-tabbar-active', 'false');
@@ -2237,10 +2281,11 @@
     setActiveTab(st, idx, false);
   }
 
+  /** @param {any} node @param {any} value */
   function applyTabBar(node, value) {
     const st = node.__tabContentOf;
     if (!st) { layoutWarnings.push('TabContent.tabBar: 未找到所属 Tabs'); return; }
-    const entry = st.contents.find((c) => c.el === node);
+    const entry = st.contents.find((/** @type {any} */ c) => c.el === node);
     if (typeof value === 'string' || typeof value === 'number') {
       const label = String(resolveResource(value));
       node.__tabBarLabel = label;             // 同时记在节点上，供重渲染后补登记
@@ -2254,6 +2299,7 @@
   }
 
   // TabContent 挂载：认领所属 Tabs 的内容区（不压栈——压栈由 create 统一收尾，与 ListItem 一致）
+  /** @param {any} rec */
   function mountTabContent(rec) {
     let node = rec && rec.node && rec.node.__arkuiComp === 'TabContent' ? rec.node : null;
     if (!node) {
@@ -2274,7 +2320,7 @@
     }
     // Tabs 重渲染会清空 contents，此处在复用路径上补登记，避免标签/可见性丢失
     const st = node.__tabContentOf;
-    if (st && !st.contents.some((c) => c.el === node)) {
+    if (st && !st.contents.some((/** @type {any} */ c) => c.el === node)) {
       st.contents.push({ el: node, label: node.__tabBarLabel === undefined ? '' : node.__tabBarLabel });
     }
     return node;
@@ -2348,6 +2394,7 @@
     return st;
   }
 
+  /** @param {any} st @param {number} i @param {boolean} fire */
   function setActiveSwiper(st, i, fire) {
     const n = st.entries.length;
     if (!n) { layoutWarnings.push('Swiper 内没有任何子组件，无法确定当前页'); return false; }
@@ -2361,7 +2408,7 @@
     }
     st.index = idx;
     onlyOneVisible(st.entries, idx);
-    st.dots.forEach((d, k) => d.setAttribute('data-arkui-swiper-dot-active', k === idx ? 'true' : 'false'));
+    st.dots.forEach((/** @type {any} */ d, /** @type {number} */ k) => d.setAttribute('data-arkui-swiper-dot-active', k === idx ? 'true' : 'false'));
     if (fire) {
       for (const cb of st.onChange) {
         try { cb(idx); } catch (e) { layoutWarnings.push(`Swiper.onChange 抛错：${e && e.message}`); }
@@ -2371,6 +2418,7 @@
   }
 
   // showNext / showPrevious：loop=false 且在边界时【停住】（这是合法语义，所以不记 warning）
+  /** @param {any} st @param {number} delta */
   function stepSwiper(st, delta) {
     if (!st) { layoutWarnings.push('SwiperController 尚未绑定到任何 Swiper'); return false; }
     const n = st.entries.length;
@@ -2380,6 +2428,7 @@
     return setActiveSwiper(st, next, true);
   }
 
+  /** @param {any} st */
   function startSwiperAutoPlay(st) {
     if (st.timer) { clearInterval(st.timer); st.timer = 0; }
     if (!st.autoPlay) return;
@@ -2391,6 +2440,7 @@
   }
 
   // Swiper.pop() 之后才知道有几页、每页是谁
+  /** @param {any} st */
   function finalizeSwiper(st) {
     const kids = [...st.node.children].filter((el) => !el.hasAttribute('data-arkui-swiper-indicator'));
     for (const el of kids) {
@@ -2418,6 +2468,7 @@
     startSwiperAutoPlay(st);
   }
 
+  /** @param {any} st */
   function buildSwiperIndicator(st) {
     const wrap = document.createElement('div');
     wrap.setAttribute('data-arkui-swiper-indicator', '');
@@ -2429,7 +2480,7 @@
     wrap.style.flexDirection = 'row';
     wrap.style.justifyContent = 'center';
     wrap.style.gap = '4px';
-    st.dots = st.entries.map((_e, k) => {
+    st.dots = st.entries.map((/** @type {any} */ _e, /** @type {number} */ k) => {
       const d = document.createElement('div');
       d.setAttribute('data-arkui-swiper-dot', String(k));
       d.setAttribute('data-arkui-swiper-dot-active', 'false');
@@ -2501,6 +2552,7 @@
   // subtitle are both available"）对应到 Full 那两个已文档化的数字（112 / 138）。**这是推断**，
   // 已写进 docs 的已知限制。
   const NAV_TITLE_H = { main: 112, mainSub: 138, mini: 56 };
+  /** @type {Record<number, number>} */
   const TITLE_HEIGHT_VALUE = { 0: NAV_TITLE_H.main, 1: NAV_TITLE_H.mainSub };
   const NAV_DIVIDER_PX = 1;               // 分栏时的分割线宽度
   const NAV_DEFAULT_BAR_W = 240;          // navBarWidth 默认 240vp（.d.ts JSDoc 原文）
@@ -2517,6 +2569,7 @@
   const NAV_POP_TO = 50;                // 弹出页终点%（width×HALF）
   const NAV_PARALLAX = 20;              // 被盖/露出页的视差%（CONTENT_OFFSET_PERCENT×100）
   // 转场运行记录（测试轮询"挂着的转场"用，与 animation.js 的 transitionRuns 同思想）
+  /** @type {any[]} */
   const navTransRuns = [];
   let navTransRunSeq = 0;
   function navTransDescribe() {
@@ -2524,11 +2577,13 @@
     navTransRuns.forEach((r) => { if (!r.done) pending++; });
     return { runs: navTransRuns.map((r) => ({ ...r })), pending };
   }
+  /** @param {HTMLElement} el @param {any} run */
   function navWitness(el, run) {          // transitionend 只当"见证"，不当收口依据（坑 ⑧ 同源）
     const fn = () => { run.sawTransitionEnd = true; };
     el.addEventListener('transitionend', fn, { once: true });
     return () => el.removeEventListener('transitionend', fn);
   }
+  /** @param {HTMLElement} el */
   function navEndTransStyle(el) {
     el.style.transitionProperty = '';
     el.style.transitionDuration = '';
@@ -2553,6 +2608,7 @@
     'enableToolBarAdaptation', 'splitPlaceholder',
   ]);
 
+  /** @param {any} v */
   const animOf = (v) => (typeof v === 'boolean' ? v : !!(v && typeof v === 'object' && v.animated));
 
   class NavPathStack {
@@ -2571,6 +2627,7 @@
     getParamByName(name) { return this._paths.filter((p) => p.name === name).map((p) => p.param); }
     /** @param {string} name */
     getIndexByName(name) {
+      /** @type {number[]} */
       const out = [];
       this._paths.forEach((p, i) => { if (p.name === name) out.push(i); });
       return out;
@@ -2659,6 +2716,7 @@
     replaceDestination(info) { navReplaceTop(this, info || {}, animOf(arguments[1])); return Promise.resolve(); }
     /** @param {string} name */
     removeByName(name) {
+      /** @type {number[]} */
       const idx = [];
       this._paths.forEach((p, i) => { if (p.name === name) idx.push(i); });
       if (!idx.length) return 0;
@@ -2668,7 +2726,7 @@
     /** @param {any=} [indexes] */
     removeByIndexes(indexes) {
       const valid = (indexes || []).filter((/** @type {number} */ i) => Number.isInteger(i) && i >= 0 && i < this._paths.length);
-      valid.slice().sort((a, b) => b - a).forEach((i) => navPopRange(this, i, 1, undefined));
+      valid.slice().sort((/** @type {number} */ a, /** @type {number} */ b) => b - a).forEach((/** @type {number} */ i) => navPopRange(this, i, 1, undefined));
       return valid.length;
     }
     removeByNavDestinationId() {
@@ -2823,6 +2881,7 @@
     return wrap;
   }
 
+  /** @param {any} onBack @param {any=} icon */
   function navBackButton(onBack, icon) {
     const btn = document.createElement('div');
     btn.setAttribute('data-arkui-nav-back', '');
@@ -2836,6 +2895,7 @@
   }
 
   // 往 host 里画一条标题栏（Navigation 的导航栏 / NavDestination 的标题栏共用）
+  /** @param {HTMLElement} host @param {any} spec @param {any} opts */
   function drawTitleBar(host, spec, opts) {
     const o = opts || {};
     host.textContent = '';
@@ -2884,6 +2944,7 @@
   }
 
   // 工具栏（NavDestination 底部）：ToolbarItem[] → 一行可点项
+  /** @param {HTMLElement} host @param {any} items */
   function drawToolbar(host, items) {
     host.textContent = '';
     host.style.display = 'flex';
@@ -2891,7 +2952,7 @@
     host.style.justifyContent = 'center';
     host.style.boxSizing = 'border-box';
     host.style.gap = '16px';
-    (items || []).forEach((it, i) => {
+    (items || []).forEach((/** @type {any} */ it, /** @type {number} */ i) => {
       const el = document.createElement('div');
       el.setAttribute('data-arkui-nav-toolbar-item', String(i));
       el.setAttribute('data-arkui-nav-toolbar-status', String(it.status === undefined ? 0 : it.status));
@@ -2906,6 +2967,7 @@
     });
   }
 
+  /** @param {HTMLElement} node @param {any} stack */
   function createNavState(node, stack) {
     // @type 档位：整袋 any —— barEl/titleEl/dividerEl/tmc 等十来个字段都是 null↔对象 摆动，
     // 后渲染才赋值；属性级 @type 只能管到紧随其后的一个属性，这里必须整袋收
@@ -2961,6 +3023,7 @@
   // 本轮该按哪种模式布局：Auto 用【真实宽度】判（.d.ts：宽度 ≥ 600vp 走 Split，
   // 600 = minNavBarWidth 240 + minContentWidth 360）。用元素自身宽度而不是 window：
   // 同一页可以有多个 Navigation（本项目的测量页正是这样），窗口宽度无法区分它们。
+  /** @param {any} st */
   function navEffectiveMode(st) {
     const m = String(st.mode || 'stack');
     if (m === 'split') return 'split';
@@ -2975,7 +3038,7 @@
   // 会退化成同一个签名（于是标题栏再也不重建）。
   const builderIds = new WeakMap();
   let builderIdSeq = 0;
-  const builderIdOf = (fn) => {
+  const builderIdOf = (/** @type {any} */ fn) => {
     if (!builderIds.has(fn)) builderIds.set(fn, ++builderIdSeq);
     return builderIds.get(fn);
   };
@@ -3054,7 +3117,7 @@
     // · 副标题透明度 = (H − 56) / (max − 56)，随收缩从 1 线性到 0
     // · 主标题 = 字号插值（L=30fp ↔ M=26fp），映射经 Curves::SHARP（cubic-bezier(0.4,0,0.6,1)，
     //   GetMappedOffset）；DOM 侧等价实现为 transform scale = (26 + SHARP(p)×4) / 30
-    const sharp = (p) => {                       // Curves::SHARP = cubic-bezier(0.4, 0, 0.6, 1)
+    const sharp = (/** @type {number} */ p) => {                       // Curves::SHARP = cubic-bezier(0.4, 0, 0.6, 1)
       let lo = 0, hi = 1, t = p;
       for (let i = 0; i < 24; i++) {             // 解 x(t)=p 的 t（x(t) 单调），再取 y(t)
         const x = 3 * (1 - t) * (1 - t) * t * 0.4 + 3 * (1 - t) * t * t * 0.6 + t * t * t;
@@ -3086,6 +3149,7 @@
   }
 
   // NavDestination 的标题栏 / 工具栏（同一时机同步）。它没有 titleMode，高度恒为紧凑 56vp（推断）。
+  /** @param {HTMLElement} node */
   function syncOneDest(node) {
     const d = node.__navDest;
     if (!d || !d.barEl || !d.barEl.isConnected) return;
@@ -3110,7 +3174,7 @@
     const showTb = !d.hideToolBar && items.length > 0;
     d.toolbarEl.style.display = showTb ? 'flex' : 'none';
     node.style.paddingBottom = showTb ? '56px' : '0';
-    const tbSig = `${items.length}|${items.map((i) => String(i.value)).join(',')}|${d.hideToolBar}`;
+    const tbSig = `${items.length}|${items.map((/** @type {any} */ i) => String(i.value)).join(',')}|${d.hideToolBar}`;
     if (d.toolbarDrawn !== tbSig) {
       d.toolbarDrawn = tbSig;
       drawToolbar(d.toolbarEl, items);
@@ -3119,6 +3183,7 @@
   }
 
   // 目的地所属的 Navigation 状态（目标区 → Navigation 元素）
+  /** @param {HTMLElement} node */
   function navStateOfDest(node) {
     let p = node.parentElement;
     while (p) {
@@ -3155,6 +3220,7 @@
   }
 
   // 目标区：Navigation.pop() 时创建（空栈时内容为空且隐藏）
+  /** @param {any} st */
   function ensureNavArea(st) {
     if (st.areaEl && st.areaEl.isConnected) return st.areaEl;
     const area = document.createElement('div');
@@ -3171,6 +3237,7 @@
     return area;
   }
 
+  /** @param {any} st */
   function ensureBuilder(st) {
     if (!st.builder) {
       layoutWarnings.push('Navigation 没有 navDestination builder：无法创建 NavDestination。'
@@ -3182,6 +3249,7 @@
 
   // animated：boolean | {animated} | undefined。.d.ts（pop 的 JSDoc，push 同）：
   // "Whether to enable the transition animation ... Default value: true" —— 未给就默认开。
+  /** @param {any} stack @param {any} animated */
   function navWantAnim(stack, animated) {
     if (stack._noAnim) return false;                       // disableAnimation(true)
     if (animated === undefined || animated === null) return true;
@@ -3191,6 +3259,7 @@
   // push 转场（R25）：新栈顶从右滑入、盖在上一个栈顶上；上一个栈顶在滑入期间保持可见，
   // 结束才藏。样式收口与 animation.js 同一约定：先提交起始值（强制重排，坑 ⑧），
   // transitionend 只当见证，真正收口靠定时器。
+  /** @param {any} st @param {any} rec @param {any} prev */
   function navSlidePush(st, rec, prev) {
     const el = rec.el;
     if (!el) return;
@@ -3249,6 +3318,7 @@
     return true;
   }
 
+  /** @param {any} st @param {any} rec */
   function navBuildDest(st, rec) {
     const area = ensureNavArea(st);
     const savedStack = ViewStackProcessor.snapshot();
@@ -3258,7 +3328,7 @@
     // 旧实现就这么写的，遇到带 if 分支的 PageMap 会误判成"没建出来"并把栈项弹掉
     // （R12 收口的新页面正是这种 builder，断言当场抓住）。改成按"本次新建的节点"认领。
     area.querySelectorAll('[data-arkui-comp="NavDestination"]')
-      .forEach((n) => { n.__arkuiNavNew = false; });
+      .forEach((/** @type {any} */ n) => { n.__arkuiNavNew = false; });
     ViewStackProcessor.push(area);          // 让 NavDestination 挂进目标区
     try {
       st.builder(rec.name, rec.param, undefined);
@@ -3279,11 +3349,13 @@
     return true;
   }
 
+  /** @param {any} rec */
   function navDestroyDest(rec) {
     if (rec.el && rec.el.parentNode) rec.el.parentNode.removeChild(rec.el);
     rec.el = null;
   }
 
+  /** @param {any} rec @param {string} kind */
   function navFire(rec, kind) {
     const cb = rec.cbs && rec.cbs[kind];
     if (typeof cb !== 'function') return;
@@ -3291,6 +3363,7 @@
   }
 
   // 隐藏：willHide → hidden（JSDoc：前者"即将隐藏"，后者"已隐藏"）
+  /** @param {any} rec */
   function navHideDest(rec) {
     if (!rec || !rec.el) return;
     navFire(rec, 'willHide');
@@ -3299,6 +3372,7 @@
   }
 
   // 显示：首次挂载 willAppear → willShow → shown → ready；再次显示只走 willShow → shown
+  /** @param {any} rec */
   function navShowDest(rec) {
     if (!rec || !rec.el) return;
     if (!rec.everShown) { navFire(rec, 'willAppear'); rec.everShown = true; }
@@ -3309,11 +3383,12 @@
   }
 
   // 把可见性与生命周期对齐到"只有栈顶可见"
+  /** @param {any} st */
   function navSyncVisibility(st) {
     if (!st) return;
     const top = st.paths.length ? st.paths[st.paths.length - 1] : null;
     if (st.visible && st.visible !== top) navHideDest(st.visible);
-    st.paths.forEach((p) => { if (p.el && p !== top) p.el.style.display = 'none'; });
+    st.paths.forEach((/** @type {any} */ p) => { if (p.el && p !== top) p.el.style.display = 'none'; });
     if (top && top !== st.visible) navShowDest(top);
     st.visible = top;
     if (st.areaEl) st.areaEl.style.display = st.paths.length ? 'block' : 'none';
@@ -3325,6 +3400,7 @@
   // pop 转场（R25）：栈顶向右滑出、露出新栈顶（或空栈时的根内容）。状态层回调照旧立刻发
   //（willHide → hidden → willDisappear，顺序与立即版一致），DOM 摘除推迟到滑出结束 ——
   // 这是"动画期间目的地还在"与"生命周期语义不变"的唯一交点，已写进 docs。
+  /** @param {any} stack @param {any} rec @param {any} result */
   function navPopAnimated(stack, rec, result) {
     const st = stack._nav;
     const el = rec.el;
@@ -3412,12 +3488,14 @@
     navSyncVisibility(st);
   }
 
+  /** @param {any} stack */
   function navClearAll(stack) {
     const st = stack._nav;
     if (!st) { stack._paths.length = 0; return; }
     navPopRange(stack, 0, st.paths.length, undefined);
   }
 
+  /** @param {any} stack @param {any} info @param {any} _animated */
   function navReplaceTop(stack, info, _animated) {
     const st = stack._nav;
     if (!st) { layoutWarnings.push('NavPathStack 尚未绑定到任何 Navigation'); return; }
@@ -3439,9 +3517,11 @@
     navSyncVisibility(st);
   }
 
+  /** @param {any} st @param {any} v */
   function updateNavStack(st, v) { bindNavStack(st, v); }
 
   // NavDestination 挂载：认领目标区（先按 none 挂上，可见性交给 navSyncVisibility）
+  /** @param {any} rec @param {any} deepFn @param {any} elmtId */
   function mountNavDestination(rec, deepFn, elmtId) {
     let node = rec && rec.node && rec.node.__arkuiComp === 'NavDestination' ? rec.node : null;
     if (!node) {
@@ -3595,6 +3675,7 @@
   const ProgressType = ProgressStyle;                       // type 是老写法，语义同 style
   // 枚举顺序照 data_panel.d.ts（Line=0, Circle=1），所以也接受数字
   const DataPanelType = { Line: 'line', Circle: 'circle' };
+  /** @param {string|number} v */
   const isCirclePanel = (v) => v === 'circle' || v === 1;
 
   const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -3604,6 +3685,7 @@
     for (const k of Object.keys(attrs || {})) el.setAttribute(k, String(attrs[k]));
     return el;
   };
+  /** @param {any} c */
   const colorOf = (c) => {
     if (typeof c === 'number') return '#' + (c >>> 0).toString(16).padStart(8, '0').slice(2);
     if (typeof c === 'string') return c;
@@ -3611,6 +3693,7 @@
   };
   // 弧长归一化：pathLength=100 → dasharray 直接是百分比，跨实现可断言
   const PATH_LEN = 100;
+  /** @param {number} n */
   const r2 = (n) => Math.round(n * 100) / 100;
 
   // 圆环坐标：0 点 = 0 度、顺时针为正（Gauge 的 .d.ts JSDoc 原话）
@@ -3633,6 +3716,7 @@
     const p0 = polar(cx, cy, r, a0), p1 = polar(cx, cy, r, a1);
     return `M ${r2(p0.x)} ${r2(p0.y)} A ${r} ${r} 0 ${sweep > 180 ? 1 : 0} 1 ${r2(p1.x)} ${r2(p1.y)}`;
   }
+  /** @param {SVGElement} el @param {number} pct @param {number} offset */
   const arcDash = (el, pct, offset) => {
     el.setAttribute('pathLength', String(PATH_LEN));
     el.setAttribute('stroke-dasharray', `${r2(pct)} ${PATH_LEN}`);
@@ -3640,6 +3724,7 @@
   };
 
   // ── Progress ──
+  /** @param {any} opts */
   function buildProgressNode(opts) {
     const o = opts && typeof opts === 'object' ? opts : {};
     const style = String(o.style !== undefined ? o.style : (o.type !== undefined ? o.type : 'linear'));
@@ -3679,6 +3764,7 @@
     return node;
   }
 
+  /** @param {any} node @param {any} value @param {any} totalArg */
   function applyProgressValue(node, value, totalArg) {
     const total = Number(totalArg) || Number(node.getAttribute('aria-valuemax')) || 100;
     const v = Number(value) || 0;
@@ -3690,6 +3776,7 @@
     else if (node.__svg) drawProgressRing(node, pct / 100);
   }
 
+  /** @param {any} node @param {number} ratio */
   function drawProgressRing(node, ratio) {
     const w = node.offsetWidth || 80, h = node.offsetHeight || 80;
     const stroke = node.__stroke || 4;
@@ -3711,6 +3798,7 @@
   }
 
   // ── Gauge ──
+  /** @param {any} opts */
   function buildGaugeNode(opts) {
     const o = opts && typeof opts === 'object' ? opts : {};
     const node = document.createElement('div');
@@ -3730,6 +3818,7 @@
     return node;
   }
 
+  /** @param {any} node */
   function gaugeSegments(node) {
     const c = node.__colors;
     if (c === null || c === undefined) return [{ color: null, weight: 1 }];
@@ -3743,6 +3832,7 @@
     return segs.filter((s) => s.weight > 0);
   }
 
+  /** @param {any} node */
   function redrawGauge(node) {
     const w = node.offsetWidth || 120, h = node.offsetHeight || 120;
     const stroke = node.__strokeW;
@@ -3788,6 +3878,7 @@
 
   // ── DataPanel ──
   const PANEL_PALETTE = ['#007dff', '#00c48c', '#ffb400', '#ff5c5c', '#9b59b6', '#00b3c7'];
+  /** @param {any} opts */
   function buildDataPanelNode(opts) {
     const o = opts && typeof opts === 'object' ? opts : {};
     const node = document.createElement('div');
@@ -3803,22 +3894,24 @@
     return node;
   }
 
+  /** @param {any} node */
   function panelGeometry(node) {
     const max = node.__panelMax || 100;
-    const segs = node.__values.map((v) => Math.max(0, v) / max);
+    const segs = node.__values.map((/** @type {any} */ v) => Math.max(0, v) / max);
     const stops = [];
     let acc = 0;
     for (const s of segs) { acc += s; stops.push(Math.min(1, acc)); }
     return { segs, stops };
   }
 
+  /** @param {any} node */
   function redrawDataPanel(node) {
     const { segs } = panelGeometry(node);
     const colors = node.__panelColors || PANEL_PALETTE;
     if (node.__panelType === 'circle') {
       const parts = [];
       let from = 0;
-      segs.forEach((s, i) => {
+      segs.forEach((/** @type {any} */ s, /** @type {any} */ i) => {
         if (s <= 0) return;
         const to = Math.min(1, from + s);
         parts.push(`${colors[i % colors.length]} ${r2(from * 100)}% ${r2(to * 100)}%`);
@@ -3833,7 +3926,7 @@
       node.style.overflow = 'hidden';
       node.textContent = '';
       let used = 0;
-      segs.forEach((s, i) => {
+      segs.forEach((/** @type {any} */ s, /** @type {any} */ i) => {
         if (s <= 0) return;
         const seg = document.createElement('div');
         seg.setAttribute('data-arkui-datapanel-seg', String(i));
@@ -3858,6 +3951,7 @@
   // ── Rating ──
   const STAR_PATH = 'M 12 2 L 15.09 8.26 L 22 9.27 L 17 14.14 L 18.18 21.02 L 12 17.77'
     + ' L 5.82 21.02 L 7 14.14 L 2 9.27 L 8.91 8.26 Z';
+  /** @param {any} opts */
   function buildRatingNode(opts) {
     const o = opts && typeof opts === 'object' ? opts : {};
     const node = document.createElement('div');
@@ -3876,6 +3970,7 @@
     return node;
   }
 
+  /** @param {any} node */
   function ratingLit(node) {
     const snap = node.__step > 0 ? Math.round(node.__rating / node.__step) * node.__step : node.__rating;
     const lit = Math.max(0, Math.min(node.__starCount, snap));
@@ -3884,6 +3979,7 @@
     return { lit, full, half };
   }
 
+  /** @param {boolean} filled */
   function starSvg(filled) {
     const svg = svgEl('svg', { viewBox: '0 0 24 24' });
     svg.style.width = '100%';
@@ -3892,6 +3988,7 @@
     return svg;
   }
 
+  /** @param {any} node */
   function redrawRating(node) {
     const { full, half } = ratingLit(node);
     node.textContent = '';
@@ -3938,6 +4035,7 @@
 
   // 渲染后重绘：弧的半径要用容器的真实尺寸（create 时 .width/.height 还没生效，offsetWidth 是 0）。
   // 与 syncAlignRules 同一时机（首渲染后 + 每次重渲染后）。
+  /** @param {any=} [rootEl] */
   function syncDrawings(rootEl) {
     const r = rootEl || rootNode;
     if (!r || !r.querySelectorAll) return;
@@ -4017,6 +4115,7 @@
     const pick = (/** @type {string} */ side) => parseFloat((/** @type {any} */ (cs))[kind + side]) || 0;
     return { top: pick('Top'), right: pick('Right'), bottom: pick('Bottom'), left: pick('Left') };
   };
+  /** @param {HTMLElement} el */
   const areaOf = (el) => {
     const r = el.getBoundingClientRect();
     return {
@@ -4027,6 +4126,7 @@
     };
   };
   // 渲染后按【真实几何】派发 onAreaChange：只在面积真的变了（或首次）时触发
+  /** @param {any} rootEl */
   function syncAreas(rootEl) {
     const r = rootEl || rootNode;
     if (!r || !r.querySelectorAll) return;
@@ -4050,8 +4150,10 @@
   }
 
   const customLayoutMeta = new WeakMap();
+  /** @param {any} el @param {any} con @param {any} log */
   function measureChild(el, con, log) {
     const c = con || {};
+    /** @param {string} prop @param {any} v */
     const set = (prop, v) => {
       el.style[prop] = (v === undefined || v === null) ? '' : (typeof v === 'number' ? v + 'px' : String(v));
     };
@@ -4066,6 +4168,7 @@
   // 自定义布局：组件的"子节点" = 该组件 builder 直接产出的元素（在 container 里）。
   // 返回的尺寸施加在 host（= 带 .id() 的那一层，可能是编译器合成的 __Common__ 包装器）上，
   // 因为 ArkUI 里 onMeasureSize 回的就是"组件自身"的尺寸，二者必须是同一个盒子。
+  /** @param {any} view @param {any} container @param {any} host */
   function runCustomLayout(view, container, host) {
     const kids = [...container.children];
     const hostEl = host || container;
@@ -4076,9 +4179,9 @@
     const ph = parentEl.clientHeight - (parseFloat(pcs.paddingTop) || 0) - (parseFloat(pcs.paddingBottom) || 0);
     const constraint = { minWidth: 0, maxWidth: Math.max(0, pw), minHeight: 0, maxHeight: Math.max(0, ph) };
     const log = { measures: [], layoutCalls: 0, passes: 0 };
-    const measurables = kids.map((el, i) => ({
+    const measurables = kids.map((/** @type {any} */ el, /** @type {number} */ i) => ({
       uniqueId: i,
-      measure: (c) => measureChild(el, c, log),
+      measure: (/** @type {any} */ c) => measureChild(el, c, log),
       getMargin: () => edgesOf(el, 'margin'),
       getPadding: () => edgesOf(el, 'padding'),
       getBorderWidth: () => edgesOf(el, 'borderWidth'),
@@ -4104,10 +4207,10 @@
       hostEl.style.height = h + 'px';
     }
     if (typeof view.onPlaceChildren === 'function') {
-      const layoutables = kids.map((el, i) => ({
+      const layoutables = kids.map((/** @type {any} */ el, /** @type {number} */ i) => ({
         uniqueId: i,
         measureResult: el.__lastMeasure || { width: el.offsetWidth, height: el.offsetHeight },
-        layout: (position) => {
+        layout: (/** @type {any} */ position) => {
           const x = Number((position && position.x) || 0);
           const y = Number((position && position.y) || 0);
           el.style.position = 'absolute';
@@ -4136,6 +4239,7 @@
     });
   }
 
+  /** @param {any} node @param {any} prop @param {any} value @param {any} extra */
   function applyAttr(node, prop, value, extra) {
     if (!node) return;
     // R22 收口：`.transition(options|effect[, onFinish])` 也是**属性**（产物走 builder 栈），
@@ -4174,7 +4278,7 @@
         // ⚠️ 包装器带【target 校验】：实测（inputdemo 排查）rd 的包装器会被错误地挂到
         // 其他 input 节点上（tg1/sl1 的 change 也会带起 rd 回调）—— 根因在组件栈复用，
         // 先用"事件目标必须是自己"兜住错投：change 目标不是这个节点就不算它的选中态变化。
-        const wrapper = (e) => {
+        const wrapper = (/** @type {Event} */ e) => {
           if (e.target !== node) return;
           try { value(!!node.checked); }
           catch (err) { layoutWarnings.push(`输入类 onChange 派发抛错：${err && err.message}`); }
@@ -4183,7 +4287,7 @@
           if (node.type === 'radio' && node.checked && typeof radioGroups !== 'undefined') {
             const members = radioGroups.get(node.name);
             if (members) {
-              members.forEach((m) => {
+              members.forEach((/** @type {any} */ m) => {
                 if (m !== node && m.__arkuiRadioOn && m.__arkuiEv && m.__arkuiEv.change) {
                   m.__arkuiRadioOn = false;
                   m.__arkuiEv.change({ target: m, type: 'change' });
@@ -4218,12 +4322,12 @@
       }
       if (node.__arkuiInput === 'slider' && prop === 'onChange') {
         // 覆盖语义同上：input→Moving(1)，change→End(2)；target 校验同上（防错投）
-        const onInput = (e) => {
+        const onInput = (/** @type {Event} */ e) => {
           if (e.target !== node) return;
           try { value(Number(node.value), 1); }
           catch (err) { layoutWarnings.push(`Slider.onChange 派发抛错：${err && err.message}`); }
         };
-        const onChangeEv = (e) => {
+        const onChangeEv = (/** @type {Event} */ e) => {
           if (e.target !== node) return;
           try { value(Number(node.value), 2); }
           catch (err) { layoutWarnings.push(`Slider.onChange 派发抛错：${err && err.message}`); }
@@ -4266,8 +4370,8 @@
     }
     // CalendarPicker（R54）：edgeAlign/markToday/textStyle/onChange 是语义属性；onChange
     // 与 DOM 原生 change 事件同名，必须拦在通用 on* 规则之前（坑 86）
-    if (node.__arkuiCalPick && CALPICK_ATTRS[prop]) {
-      CALPICK_ATTRS[prop](node, value);
+    if (node.__arkuiCalPick && (/** @type {Record<string, any>} */ (CALPICK_ATTRS))[prop]) {
+      (/** @type {Record<string, any>} */ (CALPICK_ATTRS))[prop](node, value);
       return;
     }
     // ImageAnimator（R47）：images/state/事件是语义属性，抢在通用落点之前
@@ -4360,8 +4464,8 @@
       return;
     }
     // NavDestination 的生命周期回调同理：由栈操作派发，不能变成 'willappear' 监听器
-    if (node.__navDestCbs && NAVDEST_LIFECYCLE[prop]) {
-      const kind = NAVDEST_LIFECYCLE[prop];
+    if (node.__navDestCbs && (/** @type {Record<string, any>} */ (NAVDEST_LIFECYCLE))[prop]) {
+      const kind = (/** @type {Record<string, any>} */ (NAVDEST_LIFECYCLE))[prop];
       if (kind === 'backPressed') {
         node.__navDestCbs[kind] = value;
         layoutWarnings.push('NavDestination.onBackPressed 已登记，但本运行时没有系统返回键触发源'
@@ -4394,8 +4498,8 @@
     if (node.__navState && NAV_ATTRS[prop]) { NAV_ATTRS[prop](node.__navState, value, extra); return; }
     if (node.__navDest && NAVDEST_ATTRS[prop]) { NAVDEST_ATTRS[prop](node, value, extra); return; }
     // Grid 轨道模板要过单位归一化，所以不能走 cssPropEnum 的原样透传
-    if (GRID_TRACK_PROPS[prop]) {
-      node.style[GRID_TRACK_PROPS[prop]] = normalizeTrackList(resolveResource(value));
+    if ((/** @type {Record<string, any>} */ (GRID_TRACK_PROPS))[prop]) {
+      node.style[(/** @type {Record<string, any>} */ (GRID_TRACK_PROPS))[prop]] = normalizeTrackList(resolveResource(value));
       return;
     }
     // 未实现的 Grid/Tabs/Swiper/Navigation 语义项：不 return，继续落 data-*，但同时留下诊断
@@ -4444,8 +4548,9 @@
   }
 
   // ────────────────────── 组件注册表 ──────────────────────
-  const components = {};
+  /** @type {Record<string, any>} */ const components = {};
 
+  /** @param {string} tag @param {Record<string, string>} style */
   const defaultDom = (tag, style) => () => {
     const el = document.createElement(tag);
     Object.assign(el.style, style || {});
@@ -4453,6 +4558,7 @@
   };
 
   // 组件声明的已知工厂方法（官方工厂名不统一，先显式登记，其余以 /^create/ 兜底）
+  /** @type {Record<string, string[]>} */
   const FACTORIES = {
     Button: ['create', 'createWithLabel', 'createWithIcon', 'createWithChild'],
   };
@@ -4463,13 +4569,15 @@
     const C = function () {};
     C.componentName = name;
     const declared = FACTORIES[name] || ['create'];
-    const methods = {};
+    /** @type {Record<string, any>} */ const methods = {};
 
+    /** @param {any} key */
     const isFactory = (key) => declared.includes(key) || /^create/.test(key) || key === 'pop';
 
+    /** @param {...any} args */
     C.create = function (...args) {
       const rec = elmtRecords.get(currentNodeElmtId);
-      let node;
+      /** @type {any} */ let node;
       if (rec && rec.node && rec.node.__arkuiComp === name) {
         node = rec.node;
         if (contentUpdater) contentUpdater(node, args);
@@ -4492,10 +4600,11 @@
 
     // deepRender：ListItem.create(deepFn, true) 首次渲染要展开子树，但不能递归再进入
     if (name === 'ListItem' || name === 'GridItem') {
+      /** @param {any} deepFn @param {any} isDeep */
       C.create = function (deepFn, isDeep) {
         const elmtId = currentNodeElmtId;
         const rec = elmtRecords.get(elmtId);
-        let node;
+        /** @type {any} */ let node;
         if (rec && rec.node) {
           node = rec.node;
         } else {
@@ -4522,9 +4631,10 @@
     // Tabs：DOM 结构见 createTabsState。栈顶是【包装元素】，所以 Tabs.width/height/onChange
     // 全部作用在整体上；TabContent 由 mountTabContent 认领内容区。
     if (name === 'Tabs') {
+      /** @param {...any} args */
       C.create = function (...args) {
         const rec = elmtRecords.get(currentNodeElmtId);
-        let node;
+        /** @type {any} */ let node;
         if (rec && rec.node && rec.node.__arkuiComp === 'Tabs') {
           node = rec.node;
           node.__tabsState.contents = [];        // 重渲染：子项会重新登记，bar 在 pop 时重建
@@ -4553,9 +4663,10 @@
     // （gap 会连 header/首项也拉开，违反 d.ts"not spacing between the header and list
     // items"）——间距/divider 在 pop 时按 item 间 margin+::before 落。
     if (name === 'ListItemGroup') {
+      /** @param {...any} args */
       C.create = function (...args) {
         const rec = elmtRecords.get(currentNodeElmtId);
-        let node;
+        /** @type {any} */ let node;
         if (rec && rec.node && rec.node.__arkuiComp === 'ListItemGroup') {
           node = rec.node;
         } else {
@@ -4610,7 +4721,7 @@
         const bw = st.divider ? Math.max(0, Number(st.divider.strokeWidth) || 0) : 0;
         const gap = st.spaceWidth != null ? Math.max(0, Number(st.spaceWidth) || 0)
           : Math.max(st.space, bw);
-        items.forEach((item, k) => {
+        items.forEach((/** @type {any} */ item, /** @type {number} */ k) => {
           if (k > 0) item.style.marginTop = `${gap}px`;
           if (st.divider && k > 0) {
             item.setAttribute('data-arkui-lig-div', '');
@@ -4626,6 +4737,7 @@
 
     // TabContent：子构建器是【构造参数】，首次构建时立即展开（同 ListItem 的深渲染，防递归再入）
     if (name === 'TabContent') {
+      /** @param {any} deepFn */
       C.create = function (deepFn) {
         const elmtId = currentNodeElmtId;
         const rec = elmtRecords.get(elmtId);
@@ -4652,9 +4764,10 @@
     // Swiper：create 的参数是【控制器实例】；子项直接挂进 Swiper 元素（栈顶即它），
     // 所以 Swiper.width/height/onChange 都作用在整体上，指示点在 pop 时作为覆盖层追加。
     if (name === 'Swiper') {
+      /** @param {...any} args */
       C.create = function (...args) {
         const rec = elmtRecords.get(currentNodeElmtId);
-        let node;
+        /** @type {any} */ let node;
         if (rec && rec.node && rec.node.__arkuiComp === 'Swiper') {
           node = rec.node;
           node.__swiperState.entries = [];        // 重渲染：页会在 pop 时重新收集
@@ -4680,9 +4793,10 @@
     // Navigation：栈顶是【Navigation 元素本身】（所以 width/height/mode/navDestination 都作用于整体），
     // 根内容子组件直接挂进来；目标区在 pop 时作为覆盖层创建，push 时由 navBuildDest 往里面建树。
     if (name === 'Navigation') {
+      /** @param {...any} args */
       C.create = function (...args) {
         const rec = elmtRecords.get(currentNodeElmtId);
-        let node;
+        /** @type {any} */ let node;
         if (rec && rec.node && rec.node.__arkuiComp === 'Navigation') {
           node = rec.node;
           updateNavStack(node.__navState, args && args[0]);
@@ -4706,6 +4820,7 @@
     // NavDestination：由 NavPathStack 的压栈操作驱动创建（builder 里），不在页面 initialRender 中。
     // 子构建器同样是【构造参数】（同 TabContent），首次构建时立即展开。
     if (name === 'NavDestination') {
+      /** @param {any} deepFn */
       C.create = function (deepFn) {
         const elmtId = currentNodeElmtId;
         const rec = elmtRecords.get(elmtId);
@@ -4718,10 +4833,11 @@
     // 绘制类四件套：形状/数据来自 create 选项，尺寸来自 .width/.height ——
     // 所以弧的真正绘制要等渲染后（见 syncDrawings），create 时只是先建出骨架。
     if (name === 'Progress') {
+      /** @param {...any} args */
       C.create = function (...args) {
         const rec = elmtRecords.get(currentNodeElmtId);
         const o = args && args[0];
-        let node;
+        /** @type {any} */ let node;
         if (rec && rec.node && rec.node.__drawKind === 'Progress') {
           node = rec.node;
           node.__drawOpts = o || {};
@@ -4740,7 +4856,7 @@
       C.create = function (...args) {
         const rec = elmtRecords.get(currentNodeElmtId);
         const o = args && args[0];
-        let node;
+        /** @type {any} */ let node;
         if (rec && rec.node && rec.node.__drawKind === 'Gauge') {
           node = rec.node;
           node.__drawOpts = o || {};
@@ -4756,10 +4872,11 @@
     }
 
     if (name === 'DataPanel') {
+      /** @param {...any} args */
       C.create = function (...args) {
         const rec = elmtRecords.get(currentNodeElmtId);
         const o = args && args[0];
-        let node;
+        /** @type {any} */ let node;
         if (rec && rec.node && rec.node.__drawKind === 'DataPanel') {
           node = rec.node;
           node.__drawOpts = o || {};
@@ -4777,10 +4894,11 @@
     }
 
     if (name === 'Rating') {
+      /** @param {...any} args */
       C.create = function (...args) {
         const rec = elmtRecords.get(currentNodeElmtId);
         const o = args && args[0];
-        let node;
+        /** @type {any} */ let node;
         if (rec && rec.node && rec.node.__drawKind === 'Rating') {
           node = rec.node;
           node.__rating = Number(o && o.rating) || 0;
@@ -4796,14 +4914,16 @@
     }
 
     components[name] = new Proxy(C, {
+      /** @param {any} target @param {any} key */
       get(target, key) {
         if (key in target) return target[key];
         if (typeof key === 'symbol') return undefined;
         if (isFactory(key)) {
           if (!methods[key]) {
+            /** @param {...any} args */
             methods[key] = function (...args) {
               const rec = elmtRecords.get(currentNodeElmtId);
-              let node;
+              /** @type {any} */ let node;
               if (rec && rec.node) { node = rec.node; if (contentUpdater) contentUpdater(node, args); }
               else {
                 node = domFactory(args);
@@ -4822,6 +4942,7 @@
         if (!methods[key]) {
           // 属性方法要把**所有**实参透传：`transition(effect, onFinish)` 是两参重载，
           // 只传第一个会把 onFinish 静默丢掉（实测产物确实这么调）
+          /** @param {...any} args */
           methods[key] = function (...args) { applyAttr(ViewStackProcessor.top(), key, args[0], args[1]); };
         }
         return methods[key];
@@ -4831,6 +4952,7 @@
   }
 
   // ────────────────────── 具体组件 ──────────────────────
+  /** @param {any} node @param {any} args */
   const textLike = (node, args) => {
     if (args && args[0] !== undefined) node.textContent = String(resolveResource(args[0]));
   };
@@ -4912,6 +5034,7 @@
   // 产物形式（与 ForEach 不同，view/dataSource 直接传进 create）：
   //   LazyForEach.create("1", this, this.source, itemGen, keyGen); LazyForEach.pop();
   // 只渲染视口内的项 + overscan，用上下 spacer 撑出总高度；滚动/数据变更时重算窗口。
+  /** @param {HTMLElement} startEl */
   function nearestScrollable(startEl) {
     let p = startEl.parentElement;
     while (p) {
@@ -4922,6 +5045,7 @@
     return startEl.parentElement;
   }
 
+  /** @param {any} id @param {any} view @param {any} source @param {any} itemGen @param {any} keyGen */
   function createLazyForEach(id, view, source, itemGen, keyGen) {
     const holder = document.createElement('div');
     holder.setAttribute('data-arkui-lazyforeach', String(id));
@@ -4951,6 +5075,7 @@
     // advance 取整：布局最终落在整像素上（spacer 的 px 高度会被浏览器取整），
     // 模型若保留小数，累积到几千像素后会与真实 DOM 差出零点几到一像素。
     // 估计值本身保留小数（均值更准），只在"一步前进多少"这一步取整。
+    /** @param {number} i */
     const advanceOf = (i) => Math.round((state.heights.has(i) ? state.heights.get(i) : state.estItemH) + state.gap);
     function rebuildPrefix() {
       const p = new Float64Array(state.total + 1);
@@ -4958,6 +5083,7 @@
       state.prefix = p;
       state.prefixDirty = false;
     }
+    /** @param {number} i */
     const offsetOf = (i) => {
       if (state.prefixDirty || !state.prefix || state.prefix.length !== state.total + 1) rebuildPrefix();
       const k = Math.max(0, Math.min(state.total, i | 0));
@@ -4966,6 +5092,7 @@
     // 总高：最后一项后面没有 gap
     const totalHOf = () => offsetOf(state.total) - (state.total ? state.gap : 0);
     // 二分：最大的 i 使 offset(i) <= y
+    /** @param {number} y */
     function indexAt(y) {
       if (state.prefixDirty || !state.prefix) rebuildPrefix();
       const p = state.prefix;
@@ -4980,6 +5107,7 @@
     state.totalHOf = totalHOf;
     state.indexAt = indexAt;
 
+    /** @param {number=} [depth] */
     function renderWindow(depth) {
       const d = depth || 0;
       if (!state.scrollEl) state.scrollEl = nearestScrollable(holder);
@@ -5092,8 +5220,8 @@
       state.scrollEl.addEventListener('scroll', state.onScroll);
     }
     // 注意：logs 由 ohos-shims.js 创建，未加载时不能假设它存在
-    if (global.__arkui_dom_logs) {
-      global.__arkui_dom_logs.push({ t: 'lazyForEach.mounted', id: String(id), total: state.total, estItemH: state.estItemH });
+    if ((/** @type {any} */ (global)).__arkui_dom_logs) {
+      (/** @type {any} */ (global)).__arkui_dom_logs.push({ t: 'lazyForEach.mounted', id: String(id), total: state.total, estItemH: state.estItemH });
     }
     return holder;
   }
@@ -5127,11 +5255,13 @@
   // fill 表现属性能通过 CSS 继承进【没显式 fill】的子形状（子形状自己的属性永远赢过继承）。
   // 生成的骨架只有裸 `<circle>` 之类（零属性语义），本节在生成注册之前手写登记，手写优先。
   // SVG_NS 复用 draw.js 里的同名常量（同一 IIFE，draw 分片在本节之前）
+  /** @param {any} v */
   const shapeDim = (v) => {
     const n = dimOf(v, 0);
     return Number.isFinite(n) && n > 0 ? n : 0;   // .d.ts：无效值（undefined/null/NaN/Infinity）按默认 0
   };
 
+  /** @param {string} tag @param {number} w @param {number} h */
   function shapeRoot(tag, w, h) {
     const svg = document.createElementNS(SVG_NS, 'svg');
     const el = document.createElementNS(SVG_NS, tag);
@@ -5144,6 +5274,7 @@
     return svg;
   }
 
+  /** @param {any} v */
   const pointsAttr = (v) => (Array.isArray(v) ? v : [])
     .map((p) => `${Number(resolveResource(p[0]))},${Number(resolveResource(p[1]))}`)
     .join(' ');
@@ -5312,6 +5443,7 @@
     if (o.isOn !== undefined) el.checked = !!o.isOn;
   });
   const Slider = inputComponent('Slider', 'range', (el, o) => {
+    /** @param {any} v @param {number} d */
     const num = (v, d) => { const n = Number(resolveResource(v)); return Number.isFinite(n) ? n : d; };
     el.min = String(num(o.min, 0));                       // .d.ts 默认：min 0、max 100
     el.max = String(num(o.max, 100));
@@ -5332,7 +5464,9 @@
   // TextInputController：caretPosition/caretAnimationTime 等按需补面（本轮只挂基座 + 绑定）
   const TextInputControllerBase = class {
     constructor() { this.__arkuiEditable = null; }
+    /** @param {any} el */
     __arkuiBindEditable(el) { this.__arkuiEditable = el; }
+    /** @param {number} pos */
     caretPosition(pos) {
       if (this.__arkuiEditable) this.__arkuiEditable.setSelectionRange(pos, pos);
     }
@@ -5401,7 +5535,7 @@
       // enterKey 未设时取 Done(6)（.d.ts 默认值原文："Default value: EnterKeyType.Done"）。
       // （R38 修复：此前的 wrapper 里写的是 `value(...)`——未定义标识符，Enter 一按就
       // ReferenceError 且被本 try/catch 吞掉，表现为"派发未打通"之谜；tsc --checkJs 抓出。）
-      const wrapper = (e) => {
+      const wrapper = (/** @type {KeyboardEvent} */ e) => {
         if (e.target !== n) return;
         const key = n.getAttribute('data-enter-key');
         const enterKey = key !== null ? Number(key) : EnterKeyType.Done;
@@ -5676,12 +5810,14 @@
   // 颜色变化 → 整幅重画。
   // ArkUI 的 8 位颜色字面量是【ARGB】（'#ff000000' = 不透明黑，JSDoc 原文默认），CSS 是 RRGGBBAA
   // ——位数歧义必须归一，否则默认前景画成全透明（首跑当场抓住：解码 null）。
+  /** @param {any} c */
   const qrColor = (c) => {
     const s = colorOf(c);
     return s[0] === '#' && s.length === 9 ? '#' + s.slice(3) + s.slice(1, 3) : s;
   };
+  /** @param {any} el */
   function redrawQr(el) {
-    if (!global.ArkuiQrcodegen || typeof global.ArkuiQrcodegen.encode !== 'function') {
+    if (!(/** @type {any} */ (global)).ArkuiQrcodegen || typeof (/** @type {any} */ (global)).ArkuiQrcodegen.encode !== 'function') {
       layoutWarnings.push('QRCode 编码器 vendor 未加载（runtime/vendor/arkui-qrcodegen.js）——降级为不渲染');
       delete el.__arkuiQrPending;
       return;
@@ -5697,7 +5833,7 @@
       const native = el.getContext('2d');
       // 真机编码器：arkui_qrcodegen 的 QrcodeImageEncodeString，ECC 恒 MEDIUM(0)
       //（qrcode_modifier.cpp:44 硬编码）。返回 {version,width,data}，data[i]&1 = 暗格。
-      const matrix = global.ArkuiQrcodegen.encode(value, 0);
+      const matrix = (/** @type {any} */ (global)).ArkuiQrcodegen.encode(value, 0);
       if (!matrix) return;                                    // 编码失败（内容非法）
       // R44 照真机守卫（qrcode_modifier.cpp:55）：组件尺寸小于矩阵模块数 → 拒绝绘制
       //（真机：LessNotEqual(qrCodeSize, qrWidth) 即记错误返回；我们含 quiet zone，
@@ -5770,7 +5906,7 @@
     const el = document.createElement('select');
     el.style.display = 'inline-block';
     el.__arkuiPopup = 'Select';
-    (Array.isArray(args && args[0]) ? args[0] : []).forEach((opt) => {
+    (Array.isArray(args && args[0]) ? args[0] : []).forEach(/** @param {any} opt */ (opt) => {
       const o = document.createElement('option');
       const text = String(resolveResource(opt && opt.value === undefined ? '' : opt.value));
       o.value = text;
@@ -5836,6 +5972,7 @@
 
   // Select.onSelect 的双参派发（特殊签名，拦在通用 on* 规则之前）：change 事件 → (index, value)。
   // 编程改 selectedIndex 不派发（DOM 语义取舍已记录）；测试用 dispatchEvent('change') 驱动。
+  /** @param {any} node @param {any} cb */
   function popupBindSelect(node, cb) {
     node.addEventListener('change', () => {
       const i = node.selectedIndex;
@@ -5914,6 +6051,7 @@
     }
   };
   const RenderingContextSettings = class RenderingContextSettings {
+    /** @param {boolean=} [antialias] @param {boolean=} [alpha] */
     constructor(antialias, alpha) {
       this.antialias = !!antialias;
       this.alpha = alpha === undefined ? true : !!alpha;   // .d.ts 默认 true
@@ -5975,11 +6113,13 @@
       this.__arkuiXcEl = null;
       this.__arkuiXcRect = null;
     }
+    /** @param {any} el */
     __arkuiBindXComponent(el) { this.__arkuiXcEl = el; }
     getXComponentSurfaceId() {
       return 'XComponent-' + (this.__arkuiXcEl ? this.__arkuiXcEl.__arkuiXcId : '');
     }
     getXComponentContext() { return { surfaceId: this.getXComponentSurfaceId() }; }
+    /** @param {any} rect */
     setXComponentSurfaceRect(rect) { this.__arkuiXcRect = rect; }
     getXComponentSurfaceRect() {
       if (this.__arkuiXcRect) return Object.assign({}, this.__arkuiXcRect);
@@ -6038,6 +6178,7 @@
   // 解码尺寸）→ onLoad、error → onError。syncLoad 只记 data-*（浏览器默认即主线程解码）。
   // 回调经 __imgCbs 闭包间接引用（覆盖语义，坑 88 同族）；图已缓存完成时补派发（定时器
   // 收口，坑 ⑧ 同思想）。
+  /** @type {Record<string, string>} */
   const IMAGE_FIT_CSS = { 0: 'contain', 1: 'cover', 3: 'fill', 4: 'scale-down', 5: 'none' };
   /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
   const IMAGE_ATTRS = {
@@ -6083,7 +6224,7 @@
     main.style.height = '100%';
     // alt 占位图**惰性创建**（R45 教训：预插的无 src <img> 会被页面的 querySelector('img')
     // 命中、getAttribute('src') 为 null——widgets 页的旧断言就是这么红的）
-    let altImg = null;
+    /** @type {any} */ let altImg = null;
     const ensureAlt = () => {
       if (!altImg) {
         altImg = document.createElement('img');
@@ -6129,6 +6270,7 @@
     el.__arkuiImgFireIfDone = () => {
       const cbs = el.__imgCbs;
       if (!cbs) return;
+      /** @param {any} name @param {any} arg */
       const fire = (name, arg) => {
         if (typeof cbs[name] !== 'function') return;
         const cb = cbs[name];
@@ -6226,7 +6368,7 @@
     el.__an = {
       frames: [], framesKey: '', duration: 1000, iterations: 1, reverse: false, fixedSize: true,
       state: 0, idx: 0, cycle: 0, timer: null, started: false,
-      show: (i) => {
+      show: /** @param {number} i */ (i) => {
         el.__an.idx = i;
         const f = el.__an.frames[i];
         if (f && f.src != null) img.src = String(resolveResource(f.src));
@@ -6234,6 +6376,7 @@
       },
     };
     const an = el.__an;
+    /** @param {string} name */
     const fire = (name) => {
       // 延时派发：state 属性先于 onStart/onFinish 应用（产物顺序实测），同步发会丢
       setTimeout(() => {
@@ -6353,16 +6496,19 @@
       refreshing: false, lastOffset: -1,
     };
     const childOf = () => (/** @type {HTMLElement} */ (el.firstElementChild));
+    /** @param {number} y */
     const setTranslate = (y) => {
       const c = childOf();
       if (c) c.style.transform = y ? `translateY(${y}px)` : '';
     };
+    /** @param {string} kind @param {any=} [a] */
     const fire = (kind, a) => {
       const cb = el.__rfCbs && el.__rfCbs[kind];
       if (typeof cb !== 'function') return;
       try { cb(a); }
       catch (e) { layoutWarnings.push(`Refresh.on${kind[0].toUpperCase() + kind.slice(1)} 回调抛错：${e && e.message}`); }
     };
+    /** @param {number} s */
     const setState = (s) => {
       if (el.__rf.state === s) return;           // 同值不重复发（真机 NearEqual 守卫同族）
       el.__rf.state = s;
@@ -6446,6 +6592,7 @@
   // 重渲染时处理 refreshing 选项变化（应用设置 refreshing=false 是结束刷新的唯一通道）
   {
     const prevCreate = Refresh.create;
+    /** @param {...any} args */
     Refresh.create = function (...args) {
       const node = prevCreate.apply(null, args);
       const o = args && args[0] && typeof args[0] === 'object' ? args[0] : {};
@@ -6474,6 +6621,7 @@
   const DP_ROWS = 5;
   const DP_COLOR_DIS = 'rgb(24, 36, 49)';
   const DP_COLOR_SEL = 'rgb(0, 125, 255)';
+  /** @param {number} y @param {number} m */
   const dpDaysInMonth = (y, m) => new Date(y, m, 0).getDate();   // m=1..12
   /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
   const DATEPICKER_ATTRS = {
@@ -6551,6 +6699,7 @@
     if (mode === 2) cols.year.wrap.style.display = 'none';      // MONTH_AND_DAY
     el.dataset.dpMode = String(mode);
     // 渲染一列：围绕 idx 显示 5 行（idx-2..idx+2）
+    /** @param {string} col @param {any[]} options @param {number} idx @param {(v: any) => string} fmt */
     const renderCol = (col, options, idx, fmt) => {
       const c = cols[col];
       for (let r = 0; r < DP_ROWS; r++) {
@@ -6585,6 +6734,7 @@
         catch (e) { layoutWarnings.push(`DatePicker.onDateChange 抛错：${e && e.message}`); }
       }
     };
+    /** @param {string} col @param {number} dir */
     dp.step = (col, dir) => {
       // dir: +1 = 值+1（wheel deltaY<0），-1 = 值−1
       const opts = col === 'year' ? getYears() : col === 'month' ? getMonths() : getDays(dp.year, dp.month);
@@ -6612,7 +6762,7 @@
     };
     // wheel 步进（deltaY<0 = 上/值+1；deltaY>0 = 下/值−1）
     for (const col of ['year', 'month', 'day']) {
-      cols[col].wrap.addEventListener('wheel', (e) => {
+      cols[col].wrap.addEventListener('wheel', (/** @type {WheelEvent} */ e) => {
         e.preventDefault();
         dp.step(col, e.deltaY < 0 ? 1 : -1);
       }, { passive: false });
@@ -6655,6 +6805,7 @@
     };
     el.__tpCbs = el.__tp.cbs;
     const tp = el.__tp;
+    /** @param {string} label */
     const mk = (label) => {
       const wrap = document.createElement('div');
       wrap.dataset['tpCol'] = label;
@@ -6680,6 +6831,7 @@
       el.appendChild(wrap);
       return { wrap, inner, rows: [...inner.children] };
     };
+    /** @type {Record<string, any>} */
     const cols = { hour: mk('hour'), minute: mk('minute') };
     if (hasSec) cols.second = mk('second');
     /** @param {number} v */
@@ -6712,6 +6864,7 @@
         catch (e) { layoutWarnings.push(`TimePicker.onChange 抛错：${e && e.message}`); }
       }
     };
+    /** @param {string} col @param {number} dir */
     el.__tpStep = tp.step = (col, dir) => {
       const max = col === 'hour' ? 23 : 59;
       const cur = col === 'hour' ? tp.hour : col === 'minute' ? tp.minute : tp.second;
@@ -6725,7 +6878,7 @@
       tp.fireChange();
     };
     for (const col of ['hour', 'minute'].concat(hasSec ? ['second'] : [])) {
-      cols[col].wrap.addEventListener('wheel', (e) => {
+      cols[col].wrap.addEventListener('wheel', (/** @type {WheelEvent} */ e) => {
         e.preventDefault();
         tp.step(col, e.deltaY < 0 ? 1 : -1);
       }, { passive: false });
@@ -6750,6 +6903,7 @@
   // 离开后再到才再发）；onScrollStart/onScrollEnd 是真机手势语义——DOM 化为"滚动静默 80ms
   // 收口"（近似，标注）；onScrollStop 与 onScrollEnd 同源（DOM 无 fling/停止之分）。
   // Scroller 侧（scrollBy/scrollEdge/scrollPage）改 scrollTop 后同步派发 'scroll'（确定性）。
+  /** @type {Record<string, string>} */
   const SCROLLABLE_CSS = { 0: 'auto', 1: 'auto', 2: 'auto', 3: 'hidden' };  // Vertical/Horizontal/Free/None
   if (!document.getElementById('arkui-scroll-style')) {
     const st = document.createElement('style');
@@ -6815,7 +6969,7 @@
     el.style.overflowY = 'auto';
     el.__scrollCbs = {};
     let lastEdge = '';
-    let settleTimer = null;
+    /** @type {any} */ let settleTimer = null;
     let scrolling = false;
     // create 单参：scroller 直接就是 Scroller 实例（.d.ts："(scroller?: Scroller)"——不是
     // {scroller} 选项对象）。手写接管骨架后不走 applyCreateArgs 的通用绑定，必须在工厂里
@@ -6916,6 +7070,7 @@
   const wfdShareTracks = (defs, cross, gap, fixedOverride) => {
     let fr = 0;
     let fixed = 0;
+    /** @type {Record<string, number>} */
     const fixedPx = {};
     defs.forEach((d, i) => {
       const f = fixedOverride && fixedOverride[i] !== undefined ? fixedOverride[i]
@@ -7170,7 +7325,7 @@
   /** @param {HTMLElement} root @returns {HTMLElement[]} */
   const wfdItems = (root) => /** @type {HTMLElement[]} */ (Array.prototype.filter.call(
     root.querySelectorAll('[data-arkui-comp="FlowItem"]'),
-    (c) => { const w = c.closest('[data-arkui-comp="WaterFlow"]'); return !w || w === root; }));
+    (/** @type {Element} */ c) => { const w = c.closest('[data-arkui-comp="WaterFlow"]'); return !w || w === root; }));
   // FlowItem：WaterFlow 专属子项（.d.ts 'can be used only as a child of WaterFlow'，无专有属性）
   const FlowItem = ensureComponent('FlowItem', () => {
     const el = document.createElement('div');
@@ -7181,16 +7336,16 @@
   });
   // WaterFlowSections shim（water_flow.d.ts:148-236）：itemsCount 必须非负，非法 push/splice 返 false
   class WaterFlowSections {
-    constructor() { this._secs = []; }
+    constructor() { this._secs = /** @type {any[]} */ ([]); }
     /** @param {any} s */
     _valid(s) { return !!s && typeof s.itemsCount === 'number' && s.itemsCount >= 0; }
     /** @param {any} section */
     push(section) { if (!this._valid(section)) return false; this._secs.push(Object.assign({}, section)); return true; }
-    /** @returns {boolean} */
+    /** @param {number} start @param {number} deleteCount @returns {boolean} */
     splice(start, deleteCount) {
       const add = Array.prototype.slice.call(arguments, 2);
       for (let i = 0; i < add.length; i++) { if (!this._valid(add[i])) return false; }
-      this._secs.splice.apply(this._secs, [start, deleteCount].concat(add.map((s) => Object.assign({}, s))));
+      this._secs.splice.apply(this._secs, [start, deleteCount].concat(add.map((/** @type {any} */ s) => Object.assign({}, s))));
       return true;
     }
     /**
@@ -7257,7 +7412,7 @@
   const calpDisabled = (p, st) => {
     if (st.start && !calpLe(st.start, p)) return true;
     if (st.end && !calpLe(p, st.end)) return true;
-    return (st.dis || []).some((r) => calpLe(r.start, p) && calpLe(p, r.end));
+    return (st.dis || []).some((/** @type {any} */ r) => calpLe(r.start, p) && calpLe(p, r.end));
   };
   // GetAvailableNextDay（:563-566）：从 p 沿 dir 找第一个可用日；无可到日返 null（=真机 year<=0 哨兵）
   /** @param {any} p @param {number} dir @param {any} st */
@@ -7303,6 +7458,7 @@
     calpRender(el);
     calpFire(el, calpDateOf(st.sel));
   };
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
   const CALPICK_ATTRS = {
     edgeAlign: (n, v) => {
       const a = Number(resolveResource(v));                  // START=0 CENTER=1 END=2（.d.ts 显式）
@@ -7312,7 +7468,7 @@
     textStyle: (n, v) => {
       const o = v || {};
       n.dataset.textStyle = 'set';
-      n.querySelectorAll('[data-cal-seg]').forEach((s) => {
+      n.querySelectorAll('[data-cal-seg]').forEach((/** @type {any} */ s) => {
         if (o.color !== undefined) s.style.color = colorOf(o.color);
         if (o.font && o.font.size !== undefined) s.style.fontSize = toCssSize(o.font.size);
         if (o.font && o.font.weight !== undefined) s.style.fontWeight = String(resolveResource(o.font.weight));
@@ -7409,7 +7565,7 @@
     el.appendChild(dlg);
     st.dlg = dlg;
     setTimeout(() => {                                       // 开层这一笔点击不能自己关自己
-      st.outside = (ev) => {
+      st.outside = (/** @type {any} */ ev) => {
         if (!el.contains(ev.target)) calpCloseDialog(el);
       };
       document.addEventListener('click', st.outside);
@@ -7441,8 +7597,8 @@
     if (o.end instanceof Date) { st.end = calpPartsOf(o.end); el.dataset.end = calpIso(o.end); }
     if (Array.isArray(o.disabledDateRange)) {
       st.dis = o.disabledDateRange
-        .filter((r) => r && r.start instanceof Date && r.end instanceof Date)
-        .map((r) => ({ start: calpPartsOf(r.start), end: calpPartsOf(r.end) }));
+        .filter((/** @type {any} */ r) => r && r.start instanceof Date && r.end instanceof Date)
+        .map((/** @type {any} */ r) => ({ start: calpPartsOf(r.start), end: calpPartsOf(r.end) }));
       el.dataset.disabledRange = String(st.dis.length);
     }
     st.sel = o.selected instanceof Date
@@ -7483,6 +7639,7 @@
   // CalendarPickerDialog.show（静态弹层）：带 OK/Cancel（onAccept/onCancel，.d.ts:332-344）。
   // 与组件弹层共用 calpBuildGrid；面板 fixed 居中（DOM 无 OverlayManager 弹簧动画，标注）。
   const CalendarPickerDialog = {
+    /** @param {any} options */
     show(options) {
       const o = options || {};
       const host = document.createElement('div');
@@ -7499,8 +7656,8 @@
         end: o.end instanceof Date ? calpPartsOf(o.end) : null,
         dis: Array.isArray(o.disabledDateRange)
           ? o.disabledDateRange
-            .filter((r) => r && r.start instanceof Date && r.end instanceof Date)
-            .map((r) => ({ start: calpPartsOf(r.start), end: calpPartsOf(r.end) }))
+            .filter((/** @type {any} */ r) => r && r.start instanceof Date && r.end instanceof Date)
+            .map((/** @type {any} */ r) => ({ start: calpPartsOf(r.start), end: calpPartsOf(r.end) }))
           : [],
         hr: o.hintRadius !== undefined ? Number(resolveResource(o.hintRadius)) : undefined,
         align: 1, markToday: o.markToday === true, seg: 'day',
@@ -7571,6 +7728,7 @@
     el.textContent = args && args[0] !== undefined ? String(resolveResource(args[0])) : '';
     return el;
   });
+  /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
   const SPAN_ATTRS = {
     fontColor: (n, v) => { n.style.color = colorOf(v); },
     fontSize: (n, v) => { n.style.fontSize = `${dimOf(v, 16)}px`; },
@@ -7724,6 +7882,7 @@
       goTo(p2);
     };
     // 纯切页：显隐 + label 汇入 + index 更新，不发任何事件（与真机 swiper 桥一致）
+    /** @param {number} i */
     const goTo = (i) => {
       const items = /** @type {NodeListOf<HTMLElement>} */ (el.querySelectorAll('[data-stepper-item]'));
       if (i < 0 || i >= items.length) return;
@@ -7756,7 +7915,7 @@
   // 骨架保证"能建出正确的 DOM 标签 + 基础样式"，精细化布局语义按需手补（见 docs）。
   let generatedRegistered = false;
   function registerGeneratedComponents() {
-    const reg = global.__ARKUI_COMPONENTS;
+    const reg = (/** @type {any} */ (global)).__ARKUI_COMPONENTS;
     if (!reg || generatedRegistered) return 0;
     let n = 0;
     const overwritten = [];
@@ -7777,12 +7936,12 @@
       // 必须装成全局：产物里是 `Scroll.create(...)` 这类【自由变量】引用，不走 import。
       // 代价是可能覆盖同名浏览器全局（Image/Range/Text 之类）——记录下来以便排查。
       if (Object.prototype.hasOwnProperty.call(global, name)) overwritten.push(name);
-      global[name] = comp;
+      (/** @type {any} */ (global))[name] = comp;
       n++;
     }
     generatedRegistered = true;
     if (overwritten.length) {
-      global.__arkui_dom_overwrittenGlobals = overwritten;
+      (/** @type {any} */ (global)).__arkui_dom_overwrittenGlobals = overwritten;
       if (global.console && console.debug) {
         console.debug('[arkui-dom] 组件骨架覆盖了同名浏览器全局:', overwritten.join(', '));
       }
@@ -7907,6 +8066,7 @@
     const entries = [{ path: key, now: value, before }];
     const monitor = {
       dirty: entries.map((e) => e.path),
+      /** @param {string=} [path] */
       value(path) {
         const want = path === undefined ? entries[0].path : path;
         const e = entries.find((x) => x.path === want);
@@ -8000,11 +8160,11 @@
 
     // ── 产物契约：initParam / updateParam / resetParam ──
     /** @param {string} name @param {any} value */
-    initParam(name, value) { this[name] = value; }
+    initParam(name, value) { (/** @type {any} */ (this))[name] = value; }
     /** @param {string} name @param {any} value */
-    updateParam(name, value) { this[name] = value; }
+    updateParam(name, value) { (/** @type {any} */ (this))[name] = value; }
     /** @param {string} name @param {any} value */
-    resetParam(name, value) { this[name] = value; }
+    resetParam(name, value) { (/** @type {any} */ (this))[name] = value; }
 
     /** @param {string} fieldKey @param {any} fallback */
     resetConsumer(fieldKey, fallback) {
@@ -8013,8 +8173,8 @@
         if (n) out.push(n);
       })[0] || fieldKey;
       // 直接写槽，绕过 setter（此刻尚未绑定，走 setter 会平白触发一次通知）
-      if (fallback !== undefined && this[v2Slot(fieldKey)] === undefined) {
-        this[v2Slot(fieldKey)] = fallback;
+      if (fallback !== undefined && (/** @type {any} */ (this))[v2Slot(fieldKey)] === undefined) {
+        (/** @type {any} */ (this))[v2Slot(fieldKey)] = fallback;
       }
       if (!this.__v2consumerBind) this.__v2consumerBind = new Map();
       this.bindConsumer(fieldKey, provName, true);
@@ -8044,13 +8204,13 @@
       const provs = v2Collect(this, (info, out) => { for (const [k, n] of info.providers) out.push([k, n]); });
       for (const [key, name] of provs) {
         if (!this.__providedVars) this.__providedVars = new Map();
-        const inst = this;
+        const inst = /** @type {any} */ (this);
         // 同时提供 get/set：这样 V1 的 @Consume（initializeConsume 期望拿到 prop 对象）
         // 也能消费 V2 的 @Provider，反之亦然。
         this.__providedVars.set(name, {
           __v2provider: true, inst, key,
           get() { return inst[key]; },
-          set(v) { inst[key] = v; },
+          set(/** @type {any} */ v) { inst[key] = v; },
           purgeDependencyOnElmtId() {},
           aboutToBeDeleted() {},
         });
@@ -8071,6 +8231,7 @@
   // ────────────────────── @ohos:* 模块别名层（④） ──────────────────────
   // 产物里的 `import X from "@ohos:xxx"` 经 CommonJS 转译后是 require("@ohos:xxx").default
   const ohosModules = new Map();
+  /** @param {any} name @param {any} impl */
   function defineOhosModule(name, impl) {
     // 同时接受 @ohos:x 与 x 两种写法；require 返回 {default, ...impl} 以兼容 TS 的 default interop
     const ns = Object.assign({}, impl);
@@ -8079,6 +8240,7 @@
     ohosModules.set('@ohos:' + name, ns);
     ohosModules.set(name, ns);
   }
+  /** @param {any} spec */
   function ohosRequire(spec) {
     if (ohosModules.has(spec)) return ohosModules.get(spec);
     const known = [...ohosModules.keys()].filter((k) => !k.startsWith('@ohos:')).sort();
@@ -8092,7 +8254,9 @@
   // 已注册的 CommonJS 模块（由 tools/extract.mjs --register 生成的文件调用 define）
   const cjsModules = new Map();
   const cjsCache = new Map();
+  /** @param {any} id @param {any} factory */
   function defineCommonJS(id, factory) { cjsModules.set(id, factory); }
+  /** @param {any} id */
   function requireModule(id) {
     if (cjsCache.has(id)) return cjsCache.get(id);
     const factory = cjsModules.get(id);
@@ -8122,7 +8286,7 @@
 
   /** @param {any} rec */
   function abilityLog(rec) {
-    (global.__arkui_dom_logs = global.__arkui_dom_logs || []).push(rec);
+    ((/** @type {any} */ (global)).__arkui_dom_logs = (/** @type {any} */ (global)).__arkui_dom_logs || []).push(rec);
   }
   /** @param {number} code @param {string} message */
   function bizError(code, message) { return Object.assign(new Error(message), { code }); }
@@ -8306,7 +8470,7 @@
   /** @param {any} AbilityClass @param {any=} [opts] */
   function startAbility(AbilityClass, opts) {
     const { rootEl, want = {} } = opts || {};
-    const logs = (global.__arkui_dom_logs = global.__arkui_dom_logs || []);
+    const logs = ((/** @type {any} */ (global)).__arkui_dom_logs = (/** @type {any} */ (global)).__arkui_dom_logs || []);
     abilityClassForChildren = AbilityClass;
 
     // @type 档位：windowEl/context/ability 是 null↔对象 摆动（同 child entry）
@@ -8386,6 +8550,7 @@
     }
   }
 
+  /** @param {any} view */
   function renderView(view) {
     ViewStackProcessor.restore([]);
     if (typeof view.aboutToAppear === 'function' && !view.__aboutToAppearDone) {
@@ -8402,6 +8567,7 @@
     return view;
   }
 
+  /** @param {string} pagePath @param {HTMLElement} rootEl */
   function loadRoute(pagePath, rootEl) {
     if (rootEl) rootNode = rootEl;
     const view = createPage(pagePath);
@@ -8409,6 +8575,7 @@
     return renderView(view);
   }
 
+  /** @param {string} pagePath */
   function navigateTo(pagePath) {
     clearRoot();
     return loadRoute(pagePath, currentRoot());
@@ -8422,6 +8589,7 @@
     return renderView(prev.view);                    // 状态因此保留
   }
 
+  /** @param {string} pagePath */
   function pushRoute(pagePath) { return loadRoute(pagePath, currentRoot()); }
 
   // ────────────────────── 安装全局 ──────────────────────
@@ -8520,16 +8688,16 @@
     PanGesture: gestureBuilders.PanGesture, SwipeGesture: gestureBuilders.SwipeGesture,
     PinchGesture: gestureBuilders.PinchGesture, RotationGesture: gestureBuilders.RotationGesture,
     // 手势自省：证明手势真的挂到了哪个元素上（而不是只登记了一堆回调）＋ 分组登记 ＋ 仲裁结论
-    __arkui_dom_gestures: (el) => {
+    __arkui_dom_gestures: (/** @type {any} */ el) => {
       const st = el && el.__arkuiGestureState;
       return {
         types: gestureTypes(el),
         attachCount: gestureAttachCount,
         dragState: st ? st.gestures.length : 0,
         groups: gestureGroups(el),
-        priority: st ? [...new Set(st.gestures.map((r) => (r.__priority === GesturePriority.High ? 'high'
+        priority: st ? [...new Set(st.gestures.map((/** @type {any} */ r) => (r.__priority === GesturePriority.High ? 'high'
           : (r.__priority === GesturePriority.Parallel ? 'parallel' : 'low'))))] : [],
-        masks: st ? [...new Set(st.gestures.map((r) => GESTURE_MASK_NAME[r.__mask] || String(r.__mask)))] : [],
+        masks: st ? [...new Set(st.gestures.map((/** @type {any} */ r) => GESTURE_MASK_NAME[r.__mask] || String(r.__mask)))] : [],
         arbClass: st ? st.arbClass : 'idle',
         arb: st ? gestureArbState(st) : 'idle',
       };
@@ -8537,17 +8705,17 @@
     // 动画自省：证明"过渡真的挂在被重渲染的节点上、到点真的清掉了"，而不是只看某次 style 非空
     __arkui_dom_animations: () => ({
       active: animWindow ? { seq: animWindow.seq, duration: animWindow.duration, els: animWindow.els.length } : null,
-      history: animHistory.map((h) => Object.assign({}, h)),
+      history: animHistory.map((/** @type {any} */ h) => Object.assign({}, h)),
       onFinishCount,
     }),
     // DataPanel 自省：证明"段占比真按 values/max 算出来了"，而不只看某个背景串。
-    __arkui_dom_dataPanel: (el) => {
+    __arkui_dom_dataPanel: (/** @type {any} */ el) => {
       if (!el || el.__drawKind !== 'DataPanel') return null;
       const g = panelGeometry(el);
       return { type: el.__panelType, segments: g.segs, stops: g.stops, max: el.__panelMax };
     },
     // Rating 自省：区分"满星/半星"（渲染上只是个位数，机制上要能证明）
-    __arkui_dom_rating: (el) => {
+    __arkui_dom_rating: (/** @type {any} */ el) => {
       if (!el || el.__drawKind !== 'Rating') return null;
       const { lit, full, half } = ratingLit(el);
       return {
@@ -8556,7 +8724,7 @@
       };
     },
     // 虚拟列表自省：证明"偏移是真的按实测高度算出来的"，而不只看某个 scrollTop 数字
-    __arkui_dom_lazyInfo: (el) => {
+    __arkui_dom_lazyInfo: (/** @type {any} */ el) => {
       const st = el && lazyMeta.get(el);
       if (!st) return null;
       return {
@@ -8568,11 +8736,11 @@
         totalH: st.totalHOf ? st.totalHOf() : 0,
         window: st.window.slice(),
         passes: st.passes,
-        offsetOf: (i) => (st.offsetOf ? st.offsetOf(i) : 0),
+        offsetOf: (/** @type {any} */ i) => (st.offsetOf ? st.offsetOf(i) : 0),
       };
     },
     // 自定义布局自省：证明"measure() 真的量了、layout() 真的摆了"，而不只看最终矩形
-    __arkui_dom_customLayout: (el) => {
+    __arkui_dom_customLayout: (/** @type {any} */ el) => {
       const m = el && customLayoutMeta.get(el);
       return m ? JSON.parse(JSON.stringify(m)) : null;
     },
@@ -8597,9 +8765,9 @@
     __arkui_dom_abilityWindows: () => ({
       created: abilityWindowStats.created,
       closed: abilityWindowStats.closed,
-      open: abilityStack.filter((e) => e.windowEl).length,
+      open: abilityStack.filter((/** @type {any} */ e) => e.windowEl).length,
       depth: abilityStack.length,
-      history: abilityWindowStats.history.map((h) => ({ ability: h.ability, page: h.page, text: h.text })),
+      history: abilityWindowStats.history.map((/** @type {any} */ h) => ({ ability: h.ability, page: h.page, text: h.text })),
     }),
     // 组件骨架（生成）
     __arkui_dom_registerGenerated: registerGeneratedComponents,
@@ -8612,23 +8780,23 @@
     __arkui_dom_decorators: decorators,
     // V1 深度观测自省：断言"@Observed 确实产出了可观测代理"，而不只看渲染结果。
     // （Meta 这类非 @Observed 的嵌套对象必须返回 false —— 这是负向断言的依据。）
-    __arkui_dom_isObserved: (v) => !!observedCells.get(v),
+    __arkui_dom_isObserved: (/** @type {any} */ v) => !!observedCells.get(v),
     // Tabs 自省：证明"控制器真绑上了、标签真来自 tabBar、活动索引真的变了"，
     // 而不是只看"某个 div 的 display 恰好是 none"。
-    __arkui_dom_tabsState: (el) => {
+    __arkui_dom_tabsState: (/** @type {any} */ el) => {
       const st = el && el.__tabsState;
       if (!st) return null;
       return {
         index: st.index,
         count: st.contents.length,
-        labels: st.contents.map((c) => c.label),
+        labels: st.contents.map((/** @type {any} */ c) => c.label),
         barPosition: st.barPosition,
         hasController: !!st.controller,
         controller: st.controller,
       };
     },
     // Swiper 自省：证明"控制器真绑上了、loop/autoPlay 真生效"，而不只看某个 div 的 display。
-    __arkui_dom_swiperState: (el) => {
+    __arkui_dom_swiperState: (/** @type {any} */ el) => {
       const st = el && el.__swiperState;
       if (!st) return null;
       return {
@@ -8642,20 +8810,20 @@
       };
     },
     // Navigation 自省：证明"builder 真登记了、栈真在走动"，而不只看某个 div 的 display。
-    __arkui_dom_navState: (el) => {
+    __arkui_dom_navState: (/** @type {any} */ el) => {
       const st = el && el.__navState;
       if (!st) return null;
       return {
         size: st.paths.length,
-        names: st.paths.map((p) => p.name),
-        params: st.paths.map((p) => p.param),
+        names: st.paths.map((/** @type {any} */ p) => p.name),
+        params: st.paths.map((/** @type {any} */ p) => p.param),
         hasBuilder: typeof st.builder === 'function',
         mode: st.mode,
         stack: st.stack,
       };
     },
     // R12 收口自省：标题栏 / 工具栏 / 分栏的【实际形态】（断言读这个，而不是读 style 字符串猜）
-    __arkui_dom_navChrome: (el) => {
+    __arkui_dom_navChrome: (/** @type {any} */ el) => {
       if (!el) return null;
       const nav = el.__navState;
       if (nav) {
@@ -8704,23 +8872,23 @@
       return null;
     },
     // Guideline 自省：证明"参考线真的按 start/end 与轴向算出了位置"，而不只看子项恰好落在那儿。
-    __arkui_dom_guideLines: (el) => {
+    __arkui_dom_guideLines: (/** @type {any} */ el) => {
       const m = el && el.__guideLineBoxes;
       if (!m) return null;
-      const out = {};
+      /** @type {Record<string, any>} */ const out = {};
       for (const k of Object.keys(m)) out[k] = { x: m[k].x, y: m[k].y, axis: m[k].axis };
       return out;
     },
     // 只读自省：供测试断言"装饰器确实在原型上装了访问器"，而不是只看渲染结果。
     // 注意 v2ProtoMeta 是 WeakMap（不可枚举，没有 keys()），所以只按类查询。
     __arkui_dom_v2Introspect: () => ({
-      observedOf: (cls) => v2Collect({ __proto__: cls.prototype }, (info, out) => {
+      observedOf: (/** @type {any} */ cls) => v2Collect({ __proto__: cls.prototype }, (/** @type {any} */ info, /** @type {any} */ out) => {
         for (const k of info.observed) out.push(k);
       }),
-      monitorsOf: (cls) => v2Collect({ __proto__: cls.prototype }, (info, out) => {
+      monitorsOf: (/** @type {any} */ cls) => v2Collect({ __proto__: cls.prototype }, (/** @type {any} */ info, /** @type {any} */ out) => {
         for (const [k, s] of info.monitors) out.push(`${k}→${[...s].join('|')}`);
       }),
-      computedOf: (cls) => v2Collect({ __proto__: cls.prototype }, (info, out) => {
+      computedOf: (/** @type {any} */ cls) => v2Collect({ __proto__: cls.prototype }, (/** @type {any} */ info, /** @type {any} */ out) => {
         for (const k of info.computed) out.push(k);
       }),
     }),

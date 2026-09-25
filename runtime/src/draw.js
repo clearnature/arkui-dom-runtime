@@ -10,6 +10,7 @@
   const ProgressType = ProgressStyle;                       // type 是老写法，语义同 style
   // 枚举顺序照 data_panel.d.ts（Line=0, Circle=1），所以也接受数字
   const DataPanelType = { Line: 'line', Circle: 'circle' };
+  /** @param {string|number} v */
   const isCirclePanel = (v) => v === 'circle' || v === 1;
 
   const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -19,6 +20,7 @@
     for (const k of Object.keys(attrs || {})) el.setAttribute(k, String(attrs[k]));
     return el;
   };
+  /** @param {any} c */
   const colorOf = (c) => {
     if (typeof c === 'number') return '#' + (c >>> 0).toString(16).padStart(8, '0').slice(2);
     if (typeof c === 'string') return c;
@@ -26,6 +28,7 @@
   };
   // 弧长归一化：pathLength=100 → dasharray 直接是百分比，跨实现可断言
   const PATH_LEN = 100;
+  /** @param {number} n */
   const r2 = (n) => Math.round(n * 100) / 100;
 
   // 圆环坐标：0 点 = 0 度、顺时针为正（Gauge 的 .d.ts JSDoc 原话）
@@ -48,6 +51,7 @@
     const p0 = polar(cx, cy, r, a0), p1 = polar(cx, cy, r, a1);
     return `M ${r2(p0.x)} ${r2(p0.y)} A ${r} ${r} 0 ${sweep > 180 ? 1 : 0} 1 ${r2(p1.x)} ${r2(p1.y)}`;
   }
+  /** @param {SVGElement} el @param {number} pct @param {number} offset */
   const arcDash = (el, pct, offset) => {
     el.setAttribute('pathLength', String(PATH_LEN));
     el.setAttribute('stroke-dasharray', `${r2(pct)} ${PATH_LEN}`);
@@ -55,6 +59,7 @@
   };
 
   // ── Progress ──
+  /** @param {any} opts */
   function buildProgressNode(opts) {
     const o = opts && typeof opts === 'object' ? opts : {};
     const style = String(o.style !== undefined ? o.style : (o.type !== undefined ? o.type : 'linear'));
@@ -94,6 +99,7 @@
     return node;
   }
 
+  /** @param {any} node @param {any} value @param {any} totalArg */
   function applyProgressValue(node, value, totalArg) {
     const total = Number(totalArg) || Number(node.getAttribute('aria-valuemax')) || 100;
     const v = Number(value) || 0;
@@ -105,6 +111,7 @@
     else if (node.__svg) drawProgressRing(node, pct / 100);
   }
 
+  /** @param {any} node @param {number} ratio */
   function drawProgressRing(node, ratio) {
     const w = node.offsetWidth || 80, h = node.offsetHeight || 80;
     const stroke = node.__stroke || 4;
@@ -126,6 +133,7 @@
   }
 
   // ── Gauge ──
+  /** @param {any} opts */
   function buildGaugeNode(opts) {
     const o = opts && typeof opts === 'object' ? opts : {};
     const node = document.createElement('div');
@@ -145,6 +153,7 @@
     return node;
   }
 
+  /** @param {any} node */
   function gaugeSegments(node) {
     const c = node.__colors;
     if (c === null || c === undefined) return [{ color: null, weight: 1 }];
@@ -158,6 +167,7 @@
     return segs.filter((s) => s.weight > 0);
   }
 
+  /** @param {any} node */
   function redrawGauge(node) {
     const w = node.offsetWidth || 120, h = node.offsetHeight || 120;
     const stroke = node.__strokeW;
@@ -203,6 +213,7 @@
 
   // ── DataPanel ──
   const PANEL_PALETTE = ['#007dff', '#00c48c', '#ffb400', '#ff5c5c', '#9b59b6', '#00b3c7'];
+  /** @param {any} opts */
   function buildDataPanelNode(opts) {
     const o = opts && typeof opts === 'object' ? opts : {};
     const node = document.createElement('div');
@@ -218,22 +229,24 @@
     return node;
   }
 
+  /** @param {any} node */
   function panelGeometry(node) {
     const max = node.__panelMax || 100;
-    const segs = node.__values.map((v) => Math.max(0, v) / max);
+    const segs = node.__values.map((/** @type {any} */ v) => Math.max(0, v) / max);
     const stops = [];
     let acc = 0;
     for (const s of segs) { acc += s; stops.push(Math.min(1, acc)); }
     return { segs, stops };
   }
 
+  /** @param {any} node */
   function redrawDataPanel(node) {
     const { segs } = panelGeometry(node);
     const colors = node.__panelColors || PANEL_PALETTE;
     if (node.__panelType === 'circle') {
       const parts = [];
       let from = 0;
-      segs.forEach((s, i) => {
+      segs.forEach((/** @type {any} */ s, /** @type {any} */ i) => {
         if (s <= 0) return;
         const to = Math.min(1, from + s);
         parts.push(`${colors[i % colors.length]} ${r2(from * 100)}% ${r2(to * 100)}%`);
@@ -248,7 +261,7 @@
       node.style.overflow = 'hidden';
       node.textContent = '';
       let used = 0;
-      segs.forEach((s, i) => {
+      segs.forEach((/** @type {any} */ s, /** @type {any} */ i) => {
         if (s <= 0) return;
         const seg = document.createElement('div');
         seg.setAttribute('data-arkui-datapanel-seg', String(i));
@@ -273,6 +286,7 @@
   // ── Rating ──
   const STAR_PATH = 'M 12 2 L 15.09 8.26 L 22 9.27 L 17 14.14 L 18.18 21.02 L 12 17.77'
     + ' L 5.82 21.02 L 7 14.14 L 2 9.27 L 8.91 8.26 Z';
+  /** @param {any} opts */
   function buildRatingNode(opts) {
     const o = opts && typeof opts === 'object' ? opts : {};
     const node = document.createElement('div');
@@ -291,6 +305,7 @@
     return node;
   }
 
+  /** @param {any} node */
   function ratingLit(node) {
     const snap = node.__step > 0 ? Math.round(node.__rating / node.__step) * node.__step : node.__rating;
     const lit = Math.max(0, Math.min(node.__starCount, snap));
@@ -299,6 +314,7 @@
     return { lit, full, half };
   }
 
+  /** @param {boolean} filled */
   function starSvg(filled) {
     const svg = svgEl('svg', { viewBox: '0 0 24 24' });
     svg.style.width = '100%';
@@ -307,6 +323,7 @@
     return svg;
   }
 
+  /** @param {any} node */
   function redrawRating(node) {
     const { full, half } = ratingLit(node);
     node.textContent = '';
@@ -353,6 +370,7 @@
 
   // 渲染后重绘：弧的半径要用容器的真实尺寸（create 时 .width/.height 还没生效，offsetWidth 是 0）。
   // 与 syncAlignRules 同一时机（首渲染后 + 每次重渲染后）。
+  /** @param {any=} [rootEl] */
   function syncDrawings(rootEl) {
     const r = rootEl || rootNode;
     if (!r || !r.querySelectorAll) return;

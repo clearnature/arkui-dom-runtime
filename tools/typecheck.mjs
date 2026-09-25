@@ -7,7 +7,8 @@
 //（2026-09-21 实测：分片模式 370 错，其中 153 个是拼接模型假阳性；产物模式 211 错，
 // 且挖出 2 个真 bug——onSubmit 的 `value` 未定义、v2 的 `const Event` 遮蔽 DOM Event）。
 //
-// 档位：checkJs + strictNullChecks。`noImplicitAny` 是后续路线（约 1508 个隐式 any）。
+// 档位：checkJs + strictNullChecks + noImplicitAny（R55 起三档全开：约 1500 个隐式 any 经
+// 十六批人工 + 六组并行代理清零后翻进门禁，试验档 tsconfig.implicit-any.json 已完成使命删除）。
 // TypeScript 用 ets-loader 自带的 4.9.5（本项目没有 npm 依赖，与 tools/extract.mjs 同源）。
 import fs from 'node:fs';
 import path from 'node:path';

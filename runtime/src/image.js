@@ -13,6 +13,7 @@
   // 解码尺寸）→ onLoad、error → onError。syncLoad 只记 data-*（浏览器默认即主线程解码）。
   // 回调经 __imgCbs 闭包间接引用（覆盖语义，坑 88 同族）；图已缓存完成时补派发（定时器
   // 收口，坑 ⑧ 同思想）。
+  /** @type {Record<string, string>} */
   const IMAGE_FIT_CSS = { 0: 'contain', 1: 'cover', 3: 'fill', 4: 'scale-down', 5: 'none' };
   /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
   const IMAGE_ATTRS = {
@@ -58,7 +59,7 @@
     main.style.height = '100%';
     // alt 占位图**惰性创建**（R45 教训：预插的无 src <img> 会被页面的 querySelector('img')
     // 命中、getAttribute('src') 为 null——widgets 页的旧断言就是这么红的）
-    let altImg = null;
+    /** @type {any} */ let altImg = null;
     const ensureAlt = () => {
       if (!altImg) {
         altImg = document.createElement('img');
@@ -104,6 +105,7 @@
     el.__arkuiImgFireIfDone = () => {
       const cbs = el.__imgCbs;
       if (!cbs) return;
+      /** @param {any} name @param {any} arg */
       const fire = (name, arg) => {
         if (typeof cbs[name] !== 'function') return;
         const cb = cbs[name];

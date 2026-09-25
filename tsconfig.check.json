@@ -1,7 +1,8 @@
 {
   "//": "R38 渐进强类型化：检查对象是【拼接后的产物】（作用域模型与运行时一致），分片不是。",
   "//lib": "dom.iterable 是 NodeList 展开的必需 lib（...nodeList 用到 Symbol.iterator）。",
-  "//档位": "checkJs + strictNullChecks 已是门禁档；noImplicitAny 是后续路线（1508 个隐式 any，见 ROADMAP）。",
+  "//档位": "R38 起 checkJs + strictNullChecks；R55 起 noImplicitAny=true 进门禁（492 个隐式 any",
+  "//档位2": "经十六批人工 + 六组并行代理清零后翻档；试验档 tsconfig.implicit-any.json 完成使命。",
   "compilerOptions": {
     "allowJs": true,
     "checkJs": true,
@@ -9,7 +10,7 @@
     "target": "es2020",
     "lib": ["es2020", "dom", "dom.iterable"],
     "strictNullChecks": true,
-    "noImplicitAny": false,
+    "noImplicitAny": true,
     "types": []
   },
   "files": [

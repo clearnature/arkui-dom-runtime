@@ -67,6 +67,7 @@
     }
   };
   const RenderingContextSettings = class RenderingContextSettings {
+    /** @param {boolean=} [antialias] @param {boolean=} [alpha] */
     constructor(antialias, alpha) {
       this.antialias = !!antialias;
       this.alpha = alpha === undefined ? true : !!alpha;   // .d.ts 默认 true
@@ -128,11 +129,13 @@
       this.__arkuiXcEl = null;
       this.__arkuiXcRect = null;
     }
+    /** @param {any} el */
     __arkuiBindXComponent(el) { this.__arkuiXcEl = el; }
     getXComponentSurfaceId() {
       return 'XComponent-' + (this.__arkuiXcEl ? this.__arkuiXcEl.__arkuiXcId : '');
     }
     getXComponentContext() { return { surfaceId: this.getXComponentSurfaceId() }; }
+    /** @param {any} rect */
     setXComponentSurfaceRect(rect) { this.__arkuiXcRect = rect; }
     getXComponentSurfaceRect() {
       if (this.__arkuiXcRect) return Object.assign({}, this.__arkuiXcRect);

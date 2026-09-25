@@ -38,6 +38,7 @@
   // subtitle are both available"）对应到 Full 那两个已文档化的数字（112 / 138）。**这是推断**，
   // 已写进 docs 的已知限制。
   const NAV_TITLE_H = { main: 112, mainSub: 138, mini: 56 };
+  /** @type {Record<number, number>} */
   const TITLE_HEIGHT_VALUE = { 0: NAV_TITLE_H.main, 1: NAV_TITLE_H.mainSub };
   const NAV_DIVIDER_PX = 1;               // 分栏时的分割线宽度
   const NAV_DEFAULT_BAR_W = 240;          // navBarWidth 默认 240vp（.d.ts JSDoc 原文）
@@ -54,6 +55,7 @@
   const NAV_POP_TO = 50;                // 弹出页终点%（width×HALF）
   const NAV_PARALLAX = 20;              // 被盖/露出页的视差%（CONTENT_OFFSET_PERCENT×100）
   // 转场运行记录（测试轮询"挂着的转场"用，与 animation.js 的 transitionRuns 同思想）
+  /** @type {any[]} */
   const navTransRuns = [];
   let navTransRunSeq = 0;
   function navTransDescribe() {
@@ -61,11 +63,13 @@
     navTransRuns.forEach((r) => { if (!r.done) pending++; });
     return { runs: navTransRuns.map((r) => ({ ...r })), pending };
   }
+  /** @param {HTMLElement} el @param {any} run */
   function navWitness(el, run) {          // transitionend 只当"见证"，不当收口依据（坑 ⑧ 同源）
     const fn = () => { run.sawTransitionEnd = true; };
     el.addEventListener('transitionend', fn, { once: true });
     return () => el.removeEventListener('transitionend', fn);
   }
+  /** @param {HTMLElement} el */
   function navEndTransStyle(el) {
     el.style.transitionProperty = '';
     el.style.transitionDuration = '';
@@ -90,6 +94,7 @@
     'enableToolBarAdaptation', 'splitPlaceholder',
   ]);
 
+  /** @param {any} v */
   const animOf = (v) => (typeof v === 'boolean' ? v : !!(v && typeof v === 'object' && v.animated));
 
   class NavPathStack {
@@ -108,6 +113,7 @@
     getParamByName(name) { return this._paths.filter((p) => p.name === name).map((p) => p.param); }
     /** @param {string} name */
     getIndexByName(name) {
+      /** @type {number[]} */
       const out = [];
       this._paths.forEach((p, i) => { if (p.name === name) out.push(i); });
       return out;
@@ -196,6 +202,7 @@
     replaceDestination(info) { navReplaceTop(this, info || {}, animOf(arguments[1])); return Promise.resolve(); }
     /** @param {string} name */
     removeByName(name) {
+      /** @type {number[]} */
       const idx = [];
       this._paths.forEach((p, i) => { if (p.name === name) idx.push(i); });
       if (!idx.length) return 0;
@@ -205,7 +212,7 @@
     /** @param {any=} [indexes] */
     removeByIndexes(indexes) {
       const valid = (indexes || []).filter((/** @type {number} */ i) => Number.isInteger(i) && i >= 0 && i < this._paths.length);
-      valid.slice().sort((a, b) => b - a).forEach((i) => navPopRange(this, i, 1, undefined));
+      valid.slice().sort((/** @type {number} */ a, /** @type {number} */ b) => b - a).forEach((/** @type {number} */ i) => navPopRange(this, i, 1, undefined));
       return valid.length;
     }
     removeByNavDestinationId() {
@@ -360,6 +367,7 @@
     return wrap;
   }
 
+  /** @param {any} onBack @param {any=} icon */
   function navBackButton(onBack, icon) {
     const btn = document.createElement('div');
     btn.setAttribute('data-arkui-nav-back', '');
@@ -373,6 +381,7 @@
   }
 
   // 往 host 里画一条标题栏（Navigation 的导航栏 / NavDestination 的标题栏共用）
+  /** @param {HTMLElement} host @param {any} spec @param {any} opts */
   function drawTitleBar(host, spec, opts) {
     const o = opts || {};
     host.textContent = '';
@@ -421,6 +430,7 @@
   }
 
   // 工具栏（NavDestination 底部）：ToolbarItem[] → 一行可点项
+  /** @param {HTMLElement} host @param {any} items */
   function drawToolbar(host, items) {
     host.textContent = '';
     host.style.display = 'flex';
@@ -428,7 +438,7 @@
     host.style.justifyContent = 'center';
     host.style.boxSizing = 'border-box';
     host.style.gap = '16px';
-    (items || []).forEach((it, i) => {
+    (items || []).forEach((/** @type {any} */ it, /** @type {number} */ i) => {
       const el = document.createElement('div');
       el.setAttribute('data-arkui-nav-toolbar-item', String(i));
       el.setAttribute('data-arkui-nav-toolbar-status', String(it.status === undefined ? 0 : it.status));
@@ -443,6 +453,7 @@
     });
   }
 
+  /** @param {HTMLElement} node @param {any} stack */
   function createNavState(node, stack) {
     // @type 档位：整袋 any —— barEl/titleEl/dividerEl/tmc 等十来个字段都是 null↔对象 摆动，
     // 后渲染才赋值；属性级 @type 只能管到紧随其后的一个属性，这里必须整袋收
@@ -498,6 +509,7 @@
   // 本轮该按哪种模式布局：Auto 用【真实宽度】判（.d.ts：宽度 ≥ 600vp 走 Split，
   // 600 = minNavBarWidth 240 + minContentWidth 360）。用元素自身宽度而不是 window：
   // 同一页可以有多个 Navigation（本项目的测量页正是这样），窗口宽度无法区分它们。
+  /** @param {any} st */
   function navEffectiveMode(st) {
     const m = String(st.mode || 'stack');
     if (m === 'split') return 'split';
@@ -512,7 +524,7 @@
   // 会退化成同一个签名（于是标题栏再也不重建）。
   const builderIds = new WeakMap();
   let builderIdSeq = 0;
-  const builderIdOf = (fn) => {
+  const builderIdOf = (/** @type {any} */ fn) => {
     if (!builderIds.has(fn)) builderIds.set(fn, ++builderIdSeq);
     return builderIds.get(fn);
   };
@@ -591,7 +603,7 @@
     // · 副标题透明度 = (H − 56) / (max − 56)，随收缩从 1 线性到 0
     // · 主标题 = 字号插值（L=30fp ↔ M=26fp），映射经 Curves::SHARP（cubic-bezier(0.4,0,0.6,1)，
     //   GetMappedOffset）；DOM 侧等价实现为 transform scale = (26 + SHARP(p)×4) / 30
-    const sharp = (p) => {                       // Curves::SHARP = cubic-bezier(0.4, 0, 0.6, 1)
+    const sharp = (/** @type {number} */ p) => {                       // Curves::SHARP = cubic-bezier(0.4, 0, 0.6, 1)
       let lo = 0, hi = 1, t = p;
       for (let i = 0; i < 24; i++) {             // 解 x(t)=p 的 t（x(t) 单调），再取 y(t)
         const x = 3 * (1 - t) * (1 - t) * t * 0.4 + 3 * (1 - t) * t * t * 0.6 + t * t * t;
@@ -623,6 +635,7 @@
   }
 
   // NavDestination 的标题栏 / 工具栏（同一时机同步）。它没有 titleMode，高度恒为紧凑 56vp（推断）。
+  /** @param {HTMLElement} node */
   function syncOneDest(node) {
     const d = node.__navDest;
     if (!d || !d.barEl || !d.barEl.isConnected) return;
@@ -647,7 +660,7 @@
     const showTb = !d.hideToolBar && items.length > 0;
     d.toolbarEl.style.display = showTb ? 'flex' : 'none';
     node.style.paddingBottom = showTb ? '56px' : '0';
-    const tbSig = `${items.length}|${items.map((i) => String(i.value)).join(',')}|${d.hideToolBar}`;
+    const tbSig = `${items.length}|${items.map((/** @type {any} */ i) => String(i.value)).join(',')}|${d.hideToolBar}`;
     if (d.toolbarDrawn !== tbSig) {
       d.toolbarDrawn = tbSig;
       drawToolbar(d.toolbarEl, items);
@@ -656,6 +669,7 @@
   }
 
   // 目的地所属的 Navigation 状态（目标区 → Navigation 元素）
+  /** @param {HTMLElement} node */
   function navStateOfDest(node) {
     let p = node.parentElement;
     while (p) {
@@ -692,6 +706,7 @@
   }
 
   // 目标区：Navigation.pop() 时创建（空栈时内容为空且隐藏）
+  /** @param {any} st */
   function ensureNavArea(st) {
     if (st.areaEl && st.areaEl.isConnected) return st.areaEl;
     const area = document.createElement('div');
@@ -708,6 +723,7 @@
     return area;
   }
 
+  /** @param {any} st */
   function ensureBuilder(st) {
     if (!st.builder) {
       layoutWarnings.push('Navigation 没有 navDestination builder：无法创建 NavDestination。'
@@ -719,6 +735,7 @@
 
   // animated：boolean | {animated} | undefined。.d.ts（pop 的 JSDoc，push 同）：
   // "Whether to enable the transition animation ... Default value: true" —— 未给就默认开。
+  /** @param {any} stack @param {any} animated */
   function navWantAnim(stack, animated) {
     if (stack._noAnim) return false;                       // disableAnimation(true)
     if (animated === undefined || animated === null) return true;
@@ -728,6 +745,7 @@
   // push 转场（R25）：新栈顶从右滑入、盖在上一个栈顶上；上一个栈顶在滑入期间保持可见，
   // 结束才藏。样式收口与 animation.js 同一约定：先提交起始值（强制重排，坑 ⑧），
   // transitionend 只当见证，真正收口靠定时器。
+  /** @param {any} st @param {any} rec @param {any} prev */
   function navSlidePush(st, rec, prev) {
     const el = rec.el;
     if (!el) return;
@@ -786,6 +804,7 @@
     return true;
   }
 
+  /** @param {any} st @param {any} rec */
   function navBuildDest(st, rec) {
     const area = ensureNavArea(st);
     const savedStack = ViewStackProcessor.snapshot();
@@ -795,7 +814,7 @@
     // 旧实现就这么写的，遇到带 if 分支的 PageMap 会误判成"没建出来"并把栈项弹掉
     // （R12 收口的新页面正是这种 builder，断言当场抓住）。改成按"本次新建的节点"认领。
     area.querySelectorAll('[data-arkui-comp="NavDestination"]')
-      .forEach((n) => { n.__arkuiNavNew = false; });
+      .forEach((/** @type {any} */ n) => { n.__arkuiNavNew = false; });
     ViewStackProcessor.push(area);          // 让 NavDestination 挂进目标区
     try {
       st.builder(rec.name, rec.param, undefined);
@@ -816,11 +835,13 @@
     return true;
   }
 
+  /** @param {any} rec */
   function navDestroyDest(rec) {
     if (rec.el && rec.el.parentNode) rec.el.parentNode.removeChild(rec.el);
     rec.el = null;
   }
 
+  /** @param {any} rec @param {string} kind */
   function navFire(rec, kind) {
     const cb = rec.cbs && rec.cbs[kind];
     if (typeof cb !== 'function') return;
@@ -828,6 +849,7 @@
   }
 
   // 隐藏：willHide → hidden（JSDoc：前者"即将隐藏"，后者"已隐藏"）
+  /** @param {any} rec */
   function navHideDest(rec) {
     if (!rec || !rec.el) return;
     navFire(rec, 'willHide');
@@ -836,6 +858,7 @@
   }
 
   // 显示：首次挂载 willAppear → willShow → shown → ready；再次显示只走 willShow → shown
+  /** @param {any} rec */
   function navShowDest(rec) {
     if (!rec || !rec.el) return;
     if (!rec.everShown) { navFire(rec, 'willAppear'); rec.everShown = true; }
@@ -846,11 +869,12 @@
   }
 
   // 把可见性与生命周期对齐到"只有栈顶可见"
+  /** @param {any} st */
   function navSyncVisibility(st) {
     if (!st) return;
     const top = st.paths.length ? st.paths[st.paths.length - 1] : null;
     if (st.visible && st.visible !== top) navHideDest(st.visible);
-    st.paths.forEach((p) => { if (p.el && p !== top) p.el.style.display = 'none'; });
+    st.paths.forEach((/** @type {any} */ p) => { if (p.el && p !== top) p.el.style.display = 'none'; });
     if (top && top !== st.visible) navShowDest(top);
     st.visible = top;
     if (st.areaEl) st.areaEl.style.display = st.paths.length ? 'block' : 'none';
@@ -862,6 +886,7 @@
   // pop 转场（R25）：栈顶向右滑出、露出新栈顶（或空栈时的根内容）。状态层回调照旧立刻发
   //（willHide → hidden → willDisappear，顺序与立即版一致），DOM 摘除推迟到滑出结束 ——
   // 这是"动画期间目的地还在"与"生命周期语义不变"的唯一交点，已写进 docs。
+  /** @param {any} stack @param {any} rec @param {any} result */
   function navPopAnimated(stack, rec, result) {
     const st = stack._nav;
     const el = rec.el;
@@ -949,12 +974,14 @@
     navSyncVisibility(st);
   }
 
+  /** @param {any} stack */
   function navClearAll(stack) {
     const st = stack._nav;
     if (!st) { stack._paths.length = 0; return; }
     navPopRange(stack, 0, st.paths.length, undefined);
   }
 
+  /** @param {any} stack @param {any} info @param {any} _animated */
   function navReplaceTop(stack, info, _animated) {
     const st = stack._nav;
     if (!st) { layoutWarnings.push('NavPathStack 尚未绑定到任何 Navigation'); return; }
@@ -976,9 +1003,11 @@
     navSyncVisibility(st);
   }
 
+  /** @param {any} st @param {any} v */
   function updateNavStack(st, v) { bindNavStack(st, v); }
 
   // NavDestination 挂载：认领目标区（先按 none 挂上，可见性交给 navSyncVisibility）
+  /** @param {any} rec @param {any} deepFn @param {any} elmtId */
   function mountNavDestination(rec, deepFn, elmtId) {
     let node = rec && rec.node && rec.node.__arkuiComp === 'NavDestination' ? rec.node : null;
     if (!node) {

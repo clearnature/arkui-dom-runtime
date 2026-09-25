@@ -1,7 +1,8 @@
   // ─────────────── 布局：alignRules / Guideline / bias / 文本截断 / 叠放 / Scroller ───────────────
   // ArkUI 的 measure/layout 规则在 DOM 上无法 1:1 复刻；这里实现"容器锚点 + 兄弟锚点 + Guideline"
   // 三类相对定位、bias 插值、文本截断与叠放对齐，并保留 warnings 以暴露未支持项（不是静默忽略）。
-  const layoutWarnings = (global.__arkui_dom_layout_warnings = []);
+  /** @type {any[]} */
+  const layoutWarnings = ((/** @type {any} */ (global)).__arkui_dom_layout_warnings = []);
   // 锚点解析会在不动点迭代里跑多趟，同一问题只该留一条痕（否则一条缺失锚点会变成 12 条）
   /** @param {string} msg */
   const warnOnce = (msg) => { if (!layoutWarnings.includes(msg)) layoutWarnings.push(msg); };
@@ -17,6 +18,7 @@
 
   // 注意：ArkUI 有两套对齐词汇 —— 水平是 start/end 或 left/right，垂直是 top/bottom。
   // 两者都映射到 0/0.5/1 的分数，同时 dx/dy 的判定也要认这两种写法（踩过的坑）。
+  /** @type {Record<string, number>} */
   const ALIGN_FRAC = { start: 0, top: 0, center: 0.5, end: 1, bottom: 1 };
   /** @param {any} a */
   const isStart = (a) => a === 'start' || a === 'top';
@@ -290,6 +292,7 @@
       const el = this._el;
       if (!el) { layoutWarnings.push('Scroller.scrollEdge: 未绑定容器'); return; }
       // Edge: Top=0 Center=1 Bottom=2 Baseline=3 Start=4 Middle=5 End=6
+      /** @type {Record<string, string>} */
       const E = { 0: 'top', 2: 'bottom', 4: 'left', 6: 'right' };
       const side = typeof edge === 'number' ? E[edge] : edge;
       if (side === 'top') el.scrollTop = 0;
