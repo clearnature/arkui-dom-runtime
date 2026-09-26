@@ -1366,6 +1366,34 @@ syncAreas(rootNode)` 三次全树走查——33 节点下无感（1.5ms 内）�
 
 ---
 
+### R71 — 启动开销剖面：框架同步构建仅 3.5ms，"124ms"是非框架成本 ✅（2026-09-26）
+
+**内容**：把首渲染 121ms 拆到 eval/初始化/路由/首帧各段。perfdemo 增分段时间戳
+（requireModule/loadRoute/raf1/raf2）+ 脚本 eval 资源计时（PerformanceResourceTiming）；
+stats §6 增 PERF2 剖面行。
+
+**实测（Electron）**：
+
+| 段 | 耗时 | 定性 |
+|---|---|---|
+| requireModule | 0.2ms | 可忽略 |
+| loadRoute 同步（33 节点 DOM 全建） | **3.5ms** | **框架全部工作** |
+| raf1 / raf2 | 5.3 / **112.4ms** | offscreen 首帧合成（测试模式成本） |
+| 脚本 eval（计时起点之前） | runtime 22.3 / generated 20.4 / shims 21.1 / module 20.6 ≈ 84ms | 页面加载阶段 |
+
+**判定**：运行时代码**没有可优化的大头**——框架同步构建 3.5ms 已达地板量级。
+"首渲染 124ms" = 脚本 eval ~84ms（页面架构层，可优化方向：脚本合并/V8 code cache）
++ offscreen 首帧 112ms（Electron 测试模式特有，真窗口场景待打包 spike 佐证）。
+
+**对模板编译器立项的再修正**：框架成本只有 3.5ms，编译器在**小页面**上的首渲染收益
+<3%——它的真实定位是**规模化解法**：大树 rerender 的属性重放削减与大批量组件创建。
+立项时应以大型页面（百节点级）为验收基准，而非 perfdemo。
+
+**触及**：`test/perfdemo.html`（分段剖面）、`tools/stats.mjs`（PERF2 采集）、
+`docs/ROADMAP.md`（本节）
+
+---
+
 ## P3 布局引擎
 
 ### ~~R13 — 数据可视化类：`Progress` / `Gauge` / `DataPanel` / `Rating`~~ ✅ 已完成

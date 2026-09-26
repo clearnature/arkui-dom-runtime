@@ -1749,19 +1749,22 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   fixtures 转换产物  67 个：AlphabetIndexerDemo AnimDemo AnimatorDemo AsyncIO BatchFuncDemo BatchLayoutDemo BatchMediaDemo BatchVerifyDemo CalendarPickerDemo Callee CanvasDemo DatePickerDemo Detail DrawDemo GestureDemo GestureGroupDemo GridDemo GridRowDemo Home ImageDemo Index InputDemo Layout Lazy LazyVar ListGroupDemo MeasArea MeasImage MeasNotify Measure MediaDemo NavBarDemo NavDemo NavShimDemo NavTransDemo NetFile Observe PanelDemo PerfDemo PopDemo PromptAct Provide QrDemo RefreshDemo RelDemo Rich RichVideoDemo ScrollDemo ShapeDemo ShowDemo SideBarDemo SmallDemo SplitDemo StepDemo SwiperDemo TabsGrid TextDemo TextMeasure TextPickerDemo TextTimeDemo TimePickerDemo TransitionDemo UiContextDemo V2 WaterFlowDemo Widgets XCompDemo
 
 == 性能基线（Electron 实测）==
-  首渲染            124.0 ms（33 节点：Column+Button+Text+ForEach×30）
-  最小 rerender     3.2 ms（@State 计数脏区单 Text，rAF 口径）
-  rerender 管道     1.5 ms / 1 tick（setTimeout 轮询口径，R70）
+  首渲染            121.2 ms（33 节点：Column+Button+Text+ForEach×30）
+  最小 rerender     3.3 ms（@State 计数脏区单 Text，rAF 口径）
+  rerender 管道     4.2 ms / 1 tick（setTimeout 轮询口径，R70）
   微任务底噪        0.00 ms
   行数              31
+  剖面 R71          loadRoute 同步 3.5 ms（require 0.2）· raf1 5.3 / raf2 112.4 ms（offscreen 首帧）
+  脚本 eval         runtime 22.3 / generated 20.4 / shims 21.1 / module 20.6 ms（计时起点之前）
+  判定              框架同步构建 3.5ms 无大头；"首渲染"=脚本 eval + offscreen 首帧（非框架成本）
 
 == 体积（源码，不含产物/Electron 运行时）==
   runtime          942.9 KB
   runtime(src)     957.8 KB
-  test             786.2 KB
-  tools            60.4 KB
+  test             787.1 KB
+  tools            61.1 KB
   electron(src)    27.2 KB
-  docs             673.9 KB
+  docs             675.7 KB
   fixtures         473.5 KB
 
 == 逐文件（文档"文件职责"表的来源）==
@@ -1771,7 +1774,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   tools/extract.mjs                        6563 B  6.4 KB
   tools/gen-components.mjs                 7775 B  7.6 KB
   tools/serve.py                           3887 B  3.8 KB
-  tools/stats.mjs                         18617 B  18.2 KB
+  tools/stats.mjs                         19334 B  18.9 KB
   tools/assert-counts.mjs                  7476 B  7.3 KB
   tools/preflight.mjs                      5422 B  5.3 KB
   tools/check-all.sh                       4053 B  4.0 KB
@@ -1784,10 +1787,10 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   .gitignore                                757 B  0.7 KB
   README.md                              157245 B  153.6 KB
   THIRD-PARTY-NOTICES.md                  10718 B  10.5 KB
-  docs/ARCHITECTURE.md                   159265 B  155.5 KB
+  docs/ARCHITECTURE.md                   159606 B  155.9 KB
   docs/CAPABILITY.md                      61086 B  59.7 KB
   docs/DEVELOPING.md                      67182 B  65.6 KB
-  docs/ROADMAP.md                        158697 B  155.0 KB
+  docs/ROADMAP.md                        160214 B  156.5 KB
   docs/surface-measurement.md              6496 B  6.3 KB
   docs/SESSION-2026-09-20.md              12842 B  12.5 KB
   runtime/src/.mimosa                      4096 B  4.0 KB
@@ -1939,7 +1942,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   test/observe.html                        6232 B  6.1 KB
   test/opfs-probe.html                     1620 B  1.6 KB
   test/paneldemo.html                      4428 B  4.3 KB
-  test/perfdemo.html                       3685 B  3.6 KB
+  test/perfdemo.html                       4635 B  4.5 KB
   test/perfspike.html                      4578 B  4.5 KB
   test/popdemo.html                        5709 B  5.6 KB
   test/promptaction.html                  12719 B  12.4 KB

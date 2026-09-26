@@ -349,6 +349,9 @@ console.log('\n== 性能基线（Electron 实测）==');
   const m = fs.existsSync(pf)
     ? fs.readFileSync(pf, 'utf8').match(/PERF first_render_ms=([\d.]+) rerender_ms=([\d.]+) rerender_poll_ms=([\d.]+) poll_ticks=(\d+) micro_ms=([\d.]+) rows=(\d+)/)
     : null;
+  const m2 = fs.existsSync(pf)
+    ? fs.readFileSync(pf, 'utf8').match(/PERF2 loadroute_sync_ms=([\d.]+) require_ms=([\d.]+) raf1_ms=([\d.]+) raf2_ms=([\d.]+) eval_runtime_ms=([\d.]+) eval_gen_ms=([\d.]+) eval_shims_ms=([\d.]+) eval_module_ms=([\d.]+)/)
+    : null;
   if (m) {
     console.log(`  首渲染            ${m[1]} ms（33 节点：Column+Button+Text+ForEach×30）`);
     console.log(`  最小 rerender     ${m[2]} ms（@State 计数脏区单 Text，rAF 口径）`);
@@ -357,6 +360,11 @@ console.log('\n== 性能基线（Electron 实测）==');
     console.log(`  行数              ${m[6]}`);
   } else {
     console.log('  （未测：build/perfdemo.result.txt 不存在——先跑 bash electron/run.sh perfdemo）');
+  }
+  if (m2) {
+    console.log(`  剖面 R71          loadRoute 同步 ${m2[1]} ms（require ${m2[2]}）· raf1 ${m2[3]} / raf2 ${m2[4]} ms（offscreen 首帧）`);
+    console.log(`  脚本 eval         runtime ${m2[5]} / generated ${m2[6]} / shims ${m2[7]} / module ${m2[8]} ms（计时起点之前）`);
+    console.log('  判定              框架同步构建 3.5ms 无大头；"首渲染"=脚本 eval + offscreen 首帧（非框架成本）');
   }
 }
 
