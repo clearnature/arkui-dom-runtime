@@ -396,7 +396,7 @@ console.log('\n== 性能基线（Electron 实测）==');
     ? fs.readFileSync(pf2, 'utf8').match(/PERF6 first_sync_ms=([\d.]+) first_ms=([\d.]+) single_poll_ms=([\d.]+) single_flush_ms=([\d.]+) bulk_poll_ms=([\d.]+) bulk_flush_ms=([\d.]+) bulk_update_ms=([\d.]+) rows=(\d+)/)
     : null;
   if (m6) {
-    console.log(`  千节点 R79        首渲染同步 ${m6[1]} ms（${m6[9]} 节点/~3500 属性，亚线性）· 单点 flush ${m6[4]} ms · 批量翻转 flush ${m6[6]} ms`);
+    console.log(`  千节点 R79        首渲染同步 ${m6[1]} ms（${m6[8]} 节点/~3500 属性，亚线性）· 单点 flush ${m6[4]} ms · 批量翻转 flush ${m6[6]} ms`);
     console.log('  规模曲线          203→4.8 / 304→11.2 / 1055→19.0 ms（创建路径亚线性）；行复用+守卫千节点级保持');
   }
 }

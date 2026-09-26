@@ -88,14 +88,17 @@ function classifyIfTarget(ts, inScope, visitor, node) {
   }
 
   const kept = [];
-  const statics = [];
+  // R86 修复：createBlock 在定制版 TS 工厂里对传入数组持【活引用】（合成节点场景实测），
+  // 事后 `statics.length = 0` 会把已建守卫块的语句一起清空（index 页 5 条静态属性全丢的根因）。
+  // 必须重绑定新数组，禁止原地清空。
+  let statics = [];
   const flushStatics = () => {
     if (!statics.length) return;
     kept.push(ts.factory.createIfStatement(
       ts.factory.createIdentifier(guardName),
       ts.factory.createBlock(statics, true)
     ));
-    statics.length = 0;
+    statics = [];
   };
   for (const stmt of body.statements) {
     const ac = asAttrCall(ts, stmt);

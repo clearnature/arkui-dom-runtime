@@ -1646,6 +1646,28 @@ R72/R48 方法论）。
 
 ---
 
+### R86 — 优化器全量毕业：默认开启 + createBlock 活引用修复 ✅（2026-09-26）
+
+**内容**：`--optimize` 翻为 extract.mjs **默认开启**（`--no-optimize` 退出阀）——优化器从
+"3 页验证"毕业为全管线默认。首跑全量门禁即抓出一个潜伏 bug，随后全绿。
+
+**首跑抓出的真 bug（坑 99）**：index 页 5 条静态属性全丢（空守卫）。根因：定制版 TS 4.9 的
+`ts.factory.createBlock(arr)` 对传入数组持**活引用**（`createNodeArray` 不拷贝，合成节点
+场景实测），事后 `statics.length = 0` 原地清空把已建守卫块的语句一起清掉。修复 = 重绑定
+（`statics = []`）。三个性能页守卫实测全部有内容（空守卫 0）——其收益是真实守卫，不是属性
+删除；幸存纯因节点来源/访问次序差异。**全量推广正是抓这类潜伏 bug 的正确手段**。
+
+**顺带修正（坑 100）**：PERF6 采集正则 8 组却引用 `${m6[9]}` → §6 曾固化"（undefined 节点…"
+且两端一致过守门——undefined 字样即采集断链，组号修正后 "350 节点" 就位。
+
+**验收**：`npm run check` 7/7（browser all + electron all 全部用例在优化管线下通过）。
+§6 数字为优化管线口径（单跑含噪声，阈值断言为准）。
+
+**触及**：`tools/extract.mjs`（默认翻转）、`tools/arkui-optimizer.mjs`（活引用修复）、
+`tools/stats.mjs`（组号修正）、`docs/DEVELOPING.md`（坑 99/100）、`docs/ROADMAP.md`（本节）
+
+---
+
 ## P3 布局引擎
 
 ### ~~R13 — 数据可视化类：`Progress` / `Gauge` / `DataPanel` / `Rating`~~ ✅ 已完成

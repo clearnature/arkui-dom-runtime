@@ -60,8 +60,9 @@ const result = ts.transpileModule(source, {
 
 let output = result.outputText;
 
-// R75：--optimize 静态/动态属性分裂（守卫重渲染可跳过的常量属性语句）
-if (flags.has('--optimize')) {
+// R86：静态/动态属性分裂默认开启——优化器 v1.1 全量毕业（全部用例过七步门禁后翻默认）。
+// 个别不兼容页用 --no-optimize 退出并在此登记原因；--optimize 仍被接受（幂等）。
+if (!flags.has('--no-optimize')) {
   const { optimizeJs } = await import('./arkui-optimizer.mjs');
   output = optimizeJs(output, ts);
 }
