@@ -92,6 +92,14 @@
     // 不隔离的话后续组件会嵌进前一个里。挂载点 = 已由 loadRoute 建好的页面 rootNode。
     const VSP = globalThis.ViewStackProcessor;
     const COMPONENTS = [
+      // R84：platform 分片真语义（骨架转真）
+      ['ArcSwiper','P',(el)=>el.tagName==='DIV'], ['ArcListItem','P',(el)=>el.tagName==='DIV'],
+      ['ArcScrollBar','P',(el)=>!!el.querySelector('div')], ['ArcAlphabetIndexer','P',(el)=>el.__arcIdx!==undefined],
+      ['DotMatrix','P',(el)=>el.__dot!==undefined], ['MediaCachedImage','P',(el)=>el.tagName==='IMG'],
+      ['LocationButton','P',(el)=>el.getAttribute('data-security-btn')==='LocationButton'],
+      ['PasteButton','P',(el)=>el.getAttribute('data-security-btn')==='PasteButton'],
+      ['SaveButton','P',(el)=>el.getAttribute('data-security-btn')==='SaveButton'],
+      ['Skeleton2d','P',(el)=>el.style.animation.indexOf('arkui-skel')>=0],
       ['FolderStack','A',(el)=>el.tagName==='DIV'], ['GridContainer','A',(el)=>el.tagName==='DIV'],
       ['Section','A',(el)=>el.tagName==='DIV'], ['Sheet','A',(el)=>el.tagName==='DIV'],
       ['UnionEffectContainer','A',(el)=>!!el], ['XComponentNode','A',(el)=>!!el],

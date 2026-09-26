@@ -1804,6 +1804,8 @@
 
   // @include batch-func
 
+  // @include batch-platform
+
   // ── 由 tools/gen-components.mjs 生成的 149 个组件骨架 ──
   // 手写实现（上面那些，已被测试覆盖）优先；生成的只补缺口。
   // 骨架保证"能建出正确的 DOM 标签 + 基础样式"，精细化布局语义按需手补（见 docs）。

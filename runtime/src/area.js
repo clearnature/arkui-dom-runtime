@@ -429,6 +429,12 @@
       INDIC_ATTRS[prop](node, value, extra);
       return;
     }
+    // batch-platform（R84）：Arc 系/DotMatrix/MediaCachedImage/安全按钮三件套/Skeleton2d。
+    // 属性表由分片以 __platformAttrs 挂在节点上，这里统一分派（避免 area.js 硬编码 10 张表）
+    if (node.__arkuiPlatform && node.__platformAttrs && Object.prototype.hasOwnProperty.call(node.__platformAttrs, prop)) {
+      node.__platformAttrs[prop](node, value, extra);
+      return;
+    }
     // SideBarContainer（R61）：showSideBar/sideBarWidth/controlButton/onChange 是语义属性
     if (node.__arkuiSideBar && SIDEBAR_ATTRS[prop]) {
       SIDEBAR_ATTRS[prop](node, value);
