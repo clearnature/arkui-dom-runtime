@@ -7,19 +7,46 @@
  *
  * 渲染进程侧拿到的是 __arkui_dom_nodeFs，由 runtime/ohos-shims.js 的 file.fs 后端使用。
  * 返回/入参都是可结构化克隆的原始类型，符合 contextBridge 限制。
+ *
+ * R74 落盘根按打包态条件化：
+ *   · 未打包（app.isPackaged === false，开发/测试态）→ 维持 <electron>/data/ 不变。
+ *     run.sh 的 verify_disk 外部核验与 `rm -rf "$HERE/data"` 都依赖这个确定位置，不能动。
+ *   · 打包态 → 安装位置只读，落盘根切到 userData/data。
+ * preload 拿不到 app，落盘根由主进程决定，经两条通道拿到（同一来源，两条都免疫失败）：
+ *   ① 同步：main 用 webPreferences.additionalArguments 把终值根带进 process.argv
+ *      （runtime/ohos-shims.js 在模块加载时快照 nodeFs.root 作自报，invoke 回包晚于页面
+ *      脚本会自报旧根——打包态实测复现过，所以初值必须在 preload 里就同步就位）；
+ *   ② 异步：ipcRenderer.invoke('arkui:getUserDataRoot') 向主进程再取一次并缓存
+ *      （main.js ipcMain.handle 回答；这是本项目第一个 IPC 能力桥，dialog/wifi 等照此模式接）。
+ * 任何失败（无处理器/异常/两路都没给值）都维持默认根——fs 桥初始化绝不能失败。
  */
-const { contextBridge } = require('electron');
+const { contextBridge, ipcRenderer } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const ROOT = path.join(__dirname, 'data');            // 真实落盘根目录（项目内，便于外部核验）
+let ROOT = path.join(__dirname, 'data');            // 默认/回退根：项目内 electron/data（外部核验依赖）
+// ① 同步初值：main 打包态随 additionalArguments 下发 `--arkui-fs-root=<userData>/data`，
+//    在本脚本第一行之前就位 → ROOT 从一开始就是终值，页面自报与实际落盘一致；
+//    dev 态 main 不下发该参数 → 维持默认根，路径确定，测试确定性不变。
+const fromArgv = (process.argv.find((a) => a.startsWith('--arkui-fs-root=')) || '').replace('--arkui-fs-root=', '');
+if (fromArgv) ROOT = fromArgv;
+// ② 异步复核：启动取一次并缓存。dev 态主进程回 null → 维持现状；打包态回 userData → 拼 /data。
+//    与 ① 同源，正常情况两者一致；①缺失时这里兜底补正。
+ipcRenderer
+  .invoke('arkui:getUserDataRoot')
+  .then((userDataRoot) => {
+    if (typeof userDataRoot === 'string' && userDataRoot) ROOT = path.join(userDataRoot, 'data');
+  })
+  .catch(() => { /* 回退：维持当前根，绝不让 fs 桥初始化失败 */ });
+
 const toReal = (vpath) => path.join(ROOT, String(vpath).replace(/^\/vfs\/?/, ''));
 
 const ensureDir = (real) => fs.mkdirSync(path.dirname(real), { recursive: true });
 
 contextBridge.exposeInMainWorld('__arkui_dom_nodeFs', {
   kind: 'node-fs',
-  root: ROOT,
+  // getter：跨桥按访问时机求值，ROOT 被 IPC 结果覆盖后这里给的是当前根（ohos-shims 快照的也是最新值）
+  get root() { return ROOT; },
   existsSync: (p) => fs.existsSync(toReal(p)),
   readTextSync: (p) => fs.readFileSync(toReal(p), 'utf8'),
   writeTextSync: (p, c) => { ensureDir(toReal(p)); fs.writeFileSync(toReal(p), String(c)); return String(c).length; },

@@ -6,9 +6,30 @@
  *
  * 用法: ARKUI_TEST=layout ./runtime/electron --no-sandbox --disable-gpu .
  */
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
+
+// R74：fs 落盘根查询——本项目第一个 IPC 能力桥（参考实现）。
+// preload 在渲染侧拿不到 app，而 fs 落盘根取决于"是否打包"：
+//   · 未打包（app.isPackaged === false，开发/测试态）→ 回 null：preload 维持内置默认
+//     <electron>/data/ 不变，run.sh 的 verify_disk 外部核验与 `rm -rf "$HERE/data"`
+//     语义原样保留（测试确定性的底线）；
+//   · 打包态 → 安装位置只读，回 userData，由 preload 拼成 userData/data。
+// 模式约定（后续 dialog/wifi 等主进程能力照此接）：
+//   主进程 ipcMain.handle('arkui:<能力>') 返回可结构化克隆值；渲染侧 invoke 一次并缓存；
+//   渲染侧对失败免疫（catch 后走内置回退），初始化绝不能因 IPC 失败而失败。
+ipcMain.handle('arkui:getUserDataRoot', () => {
+  if (!app.isPackaged) return null;              // 开发/测试态：维持 electron/data 现状
+  return app.getPath('userData');                // 打包态：可写根（Linux 即 ~/.config/<name>）
+});
+
+// 同步通道：把最终落盘根随渲染进程启动参数下发（additionalArguments → preload 的 process.argv）。
+// 为什么 invoke 之外还要它：runtime/ohos-shims.js 在【模块加载时】快照 nodeFs.root 作自报，
+// 而 invoke 回包晚于页面脚本执行（打包态实测复现：自报还是旧根、realPathOf 已是新根——
+// "自报与实际行为一致"被打破）。additionalArguments 在 preload 执行前就位，根从第一行起就是终值。
+const fsRootForRenderer = () =>
+  app.isPackaged ? path.join(app.getPath('userData'), 'data') : null;
 
 const testName = process.env.ARKUI_TEST || 'layout';
 const pageUrl = process.env.ARKUI_PAGE_URL || '';        // 由 electron/run.sh 起本地服务后传入
@@ -32,6 +53,7 @@ app.whenReady().then(async () => {
   }
 
   const useOffscreen = process.env.ARKUI_OFFSCREEN === '1';
+  const fsRoot = fsRootForRenderer();
   const win = new BrowserWindow({
     width: 480,
     height: 400,
@@ -43,6 +65,8 @@ app.whenReady().then(async () => {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       sandbox: false,                  // preload 里要 require('node:fs')
+      // 打包态把终值落盘根同步带给 preload（dev 态为 null → preload 维持默认根）
+      additionalArguments: fsRoot ? [`--arkui-fs-root=${fsRoot}`] : [],
     },
   });
 

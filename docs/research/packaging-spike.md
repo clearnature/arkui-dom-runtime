@@ -10,7 +10,7 @@
 
 | 层 | 文件 | 职责 | 关键事实 |
 |---|---|---|---|
-| 主进程 | `electron/main.js` | 窗口生命周期 + 驱动断言页 | 命令行开关（`disable-gpu`、`disable-software-rasterizer-fallback`、`autoplay-policy=no-user-gesture-required`、`app.disableHardwareAcceleration()`）；加载页面（默认 `loadFile(../test/<ARKUI_TEST>.html)`，`ARKUI_PAGE_URL` 时 `loadURL`）；轮询 `executeJavaScript('#result')` 到出 `ALL PASS`；截图（capturePage 或 offscreen paint 帧重试取非白占比最高帧）落 `../build/electron-<name>.png`；`ELECTRON_RESULT: PASS/FAIL` 决定退出码。**没有任何 `ipcMain` 处理器**——主进程目前只是"测试驱动器"，不向渲染进程提供能力 |
+| 主进程 | `electron/main.js` | 窗口生命周期 + 驱动断言页 | 命令行开关（`disable-gpu`、`disable-software-rasterizer-fallback`、`autoplay-policy=no-user-gesture-required`、`app.disableHardwareAcceleration()`）；加载页面（默认 `loadFile(../test/<ARKUI_TEST>.html)`，`ARKUI_PAGE_URL` 时 `loadURL`）；轮询 `executeJavaScript('#result')` 到出 `ALL PASS`；截图（capturePage 或 offscreen paint 帧重试取非白占比最高帧）落 `../build/electron-<name>.png`；`ELECTRON_RESULT: PASS/FAIL` 决定退出码。R72 时**没有任何 `ipcMain` 处理器**——主进程只是"测试驱动器"；R74 起新增 1 个（`arkui:getUserDataRoot`，见 §6），也是后续能力桥的模板 |
 | preload | `electron/preload.js` | 真 fs 桥 | `contextIsolation:true` + `sandbox:false`（preload 里 `require('node:fs')`）。`contextBridge.exposeInMainWorld('__arkui_dom_nodeFs', {...})`：`kind/root` 元数据 + 9 个**同步**方法（exists/readText/writeText/appendText/truncate/mkdir/unlink/stat/list）+ `realPathOf`（供外部核验）。虚拟路径 `/vfs/x` → `<app>/electron/data/`。**fs 操作全部发生在渲染进程侧的特权上下文，没有走 IPC** |
 | 渲染进程 | `test/*.html` + `runtime/*.js` + `build/*.js` | ArkUI→DOM 运行时本体 | 页面相对引用 `../runtime/{generated-components,arkui-dom-runtime,ohos-shims}.js` 与 `../build/<page>-module.js`；`@ohos:file.fs` 垫片消费 `window.__arkui_dom_nodeFs` |
 | env 驱动 | run.sh 注入 | 驱动面 | `ARKUI_TEST`（页面名，默认 layout）、`ARKUI_PAGE_URL`（http 模式）、`ARKUI_WAIT_MS`、`ARKUI_CAPTURE_MS`、`ARKUI_OFFSCREEN` |
@@ -120,10 +120,44 @@ cd $S && ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ \
 **C. 安全边界注意（随分发包成立而变重要）**
 
 - `sandbox:false` 是 fs 桥的前提（preload 要 `require('node:fs')`），等于放弃渲染进程沙箱；包分发后建议：页面来源收敛为应用自带文件（不加载远程内容），asar 开启（packager v20/builder 默认）防篡改；
-- 可写位置适配：`outPng`（`../build/`）与 fs 落盘根（`electron/data/`）目前都写进应用目录——解包目录可用，但安装到 `/opt`（root 属主）后不可写。后续切到 `app.getPath('userData')`（main.js/preload 各一行、可用环境变量覆盖保留测试现状），本 spike 未做、不阻塞。
+- 可写位置适配：**fs 落盘根已实现（R74）**——未打包（`app.isPackaged === false`，开发/测试态）维持 `electron/data/` 不变（`verify_disk` 外部核验与 `rm -rf "$HERE/data"` 语义原样保留，这是测试确定性的底线）；打包态切到 `app.getPath('userData')/data`。preload 拿不到 app，经 `ipcMain.handle('arkui:getUserDataRoot')` + `additionalArguments` 同步下发取根，实现要点与模板见 §6。打包态实测：realfs / netfile 两阶段全 PASS，写入落在 `~/.config/<productName>/data/`，包内不再产生 `electron/data`。`outPng`（`../build/` 截图）仍写应用目录——它只服务测试驱动，不随断言页分发，暂不动。
 
 ## 5. 本 spike 产物清单
 
 - 分发包（/tmp，未入库）：`/tmp/arkui-pkg-out/arkui-dom-electron-linux-x64/`（packager，285M）、`/tmp/arkui-pkg-staging/dist/linux-unpacked/`（builder，285M）、`/tmp/arkui-pkg-staging/dist/arkui-dom-desktop-0.1.0.AppImage`（120M）、`/tmp/arkui-dom-desktop-linux-x64.tar.gz`（118M）。
 - 仓库内新增：仅本文档。未改 runtime/ 源码，未改 package.json 依赖，未 commit。
 - 退级方案 tools/package-app.sh 未启用（npx 网络可用；如需离线打包，对 §3.3 第 1 步产物 tar 即可，见 §3.1 ③）。
+
+## 6. R74：fs 落盘根 userData 化（已实现）+ IPC 参考实现模式
+
+> §4-C"可写位置适配"落地记录。改动只有 `electron/main.js` 与 `electron/preload.js` 两个文件；
+> 测试页（test/realfs.html、test/netfile.html）、electron/run.sh、runtime/ 全部零改动，未打包态回归全绿。
+
+### 6.1 行为定义
+
+| 运行态 | fs 落盘根（`/vfs/x` 映射到哪） | 依据 |
+|---|---|---|
+| 未打包（开发/测试态，`app.isPackaged === false`） | `<repo>/electron/data/`（与 R74 之前完全一致） | `verify_disk` 外部核验、`rm -rf "$HERE/data"` 从干净态起步的语义、断言计数守门都锚定这个确定路径，不能动 |
+| 打包态（`app.isPackaged === true`） | `app.getPath('userData')/data`（Linux 即 `~/.config/<productName>/data`） | 安装位置（如 `/opt`）只读，userData 是 OS 保证可写的归宿 |
+
+### 6.2 改动点
+
+- **main.js**：`ipcMain.handle('arkui:getUserDataRoot', () => app.isPackaged ? app.getPath('userData') : null)`（回 `null` = "维持渲染侧内置默认"）；创建窗口时把终值根随 `webPreferences.additionalArguments` 以 `--arkui-fs-root=<userData>/data` 下发（仅打包态带此参数）。
+- **preload.js**：`ROOT` 默认仍是 `path.join(__dirname, 'data')`；①同步读 `process.argv` 里的 `--arkui-fs-root=`，有则立为初值；②`ipcRenderer.invoke('arkui:getUserDataRoot')` 启动取一次并缓存（回非空字符串才覆盖，`null`/异常一律维持现状）；暴露的 `root` 改成 getter，跨桥按访问时机求值，反映当前根。
+
+### 6.3 为什么是两条通道（打包态实测踩出来的）
+
+只走 `invoke` 时有个真实缺陷：`runtime/ohos-shims.js` 在**模块加载时**把 `nodeFs.root` 快照进后端自报（`describe()` 的 root 字段），而 invoke 回包晚于页面脚本执行——打包态实测复现：自报 `root=<包内>/electron/data`（旧）、`realPathOf` 已是 userData（新），写盘落 userData 但自报还是旧根，破坏 realfs 页"自报与实际行为一致"的契约（runtime/ 是禁改区，只能在 preload 侧解决）。`additionalArguments` 在 preload 第一行之前就位，根从起点就是终值，自报与落盘一致；`invoke` 仍保留为运行期正典查询通道（两者同源，一致时无感，缺一时互补）。
+
+### 6.4 IPC 模板（后续 dialog/wifi/picker 等照此接）
+
+1. 主进程：`ipcMain.handle('arkui:<能力>', handler)`，返回可结构化克隆值；未打包/打包差异在 handler 内部消化（回 `null` 表示"维持渲染侧默认行为"）。
+2. 渲染侧：`ipcRenderer.invoke('arkui:<能力>')` 取一次并缓存；**对失败免疫**——`.catch` 后走内置回退，渲染侧任何初始化绝不能因 IPC 失败而失败。
+3. 需要"渲染进程启动前就生效"的配置：用 `webPreferences.additionalArguments` 同步下发，`invoke` 作为运行期正典通道（见 §6.3）。
+
+### 6.5 实测证据
+
+- 打包态（packager，staging 含 realfs/netfile 页，`~/.cache/electron` 本地 zip 零下载）：
+  - `ARKUI_TEST=realfs ./arkui-dom-electron --no-sandbox --disable-gpu` → `ALL PASS`、exit 0，自报 `root=` 与 `realPathOf` 一致为 `~/.config/arkui-dom-desktop/data`；
+  - 两阶段 netfile（进程 A `?phase=1` 写盘退出 → 全新进程 B `?phase=2` 读回）双 PASS：`demo.txt`=`hello from arkts`、`pref_persist_probe.json`=`{"marker":"m1"}` 都落在 userData；包内 `resources/app/electron/` 不再出现 `data/`。
+- 未打包态回归（R74 改动后）：`electron/run.sh realfs`、`electron/run.sh netfile`（两阶段 + `verify_disk`）零改动全 PASS，根仍是 `electron/data`；浏览器端 `run.sh realfs`、`run.sh persist` 不受影响（不加载 electron/ 任何文件）。
