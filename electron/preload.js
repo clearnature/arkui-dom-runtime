@@ -81,4 +81,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     try { return await ipcRenderer.invoke('arkui:dialog:' + kind, options); }
     catch (e) { return { canceled: true, filePaths: [], uri: null }; }
   },
+  // R88：桌面 ability 窗口桥——startForResult 开第二窗口、terminateWithResult 回传结果。
+  // 与 fs/window 桥同约定：可结构化克隆 + 失败免疫（catch 返回 false）。
+  abilityStart: async (payload) => {
+    try { return await ipcRenderer.invoke('arkui:ability:startForResult', payload); }
+    catch (e) { return false; }
+  },
+  abilityTerminate: async (result) => {
+    try { return await ipcRenderer.invoke('arkui:ability:terminateWithResult', result); }
+    catch (e) { return false; }
+  },
+  onAbilityResult: (cb) => {
+    ipcRenderer.on('arkui:ability:result', (_e, result) => { try { cb(result); } catch (err) {} });
+  },
 });

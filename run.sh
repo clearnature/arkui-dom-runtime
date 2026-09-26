@@ -336,6 +336,10 @@ case "${1:-index}" in
     run_one ability "$(src_of entryability/EntryAbility.ts)" build/ability-module.js test/ability.html \
       "--cjs --register EntryAbility" || rc=1
     echo
+    # R88：startAbilityForResult 桌面语义（浏览器端 overlay 降级路径）
+    run_one abilitydesktop "$(src_of entryability/EntryAbility.ts)" build/abilitydesktop-module.js test/ability-desktop.html \
+      "--cjs --register EntryAbility" || rc=1
+    echo
     "$NODE" tools/extract.mjs "$(src_of pages/Detail.ts)" build/detail-module.js --cjs --register Detail >/dev/null || rc=1
     run_one router "$(src_of pages/Home.ts)" build/home-module.js test/router.html "--cjs --register Home" || rc=1
     echo
@@ -549,6 +553,10 @@ case "${1:-index}" in
     # R82：file.picker（浏览器端走探测式降级路径）
     run_one pickerdemo "$(src_of pages/PickerDemo.ts)" build/pickerdemo-module.js test/pickerdemo.html \
       "--cjs --register PickerDemo" ;;
+  abilitydesktop)
+    # R88：startAbilityForResult 桌面语义（浏览器端走 overlay 降级）
+    run_one abilitydesktop "$(src_of entryability/EntryAbility.ts)" build/abilitydesktop-module.js test/ability-desktop.html \
+      "--cjs --register EntryAbility" ;;
   router)
     # 两个页面都要注册；Detail 先单独产出，Home 由 run_one 带 flags 产出
     "$NODE" tools/extract.mjs "$(src_of pages/Detail.ts)" build/detail-module.js --cjs --register Detail >/dev/null || exit 1

@@ -39,6 +39,7 @@ page_of() {
     # test/<用例名>.html（404 页没有 #result，断言读到空串，表现为"页面没输出"而不是报错）
     lazyvh) printf 'lazyvar' ;;
     batchverify) printf 'batch-verify' ;;
+    abilitydesktop) printf 'ability-desktop' ;;
     *) printf '%s' "$1" ;;
   esac
 }
@@ -119,6 +120,7 @@ prepare() {
     stress1k) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/Stress1kDemo.ts" "$ROOT/build/stress1k-module.js" --cjs --register Stress1kDemo --optimize >/dev/null || return 1 ;;
     windowdemo) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/WindowDemo.ts" "$ROOT/build/windowdemo-module.js" --cjs --register WindowDemo >/dev/null || return 1 ;;
     pickerdemo) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/PickerDemo.ts" "$ROOT/build/pickerdemo-module.js" --cjs --register PickerDemo >/dev/null || return 1 ;;
+    abilitydesktop) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/entryability/EntryAbility.ts" "$ROOT/build/abilitydesktop-module.js" --cjs --register EntryAbility >/dev/null || return 1 ;;
     stepdemo) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/StepDemo.ts" "$ROOT/build/stepdemo-module.js" --cjs --register StepDemo >/dev/null || return 1 ;;
   esac
   return 0
@@ -190,7 +192,7 @@ case "${1:-layout}" in
   all)
     rc=0
     # 全矩阵：每个用例都是独立 Electron 进程
-    for t in index rich layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo mediademo smalldemo stepdemo imagedemo scrolldemo animatordemo listitemgroup refreshdemo datepickerdemo timepickerdemo waterflowdemo calendarpickerdemo textpickerdemo griddemo texttimedemo alphabetindexerdemo sidebardemo splitdemo paneldemo gridrowdemo richvideodemo batchverify perfdemo perfbig attrheavy stress1k windowdemo pickerdemo measure lazy provide v2 observe ability router async; do
+    for t in index rich layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo mediademo smalldemo stepdemo imagedemo scrolldemo animatordemo listitemgroup refreshdemo datepickerdemo timepickerdemo waterflowdemo calendarpickerdemo textpickerdemo griddemo texttimedemo alphabetindexerdemo sidebardemo splitdemo paneldemo gridrowdemo richvideodemo batchverify perfdemo perfbig attrheavy stress1k windowdemo pickerdemo abilitydesktop measure lazy provide v2 observe ability router async; do
       run_one "$t" || rc=1
       echo
     done
@@ -210,6 +212,6 @@ case "${1:-layout}" in
     run_one netfile "?phase=2" netfile-2 || exit 1
     echo
     verify_disk ;;
-  layout|rich|index|leak|ability|router|widgets|tabgrid|swiper|navdemo|reldemo|drawdemo|textmeasure|lazyvh|measarea|measimage|measnotify|promptaction|realfs|animdemo|gesturedemo|transitiondemo|gesturegroupdemo|navbardemo|navtransdemo|shapedemo|inputdemo|showdemo|popdemo|uictxdemo|canvasedemo|xcompdemo|qrdemo|textdemo|mediademo|smalldemo|stepdemo|imagedemo|scrolldemo|animatordemo|listitemgroup|refreshdemo|datepickerdemo|timepickerdemo|waterflowdemo|calendarpickerdemo|textpickerdemo|griddemo|texttimedemo|alphabetindexerdemo|sidebardemo|splitdemo|paneldemo|gridrowdemo|richvideodemo|batchverify|perfdemo|perfbig|attrheavy|stress1k|windowdemo|pickerdemo|measure|lazy|provide|async|v2|observe) run_one "$1" ;;
-  *) echo "用法: bash electron/run.sh [layout|rich|index|leak|ability|router|widgets|tabgrid|swiper|navdemo|reldemo|drawdemo|textmeasure|lazyvh|measarea|measimage|measnotify|promptaction|realfs|animdemo|gesturedemo|transitiondemo|gesturegroupdemo|navbardemo|navtransdemo|shapedemo|inputdemo|showdemo|popdemo|uictxdemo|canvasedemo|xcompdemo|qrdemo|textdemo|mediademo|smalldemo|stepdemo|imagedemo|scrolldemo|animatordemo|listitemgroup|refreshdemo|datepickerdemo|timepickerdemo|waterflowdemo|calendarpickerdemo|textpickerdemo|griddemo|texttimedemo|alphabetindexerdemo|sidebardemo|splitdemo|paneldemo|gridrowdemo|richvideodemo|batchverify|perfdemo|perfbig|attrheavy|stress1k|windowdemo|pickerdemo|measure|lazy|provide|async|v2|observe|netfile|all]"; exit 2 ;;
+  layout|rich|index|leak|ability|router|widgets|tabgrid|swiper|navdemo|reldemo|drawdemo|textmeasure|lazyvh|measarea|measimage|measnotify|promptaction|realfs|animdemo|gesturedemo|transitiondemo|gesturegroupdemo|navbardemo|navtransdemo|shapedemo|inputdemo|showdemo|popdemo|uictxdemo|canvasedemo|xcompdemo|qrdemo|textdemo|mediademo|smalldemo|stepdemo|imagedemo|scrolldemo|animatordemo|listitemgroup|refreshdemo|datepickerdemo|timepickerdemo|waterflowdemo|calendarpickerdemo|textpickerdemo|griddemo|texttimedemo|alphabetindexerdemo|sidebardemo|splitdemo|paneldemo|gridrowdemo|richvideodemo|batchverify|perfdemo|perfbig|attrheavy|stress1k|windowdemo|pickerdemo|abilitydesktop|measure|lazy|provide|async|v2|observe) run_one "$1" ;;
+  *) echo "用法: bash electron/run.sh [layout|rich|index|leak|ability|router|widgets|tabgrid|swiper|navdemo|reldemo|drawdemo|textmeasure|lazyvh|measarea|measimage|measnotify|promptaction|realfs|animdemo|gesturedemo|transitiondemo|gesturegroupdemo|navbardemo|navtransdemo|shapedemo|inputdemo|showdemo|popdemo|uictxdemo|canvasedemo|xcompdemo|qrdemo|textdemo|mediademo|smalldemo|stepdemo|imagedemo|scrolldemo|animatordemo|listitemgroup|refreshdemo|datepickerdemo|timepickerdemo|waterflowdemo|calendarpickerdemo|textpickerdemo|griddemo|texttimedemo|alphabetindexerdemo|sidebardemo|splitdemo|paneldemo|gridrowdemo|richvideodemo|batchverify|perfdemo|perfbig|attrheavy|stress1k|windowdemo|pickerdemo|abilitydesktop|measure|lazy|provide|async|v2|observe|netfile|all]"; exit 2 ;;
 esac

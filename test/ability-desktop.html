@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R88：startAbilityForResult 桌面语义（真第二窗口 / overlay 降级）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 360px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; font-size: 12px; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R88：startAbilityForResult 桌面语义——callee 跑在真第二 BrowserWindow</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script>
+  window.addEventListener('unhandledrejection', (e) => {
+    document.getElementById('result').textContent = 'UNHANDLED ' + (e.reason && e.reason.message || e.reason);
+  });
+  (async function () {
+    const lines = [];
+    let pass = 0, fail = 0;
+    const check = (c, m) => { if (c) { pass++; lines.push('PASS ' + m); } else { fail++; lines.push('FAIL ' + m); } };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms || 0));
+    const root = document.getElementById('root');
+    const isElectron = !!(globalThis.electronAPI && globalThis.electronAPI.abilityStart);
+    // 挂起守卫时长分端：浏览器跑在 --virtual-time-budget=8000 下，守卫吃满预算会
+    // 冻结虚拟时间（后续 tick 永不触发，dump-dom 冻结在 running…——R88 实测）；
+    // Electron 真实时钟无此问题，给足 8s。
+    const HANG_MS = isElectron ? 8000 : 1200;
+
+    // 根 ability：捕获 contexts（browser overlay 降级路径要靠它驱动子 ability 终结）
+    const ctxs = [];
+    class CallerAbility {
+      // 运行时 new AbilityClass(context)：context 走【构造器】（同真机 UIAbility 的 this.context）；
+      // onCreate 第一参是 want——在这捕获拿到的是 want 不是 context
+      constructor(ctx) { ctxs.push(ctx); }
+      onCreate(want) {}
+      onWindowStageCreate() {}
+      onForeground() {}
+      onWindowStageDestroy() {}
+      onDestroy() {}
+    }
+    const { context, logs } = __arkui_dom_startAbility(CallerAbility, { rootEl: root });
+
+    // ── 第一次 startAbilityForResult ──
+    // 浏览器 overlay 子不会自终：终结驱动与 start 并发（80ms 后驱动 ctxs[1] 终结）；
+    // Electron 真窗口由 callee 页自终，驱动为 no-op
+    const startP1 = context.startAbilityForResult({ parameters: { desktopPage: 'ability-callee', marker: 'from-caller' } });
+    const driver1 = tick(80).then(() => {
+      if (!isElectron) {
+        const c = ctxs[1];
+        if (c) c.terminateSelfWithResult({ resultCode: 0, want: { parameters: { picked: 'overlay.txt' } } });
+      }
+    });
+    const raced = await Promise.race([
+      startP1.then((r) => ({ r, hung: false })),
+      tick(HANG_MS).then(() => ({ hung: true })),
+    ]);
+    await driver1;   // 驱动在 race 外 await（它在 80ms 驱动子终结，不能进 race 抢跑）
+    const r1 = raced.r;
+
+    // ① 路径判定
+    if (isElectron) {
+      check(logs.some((l) => l.op === 'desktopStart' && l.page === 'ability-callee'),
+        'ability 桌面路径：logs 记录 desktopStart(ability-callee)');
+    } else {
+      check(logs.some((l) => l.t === 'ability' && l.child),
+        'ability 浏览器降级：overlay 子 ability 已起（探测式降级）');
+    }
+    // ② resolve（不挂起）
+    check(raced.hung !== true && r1 && typeof r1 === 'object', 'ability startAbilityForResult 已 resolve（8s 未挂起）');
+    // ③ resultCode
+    check(!!r1 && r1.resultCode === 0, 'ability resultCode=0');
+    // ④ picked 值（跨进程来的 callee 证据 / overlay 子的回调证据）
+    check(!!r1 && r1.want && r1.want.parameters &&
+      r1.want.parameters.picked === (isElectron ? 'demo.txt' : 'overlay.txt'),
+      'ability 结果参数 picked=' + (r1 && r1.want && r1.want.parameters && r1.want.parameters.picked));
+    // ⑤ callee 生命周期证据
+    if (isElectron) {
+      check(!!r1 && r1.want.parameters.lifecycle === 'callee',
+        'ability callee 生命周期已跑（结果由 callee 页 terminate 发出）');
+    } else {
+      check(ctxs.length >= 2, 'ability 子 ability onCreate 已跑（ctxs=' + ctxs.length + '）');
+    }
+    // ⑥ caller 结果后仍可交互
+    const interEl = document.createElement('div');
+    interEl.id = 'after-result';
+    interEl.textContent = 'alive';
+    root.appendChild(interEl);
+    check(interEl.textContent === 'alive', 'ability caller 结果后仍可交互');
+    // ⑨ terminate 日志
+    if (isElectron) {
+      // desktopTerminate 记在 callee 进程（随窗口销毁）；caller 侧的 desktopResult
+      // 就是"callee 走了 IPC 终结分支"的证据（overlay 路径不会产生它）
+      check(logs.some((l) => l.op === 'desktopResult'), 'ability 结果经 IPC 回传（caller 侧 desktopResult 记录）');
+    } else {
+      check(logs.some((l) => l.t === 'abilityWindow' && l.op === 'close'), 'ability logs 记录 overlay 关窗');
+    }
+    // ⑩ result.want 结构
+    check(!!r1 && !!r1.want && typeof r1.want === 'object' && !!r1.want.parameters,
+      'ability result.want 结构完整');
+
+    // ── 第二次 startAbilityForResult（顺序复用）──
+    const startP2 = context.startAbilityForResult({ parameters: { desktopPage: 'ability-callee' } });
+    const driver2 = tick(80).then(() => {
+      if (!isElectron) {
+        const c = ctxs[2];
+        if (c) c.terminateSelfWithResult({ resultCode: 0, want: { parameters: { picked: 'overlay2.txt' } } });
+      }
+    });
+    const raced2 = await Promise.race([
+      startP2.then((r) => ({ r, hung: false })),
+      tick(HANG_MS).then(() => ({ hung: true })),
+    ]);
+    await driver2;
+    const r2 = raced2.r;
+    // ⑦ 二次 resolve
+    check(raced2.hung !== true && r2 && typeof r2 === 'object', 'ability 第二次 startForResult 已 resolve（顺序复用）');
+    // ⑧ 二次 resultCode 0
+    check(!!r2 && r2.resultCode === 0, 'ability 第二次 resultCode=0');
+
+    lines.push('ABILITYLOGS ' + logs.filter((l) => l.t === 'abilityWindow').map((l) => l.op).join(','));
+
+    if (fail === 0) lines.unshift(`=== ALL PASS (${pass}) ===`);
+    else lines.unshift(`=== ${fail} FAILURES / ${pass} PASS ===`);
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = fail === 0 ? 'pass' : 'fail';
+    document.title = fail === 0 ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

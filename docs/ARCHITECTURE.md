@@ -1743,34 +1743,34 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   16 个：app.ability.AbilityConstant app.ability.ConfigurationConstant app.ability.UIAbility app.ability.Want data.preferences file.fs file.picker hilog measure multimedia.image multimedia.media net.http notificationManager promptAction router window
 
 == 用例矩阵 ==
-  浏览器 run.sh     67 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify measure lazy provide v2 observe async ability promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo mediademo smalldemo stepdemo imagedemo scrolldemo animatordemo listitemgroup refreshdemo datepickerdemo timepickerdemo waterflowdemo calendarpickerdemo textpickerdemo griddemo texttimedemo alphabetindexerdemo sidebardemo splitdemo paneldemo gridrowdemo richvideodemo batchverify perfdemo windowdemo pickerdemo router netfile persist
-  Electron          69 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo mediademo smalldemo stepdemo imagedemo scrolldemo animatordemo listitemgroup refreshdemo datepickerdemo timepickerdemo waterflowdemo calendarpickerdemo textpickerdemo griddemo texttimedemo alphabetindexerdemo sidebardemo splitdemo paneldemo gridrowdemo richvideodemo batchverify perfdemo perfbig attrheavy stress1k windowdemo pickerdemo measure lazy provide async v2 observe
-  测试页            77 个
+  浏览器 run.sh     68 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify measure lazy provide v2 observe async ability promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo mediademo smalldemo stepdemo imagedemo scrolldemo animatordemo listitemgroup refreshdemo datepickerdemo timepickerdemo waterflowdemo calendarpickerdemo textpickerdemo griddemo texttimedemo alphabetindexerdemo sidebardemo splitdemo paneldemo gridrowdemo richvideodemo batchverify perfdemo windowdemo pickerdemo abilitydesktop router netfile persist
+  Electron          70 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo mediademo smalldemo stepdemo imagedemo scrolldemo animatordemo listitemgroup refreshdemo datepickerdemo timepickerdemo waterflowdemo calendarpickerdemo textpickerdemo griddemo texttimedemo alphabetindexerdemo sidebardemo splitdemo paneldemo gridrowdemo richvideodemo batchverify perfdemo perfbig attrheavy stress1k windowdemo pickerdemo abilitydesktop measure lazy provide async v2 observe
+  测试页            79 个
   fixtures 转换产物  72 个：AlphabetIndexerDemo AnimDemo AnimatorDemo AsyncIO AttrHeavyDemo BatchFuncDemo BatchLayoutDemo BatchMediaDemo BatchVerifyDemo CalendarPickerDemo Callee CanvasDemo DatePickerDemo Detail DrawDemo GestureDemo GestureGroupDemo GridDemo GridRowDemo Home ImageDemo Index InputDemo Layout Lazy LazyVar ListGroupDemo MeasArea MeasImage MeasNotify Measure MediaDemo NavBarDemo NavDemo NavShimDemo NavTransDemo NetFile Observe PanelDemo PerfBigDemo PerfDemo PickerDemo PopDemo PromptAct Provide QrDemo RefreshDemo RelDemo Rich RichVideoDemo ScrollDemo ShapeDemo ShowDemo SideBarDemo SmallDemo SplitDemo StepDemo Stress1kDemo SwiperDemo TabsGrid TextDemo TextMeasure TextPickerDemo TextTimeDemo TimePickerDemo TransitionDemo UiContextDemo V2 WaterFlowDemo Widgets WindowDemo XCompDemo
 
 == 性能基线（Electron 实测）==
-  首渲染            121.4 ms（33 节点：Column+Button+Text+ForEach×30）
-  最小 rerender     3.2 ms（@State 计数脏区单 Text，rAF 口径）
+  首渲染            131.4 ms（33 节点：Column+Button+Text+ForEach×30）
+  最小 rerender     3.5 ms（@State 计数脏区单 Text，rAF 口径）
   rerender 管道     1.5 ms / 1 tick（setTimeout 轮询口径，R70）
   微任务底噪        0.00 ms
   行数              31
-  剖面 R71          loadRoute 同步 3.7 ms（require 0.2）· raf1 0.0 / raf2 117.7 ms（offscreen 首帧）
-  脚本 eval         runtime 18.4 / generated 17.5 / shims 17.6 / module 16.8 ms（计时起点之前）
+  剖面 R71          loadRoute 同步 3.7 ms（require 0.2）· raf1 0.1 / raf2 127.6 ms（offscreen 首帧）
+  脚本 eval         runtime 22.4 / generated 21.1 / shims 21.4 / module 20.3 ms（计时起点之前）
   判定              框架同步构建 3.5ms 无大头；"首渲染"=脚本 eval + offscreen 首帧（非框架成本）
-  千节点 R79        首渲染同步 18.2 ms（350 节点/~3500 属性，亚线性）· 单点 flush 2.7 ms · 批量翻转 flush 6.2 ms
+  千节点 R79        首渲染同步 20.5 ms（350 节点/~3500 属性，亚线性）· 单点 flush 2.7 ms · 批量翻转 flush 6.0 ms
   规模曲线          203→4.8 / 304→11.2 / 1055→19.0 ms（创建路径亚线性）；行复用+守卫千节点级保持
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          971.8 KB
-  runtime(src)     979.3 KB
-  test             813.6 KB
+  runtime          974.5 KB
+  runtime(src)     982.0 KB
+  test             821.5 KB
   tools            77.9 KB
-  electron(src)    37.2 KB
-  docs             713.5 KB
+  electron(src)    39.4 KB
+  docs             716.0 KB
   fixtures         498.3 KB
 
 == 逐文件（文档"文件职责"表的来源）==
-  runtime/arkui-dom-runtime.js           727771 B  710.7 KB
+  runtime/arkui-dom-runtime.js           730511 B  713.4 KB
   runtime/generated-components.js         57617 B  56.3 KB
   runtime/ohos-shims.js                   69380 B  67.8 KB
   tools/extract.mjs                        6936 B  6.8 KB
@@ -1781,22 +1781,22 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   tools/preflight.mjs                      5422 B  5.3 KB
   tools/check-all.sh                       4053 B  4.0 KB
   tools/build-runtime.mjs                  5138 B  5.0 KB
-  run.sh                                  30982 B  30.3 KB
-  electron/run.sh                         19009 B  18.6 KB
-  electron/main.js                        12835 B  12.5 KB
-  electron/preload.js                      5330 B  5.2 KB
+  run.sh                                  31519 B  30.8 KB
+  electron/run.sh                         19292 B  18.8 KB
+  electron/main.js                        14184 B  13.9 KB
+  electron/preload.js                      5996 B  5.9 KB
   package.json                             1366 B  1.3 KB
   .gitignore                                757 B  0.7 KB
   README.md                              157245 B  153.6 KB
   THIRD-PARTY-NOTICES.md                  10718 B  10.5 KB
-  docs/ARCHITECTURE.md                   160780 B  157.0 KB
+  docs/ARCHITECTURE.md                   160926 B  157.2 KB
   docs/CAPABILITY.md                      61786 B  60.3 KB
   docs/DEVELOPING.md                      68492 B  66.9 KB
-  docs/ROADMAP.md                        180381 B  176.2 KB
+  docs/ROADMAP.md                        182756 B  178.5 KB
   docs/surface-measurement.md              6496 B  6.3 KB
   docs/SESSION-2026-09-20.md              12842 B  12.5 KB
   runtime/src/.mimosa                      4096 B  4.0 KB
-  runtime/src/ability.js                  10229 B  10.0 KB
+  runtime/src/ability.js                  12969 B  12.7 KB
   runtime/src/alphabetindexer.js           5155 B  5.0 KB
   runtime/src/animation.js                29450 B  28.8 KB
   runtime/src/animator.js                  6308 B  6.2 KB
@@ -1909,6 +1909,8 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   fixtures/pages/Widgets.ts                4600 B  4.5 KB
   fixtures/pages/WindowDemo.ts             5683 B  5.5 KB
   fixtures/pages/XCompDemo.ts              4086 B  4.0 KB
+  test/ability-callee.html                 1417 B  1.4 KB
+  test/ability-desktop.html                6658 B  6.5 KB
   test/ability.html                        4695 B  4.6 KB
   test/alphabetindexerdemo.html            4880 B  4.8 KB
   test/animatordemo.html                   5613 B  5.5 KB

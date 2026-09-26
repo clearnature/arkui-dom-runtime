@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R88 callee：桌面 ability 窗口（__arkui_ability=1）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { border: 1px solid #ddd; padding: 8px; }
+</style>
+</head>
+<body>
+  <h3>R88 callee：本窗口由主进程 startForResult 打开，生命周期后自动交结果</h3>
+  <div id="root"></div>
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script>
+  (function () {
+    const root = document.getElementById('root');
+    const marker = document.createElement('div');
+    marker.id = 'callee-ready';
+    marker.textContent = 'callee ready';
+    root.appendChild(marker);
+
+    class CalleeAbility {
+      onCreate(want) { window.__calleeWant = want; }
+      onWindowStageCreate() {}
+      onForeground() {}
+      onWindowStageDestroy() {}
+      onDestroy() {}
+    }
+    const { context } = __arkui_dom_startAbility(CalleeAbility, { rootEl: root });
+    // 测试确定性：装载后自动交结果（真机上等价于用户操作后 terminateSelfWithResult）
+    setTimeout(() => {
+      context.terminateSelfWithResult({
+        resultCode: 0,
+        want: { parameters: { picked: 'demo.txt', lifecycle: 'callee' } },
+      });
+    }, 30);
+  })();
+  </script>
+</body>
+</html>

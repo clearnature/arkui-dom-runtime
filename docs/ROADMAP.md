@@ -1691,6 +1691,38 @@ ArcSwiper（pop 收子/index 显隐切换/duration→CSS/onChange 注册）、Ar
 
 ---
 
+### R88 — 桌面语义：startAbilityForResult 的 callee 跑在真第二窗口 ✅（2026-09-26）
+
+**内容**：桌面线 IPC 模板第四落地。`context.startAbilityForResult(want)` 在 Electron 下
+（`want.parameters.desktopPage` 显式指定 callee 页 + 宿主有桥）走**真第二 BrowserWindow**：
+caller 渲染进程 → preload `abilityStart` → 主进程开 callee 窗（同 preload，URL 追加
+`__arkui_ability=1` 标记）→ callee 页在自己的进程里跑完整生命周期 → `terminateSelfWithResult`
+经 `terminateEntry` 检测桌面 callee 标记 → IPC 回传 caller webContents → caller 的 Promise
+resolve + 主进程关 callee 窗。浏览器端无桥 → 探测式降级走既有 overlay 路径（R20 语义不变）。
+
+**语义保真要点**：callee 的 `onWindowStageDestroy/onDestroy` 在**本地**照常跑（生命周期
+忠实），只有结果交付与关窗走主进程；desktopTerminate 日志记在 callee 进程（随窗口销毁），
+caller 侧的 `desktopResult` 记录即"走了 IPC 终结分支"的证据（overlay 路径不会产生它）。
+
+**验收**：`bash electron/run.sh abilitydesktop`（10 条断言）——desktopStart/desktopResult
+日志、resultCode 0、**picked=demo.txt 跨进程回传**、callee 生命周期证据（lifecycle=callee
+由 callee 页 terminate 发出）、caller 结果后仍可交互、第二次顺序启动复用；浏览器端降级
+10/10（overlay 子由测试驱动终结）。
+
+**调试过程三个教训（全部入档为测试页注释）**：① 浏览器端挂起守卫吃满
+`--virtual-time-budget` 会冻结虚拟时间（后续 tick 永不触发）→ 守卫时长分端
+（浏览器 1200ms/Electron 8s）；② 竞速结构里**驱动 Promise 不能进 race**（80ms 必 settle
+会抢跑 hung:true）——驱动并发运行、race 外 await；③ context 走**构造器**
+（`new AbilityClass(context)`，同真机 `this.context`），`onCreate(want)` 第一参是 want。
+
+**触及**：`runtime/src/ability.js`（desktop 路径 + terminateEntry 桌面分支）、
+`electron/preload.js`（abilityStart/Terminate/onAbilityResult）、`electron/main.js`
+（callee 窗口创建 + 结果转发）、`test/ability-desktop.html`（caller）+
+`test/ability-callee.html`（callee）、`run.sh` + `electron/run.sh`（接线 + page_of）、
+`docs/ROADMAP.md`（本节）
+
+---
+
 ## P3 布局引擎
 
 ### ~~R13 — 数据可视化类：`Progress` / `Gauge` / `DataPanel` / `Rating`~~ ✅ 已完成

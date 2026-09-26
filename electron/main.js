@@ -138,6 +138,35 @@ app.whenReady().then(async () => {
     return (r.canceled || !r.filePath) ? [] : ['file://' + r.filePath];
   });
 
+  // ── @ohos:ability 的桌面语义执行端（R88）──
+  // startAbilityForResult(desktopPage) → 开【真第二 BrowserWindow】装载 callee 页；
+  // callee 页 terminateSelfWithResult → 结果转发回 caller webContents + 关 callee 窗口。
+  let callerWC = null;
+  let abilityWin = null;
+  ipcMain.handle('arkui:ability:startForResult', (e, payload) => {
+    callerWC = e.sender;
+    if (abilityWin && !abilityWin.isDestroyed()) abilityWin.close();  // 顺序启动：上一窗已让位
+    abilityWin = new BrowserWindow({
+      width: 420, height: 360, show: false,
+      webPreferences: {
+        backgroundThrottling: false,
+        preload: path.join(__dirname, 'preload.js'),
+        contextIsolation: true,
+        sandbox: false,
+        additionalArguments: fsRoot ? [`--arkui-fs-root=${fsRoot}`] : [],
+      },
+    });
+    const url = String(payload && payload.pageUrl || '');
+    abilityWin.loadURL(url + (url.includes('?') ? '&' : '?') + '__arkui_ability=1');
+    abilityWin.on('closed', () => { abilityWin = null; });
+    return { started: true };
+  });
+  ipcMain.handle('arkui:ability:terminateWithResult', (_e, result) => {
+    if (callerWC && !callerWC.isDestroyed()) callerWC.send('arkui:ability:result', result);
+    if (abilityWin && !abilityWin.isDestroyed()) abilityWin.close();
+    return true;
+  });
+
   // offscreen 模式下用 paint 事件的最后一帧当截图（隐藏窗口的合成器不产帧，capturePage 会挂）
   let lastFrame = null;
   let paintCount = 0;

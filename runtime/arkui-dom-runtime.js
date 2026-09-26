@@ -13935,6 +13935,38 @@
     return undefined;
   }
 
+  // ── R88：桌面语义——callee 在【真第二窗口】里跑（Electron）──
+  // 触发：want.parameters.desktopPage 给出 callee 页名（test/<page>.html）且宿主有桥。
+  // 结果流：callee 页 terminateSelfWithResult → terminateEntry 检测 __arkui_ability=1 →
+  // IPC 'arkui:ability:terminateWithResult' → 主进程转发 caller webContents → resolve。
+  // 浏览器端无桥 → 探测式降级（R21 先例）：走既有同进程 overlay 路径。
+  /** @type {((r: any) => void)[]} */
+  const desktopPending = [];
+  let desktopWired = false;
+  /** @param {any} want */
+  function startDesktopAbilityForResult(want) {
+    const api = (/** @type {any} */ (global)).electronAPI;
+    if (!desktopWired) {
+      desktopWired = true;
+      api.onAbilityResult((/** @type {any} */ r) => {
+        const res = { resultCode: Number(r && r.resultCode) || 0, want: r && r.want };
+        abilityLog({ t: 'abilityWindow', op: 'desktopResult', resultCode: res.resultCode });
+        const p = desktopPending.shift();
+        if (p) p(res);
+      });
+    }
+    const page = String(want.parameters.desktopPage).replace(/\.html$/, '');
+    const pageUrl = new URL('/test/' + page + '.html', location.href).href;
+    abilityLog({ t: 'abilityWindow', op: 'desktopStart', page });
+    return Promise.resolve(api.abilityStart({ pageUrl, want })).then(() => new Promise((/** @type {any} */ resolve) => {
+      desktopPending.push(resolve);
+    }));
+  }
+  /** 桌面 callee 窗口判定（主进程给 callee URL 追加 __arkui_ability=1） */
+  function isDesktopCallee() {
+    return typeof location !== 'undefined' && location.search.indexOf('__arkui_ability=1') >= 0;
+  }
+
   /** @param {any} want @param {any} parent @param {any=} [onResult] */
   function spawnChildAbility(want, parent, onResult) {
     if (!want || typeof want !== 'object') {
@@ -13981,6 +14013,16 @@
         ability.onDestroy();
       }
     }
+    // R88：桌面 callee 窗口——结果经 IPC 交回 caller 进程，窗口由主进程关闭；
+    // 本地 overlay/resolve 不适用（callee 是独立进程，pending 队列必为空）。
+    if (isDesktopCallee() && (/** @type {any} */ (global)).electronAPI &&
+        typeof (/** @type {any} */ (global)).electronAPI.abilityTerminate === 'function') {
+      abilityLog({ t: 'abilityWindow', op: 'desktopTerminate', ability: entry.name });
+      (/** @type {any} */ (global)).electronAPI.abilityTerminate(result);
+      const di = abilityStack.indexOf(entry);
+      if (di >= 0) abilityStack.splice(di, 1);
+      return undefined;
+    }
     closeAbilityWindow(entry);
     const i = abilityStack.indexOf(entry);
     if (i >= 0) abilityStack.splice(i, 1);
@@ -14012,6 +14054,12 @@
       /** @param {any} want @param {any} optionsOrCb @param {any=} [cbMaybe] */
       startAbilityForResult(want, optionsOrCb, cbMaybe) {
         const cb = typeof optionsOrCb === 'function' ? optionsOrCb : cbMaybe;
+        // R88：桌面语义——want.parameters.desktopPage + Electron 桥 → callee 跑在真第二窗口
+        const api = (/** @type {any} */ (global)).electronAPI;
+        if (want && want.parameters && want.parameters.desktopPage &&
+            api && typeof api.abilityStart === 'function') {
+          return withCallback(startDesktopAbilityForResult(want), cb);
+        }
         const started = new Promise((resolve, reject) => {
           spawnChildAbility(want, entry, { resolve, reject });
         });
