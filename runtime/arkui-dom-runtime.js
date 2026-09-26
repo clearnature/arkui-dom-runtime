@@ -13087,8 +13087,11 @@
     if (!reg || generatedRegistered) return 0;
     let n = 0;
     const overwritten = [];
+    /** @type {string[]} */
+    const filled = [];                               // 手写缺席、由骨架兜底的名册（破坏验证绊网）
     for (const name of Object.keys(reg)) {
-      if (components[name]) continue;                  // 手写优先
+      if (components[name]) continue;                // 手写优先
+      filled.push(name);
       const meta = reg[name];
       const comp = ensureComponent(name, (args) => {
         const el = document.createElement(meta.tag || 'div');
@@ -13108,6 +13111,9 @@
       n++;
     }
     generatedRegistered = true;
+    if (filled.length) {
+      (/** @type {any} */ (global)).__arkui_dom_generatedFilled = filled;
+    }
     if (overwritten.length) {
       (/** @type {any} */ (global)).__arkui_dom_overwrittenGlobals = overwritten;
       if (global.console && console.debug) {

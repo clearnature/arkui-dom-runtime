@@ -39,6 +39,7 @@
         "pages/SplitDemo",
         "pages/PanelDemo",
         "pages/GridRowDemo",
-        "pages/RichVideoDemo"
+        "pages/RichVideoDemo",
+        "pages/BatchVerifyDemo"
     ]
 }

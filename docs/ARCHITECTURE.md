@@ -1743,22 +1743,22 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   15 个：app.ability.AbilityConstant app.ability.ConfigurationConstant app.ability.UIAbility app.ability.Want data.preferences file.fs hilog measure multimedia.image multimedia.media net.http notificationManager promptAction router window
 
 == 用例矩阵 ==
-  浏览器 run.sh     63 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify measure lazy provide v2 observe async ability promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo mediademo smalldemo stepdemo imagedemo scrolldemo animatordemo listitemgroup refreshdemo datepickerdemo timepickerdemo waterflowdemo calendarpickerdemo textpickerdemo griddemo texttimedemo alphabetindexerdemo sidebardemo splitdemo paneldemo gridrowdemo richvideodemo router netfile persist
-  Electron          62 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo mediademo smalldemo stepdemo imagedemo scrolldemo animatordemo listitemgroup refreshdemo datepickerdemo timepickerdemo waterflowdemo calendarpickerdemo textpickerdemo griddemo texttimedemo alphabetindexerdemo sidebardemo splitdemo paneldemo gridrowdemo richvideodemo measure lazy provide async v2 observe
+  浏览器 run.sh     64 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify measure lazy provide v2 observe async ability promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo mediademo smalldemo stepdemo imagedemo scrolldemo animatordemo listitemgroup refreshdemo datepickerdemo timepickerdemo waterflowdemo calendarpickerdemo textpickerdemo griddemo texttimedemo alphabetindexerdemo sidebardemo splitdemo paneldemo gridrowdemo richvideodemo batchverify router netfile persist
+  Electron          63 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo mediademo smalldemo stepdemo imagedemo scrolldemo animatordemo listitemgroup refreshdemo datepickerdemo timepickerdemo waterflowdemo calendarpickerdemo textpickerdemo griddemo texttimedemo alphabetindexerdemo sidebardemo splitdemo paneldemo gridrowdemo richvideodemo batchverify measure lazy provide async v2 observe
   测试页            70 个
-  fixtures 转换产物  65 个：AlphabetIndexerDemo AnimDemo AnimatorDemo AsyncIO BatchFuncDemo BatchLayoutDemo BatchMediaDemo CalendarPickerDemo Callee CanvasDemo DatePickerDemo Detail DrawDemo GestureDemo GestureGroupDemo GridDemo GridRowDemo Home ImageDemo Index InputDemo Layout Lazy LazyVar ListGroupDemo MeasArea MeasImage MeasNotify Measure MediaDemo NavBarDemo NavDemo NavShimDemo NavTransDemo NetFile Observe PanelDemo PopDemo PromptAct Provide QrDemo RefreshDemo RelDemo Rich RichVideoDemo ScrollDemo ShapeDemo ShowDemo SideBarDemo SmallDemo SplitDemo StepDemo SwiperDemo TabsGrid TextDemo TextMeasure TextPickerDemo TextTimeDemo TimePickerDemo TransitionDemo UiContextDemo V2 WaterFlowDemo Widgets XCompDemo
+  fixtures 转换产物  66 个：AlphabetIndexerDemo AnimDemo AnimatorDemo AsyncIO BatchFuncDemo BatchLayoutDemo BatchMediaDemo BatchVerifyDemo CalendarPickerDemo Callee CanvasDemo DatePickerDemo Detail DrawDemo GestureDemo GestureGroupDemo GridDemo GridRowDemo Home ImageDemo Index InputDemo Layout Lazy LazyVar ListGroupDemo MeasArea MeasImage MeasNotify Measure MediaDemo NavBarDemo NavDemo NavShimDemo NavTransDemo NetFile Observe PanelDemo PopDemo PromptAct Provide QrDemo RefreshDemo RelDemo Rich RichVideoDemo ScrollDemo ShapeDemo ShowDemo SideBarDemo SmallDemo SplitDemo StepDemo SwiperDemo TabsGrid TextDemo TextMeasure TextPickerDemo TextTimeDemo TimePickerDemo TransitionDemo UiContextDemo V2 WaterFlowDemo Widgets XCompDemo
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          942.6 KB
-  runtime(src)     957.5 KB
-  test             774.0 KB
+  runtime          942.9 KB
+  runtime(src)     957.8 KB
+  test             778.1 KB
   tools            59.3 KB
-  electron(src)    25.9 KB
-  docs             665.3 KB
-  fixtures         463.3 KB
+  electron(src)    26.2 KB
+  docs             668.5 KB
+  fixtures         470.0 KB
 
 == 逐文件（文档"文件职责"表的来源）==
-  runtime/arkui-dom-runtime.js           705450 B  688.9 KB
+  runtime/arkui-dom-runtime.js           705726 B  689.2 KB
   runtime/generated-components.js         57617 B  56.3 KB
   runtime/ohos-shims.js                   61848 B  60.4 KB
   tools/extract.mjs                        6563 B  6.4 KB
@@ -1769,18 +1769,18 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   tools/preflight.mjs                      5422 B  5.3 KB
   tools/check-all.sh                       4053 B  4.0 KB
   tools/build-runtime.mjs                  5138 B  5.0 KB
-  run.sh                                  29491 B  28.8 KB
-  electron/run.sh                         17354 B  16.9 KB
+  run.sh                                  29980 B  29.3 KB
+  electron/run.sh                         17615 B  17.2 KB
   electron/main.js                         7025 B  6.9 KB
   electron/preload.js                      1961 B  1.9 KB
   package.json                             1366 B  1.3 KB
   .gitignore                                757 B  0.7 KB
   README.md                              157245 B  153.6 KB
   THIRD-PARTY-NOTICES.md                  10718 B  10.5 KB
-  docs/ARCHITECTURE.md                   158640 B  154.9 KB
+  docs/ARCHITECTURE.md                   158738 B  155.0 KB
   docs/CAPABILITY.md                      61086 B  59.7 KB
-  docs/DEVELOPING.md                      66055 B  64.5 KB
-  docs/ROADMAP.md                        151583 B  148.0 KB
+  docs/DEVELOPING.md                      67182 B  65.6 KB
+  docs/ROADMAP.md                        153621 B  150.0 KB
   docs/surface-measurement.md              6496 B  6.3 KB
   docs/SESSION-2026-09-20.md              12842 B  12.5 KB
   runtime/src/.mimosa                      4096 B  4.0 KB
@@ -1805,7 +1805,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   runtime/src/image.js                     7000 B  6.8 KB
   runtime/src/input.js                    10663 B  10.4 KB
   runtime/src/layout.js                   18442 B  18.0 KB
-  runtime/src/main.js                    110800 B  108.2 KB
+  runtime/src/main.js                    111076 B  108.5 KB
   runtime/src/nav.js                      56681 B  55.4 KB
   runtime/src/panel.js                     3360 B  3.3 KB
   runtime/src/popup.js                     5042 B  4.9 KB
@@ -1831,6 +1831,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   fixtures/pages/BatchFuncDemo.ts          8521 B  8.3 KB
   fixtures/pages/BatchLayoutDemo.ts        6946 B  6.8 KB
   fixtures/pages/BatchMediaDemo.ts         5904 B  5.8 KB
+  fixtures/pages/BatchVerifyDemo.ts        6785 B  6.6 KB
   fixtures/pages/CalendarPickerDemo.ts     5560 B  5.4 KB
   fixtures/pages/Callee.ts                 1726 B  1.7 KB
   fixtures/pages/CanvasDemo.ts             4151 B  4.1 KB
@@ -1894,7 +1895,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   test/animatordemo.html                   5613 B  5.5 KB
   test/animdemo.html                      11498 B  11.2 KB
   test/async.html                          5977 B  5.8 KB
-  test/batch-verify.html                   4145 B  4.0 KB
+  test/batch-verify.html                   8330 B  8.1 KB
   test/batchfunc.html                     10189 B  10.0 KB
   test/batchinputdemo.html                 9853 B  9.6 KB
   test/batchlayout.html                    8681 B  8.5 KB

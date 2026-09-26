@@ -1253,6 +1253,35 @@ md5 一致。
 
 ---
 
+### R67 — R66 批量组件验收：结构 + 兜底绊网 + 真编译语义 ✅（2026-09-26）
+
+**内容**：R66 六组并行产出的 37 个批量组件只有实现、没有测试。本轮补验收：37 结构断言 +
+兜底绊网 + BatchVerifyDemo（13 组件真编译 fixture）语义断言。
+
+**验收**：`bash run.sh batchverify`（52 条断言：结构 37/兜底绊网 1/语义 14）双端通过。
+
+**定路径（混合）**：13 个有 SDK 声明的组件走真编译 fixture（`BatchVerifyDemo.ets`）——编译器
+强制的嵌套契约直接成为断言对象：ContainerSpan/ImageSpan/SymbolSpan 只能 Text 系内、
+MenuItemGroup 子只 MenuItem、Web 必填 controller、ScrollBar 必填 scroller、WithTheme 必填
+options 且无 universal `.id`；Calendar 无 SDK 声明（`Cannot find name 'Calendar'`）→ 归
+runtime-only 结构组。
+
+**新绊网（`__arkui_dom_generatedFilled`）**：破坏验证抓出盲区——手写注册缺席时 generated
+骨架**静默兜底**建出同名同 `data-arkui-comp` 的 div，结构/语义断言全绿（Navigator 案例实测：
+改名后 51/52→若沿用旧断言 51/51 全绿）。运行时 `registerGeneratedComponents` 现在把兜底
+名册暴露在 `__arkui_dom_generatedFilled`，测试断言 37 个批量组件无一落进去。绊网对所有
+组件永久生效：今后任何手写实现被误删/改名，batchverify 必红。
+
+**结构段的两个前置**：裸 `create()` 需要 build 上下文（mountNode 走 `parentOfTop()`：
+栈顶或页面 rootNode，无上下文为 null）→ 先 loadRoute 再结构循环；`create` 会 push 栈、
+叶组件自动弹（坑 97）→ 每次 create 前后 `ViewStackProcessor.snapshot/restore` 隔离。
+
+**触及**：`harmony-proj/entry/src/main/ets/pages/BatchVerifyDemo.ets`（新）+ `main_pages.json`、
+`fixtures/pages/BatchVerifyDemo.ts`（固化）、`test/batch-verify.html`（重写为单页双段）、
+`run.sh`、`electron/run.sh`（含 `page_of` 登记）、`runtime/src/main.js`（filled 名册）
+
+---
+
 ## P3 布局引擎
 
 ### ~~R13 — 数据可视化类：`Progress` / `Gauge` / `DataPanel` / `Rating`~~ ✅ 已完成

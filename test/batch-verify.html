@@ -2,150 +2,162 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<title>R66：批量组件结构验证（37 组件全覆盖）</title>
+<title>R67：批量组件验证（37 结构 + 兜底绊网 + 14 BatchVerifyDemo 语义）</title>
 <style>
   body { font-family: system-ui, sans-serif; margin: 16px; }
-  #sandbox { width: 360px; }
-  #root > div { border: 1px solid #eee; margin: 4px 0; padding: 4px; }
+  #root { width: 360px; }
+  #root > div { border: 1px solid #eee; margin: 4px 0; padding: 4px; min-height: 20px; }
   #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; font-size: 12px; }
   .pass { color: #2e7d32; } .fail { color: #c62828; }
 </style>
 </head>
 <body>
-  <h3>R66：批量组件结构验证（37 组件 · 6 分片）</h3>
-  <div id="sandbox"><div id="root"></div></div>
+  <h3>R67：批量组件验证（6 分片 × 37 结构 + BatchVerifyDemo 13 组件语义）</h3>
+  <div id="root"></div>
   <div id="result">running…</div>
 
   <script src="../runtime/generated-components.js"></script>
   <script src="../runtime/arkui-dom-runtime.js"></script>
   <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/batchverify-module.js"></script>
   <script>
   (async function () {
     const lines = [];
     let pass = 0, fail = 0;
-    const check = (c, m) => { if (c) { pass++; } else { fail++; allPass = false; lines.push('FAIL ' + m); } };
+    const check = (c, m) => { if (c) { pass++; lines.push('PASS ' + m); } else { fail++; lines.push('FAIL ' + m); } };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
     const root = document.getElementById('root');
-    const E = (tag, attrs, text) => {
-      const el = document.createElement(tag);
-      for (const k in (attrs || {})) el.setAttribute(k, attrs[k]);
-      if (text) el.textContent = text;
-      return el;
+    const G = (name) => {
+      const v = globalThis[name];
+      return (v && typeof v.create === 'function') ? v : null;
     };
 
-    // ── 工具：挂载组件并返回 ──
-    const mount = (comp, opts, parent) => {
-      const el = comp.create(opts ? [opts] : []);
-      (parent || root).appendChild(el);
-      return el;
-    };
-
-    // ══════════ A：布局容器 ══════════
-    const A = {};
+    // ══════════ 第一段：BatchVerifyDemo（真编译 fixture）语义断言 ══════════
+    // 先载入页面：它同时是语义断言的对象，并为第二段的裸 create() 提供 build 上下文
+    //（组件的 mountNode 走 parentOfTop()：栈顶或页面 rootNode——无上下文时是 null）
     try {
-      A.FolderStack = mount(__arkui_dom_globals.FolderStack);
-      check(A.FolderStack.dataset.folderStack !== undefined, 'FolderStack 挂载');
-      A.GridContainer = mount(__arkui_dom_globals.GridContainer);
-      check(A.GridContainer.dataset.gridContainer !== undefined, 'GridContainer 挂载');
-      A.Section = mount(__arkui_dom_globals.Section);
-      check(A.Section.dataset.section !== undefined, 'Section 挂载');
-      A.Sheet = mount(__arkui_dom_globals.Sheet);
-      check(A.Sheet.tagName === 'DIV', 'Sheet 挂载');
-      A.UnionEffectContainer = mount(__arkui_dom_globals.UnionEffectContainer);
-      check(!!A.UnionEffectContainer, 'UnionEffectContainer 挂载');
-      A.XComponentNode = mount(__arkui_dom_globals.XComponentNode);
-      check(!!A.XComponentNode, 'XComponentNode 挂载');
-    } catch(e) { check(false, 'A 组异常: ' + e.message); }
+      __arkui_dom_requireModule('BatchVerifyDemo');
+      __arkui_dom_loadRoute('pages/BatchVerifyDemo', root);
+      await tick(120);
+      const q = (sel) => root.querySelector(sel);
+      const comp = (el, name) => {
+        while (el && el !== root) {
+          if (el.getAttribute && el.getAttribute('data-arkui-comp') === name) return true;
+          el = el.parentElement;
+        }
+        return false;
+      };
 
-    // ══════════ B：输入选择 ══════════
-    const B = {};
-    try {
-      B.CheckboxGroup = mount(__arkui_dom_globals.CheckboxGroup);
-      check(B.CheckboxGroup.dataset.checkboxGroup !== undefined || B.CheckboxGroup.tagName === 'DIV', 'CheckboxGroup 挂载');
-      B.ColorPicker = mount(__arkui_dom_globals.ColorPicker);
-      check(!!B.ColorPicker, 'ColorPicker 挂载');
-      B.ColorPickerDialog = mount(__arkui_dom_globals.ColorPickerDialog);
-      check(!!B.ColorPickerDialog, 'ColorPickerDialog 挂载');
-      B.Option = mount(__arkui_dom_globals.Option);
-      check(!!B.Option, 'Option 挂载');
-      B.PatternLock = mount(__arkui_dom_globals.PatternLock);
-      check(!!B.PatternLock, 'PatternLock 挂载');
-      B.SelectionContainer = mount(__arkui_dom_globals.SelectionContainer);
-      check(!!B.SelectionContainer, 'SelectionContainer 挂载');
-    } catch(e) { check(false, 'B 组异常: ' + e.message); }
+      // A: FolderStack + GridContainer（容器含子）
+      const vfs = q('#v-fs');
+      check(!!vfs && comp(vfs, 'FolderStack'), '语义 FolderStack 容器含 v-fs');
+      const vgc = q('#v-gc');
+      check(!!vgc && comp(vgc, 'GridContainer'), '语义 GridContainer 容器含 v-gc');
 
-    // ══════════ C：文本媒体 ══════════
-    const C = {};
-    try {
-      C.ContainerSpan = mount(__arkui_dom_globals.ContainerSpan);
-      check(!!C.ContainerSpan, 'ContainerSpan 挂载');
-      C.ImageSpan = mount(__arkui_dom_globals.ImageSpan);
-      check(!!C.ImageSpan, 'ImageSpan 挂载');
-      C.RichText = mount(__arkui_dom_globals.RichText);
-      check(!!C.RichText, 'RichText 挂载');
-      C.SymbolGlyph = mount(__arkui_dom_globals.SymbolGlyph);
-      check(!!C.SymbolGlyph, 'SymbolGlyph 挂载');
-      C.SymbolSpan = mount(__arkui_dom_globals.SymbolSpan);
-      check(!!C.SymbolSpan, 'SymbolSpan 挂载');
-      C.Web = mount(__arkui_dom_globals.Web);
-      check(!!C.Web, 'Web 挂载');
-    } catch(e) { check(false, 'C 组异常: ' + e.message); }
+      // B: PatternLock
+      check(!!q('#v-pl') && comp(q('#v-pl'), 'PatternLock'), '语义 PatternLock v-pl 可建');
 
-    // ══════════ D：导航路由 ══════════
-    const D = {};
-    try {
-      D.NavRouter = mount(__arkui_dom_globals.NavRouter);
-      check(!!D.NavRouter, 'NavRouter 挂载');
-      D.Navigator = mount(__arkui_dom_globals.Navigator);
-      check(!!D.Navigator, 'Navigator 挂载');
-      D.PageTransitionEnter = mount(__arkui_dom_globals.PageTransitionEnter);
-      check(!!D.PageTransitionEnter, 'PageTransitionEnter 挂载');
-      D.PageTransitionExit = mount(__arkui_dom_globals.PageTransitionExit);
-      check(!!D.PageTransitionExit, 'PageTransitionExit 挂载');
-      D.ToolBarItem = mount(__arkui_dom_globals.ToolBarItem);
-      check(!!D.ToolBarItem, 'ToolBarItem 挂载');
-      D.UIPickerComponent = mount(__arkui_dom_globals.UIPickerComponent);
-      check(!!D.UIPickerComponent, 'UIPickerComponent 挂载');
-    } catch(e) { check(false, 'D 组异常: ' + e.message); }
+      // C: 文本系嵌套契约
+      const vcs = q('#v-cs-text');
+      const csNode = vcs && vcs.querySelector('[data-arkui-comp="ContainerSpan"]');
+      check(!!csNode, '语义 Text 内建出 ContainerSpan');
+      check(!!(csNode && csNode.querySelector('[data-arkui-comp="ImageSpan"]')),
+        '语义 ContainerSpan 内含 ImageSpan');
+      check(!!q('#v-rt'), '语义 RichText v-rt 可建');
+      const vss = q('#v-ss-text');
+      check(!!(vss && vss.querySelector('[data-arkui-comp="SymbolSpan"]')), '语义 Text 内建出 SymbolSpan');
+      const vweb = q('#v-web');
+      check(!!vweb && comp(vweb, 'Web'), '语义 Web（含 controller）可建');
 
-    // ══════════ E：动效物理 ══════════
-    const E = {};
-    try {
-      E.Animator = mount(__arkui_dom_globals.Animator);
-      check(!!E.Animator, 'Animator 挂载');
-      E.FrictionMotion = mount(__arkui_dom_globals.FrictionMotion);
-      check(!!E.FrictionMotion, 'FrictionMotion 挂载');
-      E.GeometryView = mount(__arkui_dom_globals.GeometryView);
-      check(!!E.GeometryView, 'GeometryView 挂载');
-      E.ScrollBar = mount(__arkui_dom_globals.ScrollBar);
-      check(!!E.ScrollBar, 'ScrollBar 挂载');
-      E.ScrollMotion = mount(__arkui_dom_globals.ScrollMotion);
-      check(!!E.ScrollMotion, 'ScrollMotion 挂载');
-      E.SpringMotion = mount(__arkui_dom_globals.SpringMotion);
-      check(!!E.SpringMotion, 'SpringMotion 挂载');
-      E.SpringProp = mount(__arkui_dom_globals.SpringProp);
-      check(!!E.SpringProp, 'SpringProp 挂载');
-    } catch(e) { check(false, 'E 组异常: ' + e.message); }
+      // D: NavRouter + Navigator
+      const vnr = q('#v-nr');
+      check(!!vnr && comp(vnr, 'NavRouter'), '语义 NavRouter 容器含 v-nr');
+      check(!!q('#v-nav') && comp(q('#v-nav'), 'Navigator'), '语义 Navigator v-nav 可建');
 
-    // ══════════ F：功能组件 ══════════
-    const F = {};
-    try {
-      F.Calendar = mount(__arkui_dom_globals.Calendar);
-      check(!!F.Calendar, 'Calendar 挂载');
-      F.ContainerReader = mount(__arkui_dom_globals.ContainerReader);
-      check(!!F.ContainerReader, 'ContainerReader 挂载');
-      F.IndicatorComponent = mount(__arkui_dom_globals.IndicatorComponent);
-      check(!!F.IndicatorComponent, 'IndicatorComponent 挂载');
-      F.MenuItemGroup = mount(__arkui_dom_globals.MenuItemGroup);
-      check(!!F.MenuItemGroup, 'MenuItemGroup 挂载');
-      F.Repeat = mount(__arkui_dom_globals.Repeat);
-      check(!!F.Repeat, 'Repeat 挂载');
-      F.WithTheme = mount(__arkui_dom_globals.WithTheme);
-      check(!!F.WithTheme, 'WithTheme 挂载');
-    } catch(e) { check(false, 'F 组异常: ' + e.message); }
+      // E: ScrollBar（scroller 必填的构造参数被接受）
+      check(!!q('#v-sb') && comp(q('#v-sb'), 'ScrollBar'), '语义 ScrollBar（含 scroller）可建');
 
-    lines.push(`PASS 总计 ${pass} / FAIL ${fail}`);
-    if (fail === 0) lines.unshift('=== ALL PASS ===');
-    else lines.unshift(`=== ${fail} FAILURES ===`);
+      // F: MenuItemGroup 子只 MenuItem ×2；WithTheme 无 .id 由内层 Text 定位
+      const m1 = q('#v-mig-1'), m2 = q('#v-mig-2');
+      check(!!(m1 && comp(m1, 'MenuItemGroup')), '语义 MenuItemGroup 含 MenuItem#v-mig-1');
+      check(!!(m2 && comp(m2, 'MenuItemGroup')), '语义 MenuItemGroup 含 MenuItem#v-mig-2');
+      const vwt = q('#v-wt');
+      check(!!vwt && comp(vwt, 'WithTheme'), '语义 WithTheme 容器含 v-wt');
+    } catch (e) {
+      check(false, '语义 BatchVerifyDemo 装载异常 ' + e.message);
+    }
+
+    // ══════════ 第二段：37 组件注册与 create() 结构（runtime-only）══════════
+    // 每次裸 create() 前后做栈快照/恢复：create 会 push 栈、叶组件还会自动弹出（坑 97），
+    // 不隔离的话后续组件会嵌进前一个里。挂载点 = 已由 loadRoute 建好的页面 rootNode。
+    const VSP = globalThis.ViewStackProcessor;
+    const COMPONENTS = [
+      ['FolderStack','A',(el)=>el.tagName==='DIV'], ['GridContainer','A',(el)=>el.tagName==='DIV'],
+      ['Section','A',(el)=>el.tagName==='DIV'], ['Sheet','A',(el)=>el.tagName==='DIV'],
+      ['UnionEffectContainer','A',(el)=>!!el], ['XComponentNode','A',(el)=>!!el],
+      ['CheckboxGroup','B',(el)=>!!el], ['ColorPicker','B',(el)=>!!el],
+      ['ColorPickerDialog','B',(el)=>!!el], ['Option','B',(el)=>!!el],
+      ['PatternLock','B',(el)=>!!el], ['SelectionContainer','B',(el)=>!!el],
+      ['ContainerSpan','C',(el)=>!!el], ['ImageSpan','C',(el)=>!!el],
+      ['RichText','C',(el)=>!!el], ['SymbolGlyph','C',(el)=>!!el],
+      ['SymbolSpan','C',(el)=>!!el], ['Web','C',(el)=>!!el],
+      ['NavRouter','D',(el)=>!!el], ['Navigator','D',(el)=>!!el],
+      ['PageTransitionEnter','D',(el)=>!!el], ['PageTransitionExit','D',(el)=>!!el],
+      ['ToolBarItem','D',(el)=>!!el], ['UIPickerComponent','D',(el)=>!!el],
+      ['Animator','E',(el)=>!!el], ['FrictionMotion','E',(el)=>!!el],
+      ['GeometryView','E',(el)=>!!el], ['ScrollBar','E',(el)=>!!el],
+      ['ScrollMotion','E',(el)=>!!el], ['SpringMotion','E',(el)=>!!el],
+      ['SpringProp','E',(el)=>!!el],
+      ['Calendar','F',(el)=>!!el], ['ContainerReader','F',(el)=>!!el],
+      ['IndicatorComponent','F',(el)=>!!el], ['MenuItemGroup','F',(el)=>!!el],
+      ['Repeat','F',(el)=>!!el], ['WithTheme','F',(el)=>!!el],
+    ];
+
+    const wrapper = document.createElement('div');
+    root.appendChild(wrapper);
+    const results = {};
+
+    // 兜底绊网：手写实现缺席时 generated 骨架会静默顶上（两者都产出同名 data-arkui-comp
+    // 的 div，结构断言无法区分）。运行时把兜底名册暴露在 __arkui_dom_generatedFilled，
+    // 这里断言 37 个批量组件一个都不许落进去——手写注册缺席时本断言必红。
+    const filled = globalThis.__arkui_dom_generatedFilled || [];
+    const shadowed = COMPONENTS.map((c) => c[0]).filter((nm) => filled.includes(nm));
+    check(shadowed.length === 0, '绊网 批量组件无一落进 generated 骨架兜底' +
+      (shadowed.length ? '（被兜底: ' + shadowed.join(',') + '）' : ''));
+
+    for (const [name, grp, domCheck] of COMPONENTS) {
+      try {
+        const ctor = G(name);
+        if (!ctor) { check(false, `[${grp}] ${name}: global 未找到`); continue; }
+        const snap = VSP ? VSP.snapshot() : null;
+        const el = ctor.create();
+        if (VSP) VSP.restore(snap);
+        if (!el || !(el instanceof Element)) { check(false, `[${grp}] ${name}: create() 未返回元素`); continue; }
+        el.setAttribute('data-batch-comp', name);
+        wrapper.appendChild(el);
+        check(domCheck(el), `[${grp}] ${name}: DOM ✓`);
+        results[name] = 'ok';
+      } catch (e) {
+        check(false, `[${grp}] ${name}: 异常 ${e.message}`);
+      }
+    }
+
+    // 分组统计（不带 PASS 前缀，不进断言计数）
+    const groupStats = {};
+    COMPONENTS.forEach(([name, grp]) => {
+      if (!groupStats[grp]) groupStats[grp] = { total: 0, pass: 0 };
+      groupStats[grp].total++;
+      if (results[name] === 'ok') groupStats[grp].pass++;
+    });
+    for (const grp of Object.keys(groupStats).sort()) {
+      const s = groupStats[grp];
+      lines.push(`  组${grp}: ${s.pass}/${s.total} 通过`);
+    }
+
+    lines.push(`  总计: ${pass}/${pass + fail}`);
+
+    if (fail === 0) lines.unshift(`=== ALL PASS (${pass}) ===`);
+    else lines.unshift(`=== ${fail} FAILURES / ${pass} PASS ===`);
     const out = document.getElementById('result');
     out.textContent = lines.join('\n');
     out.className = fail === 0 ? 'pass' : 'fail';

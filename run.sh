@@ -310,6 +310,10 @@ case "${1:-index}" in
     run_one richvideodemo "$(src_of pages/RichVideoDemo.ts)" build/richvideodemo-module.js test/richvideodemo.html \
       "--cjs --register RichVideoDemo" || rc=1
     echo
+    # R67：批量组件——37 结构 + BatchVerifyDemo 13 组件语义（51 条断言）
+    run_one batchverify "$(src_of pages/BatchVerifyDemo.ts)" build/batchverify-module.js test/batch-verify.html \
+      "--cjs --register BatchVerifyDemo" || rc=1
+    echo
     run_one measure "$(src_of pages/Measure.ts)" build/measure.js test/measure.html || rc=1
     echo
     run_one lazy "$(src_of pages/Lazy.ts)" build/lazy.js test/lazy.html || rc=1
@@ -524,6 +528,10 @@ case "${1:-index}" in
     # R65：RichEditor + Video
     run_one richvideodemo "$(src_of pages/RichVideoDemo.ts)" build/richvideodemo-module.js test/richvideodemo.html \
       "--cjs --register RichVideoDemo" ;;
+  batchverify)
+    # R67：批量组件（37 结构 + 14 语义）
+    run_one batchverify "$(src_of pages/BatchVerifyDemo.ts)" build/batchverify-module.js test/batch-verify.html \
+      "--cjs --register BatchVerifyDemo" ;;
   router)
     # 两个页面都要注册；Detail 先单独产出，Home 由 run_one 带 flags 产出
     "$NODE" tools/extract.mjs "$(src_of pages/Detail.ts)" build/detail-module.js --cjs --register Detail >/dev/null || exit 1

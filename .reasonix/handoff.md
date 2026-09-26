@@ -8,7 +8,13 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R49**（ListItemGroup 分组容器上线：header→items→footer 子序、space 只作用
+- 上次切片：**R67**（R66 批量组件验收：37 结构 + 兜底绊网 + 14 真编译语义 = 52 条双端 PASS；
+  新绊网 `__arkui_dom_generatedFilled`——手写注册缺席时骨架静默兜底，Navigator 破坏案例
+  实测只有绊网能抓；BatchVerifyDemo.ets 把编译器嵌套契约变成断言）— **PASS**
+- 上一轮：**R66/R66.1**（六组并行 37 组件 + Mimosa 0 findings）；**R24 收口**（渲染路径决策
+  归档 3f6e209：previewer 实证点火崩在窗口层、es2abc 无 JS 输出——留在分支 B，"复刻原生
+  栈"入明确不做）；**定位声明 5ba8874**（ArkTS 桌面应用引擎，Electron 主目标）
+- 更早：**R49**（ListItemGroup 分组容器上线：header→items→footer 子序、space 只作用
   item 间、spaceWidth 压过 space、divider ::before 槽、List.sticky 组头吸顶）— **PASS**
   （listitemgroup 19 条双端；破坏 5/3/1 红；手写 48）
 - 上一轮：**R48**（多代理验证轮：28 个只读调研代理并行完成 23 个平台组件批量判定
