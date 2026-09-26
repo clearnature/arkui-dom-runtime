@@ -310,9 +310,13 @@ case "${1:-index}" in
     run_one richvideodemo "$(src_of pages/RichVideoDemo.ts)" build/richvideodemo-module.js test/richvideodemo.html \
       "--cjs --register RichVideoDemo" || rc=1
     echo
-    # R67：批量组件——37 结构 + BatchVerifyDemo 13 组件语义（51 条断言）
+    # R67：批量组件——37 结构 + BatchVerifyDemo 13 组件语义（52 条断言，含兜底绊网）
     run_one batchverify "$(src_of pages/BatchVerifyDemo.ts)" build/batchverify-module.js test/batch-verify.html \
       "--cjs --register BatchVerifyDemo" || rc=1
+    echo
+    # R68：性能基线（浏览器端 virtual-time 下数字仅冒烟，权威数字在 Electron 端）
+    run_one perfdemo "$(src_of pages/PerfDemo.ts)" build/perfdemo-module.js test/perfdemo.html \
+      "--cjs --register PerfDemo" || rc=1
     echo
     run_one measure "$(src_of pages/Measure.ts)" build/measure.js test/measure.html || rc=1
     echo
@@ -532,6 +536,10 @@ case "${1:-index}" in
     # R67：批量组件（37 结构 + 14 语义）
     run_one batchverify "$(src_of pages/BatchVerifyDemo.ts)" build/batchverify-module.js test/batch-verify.html \
       "--cjs --register BatchVerifyDemo" ;;
+  perfdemo)
+    # R68：性能基线
+    run_one perfdemo "$(src_of pages/PerfDemo.ts)" build/perfdemo-module.js test/perfdemo.html \
+      "--cjs --register PerfDemo" ;;
   router)
     # 两个页面都要注册；Detail 先单独产出，Home 由 run_one 带 flags 产出
     "$NODE" tools/extract.mjs "$(src_of pages/Detail.ts)" build/detail-module.js --cjs --register Detail >/dev/null || exit 1

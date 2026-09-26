@@ -1282,6 +1282,29 @@ runtime-only 结构组。
 
 ---
 
+### R68 — 性能基线门禁：首渲染 / 最小 rerender 入 §6 ✅（2026-09-26）
+
+**内容**：给"怎么保证性能"一个可量化的起点。PerfDemo（30 行 ForEach + @State 计数按钮）
+实测首渲染与最小 rerender，数字进 stats/§6；宽松阈值只拦灾难性回退。
+
+**验收**：`bash run.sh perfdemo`（3 条断言）双端通过。基线（Electron 实测，2026-09-26）：
+**首渲染 125.5ms**（33 节点：Column+Button+Text+ForEach×30）/ **最小 rerender 12.8ms**
+（@State 计数、单 Text 脏区）。
+
+**设计要点**：浏览器端跑在 `--virtual-time-budget` 下时钟不可信（实测 35.7/0.0ms，恰好自证）
+——**权威数字只在 Electron 端**（与定位声明一致：Electron 是验收形态）。electron runner 把
+全部用例输出落盘 `build/<case>.result.txt`，stats.mjs 采集 PERF 行进 §6（文件缺失打印
+"未测"）；阈值 500/100ms 刻意宽松防机器抖动，精确比较看 §6 数字块趋势。
+
+**意义**：后续两大优化的对照起点——模板编译器（目标 rerender ~50x）与属性分派哈希化/
+脏区更新——没有基线，"快了多少"只能是口说。
+
+**触及**：`harmony-proj/entry/src/main/ets/pages/PerfDemo.ets`（新）+ `main_pages.json`、
+`fixtures/pages/PerfDemo.ts`（固化）、`test/perfdemo.html`（新）、`run.sh`、
+`electron/run.sh`（结果落盘）、`tools/stats.mjs`（性能段）
+
+---
+
 ## P3 布局引擎
 
 ### ~~R13 — 数据可视化类：`Progress` / `Gauge` / `DataPanel` / `Rating`~~ ✅ 已完成

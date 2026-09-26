@@ -341,6 +341,23 @@ console.log(`  Electron          ${elCases.length} 个：${elCases.join(' ')}`);
 console.log(`  测试页            ${tests.length} 个`);
 console.log(`  fixtures 转换产物  ${fixtures.length} 个：${fixtures.map((f) => f.replace('.ts', '')).join(' ')}`);
 
+// ── 性能基线（Electron 实测；数字由 test/perfdemo.html 产生、electron runner 落盘）──
+// 浏览器端跑在 --virtual-time-budget 下时钟不可信，只作冒烟；权威数字在 Electron 端。
+console.log('\n== 性能基线（Electron 实测）==');
+{
+  const pf = path.join(ROOT, 'build/perfdemo.result.txt');
+  const m = fs.existsSync(pf)
+    ? fs.readFileSync(pf, 'utf8').match(/PERF first_render_ms=([\d.]+) rerender_ms=([\d.]+) rows=(\d+)/)
+    : null;
+  if (m) {
+    console.log(`  首渲染            ${m[1]} ms（33 节点：Column+Button+Text+ForEach×30）`);
+    console.log(`  最小 rerender     ${m[2]} ms（@State 计数脏区单 Text）`);
+    console.log(`  行数              ${m[3]}`);
+  } else {
+    console.log('  （未测：build/perfdemo.result.txt 不存在——先跑 bash electron/run.sh perfdemo）');
+  }
+}
+
 console.log('\n== 体积（源码，不含产物/Electron 运行时）==');
 for (const [k, v] of Object.entries(sizes)) console.log(`  ${k.padEnd(16)} ${kb(v)}`);
 

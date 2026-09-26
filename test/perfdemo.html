@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R68：性能基线（30 行首渲染 + 最小 rerender）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 360px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; font-size: 12px; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R68：性能基线——首渲染（33 节点）与最小 rerender（@State 计数）</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/perfdemo-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let pass = 0, fail = 0;
+    const check = (c, m) => { if (c) { pass++; lines.push('PASS ' + m); } else { fail++; lines.push('FAIL ' + m); } };
+    const raf = () => new Promise((r) => requestAnimationFrame(r));
+    const root = document.getElementById('root');
+
+    // 首渲染：loadRoute → #perf-count 与 30 行齐 → 双 rAF 稳定
+    const t0 = performance.now();
+    __arkui_dom_requireModule('PerfDemo');
+    __arkui_dom_loadRoute('pages/PerfDemo', root);
+    await raf(); await raf();
+    const firstMs = performance.now() - t0;
+
+    // 最小 rerender：click → count 文本更新（脏区只有 count 一个 Text）
+    const countEl = root.querySelector('#perf-count');
+    const btn = root.querySelector('#btn-inc');
+    const rows = root.querySelectorAll('[data-arkui-comp="Text"]').length;
+    const r0 = performance.now();
+    btn.click();
+    for (let i = 0; i < 300; i++) {
+      await raf();
+      if (countEl.textContent === 'count=1') break;
+    }
+    const rerenderMs = performance.now() - r0;
+    const okUpdate = countEl.textContent === 'count=1';
+
+    // 数字行（非 PASS，供 stats.mjs 从 build/*.result.txt 采集；仅 Electron 端时钟可信）
+    lines.push('PERF first_render_ms=' + firstMs.toFixed(1) + ' rerender_ms=' + rerenderMs.toFixed(1) + ' rows=' + rows);
+
+    // 阈值刻意宽松：只拦灾难性回退，不做机器间精确比较（基线数字进 §6 供趋势观察）
+    check(firstMs < 500, 'perf 首渲染 33 节点 < 500ms（实测 ' + firstMs.toFixed(1) + 'ms）');
+    check(rerenderMs < 100, 'perf 最小 rerender < 100ms（实测 ' + rerenderMs.toFixed(1) + 'ms）');
+    check(okUpdate && rows >= 31, 'perf 正确性 count=1 且 Text 行数 ' + rows + ' ≥ 31');
+
+    if (fail === 0) lines.unshift(`=== ALL PASS (${pass}) ===`);
+    else lines.unshift(`=== ${fail} FAILURES / ${pass} PASS ===`);
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = fail === 0 ? 'pass' : 'fail';
+    document.title = fail === 0 ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>
