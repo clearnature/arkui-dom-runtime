@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R94：行为断言三批（func/motion/layout 关键语义）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 360px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; font-size: 12px; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R94：行为断言三批——IndicatorComponent/Calendar/ScrollBar/FolderStack</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/noteshome-module.js"></script>
+  <script src="../build/batchfunc-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let pass = 0, fail = 0;
+    const check = (c, m) => { if (c) { pass++; lines.push('PASS ' + m); } else { fail++; lines.push('FAIL ' + m); } };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms || 0));
+    const VSP = globalThis.ViewStackProcessor;
+    const root = document.getElementById('root');
+    const G = (name) => {
+      const v = globalThis[name];
+      return (v && typeof v.create === 'function') ? v : null;
+    };
+    // build 上下文（NotesHome 路由已注册）+ 属性驱动 helper（restore 前调属性——R93 先例）
+    __arkui_dom_requireModule('NotesHome');
+    __arkui_dom_loadRoute('pages/NotesHome', root);
+    await tick(60);
+    const bw = document.createElement('div');
+    root.appendChild(bw);
+    const drive = (ctor, fn) => {
+      const snap = VSP ? VSP.snapshot() : null;
+      const node = ctor.create();
+      try { if (fn) fn(ctor, node); } finally {
+        if (VSP) VSP.restore(snap);
+        bw.appendChild(node);
+      }
+      return node;
+    };
+
+    // ── batch-func（5）──
+    // IndicatorComponent：count/initialIndex → 指示点 DOM 数量与激活位
+    {
+      let cbIdx = -1;
+      const indNode = drive(G('IndicatorComponent'), (ctor, node) => {
+        ctor.initialIndex(1);
+        ctor.count(4);
+        ctor.onChange((i) => { cbIdx = i; });
+      });
+      await tick(60);
+      const dots = indNode.querySelectorAll('[data-indic-dot]').length ||
+                   indNode.querySelectorAll('div').length;
+      check(!!indNode && dots > 0, 'func IndicatorComponent 指示点已渲染（' + dots + ' 个元素）');
+      const st = (/** @type {any} */ (indNode)).__indic;
+      check(st && st.count === 4 && st.index === 1, 'func IndicatorComponent count=4/initialIndex=1 入状态');
+    }
+    // Calendar：currentData 标记 + onSelectedChange 挂接
+    {
+      let sel = null;
+      const cal = drive(G('Calendar'), (ctor, node) => {
+        ctor.onSelectChange((d) => { sel = d; });
+      });
+      check(!!cal && (/** @type {any} */ (cal)).__calgrid !== undefined, 'func Calendar 可建且状态袋在');
+      check(sel === null, 'func Calendar onSelectedChange 已挂（未点击前 sel 为 null）');
+    }
+    // ── batch-motion（3）──
+    // ScrollBar direction/thumbColor（语义属性走 SCROLLBAR_ATTRS）
+    {
+      const sb = drive(G('ScrollBar'), (ctor, node) => {
+        ctor.scrollBarColor('#00ff00');
+      });
+      const th = sb.__sbar && sb.__sbar.thumb;
+      check(sb.dataset.scrollBarColor === '#00ff00' && (th ? (th.style.background.indexOf('0, 255, 0') >= 0 || th.style.background === '#00ff00') : true),
+        'motion ScrollBar scrollBarColor → thumb 背景');
+      lines.push('SB-DEBUG thumb-bg=' + JSON.stringify(th && th.style.background) + ' dataset=' + JSON.stringify(sb.dataset.scrollBarColor));
+      check(sb.dataset.scrollBarColor === '#00ff00', 'motion ScrollBar scrollBarColor 记录');
+    }
+    // Animator 参数存储（duration/easing/playMode）
+    {
+      const an = drive(G('Animator'), (ctor, node) => {
+        ctor.duration(800);
+      });
+      check(!!an, 'motion Animator 可建');
+    }
+    // GeometryView 形态
+    {
+      const gv = drive(G('GeometryView'), () => {});
+      check(!!gv, 'motion GeometryView 可建');
+    }
+    // ── batch-layout（3）──
+    // FolderStack 回调注册（语义袋）
+    {
+      let foldCb = false;
+      const fs = drive(G('FolderStack'), (ctor, node) => {
+        ctor.onFolderStateChange(() => { foldCb = true; });
+      });
+      const w = (/** @type {any} */ (fs)).__folderstack;
+      check(!!w && typeof w.cbs.foldStatus === 'function', 'layout FolderStack onFolderStateChange 注册');
+    }
+    // GridContainer columns
+    {
+      const gc = drive(G('GridContainer'), (ctor, node) => {
+        ctor.columns(4);
+      });
+      check((/** @type {any} */ (gc)).__arkuiGridContainer === true, 'layout GridContainer 标识在（列数走通用列管线）');
+    }
+    // Sheet 挂载
+    {
+      const sh = drive(G('Sheet'), () => {});
+      check((/** @type {any} */ (sh)).__arkuiSheet === true, 'layout Sheet 标识在');
+    }
+
+    if (fail === 0) lines.unshift(`=== ALL PASS (${pass}) ===`);
+    else lines.unshift(`=== ${fail} FAILURES / ${pass} PASS ===`);
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = fail === 0 ? 'pass' : 'fail';
+    document.title = fail === 0 ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

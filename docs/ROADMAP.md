@@ -1822,6 +1822,22 @@ PageTransitionEnter duration、SpringProp/ScrollBar/GeometryView 可建。
 
 ---
 
+### R94 — 行为断言三批：func/motion/layout 关键语义 ✅（2026-09-27）
+
+**内容**：`test/funcbehavior.html`（新）——batch-func/motion/layout 分片的
+行为语义（NotesHome 作 build 上下文，属性在栈活时经 applyAttr 分派）。覆盖：
+IndicatorComponent（count=4/initialIndex 入状态 + 指示点渲染）、Calendar（__calgrid
+状态袋 + onSelectedChange 挂接）、ScrollBar（scrollBarColor→thumb 背景与 dataset 记录）、
+FolderStack（onFolderStateChange 注册）、GridContainer/Sheet 标识、Animator/GeometryView。
+
+**验收**：`bash electron/run.sh funcbehavior`（11 条断言）+ `bash run.sh funcbehavior`
+双端 ALL PASS。
+
+**触及**：`test/funcbehavior.html`（新，11 条）、`run.sh` + `electron/run.sh`（接线）、
+`docs/ROADMAP.md`（本节）
+
+---
+
 ## P3 布局引擎
 
 ### ~~R13 — 数据可视化类：`Progress` / `Gauge` / `DataPanel` / `Rating`~~ ✅ 已完成

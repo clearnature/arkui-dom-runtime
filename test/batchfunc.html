@@ -117,9 +117,14 @@
       const d15 = cal ? cal.querySelector('[data-cal-day="15"]') : null;
       check(!!d15 && d15.getAttribute('data-selected') === 'true',
         `15 日选中（data-selected）`);
+      // R94 修正：断言写死日期 = 脆弱断言（跨日必红）。'今天'语义源是 new Date()，
+      // 断言同源动态计算（组件 data-today 标记仍强校验存在性）。
+      const d = new Date();
+      const todayExpect = d.getFullYear() + '-' +
+        String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
       const todayCell = cal ? cal.querySelector('[data-cal-day][data-today="true"]') : null;
-      check(!!todayCell && todayCell.getAttribute('data-date') === '2026-09-26',
-        `今天 2026-09-26 带 data-today（实际 '${todayCell && todayCell.getAttribute('data-date')}'）`);
+      check(!!todayCell && todayCell.getAttribute('data-date') === todayExpect,
+        `今天 ${todayExpect} 带 data-today（实际 '${todayCell && todayCell.getAttribute('data-date')}'）`);
       const w0 = cal ? cal.querySelector('[data-cal-week]') : null;
       check(!!w0 && w0.textContent === '一',
         `startOfWeek(1) → 周头从周一开始（实际 '${w0 ? w0.textContent : '<缺>'}'）`);

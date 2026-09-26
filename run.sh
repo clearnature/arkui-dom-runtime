@@ -553,6 +553,14 @@ case "${1:-index}" in
     # R82：file.picker（浏览器端走探测式降级路径）
     run_one pickerdemo "$(src_of pages/PickerDemo.ts)" build/pickerdemo-module.js test/pickerdemo.html \
       "--cjs --register PickerDemo" ;;
+  batchfunc)
+    # R66：批量功能组件（Calendar/Repeat/Indicator 等）
+    run_one batchfunc "$(src_of pages/BatchFuncDemo.ts)" build/batchfunc-module.js test/batchfuncdemo.html \
+      "--cjs --register BatchFuncDemo" ;;
+  funcbehavior)
+    # R94：行为断言三批（func/motion/layout）
+    run_one funcbehavior "$(src_of entryability/EntryAbility.ts)" build/funcbehavior-module.js test/funcbehavior.html \
+      "--cjs --register EntryAbility" ;;
   abilitydesktop)
     # R88：startAbilityForResult 桌面语义（浏览器端走 overlay 降级）
     run_one abilitydesktop "$(src_of entryability/EntryAbility.ts)" build/abilitydesktop-module.js test/ability-desktop.html \
