@@ -1548,6 +1548,24 @@ kit 导入）+ `main_pages.json`、`fixtures/pages/WindowDemo.ts`（固化）、
 
 ---
 
+### R81 — 桌面线产品化次片：打包工具固化 tools/package-app.mjs ✅（2026-09-26）
+
+**内容**：把 R72 spike 的验证路径变成可重复工具。`node tools/package-app.mjs` 一条命令
+完成 staging（76 测试页 + 75 页面模块全量进包）→ 打包 → 冒烟验证
+（`ELECTRON_RESULT: PASS` 否则 exit 1）。
+
+**两条路实测通过**：
+- **packager**（默认）：`/tmp/arkui-pkg-out/arkui-dom-electron-linux-x64/`，冒烟 perfdemo 3/3；
+- **appimage**：`arkui-dom-desktop-0.1.0.AppImage`（121M），`--appimage-extract-and-run` 冒烟 3/3。
+
+**设计要点**：Electron zip 软链零拷贝（packager 只认目录）；`--electron-zip-dir` 复用本地
+缓存零下载；R72 三坑内建处理（builder 的 buildResources 覆盖、AppImage extract-and-run、
+--no-sandbox）；`--mode/--out/--page` 可调；零依赖纪律不变（npx 临时使用）。
+
+**触及**：`tools/package-app.mjs`（新）、`docs/ROADMAP.md`（本节）
+
+---
+
 ## P3 布局引擎
 
 ### ~~R13 — 数据可视化类：`Progress` / `Gauge` / `DataPanel` / `Rating`~~ ✅ 已完成
