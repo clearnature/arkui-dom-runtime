@@ -1695,7 +1695,9 @@
         for (let i = 0; i < snap.length; i++) {
           rowReentryIds = rec.rowRecs ? rec.rowRecs[i].ids : null;
           rowReentryCursor = 0;
-          itemGenFunc(snap[i]);            // 重入行：observeComponentCreation2 沿用旧 elmtId
+          // R90：真机 itemGenerator 签名是 (item, index)——ets-loader 产物的 itemGen
+          // 第二参是 index（NotesHome 的 pushUrl params 用它），不传则产物里 idx=undefined
+          itemGenFunc(snap[i], i);
           if (rec.rowRecs) rec.rowRecs[i].ids.length = rowReentryCursor;  // 结构收缩时截断残留
         }
       }

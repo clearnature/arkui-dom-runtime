@@ -1748,6 +1748,32 @@ Promise，断言少 await）——静默变成字符串比较恒假。
 
 ---
 
+### R90 — 千节点真实应用样例：NotesDemo 端到端 ✅（2026-09-26）
+
+**内容**：集成度里程碑——一个"真应用"（备忘录）串起全部能力面：**300 行 ForEach 列表
+（1208 个 DOM 组件节点）** + router 多页（Home→Detail 带 params）+ @State 搜索过滤 +
+pasteboard 剪贴板（Electron 真剪贴板）+ deviceInfo 进页面 + 返回后状态保持。两页走
+**真编译链**（kit 导入：@kit.ArkUI router / @kit.BasicServicesKit pasteboard+deviceInfo），
+ListItem 走 ets-loader 的 deepRender 产物形态（itemCreation/itemCreation2/deepRenderFunction
+三函数——首次被真实产物触发并验证）。
+
+**验收**：`bash electron/run.sh notesdemo`（11 条断言）——首渲染同步 23.0ms（1208 节点）、
+pasteboard→真剪贴板（Note 0 正文）、搜索 Note 299→count=1→清空→300、路由详情 idx=0
+（params 传递）、back 后 300 行状态保持；浏览器端 11/11（内存兜底 + navigator 派生
+deviceInfo）。PERF7 进 §6（信息口径）。
+
+**顺手修一个真运行时 bug**：`forEachUpdateFunction` 调 itemGen 只传 `(item)`——真机
+itemGenerator 签名是 **(item, index)**，ets-loader 产物的 itemGen 第二参（NotesHome 的
+pushUrl params 用它）一直是 undefined。修复后传 `(item, i)`。这个 bug 藏了 90 个切片：
+此前没有任何用例在 itemGen 里用 index。
+
+**触及**：`harmony-proj/.../NotesHome.ets` + `NotesDetail.ets`（新）+ `main_pages.json`、
+`fixtures/pages/NotesHome.ts` + `NotesDetail.ts`（固化）、`test/notesdemo.html`（新，11 条）、
+`runtime/src/main.js`（ForEach index 参数）、`run.sh` + `electron/run.sh`（两模块接线）、
+`docs/ROADMAP.md`（本节）
+
+---
+
 ## P3 布局引擎
 
 ### ~~R13 — 数据可视化类：`Progress` / `Gauge` / `DataPanel` / `Rating`~~ ✅ 已完成

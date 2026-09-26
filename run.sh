@@ -561,6 +561,11 @@ case "${1:-index}" in
     # R89：deviceInfo/i18n/pasteboard（浏览器端走 navigator/内存兜底）
     run_one sysapi "$(src_of entryability/EntryAbility.ts)" build/sysapi-module.js test/sysapi.html \
       "--cjs --register EntryAbility" ;;
+  notesdemo)
+    # R90：NotesDemo 千节点端到端（两模块：Detail 预提取 + Home 主注册）
+    "$NODE" tools/extract.mjs "$(src_of pages/NotesDetail.ts)" build/notesdetail-module.js --cjs --register NotesDetail >/dev/null || exit 1
+    run_one notesdemo "$(src_of pages/NotesHome.ts)" build/noteshome-module.js test/notesdemo.html \
+      "--cjs --register NotesHome" ;;
   router)
     # 两个页面都要注册；Detail 先单独产出，Home 由 run_one 带 flags 产出
     "$NODE" tools/extract.mjs "$(src_of pages/Detail.ts)" build/detail-module.js --cjs --register Detail >/dev/null || exit 1

@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R90：NotesDemo——千节点真实应用端到端（路由/大列表/搜索/剪贴板/设备信息）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 360px; }
+  #root [data-arkui-comp="List"] { max-height: 280px; overflow-y: auto; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; font-size: 12px; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R90：NotesDemo——300 行列表（~1200 节点）端到端</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/noteshome-module.js"></script>
+  <script src="../build/notesdetail-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let pass = 0, fail = 0;
+    const check = (c, m) => { if (c) { pass++; lines.push('PASS ' + m); } else { fail++; lines.push('FAIL ' + m); } };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms || 0));
+    const root = document.getElementById('root');
+    const isElectron = !!(globalThis.electronAPI && globalThis.electronAPI.clip);
+
+    // 首渲染：千节点级真实页面（带 PERF 信息行，非门禁口径）
+    const t0 = performance.now();
+    __arkui_dom_requireModule('NotesHome');
+    __arkui_dom_requireModule('NotesDetail');   // 模块体执行 → registerNamedRoute 入册（router 先例）
+    __arkui_dom_loadRoute('pages/NotesHome', root);
+    const syncMs = performance.now() - t0;
+    await tick(80);
+    const nodes = root.querySelectorAll('[data-arkui-comp]').length;
+    const countEl = root.querySelector('#note-count');
+    lines.push('PERF7 first_sync_ms=' + syncMs.toFixed(1) + ' nodes=' + nodes + ' rows=' + (countEl ? countEl.textContent : ''));
+
+    // ① 千节点渲染
+    check(syncMs < 400, 'notes 首渲染同步段 300 行 < 400ms（实测 ' + syncMs.toFixed(1) + 'ms）');
+    check(nodes >= 1000, 'notes 千节点级：DOM 组件节点 ' + nodes + ' ≥ 1000');
+    check(countEl && countEl.textContent === 'count=300', 'notes 列表 count=300');
+
+    // ② 设备信息进页面（R89 deviceInfo 集成）
+    const title = root.querySelector('#home-title');
+    check(title && title.textContent.indexOf('Notes ') === 0 && title.textContent.length > 8,
+      'notes deviceLine 已渲染：' + (title ? title.textContent.slice(0, 32) : ''));
+
+    // ③ 剪贴板集成（R89 pasteboard；Electron 真剪贴板）
+    root.querySelector('#btn-copy').click();
+    let copied = false;
+    for (let i = 0; i < 100; i++) {
+      await tick(10);
+      const cl = root.querySelector('#copy-log');
+      if (cl && cl.textContent === 'copyLog=copied') { copied = true; break; }
+    }
+    check(copied, 'notes pasteboard 写入完成（copyLog=copied）');
+    if (isElectron) {
+      const clip = await globalThis.electronAPI.clip.readText();
+      check(clip === 'Body of Note 0 for copy test', 'notes 真剪贴板内容=Note 0 正文');
+    } else {
+      check(true, '（浏览器端内存兜底，真剪贴板不验证）');
+    }
+
+    // ④ 搜索过滤（TextInput onChange → @State 重渲染）
+    const box = root.querySelector('#search-box');
+    const input = box.querySelector('input') || box;
+    input.value = 'Note 299';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await tick(60);
+    check(countEl && countEl.textContent === 'count=1', 'notes 搜索 Note 299 → count=1');
+    input.value = '';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await tick(60);
+    check(countEl && countEl.textContent === 'count=300', 'notes 清空搜索 → count=300');
+
+    // ⑤ 路由到详情（router.pushUrl + params）
+    const firstRow = root.querySelector('[data-arkui-comp="Row"]');
+    firstRow.click();
+    await tick(80);
+    const detailIdx = root.querySelector('#detail-idx');
+    const detailTitle = root.querySelector('#detail-title');
+    check(!!detailIdx && detailIdx.textContent === 'detail idx=0', 'notes 路由详情页：idx=0（params 传递）');
+    check(!!detailTitle && detailTitle.textContent === 'title=Note 0', 'notes 详情标题=Note 0');
+
+    // ⑥ 返回首页（router.back），列表状态保持
+    root.querySelector('#btn-back').click();
+    await tick(80);
+    const countBack = root.querySelector('#note-count');
+    check(!!countBack && countBack.textContent === 'count=300', 'notes 返回首页：300 行状态保持');
+
+    if (fail === 0) lines.unshift(`=== ALL PASS (${pass}) ===`);
+    else lines.unshift(`=== ${fail} FAILURES / ${pass} PASS ===`);
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = fail === 0 ? 'pass' : 'fail';
+    document.title = fail === 0 ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>
