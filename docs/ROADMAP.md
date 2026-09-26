@@ -1838,6 +1838,37 @@ FolderStack（onFolderStateChange 注册）、GridContainer/Sheet 标识、Anima
 
 ---
 
+### R96 — 仓颉内核挂载路径定型：独立 ELF + stdio（spike 实证）✅（2026-09-27）
+
+**内容**：桌面线第五能力——自研仓颉内核的挂载路径。互操作协议**由本项目自定义**（不依赖
+华为 cjffi/ark_interop——那套绑定 PandaVM 的 JSContext/JSRuntime，本运行时无 PandaVM）。
+spike 实测（`tools/cjk-spike/`，cjc 1.1.3 cjnative）：`@C` 导出产生无 mangling 的 C ABI
+符号（`T kernelAdd`），但 **dylib 不内嵌仓颉运行时初始化序列**——外部进程 dlopen 直调
+SIGABRT（`runtime != nullptr`，预载 std-core/runtime 库同样崩）。独立 ELF 自带完整初始化
+（`hello` 直接跑通）。
+
+**定型**：仓颉内核 = **独立 ELF 子进程 + stdio 行协议**（Node `child_process.spawn`；
+协议骨架：`{id, method, params}` / `{id, result|error}`，错误语义含崩溃重启一次）。
+进程内 C ABI **不可用**——触发条件：cjc 公开 dylib 运行时初始化入口。
+正式实现（`@ohos:cjk` 垫片挂 child_process 桥）待内核用途定义后立项。
+
+**参考实现核验（R96.1，2026-09-27）**：
+- **trha**（Haskell 微内核 agent harness，GHC/cabal + Electron+React 壳）——与"仓颉内核 +
+  Electron 壳"完全同构，宿主契约照抄：spawn 内核子进程 + **stdout 首行版本化 JSON 握手**
+  （不符拒启）+ 日志只走 stderr + **stdin 作为租约**（关即优雅退出）+ env 传令牌/端口；
+  数据面为 HTTP/SSE（servant）——v1 用 stdio 行 JSON，内核长大后升级 HTTP/SSE 有先例；
+- **deepseek-harness-rc2**（Cordis 插件架构）：experimental/webworker-runtime 的**初始化
+  门控**（模块 ready 前禁止调用）+ zstd WASM 模块 = "原生编译→WASM 进程内挂载"实例——
+  但 cjc 无 WASM 后端，此路对仓颉仍是触发条件；
+- **GHC 类比确认**：GHC 的 foreign export + hs_init/hs_exit 正是"AOT 语言 + 富 RTS 被外部
+  宿主调用"的教科书方案——仓颉 dylib 缺的就是公开的 hs_init 等价物。GHC 先例证明这不是
+  语言级不可能，而是**工具链公开承诺缺口**（与 R96 触发条件同构）。
+
+**触及**：`tools/cjk-spike/`（kernel.cj / test_ffi.c）、
+`docs/research/cjk-spike.md`（新）、`docs/ROADMAP.md`（本节）
+
+---
+
 ## P3 布局引擎
 
 ### ~~R13 — 数据可视化类：`Progress` / `Gauge` / `DataPanel` / `Rating`~~ ✅ 已完成
