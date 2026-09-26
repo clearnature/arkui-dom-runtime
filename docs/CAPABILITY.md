@@ -297,7 +297,14 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 - 父组件重渲染时**子视图内部 elmtId 迁移**未处理（深嵌套自定义组件可能出问题）
 
 ## 平台 API
-- 已实现仅 10 个模块（见上表）。**未实现**：`media`、`ability` 运行时（`startAbility`/`startAbilityForResult`）、
+- 已实现仅 10 个模块（见上表）。**桌面能力面（R80-R84，Electron 主目标）**：`@ohos.window`
+  v1/v2（getLastWindow 收敛主窗 + setBackgroundColor/resize/moveTo/show/minimize/destroy +
+  on(windowSizeChange) 主进程真实推送 + setFullScreen/isFullScreen 回读 + getWindowProperties；
+  三层 IPC = 垫片 → preload windowOp → ipcMain.handle 操作 BrowserWindow）、
+  `@ohos:file.picker` v1（DocumentViewPicker select/save / PhotoViewPicker select →
+  Electron dialog.showOpen/SaveDialog；返回形逐个对 d.ts——Document 是 Array<string>、
+  Photo 是 photoUris 包装）。打包：`node tools/package-app.mjs` 一条命令出 packager 目录
+  分发或 AppImage（121M）并冒烟验证。**未实现**：`media`、`ability` 运行时（`startAbility`/`startAbilityForResult`）、
   `notification`、`deviceInfo`、`i18n`、`resourceManager` 的真实资源解析、`@ohos.arkui` 的对话框/弹窗等。
   未实现模块会给出**可操作报错**，不会静默失败。
 - `getContext()` 只给了 `filesDir/cacheDir/resourceManager` 空壳，**没有真实 ResourceManager**（`$r()` 解析是兜底值）。

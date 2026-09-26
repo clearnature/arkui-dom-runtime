@@ -1749,15 +1749,15 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   fixtures 转换产物  72 个：AlphabetIndexerDemo AnimDemo AnimatorDemo AsyncIO AttrHeavyDemo BatchFuncDemo BatchLayoutDemo BatchMediaDemo BatchVerifyDemo CalendarPickerDemo Callee CanvasDemo DatePickerDemo Detail DrawDemo GestureDemo GestureGroupDemo GridDemo GridRowDemo Home ImageDemo Index InputDemo Layout Lazy LazyVar ListGroupDemo MeasArea MeasImage MeasNotify Measure MediaDemo NavBarDemo NavDemo NavShimDemo NavTransDemo NetFile Observe PanelDemo PerfBigDemo PerfDemo PickerDemo PopDemo PromptAct Provide QrDemo RefreshDemo RelDemo Rich RichVideoDemo ScrollDemo ShapeDemo ShowDemo SideBarDemo SmallDemo SplitDemo StepDemo Stress1kDemo SwiperDemo TabsGrid TextDemo TextMeasure TextPickerDemo TextTimeDemo TimePickerDemo TransitionDemo UiContextDemo V2 WaterFlowDemo Widgets WindowDemo XCompDemo
 
 == 性能基线（Electron 实测）==
-  首渲染            126.1 ms（33 节点：Column+Button+Text+ForEach×30）
-  最小 rerender     3.6 ms（@State 计数脏区单 Text，rAF 口径）
-  rerender 管道     1.6 ms / 1 tick（setTimeout 轮询口径，R70）
+  首渲染            124.4 ms（33 节点：Column+Button+Text+ForEach×30）
+  最小 rerender     3.3 ms（@State 计数脏区单 Text，rAF 口径）
+  rerender 管道     1.5 ms / 1 tick（setTimeout 轮询口径，R70）
   微任务底噪        0.00 ms
   行数              31
-  剖面 R71          loadRoute 同步 3.6 ms（require 0.2）· raf1 0.1 / raf2 122.4 ms（offscreen 首帧）
-  脚本 eval         runtime 25.3 / generated 23.8 / shims 24.1 / module 22.9 ms（计时起点之前）
+  剖面 R71          loadRoute 同步 3.7 ms（require 0.2）· raf1 0.2 / raf2 120.5 ms（offscreen 首帧）
+  脚本 eval         runtime 19.4 / generated 18.3 / shims 18.4 / module 17.3 ms（计时起点之前）
   判定              框架同步构建 3.5ms 无大头；"首渲染"=脚本 eval + offscreen 首帧（非框架成本）
-  千节点 R79        首渲染同步 18.2 ms（undefined 节点/~3500 属性，亚线性）· 单点 flush 2.7 ms · 批量翻转 flush 6.3 ms
+  千节点 R79        首渲染同步 20.2 ms（undefined 节点/~3500 属性，亚线性）· 单点 flush 2.6 ms · 批量翻转 flush 4.1 ms
   规模曲线          203→4.8 / 304→11.2 / 1055→19.0 ms（创建路径亚线性）；行复用+守卫千节点级保持
 
 == 体积（源码，不含产物/Electron 运行时）==
@@ -1766,7 +1766,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   test             806.9 KB
   tools            77.2 KB
   electron(src)    37.2 KB
-  docs             707.9 KB
+  docs             708.6 KB
   fixtures         498.3 KB
 
 == 逐文件（文档"文件职责"表的来源）==
@@ -1790,7 +1790,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   README.md                              157245 B  153.6 KB
   THIRD-PARTY-NOTICES.md                  10718 B  10.5 KB
   docs/ARCHITECTURE.md                   160663 B  156.9 KB
-  docs/CAPABILITY.md                      61086 B  59.7 KB
+  docs/CAPABILITY.md                      61786 B  60.3 KB
   docs/DEVELOPING.md                      67182 B  65.6 KB
   docs/ROADMAP.md                        176792 B  172.6 KB
   docs/surface-measurement.md              6496 B  6.3 KB
