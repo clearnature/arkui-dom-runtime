@@ -1258,8 +1258,8 @@ md5 一致。
 **内容**：R66 六组并行产出的 37 个批量组件只有实现、没有测试。本轮补验收：37 结构断言 +
 兜底绊网 + BatchVerifyDemo（13 组件真编译 fixture）语义断言。
 
-**验收**：`bash run.sh batchverify`（62 条断言：结构 47/兜底绊网 1/语义 14；R84 起增 P 组
-10 条，R67 时 52 条）双端通过。
+**验收**：`bash run.sh batchverify`（86 条断言：结构 47/兜底绊网 1/语义 14/行为 24；R67 时
+52、R84 时 62、R87 起增 platform 行为段）双端通过。
 
 **定路径（混合）**：13 个有 SDK 声明的组件走真编译 fixture（`BatchVerifyDemo.ets`）——编译器
 强制的嵌套契约直接成为断言对象：ContainerSpan/ImageSpan/SymbolSpan 只能 Text 系内、
@@ -1633,8 +1633,8 @@ R72/R48 方法论）。
 **分派架构改进**：area.js 不再为每张表硬编码分支——分片以 `__arkuiPlatform` 标记 +
 `__platformAttrs` 表挂节点，area.js 一条通用分派（后续同类扩展零改 area.js）。
 
-**验收**：`bash electron/run.sh batchverify`（62 条断言：P 组 10 条新增 + 绊网 + 原 51）——
-双端 62/62；绊网确认 10 个新实现全部走手写分片不落 generated 兜底。
+**验收**：`bash electron/run.sh batchverify`（R84 时 62 条；R87 起含 platform 行为段共 86 条）——
+双端全绿；绊网确认 10 个新实现全部走手写分片不落 generated 兜底。
 
 **类型化过程坑（坑 92 同族再现）**：`const st = { onSelect: null }` 在 strictNullChecks 下
 窄化为 `null`，后续 `st.onSelect(i)` 报 TS2349 never-callable——修法整袋收类型（坑 93）；
@@ -1665,6 +1665,29 @@ R72/R48 方法论）。
 
 **触及**：`tools/extract.mjs`（默认翻转）、`tools/arkui-optimizer.mjs`（活引用修复）、
 `tools/stats.mjs`（组号修正）、`docs/DEVELOPING.md`（坑 99/100）、`docs/ROADMAP.md`（本节）
+
+---
+
+### R87 — 行为级断言加深：platform 分片 24 条行为语义 ✅（2026-09-26）
+
+**内容**：batchverify 增第三段——platform 分片 10 组件的**行为语义**断言（runtime-only，
+真实组件栈驱动：create 压栈 → 属性经 applyAttr 分派 `__platformAttrs` → pop 收尾）。
+ArcSwiper（pop 收子/index 显隐切换/duration→CSS/onChange 注册）、ArcAlphabetIndexer
+（3 项渲染/点击→onSelect/选中高亮/selected 程序高亮）、DotMatrix（text→30 点/字形 A
+首行 010 灭亮灭/dotSpacing→gap）、MediaCachedImage（src 落 img/objectFit→CSS/renderMode
+反色）、安全按钮三件套（data 标识/onClick 触发/样式落点/独立回调不串扰）、Skeleton2d
+（脉冲动画/keyframes 注入）、ArcListItem（autoScale/swipeAction 处理器）、ArcScrollBar
+（thumb/比例→top）。
+
+**测试侧坑（2 个，断言自身的问题）**：① `ensureComponent` 返回的组件是 **Proxy**——
+`create()` 的返回值才是 DOM 节点；对 Proxy 读 `.style` 得 undefined（`.indexOf` 直接炸），
+所有节点级读取必须用捕获的 create 返回值；② `VSP.restore(snap)` 之后栈已空，属性调用
+`applyAttr(top=null)` 静默丢弃——restore 后的属性走 `node.__platformAttrs[prop](node, v)`
+同路径直调。
+
+**验收**：`bash run.sh batchverify` 86/86 双端（86 = 结构 47/绊网 1/语义 14/行为 24）。
+
+**触及**：`test/batch-verify.html`（第三段 +24）、`docs/ROADMAP.md`（声明 62→86 + 本节）
 
 ---
 

@@ -150,6 +150,148 @@
       }
     }
 
+    // ══════════ 第三段：platform 分片行为断言（R87，runtime-only，24 条）══════════
+    // 用真实组件栈驱动：create() 压栈 → 属性经 applyAttr 分派到 __platformAttrs → pop 收尾。
+    // 断言的是行为语义（显隐切换/回调触发/字形渲染/样式落点），不是存在性。
+    const bw = document.createElement('div');
+    root.appendChild(bw);
+    const adopt = (el) => { bw.appendChild(el); return el; };
+    try {
+      // ── ArcSwiper（4）──
+      {
+        const snap = VSP ? VSP.snapshot() : null;
+        const sw = G('ArcSwiper');
+        let cbArg = -1;
+        const swNode = sw.create();
+        sw.duration(500);
+        sw.onChange((i) => { cbArg = i; });
+        G('Text').create('a'); G('Text').pop();
+        G('Text').create('b'); G('Text').pop();
+        sw.index(1);
+        sw.pop();
+        if (VSP) VSP.restore(snap);
+        const st = swNode && adopt(swNode) && swNode.__arcSwiper;
+        check(st && st.children.length === 2, '行为 ArcSwiper pop 收集 2 子');
+        check(st.children[0].style.display === 'none' && st.children[1].style.display === 'block',
+          '行为 ArcSwiper index(1) 显隐切换');
+        check(swNode.style.transitionDuration === '500ms', '行为 ArcSwiper duration → transitionDuration');
+        check(typeof st.onIndexChange === 'function', '行为 ArcSwiper onChange 注册');
+      }
+      // ── ArcAlphabetIndexer（4）──
+      {
+        const snap = VSP ? VSP.snapshot() : null;
+        const idx = G('ArcAlphabetIndexer');
+        let selArg = -1;
+        const idxNode = idx.create(['A', 'B', 'C'], 0);
+        idx.onSelect((i) => { selArg = i; });
+        idx.pop();
+        if (VSP) VSP.restore(snap);
+        adopt(idxNode);
+        const items = idxNode.querySelectorAll('[data-arc-idx-item]');
+        check(items.length === 3, '行为 ArcAlphabetIndexer 渲染 3 项');
+        items[1].onclick();
+        check(selArg === 1, '行为 ArcAlphabetIndexer 点击 → onSelect(1)');
+        check(items[1].style.color.indexOf('125, 255') >= 0, '行为 ArcAlphabetIndexer 选中高亮');
+        idxNode.__platformAttrs.selected(idxNode, 2);
+        check(items[2].style.color.indexOf('125, 255') >= 0, '行为 ArcAlphabetIndexer selected(2) 程序高亮');
+      }
+      // ── DotMatrix（3）──
+      {
+        const snap = VSP ? VSP.snapshot() : null;
+        const dm = G('DotMatrix');
+        const dmNode = dm.create();
+        dm.text('AB');
+        dm.dotSpacing(4);
+        dm.pop();
+        if (VSP) VSP.restore(snap);
+        adopt(dmNode);
+        check(dmNode.children.length === 30, '行为 DotMatrix text(AB) → 30 点（2 字形×15）');
+        check(dmNode.children[0].style.background.indexOf('0, 0, 0') >= 0 &&
+              dmNode.children[1].style.background.indexOf('34, 34, 34') >= 0,
+          '行为 DotMatrix 字形 A 首行 010（灭/亮/灭）');
+        check(dmNode.style.gap === '4px', '行为 DotMatrix dotSpacing(4) → gap');
+      }
+      // ── MediaCachedImage（3）──
+      {
+        const snap = VSP ? VSP.snapshot() : null;
+        const mi = G('MediaCachedImage');
+        const miNode = mi.create('/test-assets/test.png');
+        mi.objectFit('cover');
+        mi.renderMode(1);
+        mi.pop();
+        if (VSP) VSP.restore(snap);
+        adopt(miNode);
+        check(miNode.tagName === 'IMG' && (miNode.getAttribute('src') || '').length > 0,
+          '行为 MediaCachedImage src 落 <img>');
+        check(miNode.style.objectFit === 'cover', '行为 MediaCachedImage objectFit → CSS');
+        check(miNode.style.filter.indexOf('brightness') >= 0, '行为 MediaCachedImage renderMode(1) → 反色滤镜');
+      }
+      // ── 安全按钮三件套（4）──
+      {
+        const snap = VSP ? VSP.snapshot() : null;
+        let clicked = 0, saveClicked = 0;
+        const lb = G('LocationButton');
+        const lbNode = lb.create();
+        lb.onClick(() => { clicked++; });
+        lb.fontSize(18);
+        lb.backgroundColor('#ff0000');
+        lb.pop();
+        const pb = G('PasteButton'); const pbNode = pb.create(); pb.pop();
+        const sb = G('SaveButton'); const sbNode = sb.create(); sb.onClick(() => { saveClicked++; }); sb.pop();
+        if (VSP) VSP.restore(snap);
+        adopt(lbNode); adopt(pbNode); adopt(sbNode);
+        check(lbNode.getAttribute('data-security-btn') === 'LocationButton' &&
+              pbNode.getAttribute('data-security-btn') === 'PasteButton' &&
+              sbNode.getAttribute('data-security-btn') === 'SaveButton',
+          '行为 安全按钮三件套 data 标识');
+        lbNode.click();
+        check(clicked === 1, '行为 LocationButton onClick 触发');
+        check(lbNode.style.fontSize === '18px' && lbNode.style.backgroundColor === 'rgb(255, 0, 0)',
+          '行为 LocationButton 样式落点');
+        sbNode.click();
+        check(saveClicked === 1 && pbNode.getAttribute('data-security-btn') === 'PasteButton',
+          '行为 SaveButton 独立回调（saveClicked=' + saveClicked + ' onclick=' + typeof sbNode.onclick + '）');
+      }
+      // ── Skeleton2d（2）──
+      {
+        const snap = VSP ? VSP.snapshot() : null;
+        const sk = G('Skeleton2d');
+        const skNode = sk.create();
+        sk.pop();
+        if (VSP) VSP.restore(snap);
+        adopt(skNode);
+        check(skNode.style.animation.indexOf('arkui-skel') >= 0, '行为 Skeleton2d 脉冲动画');
+        check(!!document.getElementById('arkui-skel-style'), '行为 Skeleton2d keyframes 注入');
+      }
+      // ── ArcListItem（2）──
+      {
+        const snap = VSP ? VSP.snapshot() : null;
+        const li = G('ArcListItem');
+        const liNode = li.create();
+        li.autoScale(true);
+        li.swipeAction(true);
+        li.pop();
+        if (VSP) VSP.restore(snap);
+        adopt(liNode);
+        check(typeof liNode.onpointerdown === 'function', '行为 ArcListItem autoScale 按压处理器');
+        check(typeof liNode.onpointermove === 'function', '行为 ArcListItem swipeAction 拖动处理器');
+      }
+      // ── ArcScrollBar（2）──
+      {
+        const snap = VSP ? VSP.snapshot() : null;
+        const sb = G('ArcScrollBar');
+        const sbNode = sb.create();
+        sb.pop();
+        if (VSP) VSP.restore(snap);
+        adopt(sbNode);
+        check(!!sbNode.querySelector('div'), '行为 ArcScrollBar thumb 存在');
+        globalThis.__arkui_dom_arcScrollThumb(sbNode, 0.5);
+        check(sbNode.__arcThumb.style.top === '50%', '行为 ArcScrollBar 比例 0.5 → top 50%');
+      }
+    } catch (e) {
+      check(false, '行为 platform 段异常 ' + e.message + ' @ ' + (e.stack || '').split('\n')[1]);
+    }
+
     // 分组统计（不带 PASS 前缀，不进断言计数）
     const groupStats = {};
     COMPONENTS.forEach(([name, grp]) => {

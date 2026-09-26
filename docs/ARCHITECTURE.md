@@ -1749,24 +1749,24 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   fixtures 转换产物  72 个：AlphabetIndexerDemo AnimDemo AnimatorDemo AsyncIO AttrHeavyDemo BatchFuncDemo BatchLayoutDemo BatchMediaDemo BatchVerifyDemo CalendarPickerDemo Callee CanvasDemo DatePickerDemo Detail DrawDemo GestureDemo GestureGroupDemo GridDemo GridRowDemo Home ImageDemo Index InputDemo Layout Lazy LazyVar ListGroupDemo MeasArea MeasImage MeasNotify Measure MediaDemo NavBarDemo NavDemo NavShimDemo NavTransDemo NetFile Observe PanelDemo PerfBigDemo PerfDemo PickerDemo PopDemo PromptAct Provide QrDemo RefreshDemo RelDemo Rich RichVideoDemo ScrollDemo ShapeDemo ShowDemo SideBarDemo SmallDemo SplitDemo StepDemo Stress1kDemo SwiperDemo TabsGrid TextDemo TextMeasure TextPickerDemo TextTimeDemo TimePickerDemo TransitionDemo UiContextDemo V2 WaterFlowDemo Widgets WindowDemo XCompDemo
 
 == 性能基线（Electron 实测）==
-  首渲染            124.6 ms（33 节点：Column+Button+Text+ForEach×30）
+  首渲染            121.4 ms（33 节点：Column+Button+Text+ForEach×30）
   最小 rerender     3.2 ms（@State 计数脏区单 Text，rAF 口径）
-  rerender 管道     1.7 ms / 1 tick（setTimeout 轮询口径，R70）
+  rerender 管道     1.5 ms / 1 tick（setTimeout 轮询口径，R70）
   微任务底噪        0.00 ms
   行数              31
-  剖面 R71          loadRoute 同步 3.8 ms（require 0.2）· raf1 0.0 / raf2 120.8 ms（offscreen 首帧）
-  脚本 eval         runtime 20.8 / generated 19.0 / shims 19.6 / module 19.1 ms（计时起点之前）
+  剖面 R71          loadRoute 同步 3.7 ms（require 0.2）· raf1 0.0 / raf2 117.7 ms（offscreen 首帧）
+  脚本 eval         runtime 18.4 / generated 17.5 / shims 17.6 / module 16.8 ms（计时起点之前）
   判定              框架同步构建 3.5ms 无大头；"首渲染"=脚本 eval + offscreen 首帧（非框架成本）
-  千节点 R79        首渲染同步 18.3 ms（350 节点/~3500 属性，亚线性）· 单点 flush 1.4 ms · 批量翻转 flush 3.2 ms
+  千节点 R79        首渲染同步 18.2 ms（350 节点/~3500 属性，亚线性）· 单点 flush 2.7 ms · 批量翻转 flush 6.2 ms
   规模曲线          203→4.8 / 304→11.2 / 1055→19.0 ms（创建路径亚线性）；行复用+守卫千节点级保持
 
 == 体积（源码，不含产物/Electron 运行时）==
   runtime          971.8 KB
   runtime(src)     979.3 KB
-  test             806.9 KB
+  test             813.6 KB
   tools            77.9 KB
   electron(src)    37.2 KB
-  docs             712.0 KB
+  docs             713.5 KB
   fixtures         498.3 KB
 
 == 逐文件（文档"文件职责"表的来源）==
@@ -1789,10 +1789,10 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   .gitignore                                757 B  0.7 KB
   README.md                              157245 B  153.6 KB
   THIRD-PARTY-NOTICES.md                  10718 B  10.5 KB
-  docs/ARCHITECTURE.md                   160779 B  157.0 KB
+  docs/ARCHITECTURE.md                   160780 B  157.0 KB
   docs/CAPABILITY.md                      61786 B  60.3 KB
   docs/DEVELOPING.md                      68492 B  66.9 KB
-  docs/ROADMAP.md                        178815 B  174.6 KB
+  docs/ROADMAP.md                        180381 B  176.2 KB
   docs/surface-measurement.md              6496 B  6.3 KB
   docs/SESSION-2026-09-20.md              12842 B  12.5 KB
   runtime/src/.mimosa                      4096 B  4.0 KB
@@ -1915,7 +1915,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   test/animdemo.html                      11498 B  11.2 KB
   test/async.html                          5977 B  5.8 KB
   test/attrheavy.html                      4064 B  4.0 KB
-  test/batch-verify.html                   9043 B  8.8 KB
+  test/batch-verify.html                  15833 B  15.5 KB
   test/batchfunc.html                     10189 B  10.0 KB
   test/batchinputdemo.html                 9853 B  9.6 KB
   test/batchlayout.html                    8681 B  8.5 KB
