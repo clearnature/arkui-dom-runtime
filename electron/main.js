@@ -70,6 +70,28 @@ app.whenReady().then(async () => {
     },
   });
 
+  // ── @ohos:window 的主进程执行端（R80，桌面线）──
+  // 渲染侧 @ohos:window 垫片经 preload 的 windowOp 调到这里，操作 BrowserWindow 本体。
+  // v1 能力面：setBackgroundColor/setSize/setPosition/show/minimize/destroy + resize 事件 push。
+  // destroy 仅在【非测试驱动】下放行：测试 harness 靠窗口退出收结果，误销毁会让用例假死。
+  const isTestDrive = !!(process.env.ARKUI_TEST || process.env.ARKUI_PAGE_URL);
+  ipcMain.handle('arkui:window:op', (_e, op, ...args) => {
+    switch (op) {
+      case 'setBackgroundColor': win.setBackgroundColor(String(args[0] || '#FFFFFF')); return true;
+      case 'setSize': win.setSize(Number(args[0]) || 480, Number(args[1]) || 400); return true;
+      case 'setPosition': win.setPosition(Number(args[0]) || 0, Number(args[1]) || 0); return true;
+      case 'show': win.show(); return true;
+      case 'minimize': win.minimize(); return true;
+      case 'destroy': if (isTestDrive) return false; win.destroy(); return true;
+      default: return false;
+    }
+  });
+  // BrowserWindow resize → 渲染侧 windowSizeChange 监听器（preload 转发）
+  win.on('resize', () => {
+    const [w, h] = win.getSize();
+    if (!win.webContents.isDestroyed()) win.webContents.send('arkui:window:resized', { width: w, height: h });
+  });
+
   // offscreen 模式下用 paint 事件的最后一帧当截图（隐藏窗口的合成器不产帧，capturePage 会挂）
   let lastFrame = null;
   let paintCount = 0;

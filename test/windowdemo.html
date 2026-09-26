@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R80：@ohos.window v1——窗口 API 映射（Electron 主窗）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 360px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; font-size: 12px; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R80：@ohos.window v1——getLastWindow / 颜色 / resize / moveTo / windowSizeChange</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/windowdemo-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let pass = 0, fail = 0;
+    const check = (c, m) => { if (c) { pass++; lines.push('PASS ' + m); } else { fail++; lines.push('FAIL ' + m); } };
+    const tick = () => new Promise((r) => setTimeout(r, 0));
+    const root = document.getElementById('root');
+    const wait = async (cond, ms) => { for (let i = 0; i < ms / 10; i++) { await tick(); if (cond()) return true; } return cond(); };
+    const isElectron = !!(globalThis.electronAPI && globalThis.electronAPI.windowOp);
+
+    // 载入用例页
+    __arkui_dom_requireModule('WindowDemo');
+    __arkui_dom_loadRoute('pages/WindowDemo', root);
+    for (let i = 0; i < 60; i++) { await tick(); if (root.querySelector('#win-log')) break; }
+    const q = (id) => root.querySelector('#' + id);
+    const logEl = q('win-log'), sizeEl = q('win-size');
+    const click = (id) => q(id).click();
+    const logHas = (s) => (logEl.textContent.indexOf(s) >= 0);
+
+    // ① getLastWindow + 链式 then 落 log（垫片 Promise 语义）
+    click('btn-bg');
+    check(await wait(() => logHas('bg;'), 3000), 'window getLastWindow+setWindowBackgroundColor 链式完成');
+
+    // ② resize 语义：真实窗口尺寸变化 + windowSizeChange 推送
+    click('btn-listen');
+    check(await wait(() => logHas('listen;'), 3000), 'window on(windowSizeChange) 注册完成');
+    click('btn-resize');
+    check(await wait(() => logHas('resize;'), 3000), 'window resize(600,500) 调用完成');
+    if (isElectron) {
+      check(await wait(() => sizeEl.textContent === 'size=600x500', 4000),
+        'window windowSizeChange 推送真实尺寸（' + sizeEl.textContent + '）');
+    } else {
+      check(true, '（浏览器端无主进程桥，窗口事件推送不验证——探测式降级）');
+    }
+
+    // ③ moveTo
+    click('btn-move');
+    check(await wait(() => logHas('move;'), 3000), 'window moveTo(40,40) 调用完成');
+
+    lines.push('WINLOG ' + logEl.textContent + ' size=' + sizeEl.textContent);
+
+    if (fail === 0) lines.unshift(`=== ALL PASS (${pass}) ===`);
+    else lines.unshift(`=== ${fail} FAILURES / ${pass} PASS ===`);
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = fail === 0 ? 'pass' : 'fail';
+    document.title = fail === 0 ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

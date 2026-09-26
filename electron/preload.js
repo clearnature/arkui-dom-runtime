@@ -62,3 +62,17 @@ contextBridge.exposeInMainWorld('__arkui_dom_nodeFs', {
   // 仅供测试核验：返回根目录的真实路径
   realPathOf: (p) => toReal(p),
 });
+
+// ── 窗口能力桥（R80，@ohos:window 的 Electron 侧）──
+// 与 fs 桥同约定：可结构化克隆入参/返回，失败免疫（invoke 拒绝时返回 false，渲染侧记 warning）。
+// 事件（windowSizeChange）走主进程 push：main 在 'resize' 里 webContents.send，这里转发给页面。
+contextBridge.exposeInMainWorld('electronAPI', {
+  /** @param {string} op @param {...any} args */
+  windowOp: async (op, ...args) => {
+    try { return await ipcRenderer.invoke('arkui:window:op', op, ...args); }
+    catch (e) { return false; }
+  },
+  onWindowSizeChange: (cb) => {
+    ipcRenderer.on('arkui:window:resized', (_e, size) => { try { cb(size); } catch (err) {} });
+  },
+});

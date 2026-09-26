@@ -252,7 +252,78 @@
     LastExitReason: { UNKNOWN: 0, NORMAL: 1 },
   });
   define('app.ability.Want', class Want {});
-  define('window', { WindowStage: class WindowStage {} });
+
+  // ── @ohos:window —— 窗口管理 v1（R80，桌面线）──
+  //
+  // 权威语义来自 `<CLT>/.../ets/api/@ohos.window.d.ts`（9978 行；本垫片只收桌面主目标的
+  // 常用子集）。能力面按 R74 IPC 模板分两侧：
+  //   · Electron 主进程：ipcMain.handle('arkui:window:*') 操作 BrowserWindow
+  //     （背景色/resize/moveTo/show/hide/destroy/尺寸事件）；
+  //   · 渲染进程 preload：ipcRenderer invoke 封装 + 事件用主进程 push（webContents.send）。
+  //   · 浏览器端：无主进程 → 探测式降级（R21 先例），方法存在但操作无效并记 warning。
+  // 未覆盖 API（setFullScreen/avoidArea/子窗/模态等）按需增补，不预造空壳。
+  const windowSizeListeners = new Set();
+  let winIpcAvailable = null;   // null=未探测
+
+  const winWarn = (m) => { try { console.warn('[arkui-dom] window.' + m + '：当前宿主不支持（无 Electron 主进程桥）'); } catch (e) {} };
+
+  /** @returns {Promise<boolean>} 主进程窗口桥是否可用（只探测一次） */
+  async function probeWindowBridge() {
+    if (winIpcAvailable !== null) return winIpcAvailable;
+    try {
+      winIpcAvailable = !!(globalThis.__arkui_dom_nodeFs && // Electron 形态才有 preload
+        typeof globalThis.electronAPI !== 'undefined');
+    } catch (e) { winIpcAvailable = false; }
+    return winIpcAvailable;
+  }
+
+  class WindowShim {
+    constructor(id) { this.__winId = id; }
+    async setWindowBackgroundColor(color) {
+      if (!(await probeWindowBridge())) { winWarn('setWindowBackgroundColor'); return; }
+      // css 颜色直传；'#RRGGBBAA' → Electron setBackgroundColor 支持 css 颜色串
+      await globalThis.electronAPI.windowOp('setBackgroundColor', color);
+    }
+    async resize(w, h) {
+      if (!(await probeWindowBridge())) { winWarn('resize'); return; }
+      await globalThis.electronAPI.windowOp('setSize', Math.round(Number(w) || 0), Math.round(Number(h) || 0));
+    }
+    async moveTo(x, y) {
+      if (!(await probeWindowBridge())) { winWarn('moveTo'); return; }
+      await globalThis.electronAPI.windowOp('setPosition', Math.round(Number(x) || 0), Math.round(Number(y) || 0));
+    }
+    async showWindow() { if (await probeWindowBridge()) await globalThis.electronAPI.windowOp('show'); else winWarn('showWindow'); }
+    async minimize() { if (await probeWindowBridge()) await globalThis.electronAPI.windowOp('minimize'); else winWarn('minimize'); }
+    async destroy() { if (await probeWindowBridge()) await globalThis.electronAPI.windowOp('destroy'); else winWarn('destroy'); }
+    on(type, cb) {
+      if (type !== 'windowSizeChange') { winWarn("on('" + type + "')—— v1 只支持 windowSizeChange"); return; }
+      windowSizeListeners.add(cb);
+    }
+    off(type, cb) {
+      if (type !== 'windowSizeChange') return;
+      windowSizeListeners.delete(cb);
+    }
+  }
+
+  // 主进程把 resize 事件 push 到渲染侧（preload 转发）；浏览器端永不触发
+  if (globalThis.electronAPI && globalThis.electronAPI.onWindowSizeChange) {
+    globalThis.electronAPI.onWindowSizeChange((size) => {
+      const ev = { type: 'windowSizeChange', width: size.width, height: size.height };
+      for (const cb of [...windowSizeListeners]) { try { cb(ev); } catch (e) {} }
+    });
+  }
+
+  define('window', {
+    WindowStage: class WindowStage {},
+    Window: WindowShim,
+    /** getLastWindow(): Promise<Window> —— 单窗形态恒返回同一实例（Electron 主窗） */
+    getLastWindow: async () => new WindowShim('main'),
+    /** findWindow(id)：v1 单窗，忽略 id */
+    findWindow: async () => new WindowShim('main'),
+    /** getTopWindow / getMainWindow 同收敛到主窗 */
+    getTopWindow: async () => new WindowShim('main'),
+    getMainWindow: async () => new WindowShim('main'),
+  });
 
   // ── @ohos:measure —— 文本测量（R15） ──
   //

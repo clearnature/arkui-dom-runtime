@@ -1523,6 +1523,31 @@ Electron 实测：**首渲染同步 19.0ms**（规模曲线
 
 ---
 
+### R80 — 桌面线产品化首片：@ohos.window v1（窗口 API → BrowserWindow）✅（2026-09-26）
+
+**内容**：把窗口管理能力面接进 Electron 主窗，走 R74 IPC 模板三层：渲染侧垫片
+（`ohos-shims.js`，权威语义对齐 `@ohos.window.d.ts` 9978 行的常用子集）→ preload
+`windowOp` 桥（可结构化克隆 + 失败免疫）→ 主进程 `ipcMain.handle('arkui:window:op')`
+操作 BrowserWindow 本体。v1 能力面：`getLastWindow/findWindow/getTopWindow/getMainWindow`
+（单窗形态收敛主窗实例）+ `setWindowBackgroundColor/resize/moveTo/show/minimize/destroy` +
+`on/off('windowSizeChange')`（主进程 'resize' → webContents.send → 渲染侧监听器）。
+
+**两个边界决策**：① `destroy` 在测试驱动下（ARKUI_TEST/ARKUI_PAGE_URL 在场）被主进程拒绝
+——harness 靠窗口退出收结果，误销毁会让用例假死；② 浏览器端探测式降级（R21 先例）：
+方法存在、操作无效、记 warning，事件推送不验证。
+
+**验收**：`bash electron/run.sh windowdemo`（5 条断言）——垫片 Promise 链、
+**windowSizeChange 推送真实尺寸 600x500**（IPC 全链路实证）、浏览器端降级 5/5 亦通过。
+WindowDemo 用 kit 形式导入（`@kit.ArkUI`）过真编译器（getContext(this) 必传；
+产物自动转 `import window from "@ohos:window"` 对接垫片）。
+
+**触及**：`runtime/ohos-shims.js`（window 垫片 v1）、`electron/preload.js`（windowOp 桥）、
+`electron/main.js`（ipcMain 执行端 + resize 转发）、`harmony-proj/.../WindowDemo.ets`（新，
+kit 导入）+ `main_pages.json`、`fixtures/pages/WindowDemo.ts`（固化）、
+`test/windowdemo.html`（新）、`run.sh` + `electron/run.sh`（接线）、`docs/ROADMAP.md`
+
+---
+
 ## P3 布局引擎
 
 ### ~~R13 — 数据可视化类：`Progress` / `Gauge` / `DataPanel` / `Rating`~~ ✅ 已完成

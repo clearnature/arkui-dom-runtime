@@ -541,6 +541,10 @@ case "${1:-index}" in
     # R68：性能基线
     run_one perfdemo "$(src_of pages/PerfDemo.ts)" build/perfdemo-module.js test/perfdemo.html \
       "--cjs --register PerfDemo" ;;
+  windowdemo)
+    # R80：@ohos.window（浏览器端走探测式降级路径）
+    run_one windowdemo "$(src_of pages/WindowDemo.ts)" build/windowdemo-module.js test/windowdemo.html \
+      "--cjs --register WindowDemo" ;;
   router)
     # 两个页面都要注册；Detail 先单独产出，Home 由 run_one 带 flags 产出
     "$NODE" tools/extract.mjs "$(src_of pages/Detail.ts)" build/detail-module.js --cjs --register Detail >/dev/null || exit 1
