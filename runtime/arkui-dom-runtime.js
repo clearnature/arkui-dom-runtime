@@ -28,12 +28,17 @@
   // ───────────────────────── 基础设施 ─────────────────────────
   let elmtIdSeq = 0;
   const elmtRecords = new Map();   // elmtId -> {node, parentNode, updateFunc, childView,
-                                   //            activeBranch, forEachSnapshot}
+                                   //            activeBranch, forEachSnapshot, rowRecs}
   const deepRendering = new Set(); // 正在执行 deepRender 的 elmtId，防止递归再进入
   const propDeps = new Map();      // ObservedProperty -> Set<elmtId>
   /** @type {any} */ let currentNodeElmtId = null;    // 正在执行哪个 elmtId 的渲染（依赖追踪 + If/ForEach 归属）
   /** @type {any} */ let rootNode = null;
   /** @type {number} */ let viewSeq = 0;
+  // R76：ForEach 行级复用——key 稳定的行重入时沿用旧 elmtId（isFirst=false → 静态守卫生效、
+  // 节点走复用+contentUpdater），而不是拆掉重建。rowReentryIds 是当前重入行的既有 elmtId 名册
+  //（按行内组件出现序），rowReentryCursor 是行内游标。
+  /** @type {any[] | null} */ let rowReentryIds = null;
+  let rowReentryCursor = 0;
 
   // 组件栈：官方命名，产物里的 ViewStackProcessor.StartGetAccessRecordingFor/Stop… 由它承载
   //（stack 不写 @type 会被推成 never[]，push 全红）
@@ -1530,7 +1535,17 @@
 
     /** @param {any} updateFunc @param {any} componentClassOrName */
     observeComponentCreation2(updateFunc, componentClassOrName) {
-      const elmtId = ++elmtIdSeq;
+      // R76：行级复用——forEachUpdateFunction 的重入行把既有 elmtId 名册放进 rowReentryIds，
+      // 行内第 k 个组件沿用名册第 k 项（存在即复用，isFirst=false → 静态守卫跳过）；否则新分配并登记。
+      let elmtId;
+      if (rowReentryIds && rowReentryCursor < rowReentryIds.length &&
+          elmtRecords.has(rowReentryIds[rowReentryCursor])) {
+        elmtId = rowReentryIds[rowReentryCursor];
+      } else {
+        elmtId = ++elmtIdSeq;
+        if (rowReentryIds) rowReentryIds[rowReentryCursor] = elmtId;  // 首建登记，供下次重入
+      }
+      rowReentryCursor++;
       const parent = parentOfTop();
       const isFirst = !elmtRecords.has(elmtId);
       const rec = elmtRecords.get(elmtId) || { node: null };
@@ -1628,21 +1643,44 @@
       const changed = !rec.forEachSnapshot
         || rec.forEachSnapshot.length !== snap.length
         || rec.forEachSnapshot.some((/** @type {any} */ v, /** @type {number} */ i) => !Object.is(v, snap[i]));
-      if (changed && rec.forEachSnapshot) {
-        // 同理：列表重建时，带"消失过渡"的项先把动画走完（R22 收口）
+      const newKeys = keyGenFunc ? snap.map((/** @type {any} */ v, /** @type {number} */ i) => keyGenFunc(v, i)) : null;
+      const oldRowRecs = rec.rowRecs || null;
+      // R76：key 稳定（长度同 + 逐位 key 相等）→ 行级复用（重入旧行 elmtId，不拆不建）；
+      // 否则维持整列表重建语义（R22 消失动画走原 detach 路径）。无 keyGenFunc → 恒为重建。
+      const keysStable = !!(newKeys && oldRowRecs && oldRowRecs.length === newKeys.length &&
+        newKeys.every((/** @type {any} */ k, /** @type {number} */ i) =>
+          oldRowRecs[i] && Object.is(oldRowRecs[i].key, k)));
+      if (changed && rec.forEachSnapshot && !keysStable) {
+        // 列表重建时，带"消失过渡"的项先把动画走完（R22 收口）。
+        // key 稳定的值更新不拆除——走行级复用（这正是 R76 的收益所在）。
         detachChildren(rec.node);
         purgeDetachedRecords();
       }
       rec.forEachSnapshot = snap;
+      rec.rowRecs = newKeys
+        ? newKeys.map((/** @type {any} */ k, /** @type {number} */ i) => ({
+            key: k,
+            ids: keysStable && oldRowRecs[i] ? oldRowRecs[i].ids : [],
+          }))
+        : null;
 
       const savedStack = ViewStackProcessor.snapshot();
       const savedElmt = currentNodeElmtId;
+      const savedIds = rowReentryIds;
+      const savedCursor = rowReentryCursor;
       ViewStackProcessor.restore([]);
       ViewStackProcessor.push(rec.node);
       currentNodeElmtId = elmtId;
-      for (const item of snap) {
-        if (changed) itemGenFunc(item);        // 逐项生成（内部各自分配 elmtId）
+      if (changed) {
+        for (let i = 0; i < snap.length; i++) {
+          rowReentryIds = rec.rowRecs ? rec.rowRecs[i].ids : null;
+          rowReentryCursor = 0;
+          itemGenFunc(snap[i]);            // 重入行：observeComponentCreation2 沿用旧 elmtId
+          if (rec.rowRecs) rec.rowRecs[i].ids.length = rowReentryCursor;  // 结构收缩时截断残留
+        }
       }
+      rowReentryIds = savedIds;
+      rowReentryCursor = savedCursor;
       ViewStackProcessor.restore(savedStack);
       currentNodeElmtId = savedElmt;
     }

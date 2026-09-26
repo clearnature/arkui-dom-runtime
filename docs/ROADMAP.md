@@ -1420,9 +1420,9 @@ perfdemo 双模式（file:// 与 http）`ELECTRON_RESULT: PASS`；打包工具�
 **内容**：为模板编译器建立"百节点级"验收基准（R71 结论的落地）。PerfBigDemo
 （200 行 ForEach + 翻转按钮，index key 走原地更新路径）+ `test/perfbig.html` 双口径测量。
 
-**验收**：`bash electron/run.sh perfbig`（3 条断言）双门禁 Electron 侧通过（与 perfdemo 同
-理由不进浏览器 all）。基线（Electron 实测，2026-09-26）：**首渲染同步段 4.8ms**（203 节点）/
-**批量翻转 16.1ms**（200 行，~0.08ms/行，轮询口径）。
+**验收**：`bash electron/run.sh perfbig`（4 条断言，R76 起含行复用同一性断言）双门禁
+Electron 侧通过（与 perfdemo 同理由不进浏览器 all）。基线（Electron 实测，2026-09-26）：
+**首渲染同步段 4.8ms**（203 节点）/ **批量翻转 16.1ms**（200 行，~0.08ms/行，轮询口径）。
 
 **两个立项级结论**：
 1. **创建路径规模化近乎平坦**：33 节点 3.5ms → 203 节点 4.8ms——运行时 create 路径不是
@@ -1434,6 +1434,40 @@ perfdemo 双模式（file:// 与 http）`ELECTRON_RESULT: PASS`；打包工具�
 **触及**：`harmony-proj/entry/src/main/ets/pages/PerfBigDemo.ets`（新）+ `main_pages.json`、
 `fixtures/pages/PerfBigDemo.ts`（固化）、`test/perfbig.html`（新）、`electron/run.sh`（接线）、
 `tools/stats.mjs`（PERF3 采集）、`docs/ROADMAP.md`（本节）
+
+---
+
+### R75/R76 — 模板编译器两连片：属性分裂优化器 v1 + ForEach 行级复用 v2 ✅（2026-09-26）
+
+**R75（优化器 v1）**：`tools/arkui-optimizer.mjs`——TS AST 变换，observeComponentCreation2
+回调内的常量属性语句包 `isInitialRender` 守卫（`onClick` 注册类：this 只在嵌套函数体内 →
+判静态；create/pop/控制流不动；嵌套回调先深访再分类）。`extract.mjs --optimize` 默认关，
+门禁仅 perfbig 启用。工具链坑：SDK 定制版 TS 的 transformer 是 **context 工厂式**
+（`(context) => (node) => …`），普通 visitor 直接传会炸 `transform2 is not a function`。
+
+**R76（ForEach 行级复用 v2）**：perfbig 行加 4 静态属性后测量暴露真相——**v1 守卫在
+ForEach 重入路径从未生效**：`observeComponentCreation2` 里 `elmtId = ++elmtIdSeq` 每次重入
+都分配新 id，`isFirst` 恒为 true；且 `forEachUpdateFunction` 是整列表拆除重建语义（key 被
+无视）。v2 运行时改动两处：
+
+1. `observeComponentCreation2` 支持行级重入：`rowReentryIds` 名册存在时，行内第 k 个组件
+   沿用名册既有 elmtId（`isFirst=false` → v1 守卫真正生效、节点复用+contentUpdater）；
+2. `forEachUpdateFunction` 按 key diff：长度同 + 逐位 key 相等 → 行级复用；否则维持整列表
+   重建（R22 消失动画语义保留）；无 keyGenFunc 恒为重建。
+
+**验收**：`bash electron/run.sh perfbig`（4 条断言，`--optimize` 管线）——批量翻转
+**19.8 → 13.9ms**（-30%），行复用同一性断言（翻转前后 DOM 节点同一）绿；全量门禁 7/7
+（所有 ForEach 存量用例零回归）。基线迁移：PERF3 从 16.1（无属性）/19.8（含属性）降至
+**13.9**，§6 为准。
+
+**诚实边界**：13.9ms 距手写形态（R69 实测 ~0.1-0.2ms）仍有两个数量级——剩余大头是每行
+`observeComponentCreation2` 重入 + create 复用的协议税本身。v3 方向（节点池/直写 content
+快路径）需要运行时为 ForEach 行建立"结构快照"协议，立项时以 perfbig 为验收。
+
+**触及**：`runtime/src/main.js`（rowReentry + key diff）、`tools/arkui-optimizer.mjs`（新）、
+`tools/extract.mjs`（--optimize）、`tools/stats.mjs`（PERF3/PERF2 采集）、
+`harmony-proj/.../PerfBigDemo.ets`（+4 静态属性）+ fixture、`test/perfbig.html`（复用断言）、
+`electron/run.sh`（--optimize 管线）、`docs/ROADMAP.md`
 
 ---
 
