@@ -1573,6 +1573,51 @@ ets-loader 自带 TS 4.9.5，项目保持零 npm 依赖；`check-all.sh` 第 5 �
 dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush() 兜底一直绿，炸点潜伏。
 修法：`value→v`；v2 内部绑定改名 `EventDeco`（装饰器表键不变，extract.mjs 产物前奏不受影响）。
 
+### 4.21 渲染路径决策记录：预览器实证与源码测绘（R24 收口）
+
+**同一份用户代码，两个协议服务端**。SDK 预览器（`previewer/common/bin/`，401MB）是完整的
+Linux 原生 ArkUI 栈；源码测绘（`arkui_ace_engine/adapter/preview/entrance/ace_container.cpp`
+include `bridge/declarative_frontend/…`，`FrontendType::DECLARATIVE_JS`）证实它加载的用户代码
+与本项目 `extract.mjs` 吃的是**同一批 ets-loader 产物**——区别只在 ViewPU 协议的服务端：
+
+```
+用户 ArkTS → ets-loader → ViewPU .ts/js（ets-loader 产物）
+    ├─【RichPreviewer】PandaVM(libark_jsruntime.so) + 框架预编译 .abc(module/arkui/*.abc)
+    │        ↓ JSI 绑定层（declarative_frontend / jsi_bindings.inl / requireNapi）
+    │   ace_compatible C++（组件树/布局）→ Skia（GL 后端 + CPU 光栅兜底）→ GLFW → X11
+    └─【arkui-dom-runtime】浏览器/Electron JS 引擎 + runtime.js（ViewPU 协议的 JS 实现）
+             ↓ DOM API
+         浏览器排版引擎
+```
+
+本项目 `runtime/src/*.js` 本质上是 `declarative_frontend + 组件 C++ 实现` 的 JS 同构重写——
+这解释了为什么"到真机 C++ 源码对照语义"一直有效：两边是同一协议的两个实现。
+
+**Skia 双后端（符号表实测）**：`libskia_canvaskit.so` 是 x86-64 原生 ELF（"canvaskit"只是
+构建 target 名，不是 WASM）：CPU 光栅（`SkBitmapDevice`/`SkRasterClip`/
+`SkGlyphRunListPainterCPU`）与 GPU Ganesh/GL（288 个 `gl*`/`egl*` 符号、`GrDirectContext`/
+`GrGLInterface`）都编入；上层 `lib2d_graphics.so` = 华为 Rosen::Drawing，持 `GPUContext` 抽象；
+`libace_compatible.so` 自身 0 个直接 GL 符号——GL 上下文创建全部委托
+`libglfw.so` + `libglfw_render_context.so`。即预览器 = GLFW 窗口 + Skia GL 后端，CPU 光栅兜底。
+
+**实证点火**（可复现命令见 ROADMAP R24 收口）：补 `libshared_libz.so` 软链（→ emulator 的 libz）→
+逆向启动契约（`-j` 是**目录**非 JSON 文件；`-or`/`-cr` 各跟 2 个独立 argv；`-sid` 纯 hex）→
+约 30 项参数校验全过 → **GLFW 窗口在 `:0` 真实创建（720×1280）** → SIGSEGV 于
+`RSUIContextManager` 构造（`librender_service_client.so` 的 WindowImpl 内，Rosen 窗口服务
+绑定缺失），发生在用户 JS 装载之前。独立启动死在窗口管理层——previewer 是 IDE 内部组件、
+窗口/输入/生命周期依赖宿主（DevEco Studio）的实测铁证。版本漂移旁证：本地开源
+ide_previewer 源码直连 GLFW，SDK 26 二进制已改走 Rosen Window——同代际窗口层重构，
+"ABI 不承诺稳定"的活标本。
+
+**决策（归档，2026-09-26）**：留在分支 B（本架构即分支 B），`.abc`/PandaVM 线与"复刻原生栈"
+均入 ROADMAP"明确不做"。理由压缩成一句：字节码级编译优化（branch-elimination 等）只属于
+PandaVM 执行路径，打不到 DOM 解释架构的瓶颈（DOM 操作与布局）；性能杠杆在运行时内部——
+DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译器方向）。语义参考资产（新增）：
+`/data/work/compiler/Ark/ide_previewer/`（官方 JS 应用装载链路 `JsAppImpl.cpp`）＋
+`frameworks/bridge/declarative_frontend/engine/jsi/`（`jsi_bindings.inl` 绑定表 +
+`jsi/*_bridge.cpp` 组件桥，"JS 调用如何落到 C++ 语义"的中间层）＋ `cj_frontend`（181 cpp，
+仓颉 ArkUI 前端完整成体系，配合 `arkui_napi` 的 cjffi/ark_interop 胶水）。
+
 ---
 
 ## 5. 架构不变量
@@ -1686,10 +1731,10 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
 == 体积（源码，不含产物/Electron 运行时）==
   runtime          942.6 KB
   runtime(src)     957.5 KB
-  test             777.2 KB
+  test             774.0 KB
   tools            59.3 KB
   electron(src)    25.9 KB
-  docs             653.5 KB
+  docs             662.6 KB
   fixtures         463.3 KB
 
 == 逐文件（文档"文件职责"表的来源）==
@@ -1712,10 +1757,10 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   .gitignore                                757 B  0.7 KB
   README.md                              157245 B  153.6 KB
   THIRD-PARTY-NOTICES.md                  10718 B  10.5 KB
-  docs/ARCHITECTURE.md                   151794 B  148.2 KB
+  docs/ARCHITECTURE.md                   155905 B  152.3 KB
   docs/CAPABILITY.md                      61086 B  59.7 KB
   docs/DEVELOPING.md                      66055 B  64.5 KB
-  docs/ROADMAP.md                        146349 B  142.9 KB
+  docs/ROADMAP.md                        151583 B  148.0 KB
   docs/surface-measurement.md              6496 B  6.3 KB
   docs/SESSION-2026-09-20.md              12842 B  12.5 KB
   runtime/src/.mimosa                      4096 B  4.0 KB
@@ -1829,7 +1874,7 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   test/animatordemo.html                   5613 B  5.5 KB
   test/animdemo.html                      11498 B  11.2 KB
   test/async.html                          5977 B  5.8 KB
-  test/batch-verify.html                   7421 B  7.2 KB
+  test/batch-verify.html                   4145 B  4.0 KB
   test/batchfunc.html                     10189 B  10.0 KB
   test/batchinputdemo.html                 9853 B  9.6 KB
   test/batchlayout.html                    8681 B  8.5 KB
@@ -1981,7 +2026,9 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
   权威是 `arkui_ace_engine/frameworks/core/components_ng/pattern/<组件>/`（C++ pattern）；
   `arkui_qrcodegen` 的编码器 R41 已直接复用（WASM，见 QRCode 节）；
   `arkcompiler_ets_runtime` 是 R24 ArkVM 调研的对象本体。R39 起，凡标"推断"的组件语义，
-  优先到这里对照清账。
+  优先到这里对照清账。R24 收口起（§4.21）：`ide_previewer/`（预览器启动契约与 JS 应用装载链路）、
+  `arkui_ace_engine/frameworks/bridge/declarative_frontend/engine/jsi/`（JSI 绑定表/组件桥）
+  为"JS 调用如何落到 C++ 语义"的第二权威层。
 
 | 依赖 | 位置 | 说明 |
 |---|---|---|
@@ -1989,6 +2036,7 @@ dispatchEvent 收到装饰器函数实例（TypeError）；lazy.html 因 flush()
 | **SDK 的 `.d.ts` 声明** | `<CLT>/sdk/default/openharmony/ets/build-tools/ets-loader/declarations/` | `IMonitor`/`IMonitorValue` 等接口的**权威形状**来源 |
 | **组件元数据** | `<CLT>/.../ets-loader/components/*.json` | 150 个文件 → 149 个组件注册表 |
 | Electron 44.2.0 | `~/.cache/electron/electron-v44.2.0-linux-x64.zip` | 启动需 `--no-sandbox --disable-gpu` |
+| **SDK 预览器（原生栈，只作语义参考）** | `<CLT>/sdk/default/openharmony/previewer/common/bin/` | 401MB：ace_compatible/ark_jsruntime/skia_canvaskit/glfw + 组件 .so + 框架 .abc；启动契约与崩溃结论见 R24 收口/§4.21，不复刻不嵌入 |
 | `libhilog.so` / `libshared_libz.so` | `/data/training/cli/arkts-shim/lib/` | 补 CLT 缺失库，使 `ark_aot_compiler` 可用 |
 | **许可与出处** | **`THIRD-PARTY-NOTICES.md`（本仓库根）** | 第三方组件许可清单：`.d.ts` 是 Apache-2.0，`ets-loader`/`components/*.json` **未声明**，CLT 顶层是 DevEco EULA |
 | `arkts-shim` 分析 | `/data/training/cli/arkts-shim/README.md` | 含"Linux 预览器被 45 字节桩阻塞"的 `objdump` 证据 |

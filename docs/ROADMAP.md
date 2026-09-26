@@ -1937,6 +1937,62 @@ L=30fp↔M=26fp 经 SHARP，出处 `title_bar_pattern.cpp`）；`customNavConten
 
 ---
 
+### R24 收口 — 原生渲染路径终审：previewer 实证 + 决策归档 ✅（2026-09-26）
+
+**内容**：SDK 预览器目录（401MB Linux 原生栈：libace_compatible/libark_jsruntime/libskia_canvaskit/
+libglfw + 28 组件 .so + 15 框架 .abc）被发现后，"生产渲染走原生还是留在 DOM"悬而未决。
+本轮三条独立证据链一次钉死，归档为渲染路径决策记录。
+
+**结论（一句话）**：**留在分支 B（ets-loader 的 ViewPU .ts → `extract.mjs` 剥类型 → DOM 运行时），
+不再分叉**。previewer 原生栈不复刻、不嵌入，只作语义参考；`.abc`/PandaVM 线结案。
+
+**三层证据（互相独立、结论一致）**：
+
+| 层 | 证据 | 判决 |
+|---|---|---|
+| 工具链 | es2abc（=es2panda 同一二进制，在 ets-loader/bin/ark/build/bin/）输出只有 `.abc`（`--output`/`--base64Output`），无任何 JS 输出模式；`--branch-elimination`/`--opt-level 0\|1\|2`/`--opt-try-catch-func` 全是字节码级优化只活在 `.abc`；`ark_disasm` 只出 `.pa` 文本汇编；`.abc` 的 `--debug-info` 是字节码→源码行列映射（给调试器/VM）——**"从 .abc 反推优化后 JS"的通路不存在** | 分支 A（吃 .abc）＝嵌 35MB libark_jsruntime.so：养第二个 JS 引擎＋重建 NAPI 桥＋重接全部 ViewPU 协议，工作量一个数量级 |
+| 实测 | 按逆向出的启动契约真机点火：约 30 项参数校验全过 → **GLFW 窗口在 `:0` 真实创建（720×1280）** → SIGSEGV 崩在 `RSUIContextManager` 构造（librender_service_client.so 的 WindowImpl 内，Rosen 窗口服务绑定缺失），发生在用户 JS 装载之前 | previewer 独立启动**死在窗口管理层**——"缺正式 Linux 平台化（窗口/输入/生命周期由宿主提供）"从理论判断升级为实测证据；当 oracle 都要先修它的窗口层（厂商调试范畴，不投） |
+| 源码 | `arkui_ace_engine/adapter/preview/entrance/ace_container.cpp` include `bridge/declarative_frontend/…`，走 `FrontendType::DECLARATIVE_JS` + JSI 的 `ark_js_runtime.cpp`（Panda 后端）：预览器加载的用户代码**就是 ets-loader 的产物**，与本项目 `extract.mjs` 吃的是同一批文件；区别只在"ViewPU 协议的服务端"（C++ 组件树+Skia vs 浏览器 DOM） | 两个实现同一协议——语义对照（真机 C++ 源码）持续有效；字节码级编译优化打不到 DOM 解释架构的瓶颈（DOM 操作与布局），收益属于"渲染也原生"那条已否决的路线 |
+
+**可复现命令（启动契约已归档）**：
+
+```bash
+CLT=/data/training/cli/commandline-tools-linux-x64-26.0.0.821/command-line-tools
+BIN=$CLT/sdk/default/openharmony/previewer/common/bin
+mkdir -p /tmp/arkpreview && ln -sf $CLT/emulator/libz.so /tmp/arkpreview/libshared_libz.so  # 唯一缺失依赖
+export LD_LIBRARY_PATH=/tmp/arkpreview:$CLT/sdk/default/hms/toolchains/lib:$BIN
+PROJ=/data/training/cli/arkui-dom-runtime/harmony-proj
+timeout 40 $BIN/Previewer \
+  -j $PROJ/entry/build/default/intermediates/loader/default \
+  -abp $PROJ/entry -arp $PROJ/entry \
+  -ljPath $PROJ/entry/build/default/intermediates/loader/default/loader.json \
+  -device phone -or 720 1280 -cr 360 780 \
+  -n ArkUIProbe -projectPath $PROJ \
+  -sid $(python3 -c "import uuid;print(uuid.uuid4().hex)") \
+  -url pages/Index
+# 期望：约 30 项 Is*Valid 全 INFO → "glfw window" 720x1280（xwininfo -root -tree 可见）→
+#       [JsEngine Crash] signal 0xb @ RSUIContextManager（R24 收口阶段的已知终点）
+```
+
+契约要点：`-j` 是**目录**（JS 应用资产根）不是 JSON 文件（反汇编 `IsAppPathValid`：
+`IsSet("j")`→`IsDirectoryExists`）；`-or/-cr` 各跟 **2 个独立 argv**（源码 `Register("-or", 2, …)`）；
+`-sid` 匹配 `^[a-fA-F0-9]+$` 纯 hex。全部 40 个旗标与 3 条校验正则见
+`/data/work/compiler/Ark/ide_previewer/util/CommandParser.{cpp,h}` 的 `Register(...)`。
+
+**技术资产（语义参考新金矿）**：`ide_previewer` 全套 C++（`jsapp/rich/JsAppImpl.cpp` 展示官方
+"JS 应用装载"链路 `SetAssetPath → AceAbility::CreateInstance`）；`arkui_ace_engine/frameworks/
+bridge/declarative_frontend/engine/jsi/`（`jsi_bindings.inl` 绑定表；`jsi/*_bridge.cpp` 组件桥——
+"JS 调用如何落到 C++ 语义"的中间层，排查事件时序/属性优先级时可能比 pattern 层更直接）；
+`cj_frontend` 181 个 cpp＝仓颉 ArkUI 前端完整成体系（配合 `arkui_napi` 的 cjffi/ark_interop 胶水）。
+
+**版本漂移旁证**：本地开源 ide_previewer 源码直连 GLFW；SDK 26 二进制的 libpreviewer_window.so
+已改走 Rosen Window 抽象——同产品代际间窗口层重构，"ABI 不承诺稳定"的活标本。
+
+**触及**：无运行时代码改动（纯调研归档）；`docs/ROADMAP.md`（本节 + 明确不做表加一行）、
+`docs/ARCHITECTURE.md`（§4.21 架构测绘 + §9 参考表）
+
+---
+
 ## 明确不做
 
 | 不做 | 理由 |
@@ -1944,6 +2000,7 @@ L=30fp↔M=26fp 经 SHARP，出处 `title_bar_pattern.cpp`）；`customNavConten
 | 重写 `.ets` → `.ts` 转换 | 官方 `ets-loader` 就是规范；自己发明一套语义会和设备分叉 |
 | 像素级复刻原生渲染 | 字体/光栅化是平台能力，不是本项目目标；目标是**语义与布局**可用 |
 | 实现 `.abc` 解释器 | ArkVM 存在且可用；本项目走 JS 路径 |
+| 复刻/嵌入 previewer 原生栈（PandaVM/Skia/GLFW 二进制） | R24 收口三层证据钉死：es2abc 无 JS 输出、独立启动崩在窗口管理层、声明式前端与我们同一协议同瓶颈；性能杠杆在运行时内部（DOM 操作削减/布局批处理），不在字节码级优化 |
 | 手改 `runtime/generated-components.js` | 生成物；手改会被 `--check` 拦下（R3 起进 CI） |
 | 修改 `fixtures/` 里的 `.ts` | 它们是"官方产物能跑"这一结论的**证据**，改了测试就变成自我验证 |
 
