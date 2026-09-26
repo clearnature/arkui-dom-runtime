@@ -1745,21 +1745,21 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
 == 用例矩阵 ==
   浏览器 run.sh     65 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify measure lazy provide v2 observe async ability promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo mediademo smalldemo stepdemo imagedemo scrolldemo animatordemo listitemgroup refreshdemo datepickerdemo timepickerdemo waterflowdemo calendarpickerdemo textpickerdemo griddemo texttimedemo alphabetindexerdemo sidebardemo splitdemo paneldemo gridrowdemo richvideodemo batchverify perfdemo router netfile persist
   Electron          64 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo mediademo smalldemo stepdemo imagedemo scrolldemo animatordemo listitemgroup refreshdemo datepickerdemo timepickerdemo waterflowdemo calendarpickerdemo textpickerdemo griddemo texttimedemo alphabetindexerdemo sidebardemo splitdemo paneldemo gridrowdemo richvideodemo batchverify perfdemo measure lazy provide async v2 observe
-  测试页            71 个
+  测试页            72 个
   fixtures 转换产物  67 个：AlphabetIndexerDemo AnimDemo AnimatorDemo AsyncIO BatchFuncDemo BatchLayoutDemo BatchMediaDemo BatchVerifyDemo CalendarPickerDemo Callee CanvasDemo DatePickerDemo Detail DrawDemo GestureDemo GestureGroupDemo GridDemo GridRowDemo Home ImageDemo Index InputDemo Layout Lazy LazyVar ListGroupDemo MeasArea MeasImage MeasNotify Measure MediaDemo NavBarDemo NavDemo NavShimDemo NavTransDemo NetFile Observe PanelDemo PerfDemo PopDemo PromptAct Provide QrDemo RefreshDemo RelDemo Rich RichVideoDemo ScrollDemo ShapeDemo ShowDemo SideBarDemo SmallDemo SplitDemo StepDemo SwiperDemo TabsGrid TextDemo TextMeasure TextPickerDemo TextTimeDemo TimePickerDemo TransitionDemo UiContextDemo V2 WaterFlowDemo Widgets XCompDemo
 
 == 性能基线（Electron 实测）==
-  首渲染            125.5 ms（33 节点：Column+Button+Text+ForEach×30）
-  最小 rerender     12.8 ms（@State 计数脏区单 Text）
+  首渲染            122.1 ms（33 节点：Column+Button+Text+ForEach×30）
+  最小 rerender     3.7 ms（@State 计数脏区单 Text）
   行数              31
 
 == 体积（源码，不含产物/Electron 运行时）==
   runtime          942.9 KB
   runtime(src)     957.8 KB
-  test             781.0 KB
+  test             785.5 KB
   tools            60.1 KB
-  electron(src)    26.5 KB
-  docs             670.2 KB
+  electron(src)    27.2 KB
+  docs             672.3 KB
   fixtures         473.5 KB
 
 == 逐文件（文档"文件职责"表的来源）==
@@ -1774,7 +1774,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   tools/preflight.mjs                      5422 B  5.3 KB
   tools/check-all.sh                       4053 B  4.0 KB
   tools/build-runtime.mjs                  5138 B  5.0 KB
-  run.sh                                  30423 B  29.7 KB
+  run.sh                                  30533 B  29.8 KB
   electron/run.sh                         17974 B  17.6 KB
   electron/main.js                         7025 B  6.9 KB
   electron/preload.js                      1961 B  1.9 KB
@@ -1782,10 +1782,10 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   .gitignore                                757 B  0.7 KB
   README.md                              157245 B  153.6 KB
   THIRD-PARTY-NOTICES.md                  10718 B  10.5 KB
-  docs/ARCHITECTURE.md                   159089 B  155.4 KB
+  docs/ARCHITECTURE.md                   159146 B  155.4 KB
   docs/CAPABILITY.md                      61086 B  59.7 KB
   docs/DEVELOPING.md                      67182 B  65.6 KB
-  docs/ROADMAP.md                        155064 B  151.4 KB
+  docs/ROADMAP.md                        157132 B  153.4 KB
   docs/surface-measurement.md              6496 B  6.3 KB
   docs/SESSION-2026-09-20.md              12842 B  12.5 KB
   runtime/src/.mimosa                      4096 B  4.0 KB
@@ -1938,6 +1938,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   test/opfs-probe.html                     1620 B  1.6 KB
   test/paneldemo.html                      4428 B  4.3 KB
   test/perfdemo.html                       2956 B  2.9 KB
+  test/perfspike.html                      4578 B  4.5 KB
   test/popdemo.html                        5709 B  5.6 KB
   test/promptaction.html                  12719 B  12.4 KB
   test/provide.html                        4238 B  4.1 KB

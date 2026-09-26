@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Spike：模板编译器上限测量（基线 vs c()/m()/p() 手写形态 vs 地板）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root, #rootB { width: 360px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; font-size: 12px; }
+</style>
+</head>
+<body>
+  <h3>模板编译器 spike：同一页面的三种执行形态对比（真实时钟 setTimeout 轮询，无 virtual-time/rAF）</h3>
+  <div id="root"></div>
+  <div id="rootB"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/perfdemo-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    const root = document.getElementById('root');
+    const rootB = document.getElementById('rootB');
+    const F = (x) => x.toFixed(2);
+    const tick = () => new Promise((r) => setTimeout(r, 0));
+    window.onerror = (e) => { lines.push('  ERROR ' + e); };
+
+    // ═══ A：当前运行时基线（真编译 PerfDemo，ViewPU 协议 + 脏区更新）═══
+    let t0 = performance.now();
+    __arkui_dom_requireModule('PerfDemo');
+    __arkui_dom_loadRoute('pages/PerfDemo', root);
+    const countEl = root.querySelector('#perf-count');
+    const btn = root.querySelector('#btn-inc');
+    for (let i = 0; i < 100 && !countEl; i++) await tick();   // 同步建好后这里立刻通过
+    const rowsA = root.querySelectorAll('[data-arkui-comp="Text"]').length;
+    const aFirst = performance.now() - t0;
+    let r0 = performance.now();
+    let clickSyncMs = 0;
+    btn.click();
+    clickSyncMs = performance.now() - r0;
+    for (let i = 0; i < 600 && countEl.textContent !== 'count=1'; i++) await tick();
+    const aRerender = performance.now() - r0;
+
+    // ═══ B：编译器目标形态（手写 c()/m()/p()）═══
+    let bFirst = 0, bRerender = 0, bDyn, btnB;
+    {
+      t0 = performance.now();
+      const col = document.createElement('div');
+      col.style.cssText = 'display:flex;flex-direction:column;gap:4px;width:100%;height:100%;padding:8px;box-sizing:border-box';
+      btnB = document.createElement('button');
+      btnB.textContent = 'inc'; btnB.id = 'btn-inc-b';
+      const cnt = document.createElement('div'); cnt.id = 'perf-count-b'; cnt.textContent = 'count=0';
+      col.appendChild(btnB); col.appendChild(cnt);
+      for (let i = 0; i < 30; i++) { const r = document.createElement('div'); r.textContent = 'row ' + i; col.appendChild(r); }
+      rootB.appendChild(col);
+      bDyn = cnt;
+      bFirst = performance.now() - t0;
+    }
+    {
+      const st = { count: 0 };
+      const p = (s) => { bDyn.textContent = 'count=' + s.count; };   // p()：只写动态节点
+      btnB.onclick = () => { st.count++; p(st); };
+      let r = performance.now();
+      btnB.click();
+      for (let i = 0; i < 600 && bDyn.textContent !== 'count=1'; i++) await tick();
+      bRerender = performance.now() - r;
+    }
+
+    // ═══ C：理论地板（裸 textContent 写入，单次均摊）═══
+    const probe = document.createElement('div');
+    document.body.appendChild(probe);
+    let c0 = performance.now();
+    for (let i = 0; i < 100; i++) probe.textContent = 'count=' + i;
+    const cPerOp = (performance.now() - c0) / 100;
+
+    const ratio = (x, y) => (y > 0 ? F(x / y) : '∞');
+    lines.push('PERF2 a_first_ms=' + F(aFirst) + ' a_rerender_ms=' + F(aRerender) +
+      ' b_first_ms=' + F(bFirst) + ' b_rerender_ms=' + F(bRerender) +
+      ' c_textcontent_ms=' + F(cPerOp) + ' click_sync_ms=' + F(clickSyncMs) + ' rows=' + rowsA);
+    lines.push('  A 基线(当前运行时)    首渲染 ' + F(aFirst) + 'ms   rerender ' + F(aRerender) + 'ms   （click 同步段 ' + F(clickSyncMs) + 'ms）');
+    lines.push('  B 编译器目标形态      首渲染 ' + F(bFirst) + 'ms   rerender ' + F(bRerender) + 'ms');
+    lines.push('  C 地板(裸 textContent) 单次 ' + F(cPerOp) + 'ms');
+    lines.push('  ==> rerender 上限空间 A/B = ' + ratio(aRerender, bRerender) + 'x ；A/C = ' + ratio(aRerender, cPerOp) + 'x');
+    lines.push('  ==> 首渲染上限空间 A/B = ' + ratio(aFirst, bFirst) + 'x');
+
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    document.title = 'PASS';   // harness 以 title=PASS/FAIL 为完成信号（与正式用例一致）
+  })();
+  </script>
+</body>
+</html>

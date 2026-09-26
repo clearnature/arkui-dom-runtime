@@ -314,9 +314,10 @@ case "${1:-index}" in
     run_one batchverify "$(src_of pages/BatchVerifyDemo.ts)" build/batchverify-module.js test/batch-verify.html \
       "--cjs --register BatchVerifyDemo" || rc=1
     echo
-    # R68：性能基线（浏览器端 virtual-time 下数字仅冒烟，权威数字在 Electron 端）
-    run_one perfdemo "$(src_of pages/PerfDemo.ts)" build/perfdemo-module.js test/perfdemo.html \
-      "--cjs --register PerfDemo" || rc=1
+    # R68：性能基线——不进浏览器 all：virtual-time 下时钟不可信且是竞态红点，
+    # 权威测量在 Electron 端（electron/run.sh all）。需要冒烟时手动：bash run.sh perfdemo
+    # run_one perfdemo "$(src_of pages/PerfDemo.ts)" build/perfdemo-module.js test/perfdemo.html \
+    #   "--cjs --register PerfDemo" || rc=1
     echo
     run_one measure "$(src_of pages/Measure.ts)" build/measure.js test/measure.html || rc=1
     echo

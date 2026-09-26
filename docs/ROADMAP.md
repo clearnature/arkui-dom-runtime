@@ -1305,6 +1305,41 @@ runtime-only 结构组。
 
 ---
 
+### R69 — 模板编译器手工 spike：上限实测 + 两个改向情报 ✅（2026-09-26）
+
+**内容**：编译器立项前的前置验证。同一页面（PerfDemo 语义）三种执行形态在同一环境
+（headless Chrome 真实时钟、setTimeout 轮询，三轮）对比：A 当前运行时基线（真编译产物走
+ViewPU 协议）/ B 编译器目标形态（手写 c()/m()/p()：静态 DOM 一次建 + 动态绑定直写）/
+C 地板（裸 textContent）。`test/perfspike.html`（实验页，不进门禁）。
+
+**结果（三轮实测）**：
+
+| 形态 | 首渲染 | rerender |
+|---|---|---|
+| A 当前运行时 | 4.8–6.2ms | 1.1–32.8ms |
+| B 编译器目标形态 | 0.1–0.3ms | 0.1–0.2ms |
+| C 裸 textContent | — | ~0.005ms/次 |
+
+**判定：编译器方向成立**——首渲染上限空间 20–60x（立项假设 10x 保守成立）、rerender 上限
+空间 11–270x（假设 50x 在带宽内）。
+
+**两个改向情报（比验证本身更值钱）**：
+
+1. **rerender 的大头是调度管道，不是计算**：A 的 click 同步段仅 0.4–0.6ms（状态置脏+派发），
+   文本更新落在后续 tick——12.8ms（R68 Electron 基线）主要是异步调度延迟。**第一刀应是
+   rerender 调度路径优化（同步化/微任务化），比模板编译器更便宜**，且编译器削不掉这块。
+2. **首渲染 125.5ms 里 DOM 构建只占 ~6ms**：spike 里 A 的纯 DOM 构建 4.8–6.2ms，即
+   R68 基线的大头是**启动/模块装载开销**（CJS 包装 eval、运行时初始化、首帧调度）——
+   编译器对首渲染的收益被启动开销封顶，启动优化是独立（可能更优先）的战场。
+
+**方法论沉淀**：headless 无 virtual-time 时 rAF 不被驱动（等待永久挂起）——测量页轮询用
+`setTimeout(0)`；electron harness 直调需 cwd=electron/ 且 app 参数=该目录；实验页完成信号
+`document.title='PASS'` 与正式用例一致。
+
+**触及**：`test/perfspike.html`（新，实验页不进 gate）、`docs/ROADMAP.md`（本节）
+
+---
+
 ## P3 布局引擎
 
 ### ~~R13 — 数据可视化类：`Progress` / `Gauge` / `DataPanel` / `Rating`~~ ✅ 已完成
