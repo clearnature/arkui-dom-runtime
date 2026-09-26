@@ -1471,6 +1471,32 @@ ForEach 重入路径从未生效**：`observeComponentCreation2` 里 `elmtId = +
 
 ---
 
+### R78 — 编译器深化基准：重属性大树 3.8x + 优化器 v1.1 对抗修复 ✅（2026-09-26）
+
+**内容**：编译器深化首片。AttrHeavyDemo（100 行 × 10 静态属性、嵌套 Row+双 Text、
+304 节点 / ~1006 条属性语句）+ `test/attrheavy.html` 三口径（首渲染/单点动态/批量翻转），
+门禁走优化管线（--optimize + R76 行复用 + R75 守卫全开）。
+
+**验收**：`bash electron/run.sh attrheavy`（4 条断言，含"单点动态 flush < 批量 flush"的
+依赖追踪正确性断言）双门禁 Electron 侧通过。基线（Electron 实测，2026-09-26）：
+首渲染同步 11.2ms（304 节点 ~1006 属性）/ **单点动态 flush 1.0ms / 批量翻转 flush 2.2ms**。
+
+**A/B（同页无优化 vs 优化，flush 权威口径）**：批量翻转 **8.4 → 2.2ms ≈ 3.8x**
+（每行 0.084 → 0.022ms）；单点动态 1.1 → 1.0ms（依赖追踪与优化器正交，符合预期）。
+深化构成：R75 属性守卫（跳过 ~1000 条静态重放）+ R76 行复用（不拆不建）。
+
+**优化器 v1.1（对抗自检修复）**：v1 分类器只认 `this` 引用——行属性依赖 itemGen
+**闭包参数**（如 `.fontSize(it.length)`）会被误判静态守卫。v1.1 沿作用域链收集全部
+参数名，语句引用任一即判动态（保守方向）。修复后两基准回归持平（本页无该形态，
+数字不变），边界闭合。头注释与坑记录同步。
+
+**触及**：`harmony-proj/.../AttrHeavyDemo.ets`（新）+ `main_pages.json`、
+`fixtures/pages/AttrHeavyDemo.ts`（固化）、`test/attrheavy.html`（新）、
+`electron/run.sh`（--optimize 管线接线）、`tools/arkui-optimizer.mjs`（v1.1）、
+`tools/stats.mjs`（PERF5 采集）、`docs/ROADMAP.md`（本节）
+
+---
+
 ## P3 布局引擎
 
 ### ~~R13 — 数据可视化类：`Progress` / `Gauge` / `DataPanel` / `Rating`~~ ✅ 已完成

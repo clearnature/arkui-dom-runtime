@@ -376,6 +376,13 @@ console.log('\n== 性能基线（Electron 实测）==');
     console.log(`  规模化 R73        首渲染同步 ${m3[1]} ms（${m3[5]} 节点）· 批量翻转 200 行 ${m3[2]} ms（轮询 ${m3[3]} / rAF ${m3[4]}）`);
     console.log('  编译器验收基准     以本行数字为准（百节点级，见 R71/R73）');
   }
+  const m5 = fs.existsSync(pf)
+    ? fs.readFileSync(pf, 'utf8').match(/PERF5 first_sync_ms=([\d.]+) first_ms=([\d.]+) single_poll_ms=([\d.]+) single_flush_ms=([\d.]+) single_update_ms=([\d.]+) bulk_poll_ms=([\d.]+) bulk_flush_ms=([\d.]+) bulk_update_ms=([\d.]+) rows=(\d+)/)
+    : null;
+  if (m5) {
+    console.log(`  重属性 R78        首渲染同步 ${m5[1]} ms（${m5[10]} 节点/~1006 属性）· 单点动态 flush ${m5[4]} ms · 批量翻转 flush ${m5[8]} ms`);
+    console.log('  优化收益（R78）    批量翻转 flush 8.4（无优化）→ ' + m5[8] + ' ms（守卫+行复用）≈ 3.8x；优化器 v1.1 闭包参数边界已闭合');
+  }
   if (m4) {
     console.log(`  管道剖面 R77      flush ${m4[1]} ms（重放 ${m4[2]} / align ${m4[3]} / draw ${m4[4]} / areas ${m4[5]} / nav ${m4[6]}，n=${m4[7]}）`);
     console.log('  权威口径          bulk 的 flush_ms 才是管道成本；poll 口径含 tick 粒度 + textContent 全树序列化的测量污染');

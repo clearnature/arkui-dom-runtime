@@ -42,6 +42,7 @@
         "pages/RichVideoDemo",
         "pages/BatchVerifyDemo",
         "pages/PerfDemo",
-        "pages/PerfBigDemo"
+        "pages/PerfBigDemo",
+        "pages/AttrHeavyDemo"
     ]
 }
