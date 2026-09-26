@@ -89,7 +89,10 @@ const HANDWRITTEN = ['Text', 'Button', 'Column', 'Row', 'Stack', 'List', 'ListIt
   'Navigator', 'Option', 'PageTransitionEnter', 'PageTransitionExit', 'PatternLock',
   'Repeat', 'RichText', 'ScrollBar', 'ScrollMotion', 'Section', 'SelectionContainer',
   'Sheet', 'SpringMotion', 'SpringProp', 'SymbolGlyph', 'SymbolSpan', 'ToolBarItem',
-  'UIPickerComponent', 'UnionEffectContainer', 'Web', 'WithTheme', 'XComponentNode'];
+  'UIPickerComponent', 'UnionEffectContainer', 'Web', 'WithTheme', 'XComponentNode',
+  // R84：platform 分片真语义（骨架转真，10 个；其余 23 个平台特定保持骨架）
+  'ArcSwiper', 'ArcListItem', 'ArcScrollBar', 'ArcAlphabetIndexer', 'DotMatrix',
+  'MediaCachedImage', 'LocationButton', 'PasteButton', 'SaveButton', 'Skeleton2d'];
 const CONTROL_FLOW = ['If', 'ForEach', 'LazyForEach'];   // 不在 149 注册表内，单独实现
 
 const gen = read('runtime/generated-components.js');

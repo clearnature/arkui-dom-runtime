@@ -1717,13 +1717,13 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
 ```
 == 组件库 ==
   ets-loader 注册名    149
-  手写实现（真布局语义）115：Text Button Column Row Stack List ListItem RelativeContainer Tabs TabContent Swiper Navigation NavDestination Progress Gauge DataPanel Rating Circle Ellipse Rect Line Path Polygon Polyline Shape Checkbox Radio Toggle Slider Badge Counter Divider Marquee Select Menu MenuItem Canvas XComponent Flex Span LoadingProgress Blank Stepper StepperItem Image Scroll ImageAnimator ListItemGroup Refresh DatePicker TimePicker WaterFlow FlowItem CalendarPicker TextPicker Grid GridItem TextClock TextTimer AlphabetIndexer RichEditor Video SideBarContainer RowSplit ColumnSplit GridRow GridCol TextInput TextArea Search Hyperlink QRCode Panel DynamicLayout LazyColumnLayout LazyDynamicLayout LazyVGridLayout LazyVWaterFlowLayout Animator Calendar CheckboxGroup ColorPicker ColorPickerDialog ContainerReader ContainerSpan FolderStack FrictionMotion GeometryView GridContainer ImageSpan IndicatorComponent MenuItemGroup NavRouter Navigator Option PageTransitionEnter PageTransitionExit PatternLock Repeat RichText ScrollBar ScrollMotion Section SelectionContainer Sheet SpringMotion SpringProp SymbolGlyph SymbolSpan ToolBarItem UIPickerComponent UnionEffectContainer Web WithTheme XComponentNode
+  手写实现（真布局语义）125：Text Button Column Row Stack List ListItem RelativeContainer Tabs TabContent Swiper Navigation NavDestination Progress Gauge DataPanel Rating Circle Ellipse Rect Line Path Polygon Polyline Shape Checkbox Radio Toggle Slider Badge Counter Divider Marquee Select Menu MenuItem Canvas XComponent Flex Span LoadingProgress Blank Stepper StepperItem Image Scroll ImageAnimator ListItemGroup Refresh DatePicker TimePicker WaterFlow FlowItem CalendarPicker TextPicker Grid GridItem TextClock TextTimer AlphabetIndexer RichEditor Video SideBarContainer RowSplit ColumnSplit GridRow GridCol TextInput TextArea Search Hyperlink QRCode Panel DynamicLayout LazyColumnLayout LazyDynamicLayout LazyVGridLayout LazyVWaterFlowLayout Animator Calendar CheckboxGroup ColorPicker ColorPickerDialog ContainerReader ContainerSpan FolderStack FrictionMotion GeometryView GridContainer ImageSpan IndicatorComponent MenuItemGroup NavRouter Navigator Option PageTransitionEnter PageTransitionExit PatternLock Repeat RichText ScrollBar ScrollMotion Section SelectionContainer Sheet SpringMotion SpringProp SymbolGlyph SymbolSpan ToolBarItem UIPickerComponent UnionEffectContainer Web WithTheme XComponentNode ArcSwiper ArcListItem ArcScrollBar ArcAlphabetIndexer DotMatrix MediaCachedImage LocationButton PasteButton SaveButton Skeleton2d
   控制流宏（非组件）    3：If ForEach LazyForEach
   骨架·有 DOM 画像     1（容器 1 / 叶子 0）
-  骨架·仅 data-*       33
+  骨架·仅 data-*       23
   ⇒ 可建出的组件名      149 / 149
   原生输入类控件       0
-  属性元数据总数       180（平均 1.2／组件，最多 LocationButton=20）
+  属性元数据总数       76（平均 0.5／组件，最多 ArcList=19）
 
 == 运行时 API ==
   global 导出        401 个
@@ -1749,24 +1749,24 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   fixtures 转换产物  72 个：AlphabetIndexerDemo AnimDemo AnimatorDemo AsyncIO AttrHeavyDemo BatchFuncDemo BatchLayoutDemo BatchMediaDemo BatchVerifyDemo CalendarPickerDemo Callee CanvasDemo DatePickerDemo Detail DrawDemo GestureDemo GestureGroupDemo GridDemo GridRowDemo Home ImageDemo Index InputDemo Layout Lazy LazyVar ListGroupDemo MeasArea MeasImage MeasNotify Measure MediaDemo NavBarDemo NavDemo NavShimDemo NavTransDemo NetFile Observe PanelDemo PerfBigDemo PerfDemo PickerDemo PopDemo PromptAct Provide QrDemo RefreshDemo RelDemo Rich RichVideoDemo ScrollDemo ShapeDemo ShowDemo SideBarDemo SmallDemo SplitDemo StepDemo Stress1kDemo SwiperDemo TabsGrid TextDemo TextMeasure TextPickerDemo TextTimeDemo TimePickerDemo TransitionDemo UiContextDemo V2 WaterFlowDemo Widgets WindowDemo XCompDemo
 
 == 性能基线（Electron 实测）==
-  首渲染            125.7 ms（33 节点：Column+Button+Text+ForEach×30）
-  最小 rerender     3.2 ms（@State 计数脏区单 Text，rAF 口径）
-  rerender 管道     1.6 ms / 1 tick（setTimeout 轮询口径，R70）
+  首渲染            101.7 ms（33 节点：Column+Button+Text+ForEach×30）
+  最小 rerender     10.9 ms（@State 计数脏区单 Text，rAF 口径）
+  rerender 管道     1.5 ms / 1 tick（setTimeout 轮询口径，R70）
   微任务底噪        0.00 ms
   行数              31
-  剖面 R71          loadRoute 同步 4.1 ms（require 0.3）· raf1 0.2 / raf2 121.4 ms（offscreen 首帧）
-  脚本 eval         runtime 18.1 / generated 17.4 / shims 16.7 / module 16.4 ms（计时起点之前）
+  剖面 R71          loadRoute 同步 3.5 ms（require 0.1）· raf1 0.2 / raf2 98.0 ms（offscreen 首帧）
+  脚本 eval         runtime 20.8 / generated 19.7 / shims 19.0 / module 18.7 ms（计时起点之前）
   判定              框架同步构建 3.5ms 无大头；"首渲染"=脚本 eval + offscreen 首帧（非框架成本）
-  千节点 R79        首渲染同步 19.2 ms（undefined 节点/~3500 属性，亚线性）· 单点 flush 2.7 ms · 批量翻转 flush 6.0 ms
+  千节点 R79        首渲染同步 19.6 ms（undefined 节点/~3500 属性，亚线性）· 单点 flush 2.9 ms · 批量翻转 flush 6.2 ms
   规模曲线          203→4.8 / 304→11.2 / 1055→19.0 ms（创建路径亚线性）；行复用+守卫千节点级保持
 
 == 体积（源码，不含产物/Electron 运行时）==
   runtime          971.8 KB
   runtime(src)     979.3 KB
   test             806.9 KB
-  tools            77.2 KB
+  tools            77.4 KB
   electron(src)    37.2 KB
-  docs             709.1 KB
+  docs             709.2 KB
   fixtures         498.3 KB
 
 == 逐文件（文档"文件职责"表的来源）==
@@ -1776,7 +1776,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   tools/extract.mjs                        6793 B  6.6 KB
   tools/gen-components.mjs                 7775 B  7.6 KB
   tools/serve.py                           3887 B  3.8 KB
-  tools/stats.mjs                         21797 B  21.3 KB
+  tools/stats.mjs                         22064 B  21.5 KB
   tools/assert-counts.mjs                  7476 B  7.3 KB
   tools/preflight.mjs                      5422 B  5.3 KB
   tools/check-all.sh                       4053 B  4.0 KB
@@ -1789,7 +1789,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   .gitignore                                757 B  0.7 KB
   README.md                              157245 B  153.6 KB
   THIRD-PARTY-NOTICES.md                  10718 B  10.5 KB
-  docs/ARCHITECTURE.md                   160663 B  156.9 KB
+  docs/ARCHITECTURE.md                   160785 B  157.0 KB
   docs/CAPABILITY.md                      61786 B  60.3 KB
   docs/DEVELOPING.md                      67182 B  65.6 KB
   docs/ROADMAP.md                        177284 B  173.1 KB
