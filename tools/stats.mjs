@@ -369,9 +369,16 @@ console.log('\n== 性能基线（Electron 实测）==');
   const m3 = fs.existsSync(pf)
     ? fs.readFileSync(pf, 'utf8').match(/PERF3 first_sync_ms=([\d.]+) first_ms=([\d.]+) bulk_poll_ms=([\d.]+) bulk_raf_ms=([\d.]+) rows=(\d+)/)
     : null;
+  const m4 = fs.existsSync(pf)
+    ? fs.readFileSync(pf, 'utf8').match(/PERF4 flush_ms=([\d.]+) update_ms=([\d.]+) align_ms=([\d.]+) draw_ms=([\d.]+) areas_ms=([\d.]+) nav_ms=([\d.]+) flush_n=(\d+)/)
+    : null;
   if (m3) {
     console.log(`  规模化 R73        首渲染同步 ${m3[1]} ms（${m3[5]} 节点）· 批量翻转 200 行 ${m3[2]} ms（轮询 ${m3[3]} / rAF ${m3[4]}）`);
     console.log('  编译器验收基准     以本行数字为准（百节点级，见 R71/R73）');
+  }
+  if (m4) {
+    console.log(`  管道剖面 R77      flush ${m4[1]} ms（重放 ${m4[2]} / align ${m4[3]} / draw ${m4[4]} / areas ${m4[5]} / nav ${m4[6]}，n=${m4[7]}）`);
+    console.log('  权威口径          bulk 的 flush_ms 才是管道成本；poll 口径含 tick 粒度 + textContent 全树序列化的测量污染');
   }
 }
 

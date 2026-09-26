@@ -43,6 +43,7 @@
     const rowEls = root.querySelectorAll('[data-arkui-comp="Text"]');
     const probeRow = rowEls[6];
     probeRow.__reuseProbe = 'r76';
+    { const P = globalThis.__arkui_dom_perf; P.flushMs = 0; P.updateMs = 0; P.alignMs = 0; P.drawMs = 0; P.areasMs = 0; P.navMs = 0; P.n = 0; }  // 只测本轮
     const r0 = performance.now();
     btn.click();
     for (let i = 0; i < 600; i++) { await tick(); if (countEl && root.textContent.indexOf('ROW 199') >= 0) break; }
@@ -54,6 +55,13 @@
     btn.click();
     for (let i = 0; i < 600; i++) { await raf(); if (root.textContent.indexOf('row 199') >= 0) break; }
     const bulkRafMs = performance.now() - r1;
+
+    // R77：运行时剖面（本轮 flush 的分段耗时；用后清零）
+    const P = globalThis.__arkui_dom_perf;
+    lines.push('PERF4 flush_ms=' + P.flushMs.toFixed(1) + ' update_ms=' + P.updateMs.toFixed(1) +
+      ' align_ms=' + P.alignMs.toFixed(1) + ' draw_ms=' + P.drawMs.toFixed(1) +
+      ' areas_ms=' + P.areasMs.toFixed(1) + ' nav_ms=' + P.navMs.toFixed(1) + ' flush_n=' + P.n);
+    P.flushMs = 0; P.updateMs = 0; P.alignMs = 0; P.drawMs = 0; P.areasMs = 0; P.navMs = 0; P.n = 0;
 
     lines.push('PERF3 first_sync_ms=' + syncMs.toFixed(1) + ' first_ms=' + firstMs.toFixed(1) +
       ' bulk_poll_ms=' + bulkPollMs.toFixed(1) + ' bulk_raf_ms=' + bulkRafMs.toFixed(1) + ' rows=' + rows);

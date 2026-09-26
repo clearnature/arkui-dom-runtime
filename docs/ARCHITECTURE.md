@@ -1749,32 +1749,32 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   fixtures 转换产物  68 个：AlphabetIndexerDemo AnimDemo AnimatorDemo AsyncIO BatchFuncDemo BatchLayoutDemo BatchMediaDemo BatchVerifyDemo CalendarPickerDemo Callee CanvasDemo DatePickerDemo Detail DrawDemo GestureDemo GestureGroupDemo GridDemo GridRowDemo Home ImageDemo Index InputDemo Layout Lazy LazyVar ListGroupDemo MeasArea MeasImage MeasNotify Measure MediaDemo NavBarDemo NavDemo NavShimDemo NavTransDemo NetFile Observe PanelDemo PerfBigDemo PerfDemo PopDemo PromptAct Provide QrDemo RefreshDemo RelDemo Rich RichVideoDemo ScrollDemo ShapeDemo ShowDemo SideBarDemo SmallDemo SplitDemo StepDemo SwiperDemo TabsGrid TextDemo TextMeasure TextPickerDemo TextTimeDemo TimePickerDemo TransitionDemo UiContextDemo V2 WaterFlowDemo Widgets XCompDemo
 
 == 性能基线（Electron 实测）==
-  首渲染            128.5 ms（33 节点：Column+Button+Text+ForEach×30）
-  最小 rerender     6.9 ms（@State 计数脏区单 Text，rAF 口径）
-  rerender 管道     1.1 ms / 1 tick（setTimeout 轮询口径，R70）
+  首渲染            125.1 ms（33 节点：Column+Button+Text+ForEach×30）
+  最小 rerender     3.3 ms（@State 计数脏区单 Text，rAF 口径）
+  rerender 管道     1.7 ms / 1 tick（setTimeout 轮询口径，R70）
   微任务底噪        0.00 ms
   行数              31
-  剖面 R71          loadRoute 同步 3.5 ms（require 0.2）· raf1 0.2 / raf2 124.8 ms（offscreen 首帧）
-  脚本 eval         runtime 19.3 / generated 18.4 / shims 17.9 / module 17.2 ms（计时起点之前）
+  剖面 R71          loadRoute 同步 3.6 ms（require 0.2）· raf1 0.2 / raf2 121.3 ms（offscreen 首帧）
+  脚本 eval         runtime 20.1 / generated 19.4 / shims 18.8 / module 18.5 ms（计时起点之前）
   判定              框架同步构建 3.5ms 无大头；"首渲染"=脚本 eval + offscreen 首帧（非框架成本）
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          945.2 KB
-  runtime(src)     960.1 KB
-  test             790.6 KB
-  tools            66.6 KB
+  runtime          946.2 KB
+  runtime(src)     961.0 KB
+  test             791.3 KB
+  tools            67.2 KB
   electron(src)    31.4 KB
   docs             696.0 KB
   fixtures         477.6 KB
 
 == 逐文件（文档"文件职责"表的来源）==
-  runtime/arkui-dom-runtime.js           708121 B  691.5 KB
+  runtime/arkui-dom-runtime.js           709072 B  692.5 KB
   runtime/generated-components.js         57617 B  56.3 KB
   runtime/ohos-shims.js                   61848 B  60.4 KB
   tools/extract.mjs                        6793 B  6.6 KB
   tools/gen-components.mjs                 7775 B  7.6 KB
   tools/serve.py                           3887 B  3.8 KB
-  tools/stats.mjs                         19802 B  19.3 KB
+  tools/stats.mjs                         20346 B  19.9 KB
   tools/assert-counts.mjs                  7476 B  7.3 KB
   tools/preflight.mjs                      5422 B  5.3 KB
   tools/check-all.sh                       4053 B  4.0 KB
@@ -1815,7 +1815,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   runtime/src/image.js                     7000 B  6.8 KB
   runtime/src/input.js                    10663 B  10.4 KB
   runtime/src/layout.js                   18442 B  18.0 KB
-  runtime/src/main.js                    113471 B  110.8 KB
+  runtime/src/main.js                    114422 B  111.7 KB
   runtime/src/nav.js                      56681 B  55.4 KB
   runtime/src/panel.js                     3360 B  3.3 KB
   runtime/src/popup.js                     5042 B  4.9 KB
@@ -1943,7 +1943,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   test/observe.html                        6232 B  6.1 KB
   test/opfs-probe.html                     1620 B  1.6 KB
   test/paneldemo.html                      4428 B  4.3 KB
-  test/perfbig.html                        3615 B  3.5 KB
+  test/perfbig.html                        4275 B  4.2 KB
   test/perfdemo.html                       4635 B  4.5 KB
   test/perfspike.html                      4578 B  4.5 KB
   test/popdemo.html                        5709 B  5.6 KB

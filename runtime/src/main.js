@@ -34,6 +34,11 @@
   /** @type {any} */ let currentNodeElmtId = null;    // 正在执行哪个 elmtId 的渲染（依赖追踪 + If/ForEach 归属）
   /** @type {any} */ let rootNode = null;
   /** @type {number} */ let viewSeq = 0;
+  // R77：重渲染剖面（永久轻量——每 flush 4 对 performance.now）。页面可读
+  // __arkui_dom_perf 看单轮管道分布（flushMs 总账 + update/align/draw/areas/nav 分段）。
+  // 用前先清零：const P=__arkui_dom_perf; Object.keys(P).forEach(k=>P[k]=0);
+  (/** @type {any} */ (global)).__arkui_dom_perf =
+    { flushMs: 0, updateMs: 0, alignMs: 0, drawMs: 0, areasMs: 0, navMs: 0, n: 0 };
   // R76：ForEach 行级复用——key 稳定的行重入时沿用旧 elmtId（isFirst=false → 静态守卫生效、
   // 节点走复用+contentUpdater），而不是拆掉重建。rowReentryIds 是当前重入行的既有 elmtId 名册
   //（按行内组件出现序），rowReentryCursor 是行内游标。
@@ -290,15 +295,19 @@
     Promise.resolve().then(() => { flushScheduled = false; flush(); });
   }
   function flush() {
+    const pf0 = performance.now();
     const ids = [...dirty].sort((a, b) => a - b);
     dirty.clear();
     for (const id of ids) rerenderElmt(id);
+    const P = (/** @type {any} */ (global)).__arkui_dom_perf;
+    if (P) { P.flushMs += performance.now() - pf0; P.n++; }
   }
 
   /** @param {number} elmtId */
   function rerenderElmt(elmtId) {
     const rec = elmtRecords.get(elmtId);
     if (!rec || !rec.updateFunc || !rec.node) return;
+    const pf0 = performance.now();
     const savedStack = ViewStackProcessor.snapshot();
     const savedElmt = currentNodeElmtId;
     ViewStackProcessor.restore([]);
@@ -311,9 +320,20 @@
     // 而不是"整个子树"或"碰巧同名的所有元素"（谁变了就动谁）
     if (animWindow && rec.node) animWindow.els.push(rec.node);
     syncAlignRules(rootNode);          // 重渲染后几何可能变，重新同步
+    const pf1 = performance.now();
     syncDrawings(rootNode);            // 弧形要用真实尺寸重画
+    const pf2 = performance.now();
     syncAreas(rootNode);               // onAreaChange 要按真实几何派发
+    const pf3 = performance.now();
     syncNavChrome(rootNode);           // 标题栏高度/分栏宽度/Auto 模式判定都要真实尺寸
+    const pf4 = performance.now();
+    const P = (/** @type {any} */ (global)).__arkui_dom_perf;
+    if (P) {
+      P.updateMs += pf1 - pf0;
+      P.drawMs += pf2 - pf1;
+      P.areasMs += pf3 - pf2;
+      P.navMs += pf4 - pf3;
+    }
   }
 
   // 分支切换/列表重建后，把已脱离 DOM 树的记录清掉，避免 elmtId 泄漏与重复节点
