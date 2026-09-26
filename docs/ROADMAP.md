@@ -1340,6 +1340,32 @@ C 地板（裸 textContent）。`test/perfspike.html`（实验页，不进门禁
 
 ---
 
+### R70 — rerender 管道细测：12.8ms 是假象，目标修正为启动开销 ✅（2026-09-26）
+
+**内容**：R69 情报①说"rerender 大头是调度管道"——本片用更细的口径验证后再动手。
+perfdemo 增加三种口径：rAF 轮询（原口径）、setTimeout(0) 轮询（管道真实延迟，含 tick 数）、
+裸微任务延迟（环境底噪）；stats/§6 同步扩列。
+
+**实测（Electron）**：`rerender_poll_ms=1.5 / poll_ticks=1 / micro_ms=0.00`——**管道已经是
+微任务级**：click 置脏 → `Promise.resolve().then` flush → 文本更新，一个轮询 tick 内完成。
+同轮 rAF 口径测得 3.2ms（R68 当时的 12.8ms 同理）——**那是 offscreen 帧间隔量化，不是
+管道成本**。
+
+**判定：调度代码一行不动**（先测量后实现的胜利：前提被测量推翻，实现就不该发生）。
+R69 情报①修正为：*"rerender 的 rAF 口径数字不可信，管道本身已达标"*。
+
+**真正的目标收敛到首渲染 124ms**：DOM 构建仅 ~6ms（R69 实测），其余 ~118ms 在
+启动/模块装载（CJS 包装 eval、运行时初始化、loadRoute 首帧）——这是下一个切片。
+
+**顺带的伸缩性备忘**：`rerenderElmt` 每次重渲染后做 `syncAlignRules/syncDrawings/
+syncAreas(rootNode)` 三次全树走查——33 节点下无感（1.5ms 内），大树是潜在热点，
+列入大树优化时的首批剖面对象。
+
+**触及**：`test/perfdemo.html`（三口径）、`tools/stats.mjs`（性能段扩列）、
+`docs/ROADMAP.md`（本节）
+
+---
+
 ## P3 布局引擎
 
 ### ~~R13 — 数据可视化类：`Progress` / `Gauge` / `DataPanel` / `Rating`~~ ✅ 已完成

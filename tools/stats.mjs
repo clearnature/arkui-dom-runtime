@@ -347,12 +347,14 @@ console.log('\n== 性能基线（Electron 实测）==');
 {
   const pf = path.join(ROOT, 'build/perfdemo.result.txt');
   const m = fs.existsSync(pf)
-    ? fs.readFileSync(pf, 'utf8').match(/PERF first_render_ms=([\d.]+) rerender_ms=([\d.]+) rows=(\d+)/)
+    ? fs.readFileSync(pf, 'utf8').match(/PERF first_render_ms=([\d.]+) rerender_ms=([\d.]+) rerender_poll_ms=([\d.]+) poll_ticks=(\d+) micro_ms=([\d.]+) rows=(\d+)/)
     : null;
   if (m) {
     console.log(`  首渲染            ${m[1]} ms（33 节点：Column+Button+Text+ForEach×30）`);
-    console.log(`  最小 rerender     ${m[2]} ms（@State 计数脏区单 Text）`);
-    console.log(`  行数              ${m[3]}`);
+    console.log(`  最小 rerender     ${m[2]} ms（@State 计数脏区单 Text，rAF 口径）`);
+    console.log(`  rerender 管道     ${m[3]} ms / ${m[4]} tick（setTimeout 轮询口径，R70）`);
+    console.log(`  微任务底噪        ${m[5]} ms`);
+    console.log(`  行数              ${m[6]}`);
   } else {
     console.log('  （未测：build/perfdemo.result.txt 不存在——先跑 bash electron/run.sh perfdemo）');
   }

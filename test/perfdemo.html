@@ -47,8 +47,25 @@
     const rerenderMs = performance.now() - r0;
     const okUpdate = countEl.textContent === 'count=1';
 
+    // 细粒度口径（R70）：setTimeout(0) 轮询测管道延迟（rAF 口径被帧间隔量化）+
+    // 第二次 click 的微任务口径；micro_ms = 裸微任务延迟（环境底噪）
+    const micro0 = performance.now();
+    await Promise.resolve();
+    const microMs = performance.now() - micro0;
+    const p0 = performance.now();
+    btn.click();
+    let pollTicks = 0;
+    for (let i = 0; i < 600; i++) {
+      await new Promise((r) => setTimeout(r, 0));
+      pollTicks++;
+      if (countEl.textContent === 'count=2') break;
+    }
+    const rerenderPollMs = performance.now() - p0;
+
     // 数字行（非 PASS，供 stats.mjs 从 build/*.result.txt 采集；仅 Electron 端时钟可信）
-    lines.push('PERF first_render_ms=' + firstMs.toFixed(1) + ' rerender_ms=' + rerenderMs.toFixed(1) + ' rows=' + rows);
+    lines.push('PERF first_render_ms=' + firstMs.toFixed(1) + ' rerender_ms=' + rerenderMs.toFixed(1) +
+      ' rerender_poll_ms=' + rerenderPollMs.toFixed(1) + ' poll_ticks=' + pollTicks +
+      ' micro_ms=' + microMs.toFixed(2) + ' rows=' + rows);
 
     // 阈值刻意宽松：只拦灾难性回退，不做机器间精确比较（基线数字进 §6 供趋势观察）
     check(firstMs < 500, 'perf 首渲染 33 节点 < 500ms（实测 ' + firstMs.toFixed(1) + 'ms）');
