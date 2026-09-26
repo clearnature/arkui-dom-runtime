@@ -561,6 +561,10 @@ case "${1:-index}" in
     # R89：deviceInfo/i18n/pasteboard（浏览器端走 navigator/内存兜底）
     run_one sysapi "$(src_of entryability/EntryAbility.ts)" build/sysapi-module.js test/sysapi.html \
       "--cjs --register EntryAbility" ;;
+  batchbehavior)
+    # R93：行为断言二批（input/media/nav 关键语义）
+    run_one batchbehavior "$(src_of entryability/EntryAbility.ts)" build/batchbehavior-module.js test/batchbehavior.html \
+      "--cjs --register EntryAbility" ;;
   notesdemo)
     # R90：NotesDemo 千节点端到端（两模块：Detail 预提取 + Home 主注册）
     "$NODE" tools/extract.mjs "$(src_of pages/NotesDetail.ts)" build/notesdetail-module.js --cjs --register NotesDetail >/dev/null || exit 1

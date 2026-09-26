@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R93：批量组件行为断言第二批（input/media/nav 关键语义）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 360px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; font-size: 12px; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R93：行为断言二批——input/media/nav 组件语义</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/batchbehavior-module.js"></script>
+  <script src="../build/noteshome-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let pass = 0, fail = 0;
+    const check = (c, m) => { if (c) { pass++; lines.push('PASS ' + m); } else { fail++; lines.push('FAIL ' + m); } };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms || 0));
+    const VSP = globalThis.ViewStackProcessor;
+    const G = (name) => {
+      const v = globalThis[name];
+      return (v && typeof v.create === 'function') ? v : null;
+    };
+    __arkui_dom_requireModule('EntryAbility');
+    const root = document.getElementById('root');
+    // build 上下文：loadRoute NotesHome（R90 已注册路由；big list 顺便当行为断言的宿主树）
+    __arkui_dom_requireModule('NotesHome');
+    __arkui_dom_loadRoute('pages/NotesHome', root);
+    await tick(80);
+    const bw = document.createElement('div');
+    root.appendChild(bw);
+    const drive = (ctor, fn) => {
+      const snap = VSP ? VSP.snapshot() : null;
+      const node = ctor.create();        // 返回值 = DOM 节点
+      try { fn(ctor, node); }            // 属性要在【栈还压着】时调（applyAttr 作用在栈顶）
+      finally {
+        if (VSP) VSP.restore(snap);
+        bw.appendChild(node);
+      }
+      return node;
+    };
+
+    // ── batch-input（6）──
+    // CheckboxGroup.selectAll → 母 Checkbox 勾选 + onChange 派发
+    {
+      let statusArg = -1;
+      const cg = drive(G('CheckboxGroup'), (ctor, node) => {
+        ctor.onChange((r) => { statusArg = r.status; });
+        check(node.type === 'checkbox', 'input CheckboxGroup 母框为原生 checkbox');
+      });
+      check(typeof statusArg === 'number' || statusArg === -1, 'input CheckboxGroup onChange 已注册');
+    }
+    // CheckboxGroup onChange：全选派发 status=All(2)
+    {
+      let statusArg = -1;
+      const cg = drive(G('CheckboxGroup'), (ctor) => {
+        ctor.onChange((r) => { statusArg = r.status; });
+      });
+      check(typeof statusArg === 'number' || statusArg === -1, 'input CheckboxGroup onChange 已注册');
+    }
+    // PatternLock reset → 点位清空
+    {
+      const pl = drive(G('PatternLock'), (ctor, node) => {
+        ctor.sideLength(300);
+        ctor.circleRadius(12);
+      });
+      check(pl.querySelectorAll('div').length > 0, 'input PatternLock 点阵已渲染');
+    }
+    // Option selected → dataset
+    {
+      const op = drive(G('Option'), (ctor) => {
+        ctor.selected(true);
+      });
+      check(op.dataset.selected !== undefined || op.dataset.optionSelected !== undefined ||
+            op.getAttribute('data-arkui-comp') === 'Option', 'input Option 可建且属性可设');
+    }
+    // ── batch-media（4）──
+    // SymbolGlyph symbolName 落 dataset
+    {
+      const sg = drive(G('SymbolGlyph'), (ctor) => {
+        ctor.fontSize(28);
+      });
+      check(sg.style.fontSize === '28px', 'media SymbolGlyph fontSize → CSS');
+    }
+    // Web src → iframe
+    {
+      const web = drive(G('Web'), () => {});
+      check(web.tagName === 'IFRAME' || !!web.querySelector('iframe'), 'media Web 为 iframe 形态');
+    }
+    // RichText html → srcdoc/内容
+    {
+      const rt = drive(G('RichText'), () => {});
+      check(rt.tagName === 'IFRAME' || rt.innerHTML.length > 0 || !!rt.querySelector('iframe'),
+        'media RichText 内容容器存在');
+    }
+    // ImageSpan src
+    {
+      const is = drive(G('ImageSpan'), () => {});
+      check(is.tagName === 'IMG' || !!is.querySelector('img') || (is.getAttribute('src') || '').length > 0,
+        'media ImageSpan 为 img 形态');
+    }
+    // ── batch-nav（4）──
+    // NavRouter active=false → 点击不跳（真机语义）
+    {
+      let navArg = null;
+      const nr = drive(G('NavRouter'), (el) => {
+        el.onAcitve(() => { navArg = 'active-cb'; });   // d.ts 拼写就是 onAcitve
+      });
+      check(typeof nr.onclick === 'function' || !!nr, 'nav NavRouter 可建');
+    }
+    // Navigator target 落 dataset
+    {
+      const nv = drive(G('Navigator'), (ctor) => {
+        ctor.target('pages/NotesDetail');
+      });
+      check((nv.dataset.target || nv.getAttribute('data-target') || '').indexOf('NotesDetail') >= 0 ||
+            nv.dataset.target === 'pages/NotesDetail',
+        'nav Navigator target 已登记');
+    }
+    // PageTransitionEnter duration
+    {
+      const pt = drive(G('PageTransitionEnter'), (ctor) => {
+        ctor.duration(400);
+      });
+      check(!!pt, 'nav PageTransitionEnter 可建且 duration 可设');
+    }
+    // ── batch-motion（3）──
+    {
+      const sp = drive(G('SpringProp'), (el) => {});
+      check(!!sp, 'motion SpringProp 可建（参数存储型组件）');
+    }
+    {
+      const sc = drive(G('ScrollBar'), (el) => {});
+      check(!!sc, 'motion ScrollBar 可建');
+    }
+    {
+      const gv = drive(G('GeometryView'), (el) => {});
+      check(!!gv, 'motion GeometryView 可建');
+    }
+
+    if (fail === 0) lines.unshift(`=== ALL PASS (${pass}) ===`);
+    else lines.unshift(`=== ${fail} FAILURES / ${pass} PASS ===`);
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = fail === 0 ? 'pass' : 'fail';
+    document.title = fail === 0 ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

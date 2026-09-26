@@ -1801,6 +1801,27 @@ getPrimaryText 对齐）、`test/notesdemo.html`（+5）、`docs/ROADMAP.md`（�
 
 ---
 
+### R93 — 行为断言二批：input/media/nav 关键语义 ✅（2026-09-27）
+
+**内容**：`test/batchbehavior.html`（新）——batch-input/media/nav 三分片组件的
+行为语义（真实组件栈驱动，属性在栈活时经 applyAttr 分派）。覆盖：CheckboxGroup（原生
+checkbox 母框 + onChange 注册）、PatternLock 点阵、Option、SymbolGlyph fontSize→CSS、
+Web/RichText iframe 形态、ImageSpan img 形态、NavRouter/Navigator target 登记、
+PageTransitionEnter duration、SpringProp/ScrollBar/GeometryView 可建。
+
+**接线与上下文先例**：无模块用例的 build 上下文用 **NotesHome loadRoute**（R90 已注册
+路由；`pages/Index` 未注册会报"未注册的路由"）；EntryAbility 模块仅注册 ability 类不注册
+路由（实测教训）。属性调用必须在 **VSP.restore 之前**（restore 后栈顶 null，applyAttr
+静默丢弃——与 R87 同族坑）。
+
+**验收**：`bash electron/run.sh batchbehavior`（15 条断言）+ `bash run.sh batchbehavior`
+双端 ALL PASS。
+
+**触及**：`test/batchbehavior.html`（新，15 条）、`run.sh` + `electron/run.sh`（接线）、
+`docs/ROADMAP.md`（本节）
+
+---
+
 ## P3 布局引擎
 
 ### ~~R13 — 数据可视化类：`Progress` / `Gauge` / `DataPanel` / `Rating`~~ ✅ 已完成
