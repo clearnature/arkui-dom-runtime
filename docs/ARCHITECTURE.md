@@ -1,6 +1,7 @@
 # ArkUI DOM Runtime —— 架构
 
 > 一句话：**不重写 ArkTS 编译器、不重写 ArkUI，只重写"渲染目标"**——把官方 `ets-loader` 的转换产物当作输入，实现它要求的运行时 API，输出 DOM。
+> 身份：**ArkTS 桌面应用引擎（Linux）**——DOM 是渲染底座，不是产品身份（§1 定位声明）。
 
 本文是权威文档。数字来自 `node tools/stats.mjs`（`--json` 可机器可读），可用命令复现，不是估计值。
 
@@ -17,10 +18,29 @@ ArmonyOS 应用的 UI 代码是 `.ets`（ArkTS）。官方工具链在 **Linux �
                                                           Windows / macOS / 设备
 ```
 
-Linux 上 `es2abc`（= `es2panda`）**完全可用**，`ark_aot_compiler` 也可用（需补两个库，见 `arkts-shim`）。真正缺的是**执行 `ViewPU` 那一侧**：
+Linux 上 `es2abc`（= `es2panda`）**完全可用**，`ark_aot_compiler` 也可用（需补两个库，见 `arkts-shim`）。执行 `ViewPU` 那一侧的现状（**R24 收口实证**，详见 §4.21）：
 
-- `libarkui` / `RichPreviewer` 是闭源的，Linux 预览器的入口被一段 45 字节的桩代码挡住（已用 `objdump` 独立验证）
-- ArkVM 有，但 ArkUI 的 native 实现没有 Linux 构建
+- SDK 预览器内含完整原生栈（libace_compatible / libark_jsruntime / Skia / GLFW），逆向出启动契约后真机点火：**GLFW 窗口真实创建，随后 SIGSEGV 崩在 Rosen 窗口管理层（RSUIContextManager）**，发生在用户 JS 装载之前——独立运行依赖 DevEco Studio 宿主，且窗口层在同代际间即重构（开源源码直连 GLFW，SDK 26 二进制走 Rosen Window），ABI 不承诺稳定
+- ArkVM（libark_jsruntime.so）有 Linux 构建，但 ArkUI 原生栈没有独立于 IDE 的可分发形态
+
+（早期"预览器入口被 45 字节桩挡住"的判断已被上述实证取代。）
+
+**定位声明（2026-09-26）**：本项目的身份是 **ArkTS 桌面应用引擎（Linux）**——不是"把应用变成网页"的 web 兼容层，"web 形态"是过窄的读法。产品身份由三样决定：
+
+1. **源语言**：ArkTS，静态强类型，编译期检查走官方编译链（门禁第 5 步就是真编译器 typecheck）；
+2. **框架语义**：ArkUI 的状态管理（依赖追踪细粒度更新，无 VDOM diff）、布局、事件时序——与真机 C++ pattern 逐条对照（仓库 1000+ 断言即对照记录）；
+3. **目标矩阵**：**一份源码 → 鸿蒙设备（官方运行时）+ Linux 桌面（本引擎）+ 浏览器（免费附带）**。
+
+DOM/Chromium 是被**委托**的渲染底座，与 Flutter 委托 Skia、React Native 委托平台控件同类——机械上"底下是 web"不构成"它就是 web"的论证。分工是清醒的：**渲染保真外包给成熟底座（Blink 排版/合成/输入是二十年工程积累），语义保真自研**——这正是全部投入集中在语义层的原因。两条落地路径中 **Electron 是主目标**（桌面应用的验收形态：窗口/文件/打包按桌面应用验收），浏览器是零成本副产品，不作验收基准。
+
+| | ArkTS + 本引擎 | Electron + React/Vue | Flutter |
+|---|---|---|---|
+| 语言与类型 | ArkTS 静态强类型，编译期门禁 | JS/TS，类型外挂 | Dart 静态强类型 |
+| 状态管理 | 依赖追踪细粒度更新（@State/@Link/@Watch 编译期接线），**无 VDOM diff** | VDOM diff + 手动 memo | 声明式 + 自建更新管线 |
+| 组件语义 | 与真机 ArkUI 逐条对照 | 各自为政，无设备语义 | 自成体系（Material/Cupertino） |
+| 目标矩阵 | 设备 + Linux 桌面 + 浏览器，同一份源码 | Web/桌面，与设备无关 | 三端皆有，Dart、无鸿蒙语义 |
+
+换框架才能换目标——换的不是渲染层，是**源代码**；这就是本引擎与"成熟 Web 方案"的分工边界：壳与渲染用成熟的（Electron/Chromium），语言体验与组件语义这一层没有成熟品，本引擎即产品本体。
 
 **本项目的边界**：
 
@@ -29,7 +49,7 @@ Linux 上 `es2abc`（= `es2panda`）**完全可用**，`ark_aot_compiler` 也可
 | 消费 `ets-loader` 的**产物**（文本 `.ts`） | 重新实现 `.ets` → `.ts` 的转换 |
 | 实现产物要求的**运行时 API**（`ViewPU` 等） | 实现 ArkVM / `.abc` 解释器 |
 | 把布局/状态/事件落到 **DOM + CSS** | 像素级复刻原生渲染（字体、光栅化） |
-| 桌面（Electron）与浏览器两条落地路径 | 设备 / 模拟器（那是官方路径） |
+| **桌面（Electron，主目标）**与浏览器（免费副产品）两条落地路径 | 设备 / 模拟器（那是官方路径） |
 
 **为什么不重写编译器**：`ets-loader` 就是 ArkTS 的**规范**。它是官方实现，包含所有语法糖的降级规则（`@State`→状态对象、`build()`→`observeComponentCreation2`、`struct`→`class extends ViewPU`）。从产物反推运行时，等价于"以官方编译器为规范做兼容实现"——比自行发明一套语义可靠得多，也保证**同一份 `.ets` 在设备和 Electron 上是同一套语义**。
 
@@ -1734,7 +1754,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   test             774.0 KB
   tools            59.3 KB
   electron(src)    25.9 KB
-  docs             662.6 KB
+  docs             665.3 KB
   fixtures         463.3 KB
 
 == 逐文件（文档"文件职责"表的来源）==
@@ -1757,7 +1777,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   .gitignore                                757 B  0.7 KB
   README.md                              157245 B  153.6 KB
   THIRD-PARTY-NOTICES.md                  10718 B  10.5 KB
-  docs/ARCHITECTURE.md                   155905 B  152.3 KB
+  docs/ARCHITECTURE.md                   158640 B  154.9 KB
   docs/CAPABILITY.md                      61086 B  59.7 KB
   docs/DEVELOPING.md                      66055 B  64.5 KB
   docs/ROADMAP.md                        151583 B  148.0 KB
