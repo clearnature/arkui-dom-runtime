@@ -1415,6 +1415,28 @@ perfdemo 双模式（file:// 与 http）`ELECTRON_RESULT: PASS`；打包工具�
 
 ---
 
+### R73 — 规模化基线：203 节点首渲染 4.8ms，200 行批量翻转 16.1ms ✅（2026-09-26）
+
+**内容**：为模板编译器建立"百节点级"验收基准（R71 结论的落地）。PerfBigDemo
+（200 行 ForEach + 翻转按钮，index key 走原地更新路径）+ `test/perfbig.html` 双口径测量。
+
+**验收**：`bash electron/run.sh perfbig`（3 条断言）双门禁 Electron 侧通过（与 perfdemo 同
+理由不进浏览器 all）。基线（Electron 实测，2026-09-26）：**首渲染同步段 4.8ms**（203 节点）/
+**批量翻转 16.1ms**（200 行，~0.08ms/行，轮询口径）。
+
+**两个立项级结论**：
+1. **创建路径规模化近乎平坦**：33 节点 3.5ms → 203 节点 4.8ms——运行时 create 路径不是
+   瓶颈，"框架慢"的叙事正式终结；
+2. **批量更新是真实的可优化面**：200 行原地翻转 16.1ms ≈ 0.08ms/行（ForEach itemGen 重入 +
+   属性重放），手写 c()/m()/p() 形态预期 1–2ms——**~8–16x 就是编译器在规模化场景的验收
+   空间**，以 `perfbig` 的 PERF3 行为准。
+
+**触及**：`harmony-proj/entry/src/main/ets/pages/PerfBigDemo.ets`（新）+ `main_pages.json`、
+`fixtures/pages/PerfBigDemo.ts`（固化）、`test/perfbig.html`（新）、`electron/run.sh`（接线）、
+`tools/stats.mjs`（PERF3 采集）、`docs/ROADMAP.md`（本节）
+
+---
+
 ## P3 布局引擎
 
 ### ~~R13 — 数据可视化类：`Progress` / `Gauge` / `DataPanel` / `Rating`~~ ✅ 已完成

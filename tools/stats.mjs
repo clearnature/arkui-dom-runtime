@@ -366,6 +366,13 @@ console.log('\n== 性能基线（Electron 实测）==');
     console.log(`  脚本 eval         runtime ${m2[5]} / generated ${m2[6]} / shims ${m2[7]} / module ${m2[8]} ms（计时起点之前）`);
     console.log('  判定              框架同步构建 3.5ms 无大头；"首渲染"=脚本 eval + offscreen 首帧（非框架成本）');
   }
+  const m3 = fs.existsSync(pf)
+    ? fs.readFileSync(pf, 'utf8').match(/PERF3 first_sync_ms=([\d.]+) first_ms=([\d.]+) bulk_poll_ms=([\d.]+) bulk_raf_ms=([\d.]+) rows=(\d+)/)
+    : null;
+  if (m3) {
+    console.log(`  规模化 R73        首渲染同步 ${m3[1]} ms（${m3[5]} 节点）· 批量翻转 200 行 ${m3[2]} ms（轮询 ${m3[3]} / rAF ${m3[4]}）`);
+    console.log('  编译器验收基准     以本行数字为准（百节点级，见 R71/R73）');
+  }
 }
 
 console.log('\n== 体积（源码，不含产物/Electron 运行时）==');

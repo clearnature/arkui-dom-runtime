@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R73：规模化基线（203 节点首渲染 + 200 行批量翻转）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 360px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; font-size: 12px; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R73：规模化基线——百节点首渲染 + ForEach 原地批量更新</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/perfbig-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let pass = 0, fail = 0;
+    const check = (c, m) => { if (c) { pass++; lines.push('PASS ' + m); } else { fail++; lines.push('FAIL ' + m); } };
+    const raf = () => new Promise((r) => requestAnimationFrame(r));
+    const tick = () => new Promise((r) => setTimeout(r, 0));
+    const root = document.getElementById('root');
+
+    // 首渲染：双口径（同步段=框架真实成本；rAF 口径=含 offscreen 首帧）
+    const t0 = performance.now();
+    __arkui_dom_requireModule('PerfBigDemo');
+    __arkui_dom_loadRoute('pages/PerfBigDemo', root);
+    const syncMs = performance.now() - t0;
+    await raf(); await raf();
+    const firstMs = performance.now() - t0;
+    const countEl = root.querySelector('#big-count');
+    const btn = root.querySelector('#btn-toggle');
+    const rows = root.querySelectorAll('[data-arkui-comp="Text"]').length;
+
+    // 批量翻转：200 行原地更新（index key），双口径
+    const r0 = performance.now();
+    btn.click();
+    for (let i = 0; i < 600; i++) { await tick(); if (countEl && root.textContent.indexOf('ROW 199') >= 0) break; }
+    const bulkPollMs = performance.now() - r0;
+    const okBulk = root.textContent.indexOf('ROW 199') >= 0 && root.textContent.indexOf('ROW 0') >= 0;
+    const r1 = performance.now();
+    btn.click();
+    for (let i = 0; i < 600; i++) { await raf(); if (root.textContent.indexOf('row 199') >= 0) break; }
+    const bulkRafMs = performance.now() - r1;
+
+    lines.push('PERF3 first_sync_ms=' + syncMs.toFixed(1) + ' first_ms=' + firstMs.toFixed(1) +
+      ' bulk_poll_ms=' + bulkPollMs.toFixed(1) + ' bulk_raf_ms=' + bulkRafMs.toFixed(1) + ' rows=' + rows);
+
+    check(syncMs < 150, 'perf 首渲染同步段 203 节点 < 150ms（实测 ' + syncMs.toFixed(1) + 'ms）');
+    check(bulkPollMs < 200, 'perf 200 行批量翻转 < 200ms（实测 ' + bulkPollMs.toFixed(1) + 'ms）');
+    check(okBulk && rows >= 201, 'perf 正确性 ROW 0/199 就位且 Text 行数 ' + rows + ' ≥ 201');
+
+    if (fail === 0) lines.unshift(`=== ALL PASS (${pass}) ===`);
+    else lines.unshift(`=== ${fail} FAILURES / ${pass} PASS ===`);
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = fail === 0 ? 'pass' : 'fail';
+    document.title = fail === 0 ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>
