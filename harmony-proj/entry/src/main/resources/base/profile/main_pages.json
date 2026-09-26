@@ -43,6 +43,7 @@
         "pages/BatchVerifyDemo",
         "pages/PerfDemo",
         "pages/PerfBigDemo",
-        "pages/AttrHeavyDemo"
+        "pages/AttrHeavyDemo",
+        "pages/Stress1kDemo"
     ]
 }

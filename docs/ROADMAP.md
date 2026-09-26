@@ -1497,6 +1497,32 @@ ForEach 重入路径从未生效**：`observeComponentCreation2` 里 `elmtId = +
 
 ---
 
+### R79 — 深化三候选收官：千节点压测 + 破坏验证补账 + 路径甲判定 ✅（2026-09-26）
+
+**① 千节点压测**：Stress1kDemo（350 行 × 10 属性，1055 节点 / ~3500 条属性语句）。
+**验收**：`bash electron/run.sh stress1k`（5 条断言）Electron 侧通过。
+Electron 实测：**首渲染同步 19.0ms**（规模曲线
+203→4.8 / 304→11.2 / 1055→19.0，**亚线性**）· 单点动态 flush 1.4ms · **批量翻转 flush
+3.3ms**（0.009ms/行）· 行复用同一性在千节点级保持。PERF6 进 §6。
+
+**② 破坏验证补账（两处，各验红→还原绿）**：
+- 破坏 A（perfbig）：`keysStable` 强制 false（回退重建语义）→ **行复用同一性断言红**；
+- 破坏 B（attrheavy/runtime）：`markDependentsDirty` 置空（依赖跟踪断链）→ **3 FAIL**
+  （单点/批量退化 0.0ms、正确性红、bulk 轮询等满 2507ms）。依赖追踪的最小更新语义有了
+  直接的红线证据。
+
+**③ 路径甲判定：不立项**。数据：R75 守卫已消除静态重放；依赖追踪已行级粒度
+（单点 flush 1.0-1.4ms vs 批量 2.2-3.3ms）；attr 级再分裂的边际收益在 µs 级（低于
+测量噪声）。真正的剩余热点是**全树走查 O(N)/次**（R77 剖面：align/draw/areas/nav
+≈ 1.6ms@304 节点），千节点级 ~2-3ms——若未来出现大树高频更新场景，立项
+"增量走查"（只走查脏节点的子树），当前不投。
+
+**触及**：`harmony-proj/.../Stress1kDemo.ets`（新）+ `main_pages.json`、
+`fixtures/pages/Stress1kDemo.ts`（固化）、`test/stress1k.html`（新）、
+`electron/run.sh`（接线）、`tools/stats.mjs`（PERF6）、`docs/ROADMAP.md`（本节）
+
+---
+
 ## P3 布局引擎
 
 ### ~~R13 — 数据可视化类：`Progress` / `Gauge` / `DataPanel` / `Rating`~~ ✅ 已完成

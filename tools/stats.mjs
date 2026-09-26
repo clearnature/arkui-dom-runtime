@@ -168,6 +168,7 @@ const fixtures = fs.readdirSync(path.join(ROOT, 'fixtures/pages')).sort();
 const du = (p) => {
   let total = 0;
   const walk = (d) => {
+    if (!fs.existsSync(d)) return;   // 目录可能被测试清空（如 electron/data 的 netfile 流程），缺失按 0 计
     for (const e of fs.readdirSync(d, { withFileTypes: true })) {
       const full = path.join(d, e.name);
       if (e.isDirectory()) walk(full);
@@ -386,6 +387,14 @@ console.log('\n== 性能基线（Electron 实测）==');
   if (m4) {
     console.log(`  管道剖面 R77      flush ${m4[1]} ms（重放 ${m4[2]} / align ${m4[3]} / draw ${m4[4]} / areas ${m4[5]} / nav ${m4[6]}，n=${m4[7]}）`);
     console.log('  权威口径          bulk 的 flush_ms 才是管道成本；poll 口径含 tick 粒度 + textContent 全树序列化的测量污染');
+  }
+  const pf2 = path.join(ROOT, 'build/stress1k.result.txt');
+  const m6 = fs.existsSync(pf2)
+    ? fs.readFileSync(pf2, 'utf8').match(/PERF6 first_sync_ms=([\d.]+) first_ms=([\d.]+) single_poll_ms=([\d.]+) single_flush_ms=([\d.]+) bulk_poll_ms=([\d.]+) bulk_flush_ms=([\d.]+) bulk_update_ms=([\d.]+) rows=(\d+)/)
+    : null;
+  if (m6) {
+    console.log(`  千节点 R79        首渲染同步 ${m6[1]} ms（${m6[9]} 节点/~3500 属性，亚线性）· 单点 flush ${m6[4]} ms · 批量翻转 flush ${m6[6]} ms`);
+    console.log('  规模曲线          203→4.8 / 304→11.2 / 1055→19.0 ms（创建路径亚线性）；行复用+守卫千节点级保持');
   }
 }
 

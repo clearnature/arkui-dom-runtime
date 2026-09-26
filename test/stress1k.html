@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R79：千节点压测（1055 节点 / ~3500 条属性语句）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 360px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; font-size: 12px; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R79：千节点压测——350 行 × 10 属性（嵌套 Row+双 Text）+ 单点动态</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/stress1k-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let pass = 0, fail = 0;
+    const check = (c, m) => { if (c) { pass++; lines.push('PASS ' + m); } else { fail++; lines.push('FAIL ' + m); } };
+    const raf = () => new Promise((r) => requestAnimationFrame(r));
+    const tick = () => new Promise((r) => setTimeout(r, 0));
+    const root = document.getElementById('root');
+    const resetPerf = () => { const P = globalThis.__arkui_dom_perf; P.flushMs = 0; P.updateMs = 0; P.alignMs = 0; P.drawMs = 0; P.areasMs = 0; P.navMs = 0; P.n = 0; return P; };
+
+    // 首渲染
+    const t0 = performance.now();
+    __arkui_dom_requireModule('Stress1kDemo');
+    __arkui_dom_loadRoute('pages/Stress1kDemo', root);
+    const syncMs = performance.now() - t0;
+    await raf(); await raf();
+    const firstMs = performance.now() - t0;
+    const btnFlip = root.querySelector('#btn-flip');
+    const btnHot = root.querySelector('#btn-hot');
+    const hotEl = root.querySelector('#hot-count');
+    const rowEls = root.querySelectorAll('[data-arkui-comp="Row"]').length;
+    root.querySelectorAll('[data-arkui-comp="Row"]')[5].__reuseProbe = 'r79';
+
+    // ① 单点动态
+    let P = resetPerf();
+    btnHot.click();
+    let r0 = performance.now();
+    for (let i = 0; i < 800; i++) { await tick(); if (hotEl.textContent === 'hot=1') break; }
+    const singlePollMs = performance.now() - r0;
+    const single = { flushMs: P.flushMs, updateMs: P.updateMs, n: P.n };
+
+    // ② 批量翻转 350 行（行复用 + 守卫）
+    P = resetPerf();
+    btnFlip.click();
+    r0 = performance.now();
+    for (let i = 0; i < 800; i++) { await tick(); if (root.textContent.indexOf('ITEM 349') >= 0) break; }
+    const bulkPollMs = performance.now() - r0;
+    const bulk = { flushMs: P.flushMs, updateMs: P.updateMs, n: P.n };
+
+    // ③ 行复用同一性（R76 语义在千节点级保持）
+    const rowEls2 = root.querySelectorAll('[data-arkui-comp="Row"]');
+    const okReuse = !!(rowEls2[5] && rowEls2[5].__reuseProbe === 'r79');
+
+    lines.push('PERF6 first_sync_ms=' + syncMs.toFixed(1) + ' first_ms=' + firstMs.toFixed(1) +
+      ' single_poll_ms=' + singlePollMs.toFixed(1) + ' single_flush_ms=' + single.flushMs.toFixed(1) +
+      ' bulk_poll_ms=' + bulkPollMs.toFixed(1) + ' bulk_flush_ms=' + bulk.flushMs.toFixed(1) +
+      ' bulk_update_ms=' + bulk.updateMs.toFixed(1) + ' rows=' + rowEls);
+
+    check(syncMs < 400, 'perf 首渲染同步段 1055 节点 < 400ms（实测 ' + syncMs.toFixed(1) + 'ms）');
+    check(bulkPollMs < 500, 'perf 千节点批量翻转 < 500ms（实测 ' + bulkPollMs.toFixed(1) + 'ms）');
+    check(hotEl.textContent === 'hot=1' && root.textContent.indexOf('ITEM 349') >= 0 && rowEls === 350,
+      'perf 正确性 hot=1 / ITEM 349 就位 / Row 行数 ' + rowEls + ' = 350');
+    check(single.flushMs < bulk.flushMs, 'perf 单点动态 flush ' + single.flushMs.toFixed(1) +
+      'ms < 批量 ' + bulk.flushMs.toFixed(1) + 'ms（依赖追踪最小更新）');
+    check(okReuse, 'perf R76 行复用：千节点级翻转前后 DOM 节点同一');
+
+    if (fail === 0) lines.unshift(`=== ALL PASS (${pass}) ===`);
+    else lines.unshift(`=== ${fail} FAILURES / ${pass} PASS ===`);
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = fail === 0 ? 'pass' : 'fail';
+    document.title = fail === 0 ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>
