@@ -86,6 +86,9 @@ app.whenReady().then(async () => {
       // R83 v2：全屏/常亮/属性查询
       case 'setFullScreen': win.setFullScreen(!!args[0]); return true;
       case 'setKeepScreenOn': win.setAlwaysOnTop(!!args[0]); return true;   // 桌面无屏幕常亮语义，降级为置顶
+      case 'maximize': win.maximize(); return true;
+      case 'restore': win.restore(); return true;
+      case 'isFocused': return win.isFocused();
       case 'getProperties': {
         const [w, h] = win.getSize();
         const [x, y] = win.getPosition();
@@ -99,6 +102,17 @@ app.whenReady().then(async () => {
     const [w, h] = win.getSize();
     if (!win.webContents.isDestroyed()) win.webContents.send('arkui:window:resized', { width: w, height: h });
   });
+  // R91：2in1 窗口生命周期 → WindowEventType 数值（@ohos.window.d.ts:2954-2986：
+  // SHOWN=1/ACTIVE=2/INACTIVE=3/HIDDEN=4/DESTROYED=7）。maximize/unmaximize 不是
+  // WindowEventType（是 WindowMode 域），由 getProperties().isMaximized 回读覆盖。
+  const sendWinEvent = (type) => {
+    if (!win.webContents.isDestroyed()) win.webContents.send('arkui:window:event', { type });
+  };
+  win.on('show', () => sendWinEvent(1));
+  win.on('hide', () => sendWinEvent(4));
+  win.on('minimize', () => sendWinEvent(4));   // Linux 上 minimize 不一定派发 hide——补发 HIDDEN
+  win.on('focus', () => sendWinEvent(2));
+  win.on('blur', () => sendWinEvent(3));
 
   // ── @ohos:file.picker 的主进程执行端（R82，桌面线）──
   // 渲染侧垫片（DocumentViewPicker/PhotoViewPicker）经 preload 的 fileDialog 调到这里。

@@ -399,24 +399,43 @@
       if (!(await probeWindowBridge())) { winWarn('setKeepScreenOn'); return; }
       await globalThis.electronAPI.windowOp('setKeepScreenOn', !!keepScreenOn);
     }
-    /** getWindowProperties v1：主窗尺寸真实值；avoidArea 空实现（桌面单窗无系统栏，记日志） */
+    /** getWindowProperties：主窗尺寸真实值；浏览器降级返回文档化 stub（页面链上 p.isFullScreen 不断） */
     async getWindowProperties() {
-      if (!(await probeWindowBridge())) { winWarn('getWindowProperties'); return null; }
+      if (!(await probeWindowBridge())) {
+        winWarn('getWindowProperties');
+        return { width: 0, height: 0, x: 0, y: 0, isFullScreen: false, isMaximized: false };
+      }
       return globalThis.electronAPI.windowOp('getProperties');
     }
     async getWindowAvoidArea(type) {
       logs.push(`[window] getWindowAvoidArea(type=${type})：桌面单窗无系统栏，返回全 0 区`);
       return { visibleRect: { left: 0, top: 0, right: 0, bottom: 0 }, boundingRect: { left: 0, top: 0, right: 0, bottom: 0 } };
     }
+    // ── v3（R91）：2in1（鸿蒙 PC）窗口语义校准 ──
+    // d.ts 实名：maximize(presentation?) / restore() / isFocused() / on('windowEvent')。
+    // WindowEventType 数值照 @ohos.window.d.ts:2954-2986（SHOWN=1/ACTIVE=2/INACTIVE=3/HIDDEN=4/DESTROYED=7）。
+    async maximize() { if (await probeWindowBridge()) await globalThis.electronAPI.windowOp('maximize'); else winWarn('maximize'); }
+    async restore() { if (await probeWindowBridge()) await globalThis.electronAPI.windowOp('restore'); else winWarn('restore'); }
+    async isFocused() {
+      if (!(await probeWindowBridge())) return false;
+      return globalThis.electronAPI.windowOp('isFocused');
+    }
     on(type, cb) {
-      if (type !== 'windowSizeChange') { winWarn("on('" + type + "')—— v1 只支持 windowSizeChange"); return; }
-      windowSizeListeners.add(cb);
+      if (type === 'windowSizeChange') { windowSizeListeners.add(cb); return; }
+      if (type === 'windowEvent') { windowEventListeners.add(cb); return; }
+      winWarn("on('" + type + "')—— 已支持 windowSizeChange/windowEvent（2in1 面）");
     }
     off(type, cb) {
-      if (type !== 'windowSizeChange') return;
-      windowSizeListeners.delete(cb);
+      if (type === 'windowSizeChange') windowSizeListeners.delete(cb);
+      if (type === 'windowEvent') windowEventListeners.delete(cb);
     }
   }
+
+  // WindowEventType（@ohos.window.d.ts:2954-2986）——2in1 窗口生命周期数值，垫片暴露供页面/测试用
+  const WINDOW_EVENT_TYPE = {
+    WINDOW_SHOWN: 1, WINDOW_ACTIVE: 2, WINDOW_INACTIVE: 3, WINDOW_HIDDEN: 4, WINDOW_DESTROYED: 7,
+  };
+  const windowEventListeners = new Set();
 
   // 主进程把 resize 事件 push 到渲染侧（preload 转发）；浏览器端永不触发
   if (globalThis.electronAPI && globalThis.electronAPI.onWindowSizeChange) {
@@ -425,10 +444,18 @@
       for (const cb of [...windowSizeListeners]) { try { cb(ev); } catch (e) {} }
     });
   }
+  // R91：窗口生命周期事件转发（WINDOW_SHOWN/ACTIVE/INACTIVE/HIDDEN 数值见 WINDOW_EVENT_TYPE）
+  if (globalThis.electronAPI && globalThis.electronAPI.onWindowEvent) {
+    globalThis.electronAPI.onWindowEvent((ev) => {
+      for (const cb of [...windowEventListeners]) { try { cb({ type: ev.type }); } catch (e) {} }
+    });
+  }
 
   define('window', {
     WindowStage: class WindowStage {},
     Window: WindowShim,
+    // R91：2in1 窗口生命周期数值（@ohos.window.d.ts:2954-2986），供页面/测试对齐断言
+    WindowEventType: WINDOW_EVENT_TYPE,
     /** getLastWindow(): Promise<Window> —— 单窗形态恒返回同一实例（Electron 主窗） */
     getLastWindow: async () => new WindowShim('main'),
     /** findWindow(id)：v1 单窗，忽略 id */

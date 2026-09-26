@@ -76,6 +76,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onWindowSizeChange: (cb) => {
     ipcRenderer.on('arkui:window:resized', (_e, size) => { try { cb(size); } catch (err) {} });
   },
+  // R91：窗口生命周期事件（主进程 BrowserWindow → WindowEventType 数值推送）
+  onWindowEvent: (cb) => {
+    ipcRenderer.on('arkui:window:event', (_e, ev) => { try { cb(ev); } catch (err) {} });
+  },
   // R82：文件对话框（@ohos:file.picker 的 Electron 侧）。可结构化克隆 options/返回，
   // 失败免疫（catch 返回 {canceled:true}——与真机"用户取消"语义同形，渲染侧无需区分错误）。
   fileDialog: async (kind, options) => {

@@ -1542,7 +1542,7 @@ Electron 实测：**首渲染同步 19.0ms**（规模曲线
 ——harness 靠窗口退出收结果，误销毁会让用例假死；② 浏览器端探测式降级（R21 先例）：
 方法存在、操作无效、记 warning，事件推送不验证。
 
-**验收**：`bash electron/run.sh windowdemo`（7 条断言，R80 时 5 条、R83 起增 v2 共 7 条）——
+**验收**：`bash electron/run.sh windowdemo`（13 条断言：R80 时 5、R83 起 7、R91 起 13）——
 垫片 Promise 链、**windowSizeChange 推送真实尺寸 600x500**（IPC 全链路实证）、
 R83 起含 `isFullScreen` 真实回读；浏览器端降级全部通过（事件推送按宿主能力跳过）。
 WindowDemo 用 kit 形式导入（`@kit.ArkUI`）过真编译器（getContext(this) 必传；
@@ -1606,7 +1606,7 @@ d.ts 返回类型，不能自造包装**。
 `getWindowProperties()` → `{width,height,x,y,isFullScreen,isMaximized}`（主进程真实值）、
 `getWindowAvoidArea`（桌面单窗无系统栏 → 全 0 区 + 日志声明，不预造假数据）。
 
-**验收**：`bash electron/run.sh windowdemo`（7 条断言，v1 5 条 + v2 2 条）——
+**验收**：`bash electron/run.sh windowdemo`（13 条断言：R83 时 7、R91 起 13）——
 `setFullScreen(true)` 后 `isFullScreen` **回读真实值**（主进程 `win.isFullScreen()`）。
 fixture 与真产物逐字节一致（diff 验证）。
 

@@ -24,7 +24,7 @@
     const lines = [];
     let pass = 0, fail = 0;
     const check = (c, m) => { if (c) { pass++; lines.push('PASS ' + m); } else { fail++; lines.push('FAIL ' + m); } };
-    const tick = () => new Promise((r) => setTimeout(r, 0));
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms || 0));
     const root = document.getElementById('root');
     const wait = async (cond, ms) => { for (let i = 0; i < ms / 10; i++) { await tick(); if (cond()) return true; } return cond(); };
     const isElectron = !!(globalThis.electronAPI && globalThis.electronAPI.windowOp);
@@ -51,7 +51,7 @@
       check(await wait(() => sizeEl.textContent === 'size=600x500', 4000),
         'window windowSizeChange 推送真实尺寸（' + sizeEl.textContent + '）');
     } else {
-      check(true, '（浏览器端无主进程桥，窗口事件推送不验证——探测式降级）');
+      check(true, '（浏览器端无主进程桥，windowSizeChange 推送不验证——探测式降级）');
     }
 
     // ③ moveTo
@@ -66,6 +66,45 @@
         'window isFullScreen 回读真实值（' + sizeEl.textContent + '）');
     } else {
       check(true, '（浏览器端无主进程桥，全屏回读不验证——探测式降级）');
+    }
+
+    // ⑤ R91：2in1 窗口语义（maximize/restore/windowEvent/isFocused/枚举对齐）
+    const winMod = __arkui_dom_require('@ohos:window');
+    check(winMod.WindowEventType &&
+      winMod.WindowEventType.WINDOW_SHOWN === 1 && winMod.WindowEventType.WINDOW_ACTIVE === 2 &&
+      winMod.WindowEventType.WINDOW_INACTIVE === 3 && winMod.WindowEventType.WINDOW_HIDDEN === 4 &&
+      winMod.WindowEventType.WINDOW_DESTROYED === 7,
+      'window WindowEventType 枚举对齐 d.ts（1/2/3/4/7）');
+    if (isElectron) {
+      const w2 = await winMod.getLastWindow();
+      const events = [];
+      w2.on('windowEvent', (ev) => { events.push(ev.type); });
+      await w2.setFullScreen(false);   // 先关 ④ 段的全屏残留（maximize/restore 在正常态校准）
+      const before = await w2.getWindowProperties();
+      await w2.maximize();
+      const pMax = await w2.getWindowProperties();
+      check(pMax && pMax.isMaximized === true, 'window maximize → isMaximized 回读真实值');
+      await w2.restore();
+      const pRest = await w2.getWindowProperties();
+      check(pRest && pRest.isMaximized === false && pRest.width === before.width,
+        'window restore → isMaximized=false 且宽度复原（' + pRest.width + '）');
+      await w2.showWindow();
+      await tick(120);   // WM 事件异步派发——立即断言会假红（Linux minimize/show 实测）
+      check(events.indexOf(winMod.WindowEventType.WINDOW_SHOWN) >= 0,
+        'window windowEvent 收到 WINDOW_SHOWN(1)（show→事件推送）');
+      await w2.minimize();
+      await tick(120);
+      check(events.indexOf(winMod.WindowEventType.WINDOW_HIDDEN) >= 0,
+        'window windowEvent 收到 WINDOW_HIDDEN(4)（minimize→hide 事件）');
+      const focused = await w2.isFocused();
+      check(typeof focused === 'boolean', 'window isFocused() 返回 boolean（环境相关不判值）');
+      await w2.showWindow();
+    } else {
+      check(true, '（浏览器端无主进程桥，2in1 窗口事件不验证——探测式降级）');
+      check(true, '（浏览器端 maximize/restore 不验证——探测式降级）');
+      check(true, '（浏览器端 windowEvent 推送不验证——探测式降级）');
+      check(true, '（浏览器端 isFocused 不验证——探测式降级）');
+      check(true, '（浏览器端 maximize 尺寸复原不验证——探测式降级）');
     }
 
     lines.push('WINLOG ' + logEl.textContent + ' size=' + sizeEl.textContent);
