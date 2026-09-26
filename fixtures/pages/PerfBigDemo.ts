@@ -89,6 +89,10 @@ class PerfBigDemo extends ViewPU {
                 const it = _item;
                 this.observeComponentCreation2((elmtId, isInitialRender) => {
                     Text.create(it);
+                    Text.fontSize(14);
+                    Text.width('90%');
+                    Text.padding(4);
+                    Text.fontColor('#333333');
                 }, Text);
                 Text.pop();
             };

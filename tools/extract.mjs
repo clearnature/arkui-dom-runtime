@@ -60,6 +60,12 @@ const result = ts.transpileModule(source, {
 
 let output = result.outputText;
 
+// R75：--optimize 静态/动态属性分裂（守卫重渲染可跳过的常量属性语句）
+if (flags.has('--optimize')) {
+  const { optimizeJs } = await import('./arkui-optimizer.mjs');
+  output = optimizeJs(output, ts);
+}
+
 // ── 状态管理装饰器前奏 ──
 // V2/V1 产物把装饰器保留成 __decorate([Local], Proto, "count", void 0) / ([Observed], Cls)
 // —— 这些名字在产物里是【自由变量】。但其中 `Event` 与浏览器全局同名，而 runtime 自己

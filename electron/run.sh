@@ -114,7 +114,7 @@ prepare() {
     richvideodemo) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/RichVideoDemo.ts" "$ROOT/build/richvideodemo-module.js" --cjs --register RichVideoDemo >/dev/null || return 1 ;;
     batchverify) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/BatchVerifyDemo.ts" "$ROOT/build/batchverify-module.js" --cjs --register BatchVerifyDemo >/dev/null || return 1 ;;
     perfdemo) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/PerfDemo.ts" "$ROOT/build/perfdemo-module.js" --cjs --register PerfDemo >/dev/null || return 1 ;;
-    perfbig) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/PerfBigDemo.ts" "$ROOT/build/perfbig-module.js" --cjs --register PerfBigDemo >/dev/null || return 1 ;;
+    perfbig) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/PerfBigDemo.ts" "$ROOT/build/perfbig-module.js" --cjs --register PerfBigDemo --optimize >/dev/null || return 1 ;;
     stepdemo) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/StepDemo.ts" "$ROOT/build/stepdemo-module.js" --cjs --register StepDemo >/dev/null || return 1 ;;
   esac
   return 0

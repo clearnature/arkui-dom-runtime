@@ -1749,29 +1749,29 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   fixtures 转换产物  68 个：AlphabetIndexerDemo AnimDemo AnimatorDemo AsyncIO BatchFuncDemo BatchLayoutDemo BatchMediaDemo BatchVerifyDemo CalendarPickerDemo Callee CanvasDemo DatePickerDemo Detail DrawDemo GestureDemo GestureGroupDemo GridDemo GridRowDemo Home ImageDemo Index InputDemo Layout Lazy LazyVar ListGroupDemo MeasArea MeasImage MeasNotify Measure MediaDemo NavBarDemo NavDemo NavShimDemo NavTransDemo NetFile Observe PanelDemo PerfBigDemo PerfDemo PopDemo PromptAct Provide QrDemo RefreshDemo RelDemo Rich RichVideoDemo ScrollDemo ShapeDemo ShowDemo SideBarDemo SmallDemo SplitDemo StepDemo SwiperDemo TabsGrid TextDemo TextMeasure TextPickerDemo TextTimeDemo TimePickerDemo TransitionDemo UiContextDemo V2 WaterFlowDemo Widgets XCompDemo
 
 == 性能基线（Electron 实测）==
-  首渲染            97.9 ms（33 节点：Column+Button+Text+ForEach×30）
-  最小 rerender     3.3 ms（@State 计数脏区单 Text，rAF 口径）
-  rerender 管道     1.7 ms / 1 tick（setTimeout 轮询口径，R70）
+  首渲染            123.0 ms（33 节点：Column+Button+Text+ForEach×30）
+  最小 rerender     3.6 ms（@State 计数脏区单 Text，rAF 口径）
+  rerender 管道     3.5 ms / 1 tick（setTimeout 轮询口径，R70）
   微任务底噪        0.00 ms
   行数              31
-  剖面 R71          loadRoute 同步 3.5 ms（require 0.2）· raf1 0.0 / raf2 94.4 ms（offscreen 首帧）
-  脚本 eval         runtime 24.3 / generated 22.2 / shims 23.0 / module 22.3 ms（计时起点之前）
+  剖面 R71          loadRoute 同步 3.7 ms（require 0.2）· raf1 110.0 / raf2 9.3 ms（offscreen 首帧）
+  脚本 eval         runtime 21.5 / generated 20.5 / shims 19.3 / module 19.7 ms（计时起点之前）
   判定              框架同步构建 3.5ms 无大头；"首渲染"=脚本 eval + offscreen 首帧（非框架成本）
 
 == 体积（源码，不含产物/Electron 运行时）==
   runtime          942.9 KB
   runtime(src)     957.8 KB
   test             790.2 KB
-  tools            61.5 KB
-  electron(src)    27.4 KB
-  docs             689.4 KB
-  fixtures         477.4 KB
+  tools            66.6 KB
+  electron(src)    31.4 KB
+  docs             693.5 KB
+  fixtures         477.6 KB
 
 == 逐文件（文档"文件职责"表的来源）==
   runtime/arkui-dom-runtime.js           705726 B  689.2 KB
   runtime/generated-components.js         57617 B  56.3 KB
   runtime/ohos-shims.js                   61848 B  60.4 KB
-  tools/extract.mjs                        6563 B  6.4 KB
+  tools/extract.mjs                        6793 B  6.6 KB
   tools/gen-components.mjs                 7775 B  7.6 KB
   tools/serve.py                           3887 B  3.8 KB
   tools/stats.mjs                         19802 B  19.3 KB
@@ -1780,14 +1780,14 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   tools/check-all.sh                       4053 B  4.0 KB
   tools/build-runtime.mjs                  5138 B  5.0 KB
   run.sh                                  30533 B  29.8 KB
-  electron/run.sh                         18165 B  17.7 KB
-  electron/main.js                         7025 B  6.9 KB
-  electron/preload.js                      1961 B  1.9 KB
+  electron/run.sh                         18176 B  17.8 KB
+  electron/main.js                         8923 B  8.7 KB
+  electron/preload.js                      4194 B  4.1 KB
   package.json                             1366 B  1.3 KB
   .gitignore                                757 B  0.7 KB
   README.md                              157245 B  153.6 KB
   THIRD-PARTY-NOTICES.md                  10718 B  10.5 KB
-  docs/ARCHITECTURE.md                   159740 B  156.0 KB
+  docs/ARCHITECTURE.md                   159742 B  156.0 KB
   docs/CAPABILITY.md                      61086 B  59.7 KB
   docs/DEVELOPING.md                      67182 B  65.6 KB
   docs/ROADMAP.md                        162984 B  159.2 KB
@@ -1872,7 +1872,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   fixtures/pages/NetFile.ts                5039 B  4.9 KB
   fixtures/pages/Observe.ts               11906 B  11.6 KB
   fixtures/pages/PanelDemo.ts              3551 B  3.5 KB
-  fixtures/pages/PerfBigDemo.ts            4013 B  3.9 KB
+  fixtures/pages/PerfBigDemo.ts            4175 B  4.1 KB
   fixtures/pages/PerfDemo.ts               3644 B  3.6 KB
   fixtures/pages/PopDemo.ts                5514 B  5.4 KB
   fixtures/pages/PromptAct.ts              6916 B  6.8 KB
