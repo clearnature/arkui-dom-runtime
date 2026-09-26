@@ -41,6 +41,16 @@ struct WindowDemo {
           this.log = this.log + 'listen;';
         });
       })
+      Button('fullscreen').id('btn-fs').onClick(() => {
+        window.getLastWindow(getContext(this)).then((w: window.Window) => {
+          return w.setFullScreen(true).then((): window.Window => w);
+        }).then((w: window.Window) => {
+          return w.getWindowProperties();
+        }).then((p: window.WindowProperties) => {
+          this.lastSize = 'fs=' + (p.isFullScreen ? '1' : '0');
+          this.log = this.log + 'fs;';
+        });
+      })
       Text('log=' + this.log).id('win-log')
       Text('size=' + this.lastSize).id('win-size')
     }

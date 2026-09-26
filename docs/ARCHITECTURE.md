@@ -1749,30 +1749,30 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   fixtures 转换产物  72 个：AlphabetIndexerDemo AnimDemo AnimatorDemo AsyncIO AttrHeavyDemo BatchFuncDemo BatchLayoutDemo BatchMediaDemo BatchVerifyDemo CalendarPickerDemo Callee CanvasDemo DatePickerDemo Detail DrawDemo GestureDemo GestureGroupDemo GridDemo GridRowDemo Home ImageDemo Index InputDemo Layout Lazy LazyVar ListGroupDemo MeasArea MeasImage MeasNotify Measure MediaDemo NavBarDemo NavDemo NavShimDemo NavTransDemo NetFile Observe PanelDemo PerfBigDemo PerfDemo PickerDemo PopDemo PromptAct Provide QrDemo RefreshDemo RelDemo Rich RichVideoDemo ScrollDemo ShapeDemo ShowDemo SideBarDemo SmallDemo SplitDemo StepDemo Stress1kDemo SwiperDemo TabsGrid TextDemo TextMeasure TextPickerDemo TextTimeDemo TimePickerDemo TransitionDemo UiContextDemo V2 WaterFlowDemo Widgets WindowDemo XCompDemo
 
 == 性能基线（Electron 实测）==
-  首渲染            115.7 ms（33 节点：Column+Button+Text+ForEach×30）
-  最小 rerender     6.1 ms（@State 计数脏区单 Text，rAF 口径）
-  rerender 管道     1.0 ms / 1 tick（setTimeout 轮询口径，R70）
+  首渲染            132.3 ms（33 节点：Column+Button+Text+ForEach×30）
+  最小 rerender     3.4 ms（@State 计数脏区单 Text，rAF 口径）
+  rerender 管道     1.6 ms / 1 tick（setTimeout 轮询口径，R70）
   微任务底噪        0.00 ms
   行数              31
-  剖面 R71          loadRoute 同步 3.5 ms（require 0.1）· raf1 0.2 / raf2 112.0 ms（offscreen 首帧）
-  脚本 eval         runtime 23.0 / generated 20.9 / shims 21.6 / module 21.0 ms（计时起点之前）
+  剖面 R71          loadRoute 同步 4.1 ms（require 0.2）· raf1 0.2 / raf2 128.0 ms（offscreen 首帧）
+  脚本 eval         runtime 23.4 / generated 21.4 / shims 22.3 / module 21.4 ms（计时起点之前）
   判定              框架同步构建 3.5ms 无大头；"首渲染"=脚本 eval + offscreen 首帧（非框架成本）
-  千节点 R79        首渲染同步 21.4 ms（undefined 节点/~3500 属性，亚线性）· 单点 flush 2.6 ms · 批量翻转 flush 6.0 ms
+  千节点 R79        首渲染同步 17.9 ms（undefined 节点/~3500 属性，亚线性）· 单点 flush 2.7 ms · 批量翻转 flush 5.8 ms
   规模曲线          203→4.8 / 304→11.2 / 1055→19.0 ms（创建路径亚线性）；行复用+守卫千节点级保持
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          952.0 KB
+  runtime          953.5 KB
   runtime(src)     961.0 KB
-  test             805.8 KB
+  test             806.2 KB
   tools            77.2 KB
-  electron(src)    36.7 KB
-  docs             704.6 KB
-  fixtures         497.6 KB
+  electron(src)    37.2 KB
+  docs             705.9 KB
+  fixtures         498.3 KB
 
 == 逐文件（文档"文件职责"表的来源）==
   runtime/arkui-dom-runtime.js           709072 B  692.5 KB
   runtime/generated-components.js         57617 B  56.3 KB
-  runtime/ohos-shims.js                   67787 B  66.2 KB
+  runtime/ohos-shims.js                   69380 B  67.8 KB
   tools/extract.mjs                        6793 B  6.6 KB
   tools/gen-components.mjs                 7775 B  7.6 KB
   tools/serve.py                           3887 B  3.8 KB
@@ -1783,7 +1783,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   tools/build-runtime.mjs                  5138 B  5.0 KB
   run.sh                                  30982 B  30.3 KB
   electron/run.sh                         19009 B  18.6 KB
-  electron/main.js                        12364 B  12.1 KB
+  electron/main.js                        12835 B  12.5 KB
   electron/preload.js                      5330 B  5.2 KB
   package.json                             1366 B  1.3 KB
   .gitignore                                757 B  0.7 KB
@@ -1792,7 +1792,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   docs/ARCHITECTURE.md                   160604 B  156.8 KB
   docs/CAPABILITY.md                      61086 B  59.7 KB
   docs/DEVELOPING.md                      67182 B  65.6 KB
-  docs/ROADMAP.md                        173435 B  169.4 KB
+  docs/ROADMAP.md                        174728 B  170.6 KB
   docs/surface-measurement.md              6496 B  6.3 KB
   docs/SESSION-2026-09-20.md              12842 B  12.5 KB
   runtime/src/.mimosa                      4096 B  4.0 KB
@@ -1906,7 +1906,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   fixtures/pages/V2.ts                    13447 B  13.1 KB
   fixtures/pages/WaterFlowDemo.ts          8060 B  7.9 KB
   fixtures/pages/Widgets.ts                4600 B  4.5 KB
-  fixtures/pages/WindowDemo.ts             4973 B  4.9 KB
+  fixtures/pages/WindowDemo.ts             5683 B  5.5 KB
   fixtures/pages/XCompDemo.ts              4086 B  4.0 KB
   test/ability.html                        4695 B  4.6 KB
   test/alphabetindexerdemo.html            4880 B  4.8 KB
@@ -1984,7 +1984,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   test/v2.html                             7235 B  7.1 KB
   test/vendor                              4096 B  4.0 KB
   test/waterflowdemo.html                  7924 B  7.7 KB
-  test/windowdemo.html                     3182 B  3.1 KB
+  test/windowdemo.html                     3678 B  3.6 KB
   test/xcompdemo.html                      4113 B  4.0 KB
 ```
 

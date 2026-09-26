@@ -83,6 +83,14 @@ app.whenReady().then(async () => {
       case 'show': win.show(); return true;
       case 'minimize': win.minimize(); return true;
       case 'destroy': if (isTestDrive) return false; win.destroy(); return true;
+      // R83 v2：全屏/常亮/属性查询
+      case 'setFullScreen': win.setFullScreen(!!args[0]); return true;
+      case 'setKeepScreenOn': win.setAlwaysOnTop(!!args[0]); return true;   // 桌面无屏幕常亮语义，降级为置顶
+      case 'getProperties': {
+        const [w, h] = win.getSize();
+        const [x, y] = win.getPosition();
+        return { width: w, height: h, x, y, isFullScreen: win.isFullScreen(), isMaximized: win.isMaximized() };
+      }
       default: return false;
     }
   });

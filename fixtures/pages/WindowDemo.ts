@@ -108,6 +108,21 @@ class WindowDemo extends ViewPU {
         }, Button);
         Button.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Button.createWithLabel('fullscreen');
+            Button.id('btn-fs');
+            Button.onClick(() => {
+                window.getLastWindow(getContext(this)).then((w: window.Window) => {
+                    return w.setFullScreen(true).then((): window.Window => w);
+                }).then((w: window.Window) => {
+                    return w.getWindowProperties();
+                }).then((p: window.WindowProperties) => {
+                    this.lastSize = 'fs=' + (p.isFullScreen ? '1' : '0');
+                    this.log = this.log + 'fs;';
+                });
+            });
+        }, Button);
+        Button.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
             Text.create('log=' + this.log);
             Text.id('win-log');
         }, Text);

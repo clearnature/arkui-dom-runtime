@@ -58,6 +58,16 @@
     click('btn-move');
     check(await wait(() => logHas('move;'), 3000), 'window moveTo(40,40) 调用完成');
 
+    // ④ R83 v2：全屏 + 属性查询（isFullScreen 回读）
+    click('btn-fs');
+    check(await wait(() => logHas('fs;'), 4000), 'window setFullScreen(true)+getWindowProperties 链式完成');
+    if (isElectron) {
+      check(await wait(() => sizeEl.textContent === 'size=fs=1', 2000),
+        'window isFullScreen 回读真实值（' + sizeEl.textContent + '）');
+    } else {
+      check(true, '（浏览器端无主进程桥，全屏回读不验证——探测式降级）');
+    }
+
     lines.push('WINLOG ' + logEl.textContent + ' size=' + sizeEl.textContent);
 
     if (fail === 0) lines.unshift(`=== ALL PASS (${pass}) ===`);

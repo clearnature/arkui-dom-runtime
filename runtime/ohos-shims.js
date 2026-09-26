@@ -295,6 +295,31 @@
     async showWindow() { if (await probeWindowBridge()) await globalThis.electronAPI.windowOp('show'); else winWarn('showWindow'); }
     async minimize() { if (await probeWindowBridge()) await globalThis.electronAPI.windowOp('minimize'); else winWarn('minimize'); }
     async destroy() { if (await probeWindowBridge()) await globalThis.electronAPI.windowOp('destroy'); else winWarn('destroy'); }
+    // ── v2（R83）：全屏/布局全屏/属性查询 ──
+    // d.ts 实名：setFullScreen(isFullScreen) / setWindowLayoutFullScreen(isLayoutFullScreen)；
+    // getWindowProperties() → WindowProperties{width,height,...,isFullScreen}。
+    async setWindowFullScreen(isFullScreen) {
+      if (!(await probeWindowBridge())) { winWarn('setWindowFullScreen'); return; }
+      await globalThis.electronAPI.windowOp('setFullScreen', !!isFullScreen);
+    }
+    async setFullScreen(isFullScreen) { return this.setWindowFullScreen(isFullScreen); }
+    async setWindowLayoutFullScreen(isLayoutFullScreen) {
+      if (!(await probeWindowBridge())) { winWarn('setWindowLayoutFullScreen'); return; }
+      await globalThis.electronAPI.windowOp('setFullScreen', !!isLayoutFullScreen);
+    }
+    async setKeepScreenOn(keepScreenOn) {
+      if (!(await probeWindowBridge())) { winWarn('setKeepScreenOn'); return; }
+      await globalThis.electronAPI.windowOp('setKeepScreenOn', !!keepScreenOn);
+    }
+    /** getWindowProperties v1：主窗尺寸真实值；avoidArea 空实现（桌面单窗无系统栏，记日志） */
+    async getWindowProperties() {
+      if (!(await probeWindowBridge())) { winWarn('getWindowProperties'); return null; }
+      return globalThis.electronAPI.windowOp('getProperties');
+    }
+    async getWindowAvoidArea(type) {
+      logs.push(`[window] getWindowAvoidArea(type=${type})：桌面单窗无系统栏，返回全 0 区`);
+      return { visibleRect: { left: 0, top: 0, right: 0, bottom: 0 }, boundingRect: { left: 0, top: 0, right: 0, bottom: 0 } };
+    }
     on(type, cb) {
       if (type !== 'windowSizeChange') { winWarn("on('" + type + "')—— v1 只支持 windowSizeChange"); return; }
       windowSizeListeners.add(cb);
