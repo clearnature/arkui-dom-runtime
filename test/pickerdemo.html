@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R82：@ohos:file.picker v1——文件选择/保存（Electron dialog）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 360px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; font-size: 12px; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R82：file.picker——DocumentViewPicker select/save + PhotoViewPicker select</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/pickerdemo-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let pass = 0, fail = 0;
+    const check = (c, m) => { if (c) { pass++; lines.push('PASS ' + m); } else { fail++; lines.push('FAIL ' + m); } };
+    const tick = () => new Promise((r) => setTimeout(r, 0));
+    const root = document.getElementById('root');
+    const wait = async (cond, ms) => { for (let i = 0; i < ms / 10; i++) { await tick(); if (cond()) return true; } return cond(); };
+    const isElectron = !!(globalThis.electronAPI && globalThis.electronAPI.fileDialog);
+
+    __arkui_dom_requireModule('PickerDemo');
+    __arkui_dom_loadRoute('pages/PickerDemo', root);
+    for (let i = 0; i < 60; i++) { await tick(); if (root.querySelector('#pk-log')) break; }
+    const q = (id) => root.querySelector('#' + id);
+    const logEl = q('pk-log'), pickedEl = q('pk-picked');
+    const click = (id) => q(id).click();
+    const logHas = (s) => (logEl.textContent.indexOf(s) >= 0);
+
+    // ① Document select（测试驱动下主进程注入 vfs/demo.txt）
+    click('btn-doc');
+    check(await wait(() => logHas('doc;'), 4000), 'picker DocumentViewPicker.select 链式完成');
+    if (isElectron) {
+      check(await wait(() => pickedEl.textContent.indexOf('picked=file://') === 0, 2000),
+        'picker select 返回 file:// uri');
+    } else {
+      check(pickedEl.textContent === 'picked=',
+        '（浏览器端探测式降级：空数组形）');
+    }
+
+    // ② Document save
+    click('btn-save');
+    check(await wait(() => logHas('save;'), 4000), 'picker DocumentViewPicker.save 链式完成');
+    if (isElectron) {
+      check(await wait(() => /picked=file:\/\/.+(saved\.txt)$/.test(pickedEl.textContent), 2000),
+        'picker save 返回保存 uri（saved.txt 结尾）');
+    }
+
+    // ③ Photo select（photoUris 形）
+    click('btn-photo');
+    check(await wait(() => logHas('photo;'), 4000), 'picker PhotoViewPicker.select 链式完成');
+    if (isElectron) {
+      check(await wait(() => pickedEl.textContent.indexOf('picked=file://') === 0, 2000),
+        'picker photoUris 返回 uri 形');
+    }
+
+    lines.push('PICKLOG ' + logEl.textContent + ' | ' + pickedEl.textContent);
+
+    if (fail === 0) lines.unshift(`=== ALL PASS (${pass}) ===`);
+    else lines.unshift(`=== ${fail} FAILURES / ${pass} PASS ===`);
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = fail === 0 ? 'pass' : 'fail';
+    document.title = fail === 0 ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

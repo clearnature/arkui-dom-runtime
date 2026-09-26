@@ -6,7 +6,7 @@
  *
  * 用法: ARKUI_TEST=layout ./runtime/electron --no-sandbox --disable-gpu .
  */
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 
@@ -90,6 +90,44 @@ app.whenReady().then(async () => {
   win.on('resize', () => {
     const [w, h] = win.getSize();
     if (!win.webContents.isDestroyed()) win.webContents.send('arkui:window:resized', { width: w, height: h });
+  });
+
+  // ── @ohos:file.picker 的主进程执行端（R82，桌面线）──
+  // 渲染侧垫片（DocumentViewPicker/PhotoViewPicker）经 preload 的 fileDialog 调到这里。
+  // 测试驱动下（ARKUI_TEST/ARKUI_PAGE_URL）对话框会阻塞无人点击 → 自动注入确定性结果：
+  //   select → 取 ARKUI_PICK_FILES（逗号分隔路径）或默认 vfs 内 demo.txt；save → ARKUI_PICK_SAVE。
+  // 返回形与真机 d.ts 对齐：select → Array<string>（uri 数组）；save → Array<string>；
+  // 取消 → 空数组（Document 形）。PhotoViewPicker 的 photoUris 包装在渲染侧垫片做。
+  const pickDefaults = () => {
+    const rootDir = fsRootForRenderer() || path.join(__dirname, 'data');
+    fs.mkdirSync(rootDir, { recursive: true });
+    const demo = path.join(rootDir, 'demo.txt');
+    if (!fs.existsSync(demo)) fs.writeFileSync(demo, 'hello from arkts');
+    return demo;
+  };
+  ipcMain.handle('arkui:dialog:select', async (_e, options) => {
+    if (isTestDrive) {
+      const list = String(process.env.ARKUI_PICK_FILES || pickDefaults()).split(',').filter(Boolean);
+      return list.map((p) => 'file://' + p);
+    }
+    const filters = (options && options.fileSuffixFilters)
+      ? { name: '匹配类型', extensions: options.fileSuffixFilters.map((s) => String(s).replace(/^\./, '')) }
+      : undefined;
+    const r = await dialog.showOpenDialog(win, {
+      properties: ['openFile', 'multiSelections', 'treatPackageAsDirectory'],
+      filters,
+    });
+    return r.canceled ? [] : r.filePaths.map((p) => 'file://' + p);
+  });
+  ipcMain.handle('arkui:dialog:save', async (_e, options) => {
+    if (isTestDrive) {
+      const rootDir = fsRootForRenderer() || path.join(__dirname, 'data');
+      return [process.env.ARKUI_PICK_SAVE || path.join(rootDir, 'saved.txt')].map((p) => 'file://' + p);
+    }
+    const r = await dialog.showSaveDialog(win, {
+      defaultPath: (options && options.newFileNames && options.newFileNames[0]) || undefined,
+    });
+    return (r.canceled || !r.filePath) ? [] : ['file://' + r.filePath];
   });
 
   // offscreen 模式下用 paint 事件的最后一帧当截图（隐藏窗口的合成器不产帧，capturePage 会挂）

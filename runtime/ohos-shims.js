@@ -325,6 +325,54 @@
     getMainWindow: async () => new WindowShim('main'),
   });
 
+  // ── @ohos:file.picker —— 文件选择器 v1（R82，桌面线）──
+  //
+  // 权威语义来自 `@ohos.file.picker.d.ts`：DocumentViewPicker.select()/save()、
+  // PhotoViewPicker.select()。Electron 侧走 fileDialog IPC（main 的 dialog.showOpen/SaveDialog），
+  // IPC 返回形与 Document 形一致：Array<string>（uri 数组）。
+  // 浏览器端探测式降级（R21 先例）：select/save 恒返回空数组。
+  // PhotoSelectResult 形（photoUris）由本垫片包装（真机 Photo 形）。
+  const fileDialog = (kind, options) => {
+    if (globalThis.electronAPI && globalThis.electronAPI.fileDialog) {
+      return globalThis.electronAPI.fileDialog(kind, options);
+    }
+    logs.push(`[file.picker] ${kind}：当前宿主无文件对话框桥（探测式降级 → 空数组）`);
+    return Promise.resolve([]);
+  };
+
+  const commonPickerOptions = (op) => {
+    if (!op || typeof op !== 'object') return {};
+    // d.ts：maxSelectNumber 默认 1（Document）；fileSuffixFilters 形如 ['.txt','.md']
+    return {
+      maxSelectNumber: typeof op.maxSelectNumber === 'number' ? op.maxSelectNumber : 1,
+      fileSuffixFilters: Array.isArray(op.fileSuffixFilters) ? op.fileSuffixFilters.map(String) : [],
+      newFileNames: Array.isArray(op.newFileNames) ? op.newFileNames.map(String) : [],
+    };
+  };
+
+  class DocumentViewPicker {
+    select(op) { return fileDialog('select', commonPickerOptions(op)); }
+    save(op) { return fileDialog('save', commonPickerOptions(op)); }
+  }
+  class PhotoViewPicker {
+    // d.ts：PhotoViewPicker.select → Promise<PhotoSelectResult{ photoUris, ... }>；
+    // IPC 返回 Array<string>（同 Document 形），这里包装成 photoUris 形。
+    select(op) {
+      return fileDialog('select', commonPickerOptions(op)).then((arr) => ({
+        photoUris: Array.isArray(arr) ? arr : [],
+      }));
+    }
+    save(op) { return fileDialog('save', commonPickerOptions(op)); }
+  }
+  class AudioViewPicker {
+    select(op) { return fileDialog('select', commonPickerOptions(op)); }
+  }
+  define('file.picker', {
+    DocumentViewPicker,
+    PhotoViewPicker,
+    AudioViewPicker,
+  });
+
   // ── @ohos:measure —— 文本测量（R15） ──
   //
   // 权威语义来自 `@ohos.measure.d.ts` 的 JSDoc：

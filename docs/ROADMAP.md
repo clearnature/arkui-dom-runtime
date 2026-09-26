@@ -1566,6 +1566,31 @@ kit 导入）+ `main_pages.json`、`fixtures/pages/WindowDemo.ts`（固化）、
 
 ---
 
+### R82 — 桌面线：@ohos:file.picker v1（文件选择/保存 → Electron dialog）✅（2026-09-26）
+
+**内容**：IPC 模板第三落地。渲染侧垫片（`DocumentViewPicker/PhotoViewPicker/AudioViewPicker`，
+权威语义对齐 `@ohos.file.picker.d.ts`：Document select/save 返回 `Promise<Array<string>>`、
+Photo select 返回 `PhotoSelectResult{photoUris}`）→ preload `fileDialog` 桥 → 主进程
+`dialog.showOpenDialog/showSaveDialog`。
+
+**测试驱动注入**：对话框在 harness 下无人点击会阻塞 → `ARKUI_PICK_FILES/ARKUI_PICK_SAVE`
+env 或默认 vfs `demo.txt`/`saved.txt` 注入确定性结果；用户交互形态下走真实系统对话框。
+
+**验收**：`bash electron/run.sh pickerdemo`（6 条断言）——doc select 返回 `file://` uri、
+save 返回 saved.txt 结尾 uri、photoUris 形；浏览器端降级 4/4（空数组形）。
+
+**一次真机语义纠偏（契约对齐）**：首版 main IPC 端返回 `{uris:[...]}` 包装——与真机
+`Array<string>` 错位，渲染侧 `.then((uris)=>uris.join)` 收对象抛 TypeError（3 FAIL 实测）。
+修正为 IPC 返回裸数组、photoUris 包装收敛在渲染侧垫片。教训：**IPC 返回形必须逐个对
+d.ts 返回类型，不能自造包装**。
+
+**触及**：`runtime/ohos-shims.js`（picker 垫片）、`electron/preload.js`（fileDialog 桥）、
+`electron/main.js`（dialog 执行端 + 测试注入）、`harmony-proj/.../PickerDemo.ets`（新，
+`@kit.CoreFileKit` 导入）+ `main_pages.json`、`fixtures/pages/PickerDemo.ts`（固化）、
+`test/pickerdemo.html`（新）、`run.sh` + `electron/run.sh`（接线）、`docs/ROADMAP.md`
+
+---
+
 ## P3 布局引擎
 
 ### ~~R13 — 数据可视化类：`Progress` / `Gauge` / `DataPanel` / `Rating`~~ ✅ 已完成

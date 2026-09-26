@@ -45,6 +45,7 @@
         "pages/PerfBigDemo",
         "pages/AttrHeavyDemo",
         "pages/Stress1kDemo",
-        "pages/WindowDemo"
+        "pages/WindowDemo",
+        "pages/PickerDemo"
     ]
 }
