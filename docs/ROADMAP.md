@@ -1757,7 +1757,7 @@ pasteboard 剪贴板（Electron 真剪贴板）+ deviceInfo 进页面 + 返回�
 ListItem 走 ets-loader 的 deepRender 产物形态（itemCreation/itemCreation2/deepRenderFunction
 三函数——首次被真实产物触发并验证）。
 
-**验收**：`bash electron/run.sh notesdemo`（11 条断言）——首渲染同步 23.0ms（1208 节点）、
+**验收**：`bash electron/run.sh notesdemo`（16 条断言：R90 时 11、R92 起 +5）——首渲染同步 23.0ms（1208 节点）、
 pasteboard→真剪贴板（Note 0 正文）、搜索 Note 299→count=1→清空→300、路由详情 idx=0
 （params 传递）、back 后 300 行状态保持；浏览器端 11/11（内存兜底 + navigator 派生
 deviceInfo）。PERF7 进 §6（信息口径）。
@@ -1771,6 +1771,33 @@ pushUrl params 用它）一直是 undefined。修复后传 `(item, i)`。这个 
 `fixtures/pages/NotesHome.ts` + `NotesDetail.ts`（固化）、`test/notesdemo.html`（新，11 条）、
 `runtime/src/main.js`（ForEach index 参数）、`run.sh` + `electron/run.sh`（两模块接线）、
 `docs/ROADMAP.md`（本节）
+
+---
+
+### R92 — NotesDemo 集成深化：保存到文件 + PasteButton 粘贴流 + 坑 97 现行犯修复 ✅（2026-09-26）
+
+**内容**：真实应用继续长厚——两个新用户流：**保存到文件**（picker.save 测试驱动返回 uri →
+fs fd 系 openSync/writeSync/closeSync 落盘 vfs，真盘 note-0.txt 实测 28B）+ **PasteButton
+粘贴流**（剪贴板 getPrimaryText → concat 新笔记，与 R89 pasteboard/R84 PasteButton 配套）。
+真编译器两次教学：fs 在 CoreFileKit 里叫 `fileIo`（直导 `@ohos.file.fs`）；文本访问器是
+**PasteData.getPrimaryText()**（Record 上没有）——垫片 record 形状同步对齐。
+
+**坑 97 现行犯（本片最大收获）**：粘贴流首跑出现"幽灵笔记"——**点任何列表行都会触发粘贴**。
+栈级定位（getData 调用栈 + isConnected）：Row 是 PasteButton 的**后代**——R84 安全按钮工厂
+**没打 `__arkuiLeaf` 标记**，编译产物叶组件无 `.pop()` → PasteButton 常驻栈顶 → 后续 300 行
+列表全部挂进按钮内部 → 行点击冒泡穿过按钮。修复 = R84 全部叶组件补标记（6 处：ArcScrollBar/
+ArcAlphabetIndexer/DotMatrix/MediaCachedImage/安全按钮三件套/Skeleton2d；ArcSwiper/ArcListItem
+保持容器语义）。**坑 97 的判据（"连建两个兄弟"）在真实页面才踩得到——结构断言抓不到，这正是
+端到端样例的价值。**
+
+**验收**：`bash electron/run.sh notesdemo`（16 条断言：R90 时 11、R92 起 +5）——save 流
+file:// uri + fd 落盘（statSync size=28）、PasteButton → count=301 → Pasted 300 行在列、
+粘贴正文与剪贴板一致（相对断言防外部剪贴板干扰）；浏览器端 16/16（picker 降级 null +
+localStorage 后端落盘）。
+
+**触及**：`harmony-proj/.../NotesHome.ets`（+save/paste 流）+ fixture（逐字节同步）、
+`runtime/src/batch-platform.js`（叶标记 ×6）、`runtime/ohos-shims.js`（record
+getPrimaryText 对齐）、`test/notesdemo.html`（+5）、`docs/ROADMAP.md`（本节）
 
 ---
 

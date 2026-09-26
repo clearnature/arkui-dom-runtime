@@ -284,10 +284,14 @@
   {
     const eapi = (/** @type {any} */ (global)).electronAPI || {};   // 块级作用域：与本块 clip 引用配对
     const pbStore = { data: null };
-    const makePasteData = (mimeType, text) => ({
-      getMimeTypes: () => [mimeType],
-      getRecordAt: (/** @type {number} */ i) => (i === 0 ? { mimeType, text: text == null ? '' : String(text) } : null),
-    });
+    const makePasteData = (mimeType, text) => {
+      const t = text == null ? '' : String(text);
+      return {
+        getMimeTypes: () => [mimeType],
+        getPrimaryText: () => t,                      // d.ts:725 PasteData.getPrimaryText(): string
+        getRecordAt: (/** @type {number} */ i) => (i === 0 ? { mimeType, text: t, getPrimaryText: () => t } : null),
+      };
+    };
     define('pasteboard', {
       MIMETYPE_TEXT_PLAIN: 'text/plain',
       createData(mimeType, value) {
@@ -303,6 +307,7 @@
             return undefined;
           },
           async getData() {
+            ((/** @type {any} */ (global)).__gdStacks = (/** @type {any} */ (global)).__gdStacks || []).push(String(new Error().stack).split('\n').slice(1, 10).join(' || '));
             if (api) {
               const t = await api.readText();
               if (t) return makePasteData('text/plain', t);

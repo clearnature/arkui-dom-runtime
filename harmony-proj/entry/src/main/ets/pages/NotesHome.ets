@@ -3,6 +3,8 @@
 //   kit 导入（真编译器要求）；params 走字符串（R66 联合类型拒绝坑）。
 import { router } from '@kit.ArkUI';
 import { pasteboard, deviceInfo } from '@kit.BasicServicesKit';
+import { picker } from '@kit.CoreFileKit';
+import fs from '@ohos.file.fs';
 
 interface NoteItem {
   title: string;
@@ -17,6 +19,7 @@ struct NotesHome {
   @State keyword: string = ''
   @State deviceLine: string = ''
   @State copyLog: string = ''
+  @State saveLog: string = ''
 
   aboutToAppear() {
     const arr: NoteItem[] = [];
@@ -47,6 +50,22 @@ struct NotesHome {
         const pb = pasteboard.getSystemPasteboard();
         pb.setData(pasteboard.createData('text/plain', this.notes[0].body)).then(() => {
           this.copyLog = 'copied';
+        });
+      })
+      Button('save-note').id('btn-save').onClick(() => {
+        const doc = new picker.DocumentViewPicker(getContext(this));
+        doc.save({ newFileNames: ['note-0.txt'] }).then((uris: Array<string>) => {
+          this.saveLog = uris.length ? uris[0] : 'null';
+          const f = fs.openSync('/vfs/note-0.txt', fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE);
+          fs.writeSync(f.fd, this.notes[0].body);
+          fs.closeSync(f.fd);
+        });
+      })
+      Text('saveLog=' + this.saveLog).id('save-log').fontSize(11)
+      PasteButton().id('btn-paste').onClick(() => {
+        pasteboard.getSystemPasteboard().getData().then((d) => {
+          const t = d.getPrimaryText();
+          this.notes = this.notes.concat([{ title: 'Pasted ' + this.notes.length, body: t, date: '2026-09-26' }]);
         });
       })
       Text('copyLog=' + this.copyLog).id('copy-log').fontSize(11)

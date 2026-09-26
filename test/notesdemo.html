@@ -32,6 +32,22 @@
 
     // 首渲染：千节点级真实页面（带 PERF 信息行，非门禁口径）
     const t0 = performance.now();
+    document.addEventListener('click', (e) => {
+      (window.__clickLog = window.__clickLog || []).push('target=' + (e.target.id || e.target.tagName) +
+        ' comp=' + (e.target.getAttribute && e.target.getAttribute('data-arkui-comp')) +
+        ' sec=' + (e.target.getAttribute && e.target.getAttribute('data-security-btn')));
+    }, true);
+    const pbm = __arkui_dom_require('@ohos:pasteboard');
+    const origBoard = pbm.getSystemPasteboard;
+    pbm.getSystemPasteboard = function () {
+      const b = origBoard();
+      const og = b.getData.bind(b);
+      b.getData = function () {
+        (window.__gdStacks = window.__gdStacks || []).push(String(new Error().stack).split('\n').slice(1, 4).join(' | '));
+        return og();
+      };
+      return b;
+    };
     __arkui_dom_requireModule('NotesHome');
     __arkui_dom_requireModule('NotesDetail');   // 模块体执行 → registerNamedRoute 入册（router 先例）
     __arkui_dom_loadRoute('pages/NotesHome', root);
@@ -81,7 +97,10 @@
 
     // ⑤ 路由到详情（router.pushUrl + params）
     const firstRow = root.querySelector('[data-arkui-comp="Row"]');
+    lines.push('SAMPLE pre-click gd=' + (window.__gdStacks || []).length + ' v=' + (root.querySelector('#note-count') || {}).textContent);
     firstRow.click();
+    await tick(20);
+    lines.push('SAMPLE post-click20 gd=' + (window.__gdStacks || []).length + ' v=' + (root.querySelector('#note-count') || {}).textContent);
     await tick(80);
     const detailIdx = root.querySelector('#detail-idx');
     const detailTitle = root.querySelector('#detail-title');
@@ -90,9 +109,57 @@
 
     // ⑥ 返回首页（router.back），列表状态保持
     root.querySelector('#btn-back').click();
+    await tick(20);
+    lines.push('SAMPLE post-back20 gd=' + (window.__gdStacks || []).length + ' v=' + (root.querySelector('#note-count') || {}).textContent);
     await tick(80);
     const countBack = root.querySelector('#note-count');
-    check(!!countBack && countBack.textContent === 'count=300', 'notes 返回首页：300 行状态保持');
+    check(!!countBack && countBack.textContent === 'count=300',
+      'notes 返回首页：300 行状态保持（实测 ' + (countBack ? countBack.textContent : '无') + '）');
+
+    lines.push('SAMPLE back-count-elms=' + document.querySelectorAll('#note-count').length);
+    lines.push('SAMPLE back-paste-btns=' + document.querySelectorAll('#btn-paste').length);
+    ((/** @type {any} */ (window)).__gdStacks || []).forEach((st, i) => lines.push('GD' + i + ' ' + st.slice(0, 170)));
+    (window.__clickLog || []).forEach((c, i) => lines.push('CLK' + i + ' ' + c));
+    ((/** @type {any} */ (window)).__secClicks || []).forEach((c, i) => lines.push('SEC' + i + ' ' + c.slice(0, 260)));
+    lines.push('SAMPLE back-roots=' + document.querySelectorAll('#root').length);
+    lines.push('SAMPLE back-body-children=' + document.body.children.length);
+    // ═══ R92：保存到文件 + PasteButton 从剪贴板新建 ═══
+    const fsMod = __arkui_dom_require('@ohos:file.fs');
+    // ⑦ save 流：picker.save（测试驱动返回 vfs 内 uri）+ fs fd 写
+    root.querySelector('#btn-save').click();
+    let saved = false;
+    for (let i = 0; i < 100; i++) {
+      await tick(10);
+      const sl = root.querySelector('#save-log');
+      if (sl && sl.textContent.indexOf('saveLog=file://') === 0) { saved = true; break; }
+    }
+    const slEl = root.querySelector('#save-log');
+    if (isElectron) {
+      check(saved, 'notes save 流：picker.save 返回 file:// uri（实测 saveLog=' +
+        JSON.stringify(slEl ? slEl.textContent : '无元素') + '）');
+    } else {
+      check(slEl && slEl.textContent === 'saveLog=null',
+        'notes save 流浏览器降级：picker 无桥 → null（探测式降级先例）');
+    }
+    const st = fsMod.statSync('/vfs/note-0.txt');
+    check(st && st.size > 0, 'notes fs fd 写落盘：note-0.txt size=' + (st && st.size));
+    // ⑧ PasteButton：剪贴板 → 新建笔记（相对断言——先读当前剪贴板再比）
+    const pbMod = __arkui_dom_require('@ohos:pasteboard');
+    const before = await pbMod.getSystemPasteboard().getData();
+    const clipText = before.getPrimaryText();
+    root.querySelector('#btn-paste').click();
+    await tick(80);
+    const countAfter = root.querySelector('#note-count');
+    lines.push('PASTE-DEBUG after80=' + (countAfter ? countAfter.textContent : '无'));
+    await tick(200);
+    const countAfter2 = root.querySelector('#note-count');
+    lines.push('PASTE-DEBUG after280=' + (countAfter2 ? countAfter2.textContent : '无'));
+    check(countAfter2 && countAfter2.textContent === 'count=301',
+      'notes PasteButton → count=301（' + (countAfter ? countAfter.textContent : '') + '）');
+    const pastedRow = root.textContent.indexOf('Pasted 300') >= 0;
+    check(pastedRow, 'notes 新行 Pasted 300 在列');
+    check(clipText.length > 0 && pastedRow,
+      'notes 粘贴流完整：剪贴板非空（' + JSON.stringify(clipText.slice(0, 16)) + '）且 Pasted 行在列');
 
     if (fail === 0) lines.unshift(`=== ALL PASS (${pass}) ===`);
     else lines.unshift(`=== ${fail} FAILURES / ${pass} PASS ===`);

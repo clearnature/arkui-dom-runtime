@@ -6,10 +6,13 @@ interface NotesHome_Params {
     keyword?: string;
     deviceLine?: string;
     copyLog?: string;
+    saveLog?: string;
 }
 import router from "@ohos:router";
 import pasteboard from "@ohos:pasteboard";
 import deviceInfo from "@ohos:deviceInfo";
+import picker from "@ohos:file.picker";
+import fs from "@ohos:file.fs";
 interface NoteItem {
     title: string;
     body: string;
@@ -25,6 +28,7 @@ class NotesHome extends ViewPU {
         this.__keyword = new ObservedPropertySimplePU('', this, "keyword");
         this.__deviceLine = new ObservedPropertySimplePU('', this, "deviceLine");
         this.__copyLog = new ObservedPropertySimplePU('', this, "copyLog");
+        this.__saveLog = new ObservedPropertySimplePU('', this, "saveLog");
         this.setInitiallyProvidedValue(params);
         this.finalizeConstruction();
     }
@@ -41,6 +45,9 @@ class NotesHome extends ViewPU {
         if (params.copyLog !== undefined) {
             this.copyLog = params.copyLog;
         }
+        if (params.saveLog !== undefined) {
+            this.saveLog = params.saveLog;
+        }
     }
     updateStateVars(params: NotesHome_Params) {
     }
@@ -49,12 +56,14 @@ class NotesHome extends ViewPU {
         this.__keyword.purgeDependencyOnElmtId(rmElmtId);
         this.__deviceLine.purgeDependencyOnElmtId(rmElmtId);
         this.__copyLog.purgeDependencyOnElmtId(rmElmtId);
+        this.__saveLog.purgeDependencyOnElmtId(rmElmtId);
     }
     aboutToBeDeleted() {
         this.__notes.aboutToBeDeleted();
         this.__keyword.aboutToBeDeleted();
         this.__deviceLine.aboutToBeDeleted();
         this.__copyLog.aboutToBeDeleted();
+        this.__saveLog.aboutToBeDeleted();
         SubscriberManager.Get().delete(this.id__());
         this.aboutToBeDeletedInternal();
     }
@@ -85,6 +94,13 @@ class NotesHome extends ViewPU {
     }
     set copyLog(newValue: string) {
         this.__copyLog.set(newValue);
+    }
+    private __saveLog: ObservedPropertySimplePU<string>;
+    get saveLog() {
+        return this.__saveLog.get();
+    }
+    set saveLog(newValue: string) {
+        this.__saveLog.set(newValue);
     }
     aboutToAppear() {
         const arr: NoteItem[] = [];
@@ -134,6 +150,36 @@ class NotesHome extends ViewPU {
             });
         }, Button);
         Button.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Button.createWithLabel('save-note');
+            Button.id('btn-save');
+            Button.onClick(() => {
+                const doc = new picker.DocumentViewPicker(getContext(this));
+                doc.save({ newFileNames: ['note-0.txt'] }).then((uris: Array<string>) => {
+                    this.saveLog = uris.length ? uris[0] : 'null';
+                    const f = fs.openSync('/vfs/note-0.txt', fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE);
+                    fs.writeSync(f.fd, this.notes[0].body);
+                    fs.closeSync(f.fd);
+                });
+            });
+        }, Button);
+        Button.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create('saveLog=' + this.saveLog);
+            Text.id('save-log');
+            Text.fontSize(11);
+        }, Text);
+        Text.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            PasteButton.create();
+            PasteButton.id('btn-paste');
+            PasteButton.onClick(() => {
+                pasteboard.getSystemPasteboard().getData().then((d) => {
+                    const t = d.getPrimaryText();
+                    this.notes = this.notes.concat([{ title: 'Pasted ' + this.notes.length, body: t, date: '2026-09-26' }]);
+                });
+            });
+        }, PasteButton);
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Text.create('copyLog=' + this.copyLog);
             Text.id('copy-log');

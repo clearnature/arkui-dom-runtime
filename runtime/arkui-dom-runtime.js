@@ -13267,6 +13267,7 @@
       thumb.style.cssText = 'position:absolute;top:0;width:100%;height:20%;background:rgba(0,0,0,0.4);border-radius:4px';
       el.appendChild(thumb);
       (/** @type {any} */ (el)).__arcThumb = thumb;
+      el.__arkuiLeaf = true;   // 坑 97：叶组件（产物无 .pop()）
       markPlatform(el, 'ArcScrollBar', {});
       return el;
     });
@@ -13313,6 +13314,7 @@
         };
         el.appendChild(c);
       });
+      el.__arkuiLeaf = true;   // 坑 97
       markPlatform(el, 'ArcAlphabetIndexer', ARCIDX_ATTRS);
       return el;
     });
@@ -13360,6 +13362,7 @@
       const el = document.createElement('div');
       el.style.cssText = 'display:grid;gap:2px';
       (/** @type {any} */ (el)).__dot = { text: (args && args[0]) || '', spacing: 2 };
+      el.__arkuiLeaf = true;   // 坑 97
       markPlatform(el, 'DotMatrix', DOT_ATTRS);
       dotMatrixRender(el);
       return el;
@@ -13388,6 +13391,7 @@
       img.style.cssText = 'object-fit:contain';
       img.alt = '';
       if (args && args[0] !== undefined) img.src = String(resolveResource(args[0]));
+      img.__arkuiLeaf = true;   // 坑 97
       markPlatform(img, 'MediaCachedImage', MCI_ATTRS);
       return img;
     });
@@ -13397,7 +13401,11 @@
     const makeSecurityButton = (name, label, icon) => {
       /** @type {Record<string, (n: any, v: any, extra?: any) => void>} */
       const ATTRS = {
-        onClick: (n, v) => { n.onclick = () => { try { v(); } catch (e) { layoutWarnings.push(name + '.onClick: ' + e.message); } }; },
+        onClick: (n, v) => { n.onclick = () => {
+          ((/** @type {any} */ (global)).__secClicks = (/** @type {any} */ (global)).__secClicks || []).push(
+            name + ' connected=' + n.isConnected + ' | ' + String(new Error().stack).split('\n').slice(1, 5).join(' || '));
+          try { v(); } catch (e) { layoutWarnings.push(name + '.onClick: ' + e.message); }
+        }; },
         fontSize: (n, v) => { n.style.fontSize = Number(v) + 'px'; },
         fontColor: (n, v) => { n.style.color = String(v); },
         fontFamily: (n, v) => { n.style.fontFamily = String(v); },
@@ -13433,6 +13441,7 @@
         if (opt && typeof opt.click === 'function') {
           b.onclick = () => { try { opt.click(); } catch (e) { layoutWarnings.push(name + '.click: ' + e.message); } };
         }
+        b.__arkuiLeaf = true;   // 坑 97：安全按钮是叶（NotesHome 现行犯——列表挂进了按钮内）
         markPlatform(b, name, ATTRS);
         return b;
       });
@@ -13454,6 +13463,7 @@
         style.textContent = '@keyframes arkui-skel{0%{background-position:200% 0}100%{background-position:-200% 0}}';
         document.head.appendChild(style);
       }
+      el.__arkuiLeaf = true;   // 坑 97
       markPlatform(el, 'Skeleton2d', {});
       return el;
     });
