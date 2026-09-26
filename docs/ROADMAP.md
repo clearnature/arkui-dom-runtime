@@ -1394,6 +1394,27 @@ stats §6 增 PERF2 剖面行。
 
 ---
 
+### R72 — 打包 + 进程模型 spike：桌面分发三条路全通 ✅（2026-09-26）
+
+**内容**：桌面线前置验证——`electron/` 宿主能否打成分发包、进程模型怎么定。
+结论：**能，且零源码改动**。完整报告见 `docs/research/packaging-spike.md`。
+
+**要点**：@electron/packager（285M 目录 / tar.gz 118M）与 electron-builder（`--dir` 285M /
+AppImage 120M 单文件）全出包成功，打包后 `ARKUI_TEST/ARKU_PAGE_URL` env 驱动原样可用，
+perfdemo 双模式（file:// 与 http）`ELECTRON_RESULT: PASS`；打包工具经 npx 临时使用，
+未进任何 package.json（零依赖纪律不变）。三个坑已记录：electron-builder 默认排除 `build/`
+（与本项目产物目录名冲突，需 `-c.directories.buildResources` 覆盖）、AppImage 本机需
+`--appimage-extract-and-run`、chrome-sandbox 需 `--no-sandbox`。
+
+**进程模型**：主进程目前只是"测试驱动器"（无 ipcMain 处理器）；真 fs 在 preload
+（`sandbox:false` + `contextIsolation:true`）直连 `node:fs` 经 contextBridge 暴露，不走 IPC。
+后续能力分类建议：file.fs/preferences 留 preload 桥；dialog/wifi/蓝牙/子进程/任意路径 fs
+走主进程 IPC；分发场景可写目录应迁 `app.getPath('userData')`。
+
+**触及**：`docs/research/packaging-spike.md`（新）、`docs/ROADMAP.md`（本节）
+
+---
+
 ## P3 布局引擎
 
 ### ~~R13 — 数据可视化类：`Progress` / `Gauge` / `DataPanel` / `Rating`~~ ✅ 已完成

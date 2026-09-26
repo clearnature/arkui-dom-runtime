@@ -1749,13 +1749,13 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   fixtures 转换产物  67 个：AlphabetIndexerDemo AnimDemo AnimatorDemo AsyncIO BatchFuncDemo BatchLayoutDemo BatchMediaDemo BatchVerifyDemo CalendarPickerDemo Callee CanvasDemo DatePickerDemo Detail DrawDemo GestureDemo GestureGroupDemo GridDemo GridRowDemo Home ImageDemo Index InputDemo Layout Lazy LazyVar ListGroupDemo MeasArea MeasImage MeasNotify Measure MediaDemo NavBarDemo NavDemo NavShimDemo NavTransDemo NetFile Observe PanelDemo PerfDemo PopDemo PromptAct Provide QrDemo RefreshDemo RelDemo Rich RichVideoDemo ScrollDemo ShapeDemo ShowDemo SideBarDemo SmallDemo SplitDemo StepDemo SwiperDemo TabsGrid TextDemo TextMeasure TextPickerDemo TextTimeDemo TimePickerDemo TransitionDemo UiContextDemo V2 WaterFlowDemo Widgets XCompDemo
 
 == 性能基线（Electron 实测）==
-  首渲染            121.2 ms（33 节点：Column+Button+Text+ForEach×30）
-  最小 rerender     3.3 ms（@State 计数脏区单 Text，rAF 口径）
-  rerender 管道     4.2 ms / 1 tick（setTimeout 轮询口径，R70）
+  首渲染            119.2 ms（33 节点：Column+Button+Text+ForEach×30）
+  最小 rerender     7.2 ms（@State 计数脏区单 Text，rAF 口径）
+  rerender 管道     1.0 ms / 1 tick（setTimeout 轮询口径，R70）
   微任务底噪        0.00 ms
   行数              31
-  剖面 R71          loadRoute 同步 3.5 ms（require 0.2）· raf1 5.3 / raf2 112.4 ms（offscreen 首帧）
-  脚本 eval         runtime 22.3 / generated 20.4 / shims 21.1 / module 20.6 ms（计时起点之前）
+  剖面 R71          loadRoute 同步 3.6 ms（require 0.2）· raf1 106.8 / raf2 8.8 ms（offscreen 首帧）
+  脚本 eval         runtime 16.4 / generated 13.3 / shims 15.1 / module 14.6 ms（计时起点之前）
   判定              框架同步构建 3.5ms 无大头；"首渲染"=脚本 eval + offscreen 首帧（非框架成本）
 
 == 体积（源码，不含产物/Electron 运行时）==
@@ -1764,7 +1764,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   test             787.1 KB
   tools            61.1 KB
   electron(src)    27.2 KB
-  docs             675.7 KB
+  docs             687.9 KB
   fixtures         473.5 KB
 
 == 逐文件（文档"文件职责"表的来源）==
@@ -1790,7 +1790,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   docs/ARCHITECTURE.md                   159606 B  155.9 KB
   docs/CAPABILITY.md                      61086 B  59.7 KB
   docs/DEVELOPING.md                      67182 B  65.6 KB
-  docs/ROADMAP.md                        160214 B  156.5 KB
+  docs/ROADMAP.md                        161602 B  157.8 KB
   docs/surface-measurement.md              6496 B  6.3 KB
   docs/SESSION-2026-09-20.md              12842 B  12.5 KB
   runtime/src/.mimosa                      4096 B  4.0 KB
