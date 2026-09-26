@@ -42,17 +42,19 @@ DOM/Chromium 是被**委托**的渲染底座，与 Flutter 委托 Skia、React N
 
 换框架才能换目标——换的不是渲染层，是**源代码**；这就是本引擎与"成熟 Web 方案"的分工边界：壳与渲染用成熟的（Electron/Chromium），语言体验与组件语义这一层没有成熟品，本引擎即产品本体。
 
-**技术栈定位与三层一致性（R95，2026-09-27）**：语言执行层 = **ArkTS 生态**（CLT 26 的 ets-loader 编译前端 + 本运行时作为 *ArkTS 语义的 JS 执行器*；不使用 PandaVM/.abc，见 R24 收口）；UI 输出层 = DOM 渲染（与 Electron 生态兼容）。这是 **"ArkTS 生态 + Web 渲染后端"的混合架构，不是"ArkTS 移植到某个 JS 引擎"**——产物是标准 ES2021，引擎可替换（V8 只是 Electron/Chrome 恰好内置的 ECMAScript 引擎），架构上不绑定任何特定 JS 引擎。
+**技术栈定位与三层一致性（R95 初版 / R95.1 措辞精化，2026-09-27）**：语言执行层 = **官方编译链生态**（CLT 26 的 ets-loader 编译前端 + 本运行时作为 **ets-loader 产物的 JS 运行时**——产物已被编译期降级为 ViewPU 协议，本运行时不实现 ArkTS 的并发模型/类型系统/模块解析；不使用 PandaVM/.abc，见 R24 收口）；UI 输出层 = DOM 渲染（与 Electron 生态兼容）。这是 **"ArkTS 官方编译链生态 + Web 渲染后端"的混合架构，不是"ArkTS 移植到某个 JS 引擎"**。
 
 一致性要求分三层，只有前两层该一致、第三层刻意不一致：
 
-| 层 | 一致性 | 机制 |
+| 层 | 一致性 | 锚点 |
 |---|---|---|
 | **产物/契约层** | ✅ 完全一致 | 同一份 ets-loader 产物、同一套 ViewPU/ObservedProperty 协议、同一份 `.d.ts` 权威 |
-| **语义层** | ✅ 行为一致 | 断言对照真机源码（ace_engine C++ pattern 层 + declarative_frontend JSI 桥层），仓库 1000+ 断言即对照记录 |
-| **实现层** | ❌ 刻意不一致 | 官方运行时是 C++（PandaVM/AceEngine，为设备性能），本运行时是 JS（为浏览器/桌面部署）——若实现层也一致就等于复刻 C++ 栈，R24 收口已否决 |
+| **语义行为层** | ✅ 对照一致 | 86+62+16+15+11 条断言对照 ace_engine 的 pattern 层 + declarative_frontend 的 JSI 桥层（JSI 桥是**第二权威层**，独立于 pattern 层——见 §4.21） |
+| **实现语言层** | ❌ 刻意不一致 | 官方 C++（设备性能）/ 本项目 JS（桌面部署）——产品差异化本体，复刻 C++ 栈已被 R24 收口否决 |
 
-术语精确化（三处易错）：① **es2abc 是编译器不是解释器**（输出 .abc 字节码；解释器是 PandaVM）——CLT 内同时含编译器（es2abc/AOT）与执行器（PandaVM）；② "ArkTS 执行器"官方义 = PandaVM 执行 .abc，本运行时不是它，准确说是 **ArkTS 语义的 JS 执行器**（执行器自研、语义是 ArkTS 的）；③ "不是 V8"的准确说法是"**不绑定任何特定 JS 引擎**"（现有测试确实全跑在 V8 上，但产物是引擎无关的标准 JS）。实现语言一致性的参照也要分层：ets-loader 前端本身就是 Node.js 上的 JS/TS 实现（main.js + lib/ 112 个 .js 文件，实测）——本运行时的 JS/TS 技术栈与官方工具链的**前端层**同语言，与**运行时层**（C++）刻意不同。
+> 注：产物是标准 ES2021，运行时不依赖 V8 私有扩展；但当前全部验证在 V8 上，换引擎需要重新验证 DOM 宿主侧。我们执行的是 ets-loader 已降级为 ViewPU 协议的 JS 产物，不实现 ArkTS 的并发模型/类型系统（那些在编译期展开）。
+
+术语精确化（两处易错，保留事实、撤独立断言）：① **es2abc 是编译器不是解释器**（输出 .abc 字节码；解释器/执行器是 PandaVM）；② ets-loader 前端本身就是 Node.js 上的 JS/TS 实现（main.js + lib/ 112 个 .js 文件，实测）——本运行时的 JS/TS 技术栈与官方工具链的**前端层**同语言，与**运行时层**（C++）刻意不同。
 
 **本项目的边界**：
 
@@ -1761,15 +1763,15 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   fixtures 转换产物  74 个：AlphabetIndexerDemo AnimDemo AnimatorDemo AsyncIO AttrHeavyDemo BatchFuncDemo BatchLayoutDemo BatchMediaDemo BatchVerifyDemo CalendarPickerDemo Callee CanvasDemo DatePickerDemo Detail DrawDemo GestureDemo GestureGroupDemo GridDemo GridRowDemo Home ImageDemo Index InputDemo Layout Lazy LazyVar ListGroupDemo MeasArea MeasImage MeasNotify Measure MediaDemo NavBarDemo NavDemo NavShimDemo NavTransDemo NetFile NotesDetail NotesHome Observe PanelDemo PerfBigDemo PerfDemo PickerDemo PopDemo PromptAct Provide QrDemo RefreshDemo RelDemo Rich RichVideoDemo ScrollDemo ShapeDemo ShowDemo SideBarDemo SmallDemo SplitDemo StepDemo Stress1kDemo SwiperDemo TabsGrid TextDemo TextMeasure TextPickerDemo TextTimeDemo TimePickerDemo TransitionDemo UiContextDemo V2 WaterFlowDemo Widgets WindowDemo XCompDemo
 
 == 性能基线（Electron 实测）==
-  首渲染            123.7 ms（33 节点：Column+Button+Text+ForEach×30）
-  最小 rerender     3.2 ms（@State 计数脏区单 Text，rAF 口径）
-  rerender 管道     3.7 ms / 1 tick（setTimeout 轮询口径，R70）
-  微任务底噪        0.00 ms
+  首渲染            122.4 ms（33 节点：Column+Button+Text+ForEach×30）
+  最小 rerender     9.4 ms（@State 计数脏区单 Text，rAF 口径）
+  rerender 管道     1.0 ms / 1 tick（setTimeout 轮询口径，R70）
+  微任务底噪        0.10 ms
   行数              31
-  剖面 R71          loadRoute 同步 4.1 ms（require 0.2）· raf1 5.7 / raf2 113.9 ms（offscreen 首帧）
-  脚本 eval         runtime 18.4 / generated 16.9 / shims 17.2 / module 16.8 ms（计时起点之前）
+  剖面 R71          loadRoute 同步 3.7 ms（require 0.3）· raf1 0.1 / raf2 118.6 ms（offscreen 首帧）
+  脚本 eval         runtime 19.6 / generated 18.6 / shims 18.5 / module 17.6 ms（计时起点之前）
   判定              框架同步构建 3.5ms 无大头；"首渲染"=脚本 eval + offscreen 首帧（非框架成本）
-  千节点 R79        首渲染同步 20.0 ms（350 节点/~3500 属性，亚线性）· 单点 flush 2.7 ms · 批量翻转 flush 6.6 ms
+  千节点 R79        首渲染同步 21.4 ms（350 节点/~3500 属性，亚线性）· 单点 flush 2.9 ms · 批量翻转 flush 5.8 ms
   规模曲线          203→4.8 / 304→11.2 / 1055→19.0 ms（创建路径亚线性）；行复用+守卫千节点级保持
 
 == 体积（源码，不含产物/Electron 运行时）==
@@ -1778,7 +1780,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   test             848.1 KB
   tools            77.9 KB
   electron(src)    42.6 KB
-  docs             725.8 KB
+  docs             725.7 KB
   fixtures         512.0 KB
 
 == 逐文件（文档"文件职责"表的来源）==
@@ -1801,7 +1803,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   .gitignore                                757 B  0.7 KB
   README.md                              157245 B  153.6 KB
   THIRD-PARTY-NOTICES.md                  10718 B  10.5 KB
-  docs/ARCHITECTURE.md                   163450 B  159.6 KB
+  docs/ARCHITECTURE.md                   163379 B  159.5 KB
   docs/CAPABILITY.md                      61786 B  60.3 KB
   docs/DEVELOPING.md                      68492 B  66.9 KB
   docs/ROADMAP.md                        190299 B  185.8 KB
