@@ -225,11 +225,99 @@
   const record = (level) => (domain, tag, format, ...args) => {
     logs.push({ t: 'hilog', level, domain, tag, message: fmt(format, args) });
   };
+  // ── @ohos:deviceInfo —— 设备信息（R89，能力长尾）──
+  //
+  // 权威语义来自 `@ohos.deviceInfo.d.ts`（readonly 字段面）。取值分两类、不造假：
+  //   · 宿主真值：Electron 走 preload 的 __arkui_dom_sysInfo（node:os）；
+  //     浏览器端走 navigator 派生（降级值，字段仍非空）。
+  //   · SDK 对齐常量：sdkApiVersion/firstApiVersion = 26、osReleaseType/buildType = 'Release'
+  //     ——取自本仓库编译所对 CLT 的 `<CLT>/sdk/default/openharmony/ets/oh-uni-package.json`
+  //     （apiVersion "26" / platformVersion 26.0.0 / releaseType "Release"，引用见注释）。
+  {
+    const eapi = (/** @type {any} */ (global)).electronAPI || {};
+    const sys = eapi.sysInfo;   // preload electronAPI.sysInfo（R89）
+    const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
+    define('deviceInfo', {
+      get osFullName() { return sys ? (sys.osType + ' ' + sys.osRelease) : ('Browser ' + ua.slice(0, 40)); },
+      get marketName() { return sys ? sys.osType : 'browser'; },
+      get productModel() { return sys ? sys.hostname : (typeof navigator !== 'undefined' ? navigator.platform : 'unknown'); },
+      get brand() { return sys ? sys.osType : 'browser'; },
+      get hardwareModel() { return sys ? sys.arch : 'unknown'; },
+      get softwareModel() { return sys ? (sys.osType + '-' + sys.arch) : 'browser'; },
+      get deviceType() { return sys ? 'desktop' : 'browser'; },
+      get displayVersion() { return sys ? sys.osRelease : ua.slice(0, 24); },
+      // SDK 对齐常量（见上注释）：本运行时声明面所对 CLT 26
+      sdkApiVersion: 26,
+      firstApiVersion: 26,
+      osReleaseType: 'Release',
+      buildType: 'Release',
+      get abiList() { return sys ? sys.arch : 'unknown'; },
+    });
+  }
+
+  // ── @ohos:i18n —— 国际化（R89）──
+  //
+  // 权威语义来自 `@ohos.i18n.d.ts`：getSystemLanguage（如 'zh'）/ getSystemLocale（如
+  // 'zh-Hans-CN'）/ getSystemRegion。实现走宿主 Intl（渲染进程与浏览器同源真值，零 IPC）。
+  {
+    const locale = () => {
+      try { return Intl.DateTimeFormat().resolvedOptions().locale || 'en-US'; }
+      catch (e) { return 'en-US'; }
+    };
+    define('i18n', {
+      getSystemLanguage: () => locale().split('-')[0],
+      getSystemLocale: () => locale(),
+      getSystemRegion: () => {
+        const m = locale().match(/[-]([A-Za-z]{2})$/) ||
+          (typeof navigator !== 'undefined' ? (navigator.language || '').match(/[-]([A-Za-z]{2})$/) : null);
+        return m ? m[1].toUpperCase() : '';
+      },
+    });
+  }
+
+  // ── @ohos:pasteboard —— 剪贴板（R89，与 R84 PasteButton 配套）──
+  //
+  // 权威语义来自 `@ohos.pasteboard.d.ts`：getSystemPasteboard() → Pasteboard{ setData,
+  // getData }，createData(mimeType, value) → PasteData{ getRecordAt, getMimeTypes }。
+  // Electron：真系统剪贴板（preload __arkui_dom_clip = electron clipboard，text/plain 直通）；
+  // 浏览器：headless 无剪贴板权限 → 进程内 Map 兜底（限制已记录，跨进程不共享）。
+  {
+    const eapi = (/** @type {any} */ (global)).electronAPI || {};   // 块级作用域：与本块 clip 引用配对
+    const pbStore = { data: null };
+    const makePasteData = (mimeType, text) => ({
+      getMimeTypes: () => [mimeType],
+      getRecordAt: (/** @type {number} */ i) => (i === 0 ? { mimeType, text: text == null ? '' : String(text) } : null),
+    });
+    define('pasteboard', {
+      MIMETYPE_TEXT_PLAIN: 'text/plain',
+      createData(mimeType, value) {
+        return makePasteData(String(mimeType), typeof value === 'string' ? value : '');
+      },
+      getSystemPasteboard() {
+        const api = eapi.clip;      // preload electronAPI.clip（R89，真系统剪贴板）
+        return {
+          async setData(/** @type {any} */ data) {
+            const rec = data && data.getRecordAt && data.getRecordAt(0);
+            pbStore.data = rec ? makePasteData(rec.mimeType, rec.text) : data;
+            if (api && rec && rec.mimeType === 'text/plain') await api.writeText(rec.text);
+            return undefined;
+          },
+          async getData() {
+            if (api) {
+              const t = await api.readText();
+              if (t) return makePasteData('text/plain', t);
+            }
+            return pbStore.data || makePasteData('text/plain', '');
+          },
+        };
+      },
+    });
+  }
+
   define('hilog', {
     info: record('info'), error: record('error'), warn: record('warn'),
     debug: record('debug'), fatal: record('fatal'),
-    isLoggable: () => true,
-  });
+    isLoggable: () => true,  });
 
   // ── @ohos:app.ability.* ──
   define('app.ability.ConfigurationConstant', {

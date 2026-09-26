@@ -23,6 +23,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
+const os = require('node:os');
 
 let ROOT = path.join(__dirname, 'data');            // 默认/回退根：项目内 electron/data（外部核验依赖）
 // ① 同步初值：main 打包态随 additionalArguments 下发 `--arkui-fs-root=<userData>/data`，
@@ -93,5 +94,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   onAbilityResult: (cb) => {
     ipcRenderer.on('arkui:ability:result', (_e, result) => { try { cb(result); } catch (err) {} });
+  },
+  // R89：系统能力真值桥——deviceInfo（os 模块）与 pasteboard（Electron clipboard）。
+  // 与 fs 桥同约定：可结构化克隆，只读。
+  sysInfo: {
+    osType: os.type(),            // Linux / Darwin / Windows_NT
+    osRelease: os.release(),
+    hostname: os.hostname(),
+    arch: os.arch(),
+    platform: process.platform,
+  },
+  // Electron 44 clipboard 模块仅主进程可用（preload 直调实测静默失败）→ 走 R74 IPC 模板
+  clip: {
+    readText: async () => {
+      try { return await ipcRenderer.invoke('arkui:clip:read'); } catch (e) { return ''; }
+    },
+    writeText: async (t) => {
+      try { return await ipcRenderer.invoke('arkui:clip:write', String(t)); } catch (e) { return false; }
+    },
   },
 });

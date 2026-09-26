@@ -6,7 +6,7 @@
  *
  * 用法: ARKUI_TEST=layout ./runtime/electron --no-sandbox --disable-gpu .
  */
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, clipboard } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 
@@ -143,6 +143,9 @@ app.whenReady().then(async () => {
   // callee 页 terminateSelfWithResult → 结果转发回 caller webContents + 关 callee 窗口。
   let callerWC = null;
   let abilityWin = null;
+  // R89：pasteboard 的主进程执行端（Electron 44 clipboard 仅主进程可用）
+  ipcMain.handle('arkui:clip:read', () => clipboard.readText());
+  ipcMain.handle('arkui:clip:write', (_e, t) => { clipboard.writeText(String(t)); return true; });
   ipcMain.handle('arkui:ability:startForResult', (e, payload) => {
     callerWC = e.sender;
     if (abilityWin && !abilityWin.isDestroyed()) abilityWin.close();  // 顺序启动：上一窗已让位

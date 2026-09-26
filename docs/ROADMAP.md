@@ -1723,6 +1723,31 @@ caller 侧的 `desktopResult` 记录即"走了 IPC 终结分支"的证据（over
 
 ---
 
+### R89 — @ohos 能力长尾：deviceInfo / i18n / pasteboard ✅（2026-09-26）
+
+**内容**：三个常用平台模块按权威 d.ts 落地，取值不造假：
+- **deviceInfo**：宿主真值（Electron 走 preload `node:os`——osFullName='Linux 7.0.0-34-generic'
+  实测；浏览器走 navigator 派生降级值）+ SDK 对齐常量（sdkApiVersion/firstApiVersion=26、
+  osReleaseType/buildType='Release'，出处 `<CLT>/sdk/.../ets/oh-uni-package.json`）；
+- **i18n**：宿主 Intl 真值（渲染进程与浏览器同源，零 IPC）——getSystemLanguage/Locale/Region；
+- **pasteboard**：Electron 真系统剪贴板（`clipboard` 模块**仅主进程可用**——preload 直调
+  实测静默失败，走 R74 IPC 模板到主进程）；浏览器 headless 无剪贴板权限 → 进程内 Map
+  兜底（限制已记录）。
+
+**验收**：`bash electron/run.sh sysapi`（11 条断言）——osFullName 真值、apiVersion=26、
+i18n 与 navigator.language 一致（zh/zh-CN/CN）、剪贴板写读回环（真系统剪贴板）、覆盖写、
+clipboard 真值联动；浏览器端 11/11（兜底形）。
+
+**两个坑**：① 桥名错位（preload `electronAPI.clip` vs 垫片 `__arkui_dom_clip`）——块级
+作用域里 `eapi` 不可见导致 ReferenceError；② **同步调用异步桥**（桥改 IPC 后 readText 返回
+Promise，断言少 await）——静默变成字符串比较恒假。
+
+**触及**：`electron/preload.js`（sysInfo/clip 桥）、`electron/main.js`（clip IPC 端）、
+`runtime/ohos-shims.js`（三模块垫片）、`test/sysapi.html`（新，11 条）、
+`run.sh` + `electron/run.sh`（接线）、`docs/ROADMAP.md`（本节）
+
+---
+
 ## P3 布局引擎
 
 ### ~~R13 — 数据可视化类：`Progress` / `Gauge` / `DataPanel` / `Rating`~~ ✅ 已完成

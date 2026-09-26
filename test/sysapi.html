@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R89：@ohos 能力长尾——deviceInfo / i18n / pasteboard</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #result { font-family: ui-monospace, monospace; white-space: pre; font-size: 12px; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R89：deviceInfo（宿主真值 + SDK 对齐常量）/ i18n（Intl）/ pasteboard（真剪贴板）</h3>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let pass = 0, fail = 0;
+    const check = (c, m) => { if (c) { pass++; lines.push('PASS ' + m); } else { fail++; lines.push('FAIL ' + m); } };
+    const isElectron = !!(globalThis.electronAPI && globalThis.electronAPI.clip);   // preload electronAPI.clip（R89）
+
+    // ── deviceInfo（3）──
+    const di = __arkui_dom_require('@ohos:deviceInfo');
+    check(typeof di.osFullName === 'string' && di.osFullName.length > 0,
+      'deviceInfo osFullName 非空：' + String(di.osFullName).slice(0, 30));
+    check(di.sdkApiVersion === 26 && di.firstApiVersion === 26,
+      'deviceInfo sdk/firstApiVersion=26（对齐 CLT oh-uni-package.json）');
+    check(typeof di.productModel === 'string' && di.productModel.length > 0 &&
+          typeof di.brand === 'string' && di.brand.length > 0,
+      'deviceInfo productModel/brand 非空');
+
+    // ── i18n（3）──
+    const i18n = __arkui_dom_require('@ohos:i18n');
+    const navLang = (navigator.language || 'en-US');
+    check(i18n.getSystemLanguage() === navLang.split('-')[0],
+      'i18n getSystemLanguage=' + i18n.getSystemLanguage() + '（与 navigator.language 前缀一致）');
+    check(typeof i18n.getSystemLocale() === 'string' && i18n.getSystemLocale().length >= 2,
+      'i18n getSystemLocale=' + i18n.getSystemLocale());
+    check(typeof i18n.getSystemRegion() === 'string',
+      'i18n getSystemRegion=' + (i18n.getSystemRegion() || '（空串，区域不可得）'));
+
+    // ── pasteboard（5）──
+    const pb = __arkui_dom_require('@ohos:pasteboard');
+    const board = pb.getSystemPasteboard();
+    await board.setData(pb.createData('text/plain', 'arkui-dom'));
+    const d1 = await board.getData();
+    const rec1 = d1.getRecordAt(0);
+    check(rec1 && rec1.text === 'arkui-dom',
+      'pasteboard 写读回环=' + (rec1 && rec1.text) + (isElectron ? '（真系统剪贴板）' : '（内存兜底）'));
+    check(d1.getMimeTypes().indexOf('text/plain') >= 0, 'pasteboard getMimeTypes 含 text/plain');
+    await board.setData(pb.createData('text/plain', 'second-value'));
+    const d2 = await board.getData();
+    check(d2.getRecordAt(0).text === 'second-value', 'pasteboard 覆盖写（新值顶旧值）');
+    const clipNow = isElectron ? await globalThis.electronAPI.clip.readText() : d2.getRecordAt(0).text;
+    check(clipNow === 'second-value',
+      'pasteboard ' + (isElectron ? 'Electron clipboard 真值联动：clipboard=' + JSON.stringify(clipNow) : '内存兜底一致'));
+    check(typeof board.setData === 'function' && typeof board.getData === 'function',
+      'pasteboard Pasteboard 接口面完整');
+
+    lines.push('SYSINFO os=' + di.osFullName + ' lang=' + i18n.getSystemLocale());
+
+    if (fail === 0) lines.unshift(`=== ALL PASS (${pass}) ===`);
+    else lines.unshift(`=== ${fail} FAILURES / ${pass} PASS ===`);
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = fail === 0 ? 'pass' : 'fail';
+    document.title = fail === 0 ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

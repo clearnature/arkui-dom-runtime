@@ -557,6 +557,10 @@ case "${1:-index}" in
     # R88：startAbilityForResult 桌面语义（浏览器端走 overlay 降级）
     run_one abilitydesktop "$(src_of entryability/EntryAbility.ts)" build/abilitydesktop-module.js test/ability-desktop.html \
       "--cjs --register EntryAbility" ;;
+  sysapi)
+    # R89：deviceInfo/i18n/pasteboard（浏览器端走 navigator/内存兜底）
+    run_one sysapi "$(src_of entryability/EntryAbility.ts)" build/sysapi-module.js test/sysapi.html \
+      "--cjs --register EntryAbility" ;;
   router)
     # 两个页面都要注册；Detail 先单独产出，Home 由 run_one 带 flags 产出
     "$NODE" tools/extract.mjs "$(src_of pages/Detail.ts)" build/detail-module.js --cjs --register Detail >/dev/null || exit 1
