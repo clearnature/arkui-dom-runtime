@@ -1870,6 +1870,9 @@ R96 首测崩溃系**跳过官方初始化直接调函数**所致，非不可用
   进程退出/阻塞）为 dylib 挂载的落地边界；1.2.0 无宿主嵌入 API 条目；**新增 OHOS 版
   仓颉 SDK（鸿蒙 PC）**确认 2in1 方向为官方在推；**1.1.x STS 2026.10.30 停止维护**——
   本机 1.1.3 需升级 1.2.0（本地已有）。
+  【R97 起此结论已失效——工具链默认即最新线：.bashrc 自动 source nightly-current
+  （1.3.0-alpha），内核全程编在它上；不存在"SDK 升级"待办，只剩锁版本纪律（见
+  R98 条目与本节上方"SDK 间产物二进制不兼容"）。】
 
 **触及**：`tools/cjk-spike/`（kernel.cj / test_ffi.c）、
 `docs/research/cjk-spike.md`（新）、`docs/ROADMAP.md`（本节）
