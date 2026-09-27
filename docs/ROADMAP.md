@@ -2032,7 +2032,7 @@ R108 .ets fixture → R109 打包 → R110 取消。
 | ✅ R105 | 多 worker 并行 drainer | Job 三态+时间戳；drain_entry 可重入；draining=活跃计数；`agent.timings` 证据口 | 4×fib(28) 重叠对 6/6、加速 3.17x；契约测试 58 条（e6a5d98） | M-L |
 | ✅ R106 | 状态快照/恢复 | `sys.snapshot`/`sys.restore`（注册表+邮箱+nextId；jsonEsc+定位解析器；作业不快照） | 契约测试真重启路径（shutdown→init→restore）等价断言；契约 67 条（efe6e2b，Mimosa seal sha256:410e1f8c… 0 findings） | M |
 | R106 | 状态快照/恢复 | `sys.snapshot`/`sys.restore` 通用方法（注册表+邮箱+作业 JSON 化） | snapshot→re-init→restore→状态等价断言 | M |
-| R107 | 多内核共存 | addon 命名内核槽（向后兼容单槽）；50 行纯 C 内核样例做"多语言"实证 | smoke 双内核互不串扰；旧 API 兼容 | L |
+| ✅ R107 | 多内核共存 | addon 命名内核槽注册表（旧 6 平面 API=default 槽别名向后兼容；cjkInitK 等 K 变体；rtLib 空串=原生内核免运行时）+ 纯 C 样例内核 `kernel/c-sample/`（rev/len，零依赖，多语言实证） | smoke 双槽互不串扰 10 断言（隔离/单槽关闭/版本容忍）；旧 API 兼容回归（3263169，Mimosa seal sha256:6fbc3834… 0 findings） | L |
 | R108 | 真实 .ets fixture 消费 | CjkDemo.ets 四件套（`import cjk from '@ohos:cjk'`） | 新用例双端绿（桌面真内核/浏览器降级） | M |
 | R109 | 打包覆盖仓颉运行时 | package-app.mjs 携带内核+4 运行时 .so + LD_LIBRARY_PATH 处理 | 无 SDK 机器 AppImage 冒烟 cjk PASS | M |
 | R110 | 作业取消/超时 | `agent.cancel`（pending 摘除；in-flight 只能丢弃结果——边界如实文档化） | cancel pending/done 两路断言 | S-M |

@@ -9,12 +9,12 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R106 状态快照/恢复**（sys.snapshot/sys.restore：注册表+邮箱+nextId JSON 化，
-  jsonEsc 三转义 + Rd 定位解析器；作业不快照；契约测试 67 条含真重启路径 shutdown→init→
-  restore 等价）。本线已完成：R101-R106（payload/版本握手/release/日志/多 worker 3.17x/
-  快照）。剩余：R107 多内核共存 → R108 .ets fixture → R109 打包 → R110 取消
-  （明细表 ROADMAP「R101-R110 预分解」；**trha 划出本线**）；坑 101-105；
-  契约测试 67 / smoke 29 / cjk 双端 35+6 — **PASS**
+- 上次切片：**R107 多内核共存**（addon 命名内核槽：旧 6 平面 API=default 别名 +
+  cjk*K 变体；rtLib 空串挂原生内核免仓颉运行时；`kernel/c-sample/` 纯 C 内核
+  rev/len 做多语言实证；smoke 39 条含双槽隔离 10 断言；调试插曲=openKernel
+  忘置 ready，ok=1/ready=0 铁证定位）。本线已完成：R101-R107。剩余：R108
+  .ets fixture → R109 打包 → R110 取消（明细表 ROADMAP「R101-R110 预分解」；
+  **trha 划出本线**）；坑 101-105；契约测试 67 / smoke 39 / cjk 双端 35+6 — **PASS**
 - 更早：**R67**（R66 批量组件验收：37 结构 + 兜底绊网 + 14 真编译语义；绊网
   `__arkui_dom_generatedFilled`——手写注册缺席时骨架静默兜底，坑 98）；**R24 收口**（渲染
   路径决策 3f6e209：previewer 实证点火崩在窗口层、es2abc 无 JS 输出——留在分支 B）；

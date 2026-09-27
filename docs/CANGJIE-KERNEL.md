@@ -23,7 +23,7 @@ arkui-dom-runtime（自研 JS DOM 运行时）与自研仓颉内核的**进程�
 | 层 | 文件 | 职责 |
 |---|---|---|
 | 内核 | `kernel/cangjie/src/kernel.cj` → `libkernel.so` | 实现 `kernel/c-abi.h` 全部符号；注册表/邮箱/作业队列 + 递归计算等业务逻辑 |
-| 桥 | `bridge/napi/cjk_napi.cc` → `cjk_napi.node` | dlopen 运行时 → InitCJRuntime → dlopen 内核 → dlsym → 后置驱动（泵调度）；NAPI ABI 跨 Node/Electron 通用 |
+| 桥 | `bridge/napi/cjk_napi.cc` → `cjk_napi.node` | dlopen 运行时 → InitCJRuntime → dlopen 内核 → dlsym → 后置驱动（泵调度）；NAPI ABI 跨 Node/Electron 通用；**R107 起为命名内核槽注册表**——旧 6 平面 API = "default" 槽别名，`cjkInitK/cjkCallK/…` 变体首参槽名，rtLib 传空串可挂载无运行时依赖的原生内核 |
 | 主进程 | `electron/main.js` + `electron/preload.js` | `ipcMain.handle('arkui:cjk:*')` 四处理器；**惰性挂载**（首个 cjk 调用才 dlopen，无 SDK 时其余页面零依赖）；preload `electronAPI.cjk` 失败免疫 |
 | 垫片 | `runtime/ohos-shims.js` 的 `@ohos:cjk` | `isAvailable/call/ping/lastError`；params 对象自动 JSON 序列化；浏览器端探测式降级 |
 
@@ -182,11 +182,14 @@ c-abi.h 是纯 C ABI，任何能导出 C 符号、能编译 .so 的语言都可�
 
 - **必需**：6 核心符号精确导出（C++ 加 `extern "C"`；Rust `#[no_mangle] pub extern "C"`
   + `panic=abort`；Go 用 cgo `//export`；Haskell `foreign export ccall` + 启动时 hs_init）。
+- **已实证的第二语言（R107）**：`kernel/c-sample/`（纯 C，~100 行，rev/len 两方法，
+  **零运行时依赖**）——宿主 `cjkInitK("c", "", libkernel_c.so, "{}")` 即挂，rtLib 空串
+  表示该槽不需要仓颉运行时；与仓颉内核同进程共存、互不串扰（smoke 有隔离断言）。
+  编译：`bash kernel/c-sample/build.sh`。
 - **可选**：三调度符号 + 宿主泵契约——等价于 GHC 的 hs_init/hs_exit 教科书方案
   （"AOT 语言 + 富 RTS 被外部宿主调用"），仓颉的 InitCJRuntime 即其对应物。
-- **诚实边界**：以上仅仓颉版经过 49+18+26 条断言验证；Rust/Go/Haskell 是可行方向而非
-  已验证事实。各语言运行时自身的嵌入约束（Go 的 goroutine 调度、Haskell 的 RTS 参数）
-  需按坑 103/104 的同类思路实测钉死后再立项。
+- **诚实边界**：Rust/Go/Haskell 仍是可行方向而非已验证事实（C 已实证）；各语言运行时
+  自身的嵌入约束需按坑 103/104 的同类思路实测钉死后再立项。
 
 ## 8. 测试与守门
 

@@ -106,6 +106,24 @@ const cont = addon.cjkCall('agent.spawn', '{}');
 check(/"id":4/.test(cont), 'R106 restore 后 id 续号（nextId 随快照）');
 check(addon.cjkCall('sys.restore', '{"v":9}') === null, 'R106 坏版本快照 → null');
 
+// R107：多内核共存——"c" 槽挂纯 C 内核（rtLib 空串 = 无需仓颉运行时），与 default 互不串扰
+const K_C_LIB = process.env.KERNEL_C_LIB_TEST;
+check(!!K_C_LIB, 'KERNEL_C_LIB_TEST 已注入（纯 C 样例内核）');
+check(addon.cjkInitK('c', '', K_C_LIB, '{}') === true, 'R107 cjkInitK("c", rtLib="") 挂载纯 C 内核');
+check(addon.cjkCallK('c', 'rev', '{"text":"abc"}') === '{"text":"cba"}',
+  'R107 c 槽 rev（第二语言实现同一契约）');
+check(addon.cjkCallK('c', 'len', '{"text":"仓颉"}') === '{"len":6}',
+  'R107 c 槽 len（UTF-8 按字节，样例边界如实）');
+check(addon.cjkCallK('c', 'fib', '{"n":10}') === null &&
+  /unknown method/.test(addon.cjkLastErrorK('c')),
+  'R107 隔离：c 槽没有 fib → null + c 槽 lastError');
+check(addon.cjkCall('fib', '{"n":10}') === '{"result":55}',
+  'R107 隔离：default 槽 fib 照常（c 槽挂载零影响）');
+check(addon.cjkPingK('c') === 0 && addon.cjkPing() === 0, 'R107 双槽 ping 均 0');
+check(addon.cjkKernelVersionK('c') === 0, 'R107 c 槽无版本符号 → 0（旧内核容忍路径）');
+check(addon.cjkShutdownK('c') === true, 'R107 shutdownK("c") 只关 c 槽');
+check(addon.cjkCall('fib', '{"n":10}') === '{"result":55}', 'R107 c 槽关闭后 default 仍服务');
+
 check(addon.cjkShutdown() === true, 'cjkShutdown');
 
 console.log(fails === 0 ? 'ALL PASS' : fails + ' FAILURES');
