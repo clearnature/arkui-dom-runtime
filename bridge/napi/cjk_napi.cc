@@ -46,11 +46,44 @@ void *g_kernel = nullptr;   // 内核句柄
 KernelApi K = {};
 void *(*fnRunCJTask)(void *(*)(void *), void *) = nullptr;       // RunCJTask
 int (*fnRunUIScheduler)(unsigned long long) = nullptr;           // RunUIScheduler
+int (*fnKernelAbiVersion)(void) = nullptr;                       // kernel_abi_version（可选）
+int g_kernelAbiVersion = 0;                                      // 实测到的内核契约版本（0=缺席）
+static const int HOST_ABI_VERSION = 10001;                       // 宿主认识的最高契约版本
 
 char g_lastHostErr[512] = {0};   // 宿主侧（dlopen/dlsym 层）错误，与内核 last_error 分开
 
 void setHostErr(const char *m) {
   snprintf(g_lastHostErr, sizeof(g_lastHostErr), "%s", m);
+}
+
+/* R101：取任意长 UTF-8 字符串——先量全长再分配。
+ * 旧实现用固定栈缓冲（params[4096]），NAPI 语义下超长【静默截断】→ 内核收到残缺 JSON。
+ * 现在：> 1MB 显式抛错（拒绝服务优于静默残缺）；成功返回 malloc 缓冲（调用方 free）。
+ * 失败返回 NULL（已 setHostErr + throw）。 */
+char *TakeString(napi_env env, napi_value v, const char *what) {
+  static const size_t kMaxStr = 1u << 20;   // 1MB 上限
+  size_t len = 0;
+  if (napi_get_value_string_utf8(env, v, nullptr, 0, &len) != napi_ok) {
+    setHostErr("参数不是 string");
+    napi_throw_error(env, nullptr, g_lastHostErr);
+    return nullptr;
+  }
+  if (len > kMaxStr) {
+    char msg[128];
+    snprintf(msg, sizeof(msg), "%s too large (%zu bytes > %zu, R101 上限)", what, len, kMaxStr);
+    setHostErr(msg);
+    napi_throw_error(env, nullptr, g_lastHostErr);
+    return nullptr;
+  }
+  char *buf = (char *)malloc(len + 1);
+  if (!buf) { setHostErr("OOM"); napi_throw_error(env, nullptr, g_lastHostErr); return nullptr; }
+  if (napi_get_value_string_utf8(env, v, buf, len + 1, &len) != napi_ok) {
+    free(buf);
+    setHostErr("取字符串失败");
+    napi_throw_error(env, nullptr, g_lastHostErr);
+    return nullptr;
+  }
+  return buf;
 }
 
 /* cjkCall 的后置驱动（R100）：作业在途时拉起 drainer cjthread 并泵调度器。
@@ -79,11 +112,15 @@ napi_value Init(napi_env env, napi_callback_info info) {
     napi_throw_error(env, nullptr, "cjkInit 需要 (runtimeLibPath, kernelLibPath[, configJson])");
     return nullptr;
   }
-  char rtPath[1024] = {0}, kPath[1024] = {0}, config[2048] = {0};
-  size_t len = 0;
-  napi_get_value_string_utf8(env, argv[0], rtPath, sizeof(rtPath), &len);
-  napi_get_value_string_utf8(env, argv[1], kPath, sizeof(kPath), &len);
-  if (argc >= 3) napi_get_value_string_utf8(env, argv[2], config, sizeof(config), &len);
+  char *rtPath = TakeString(env, argv[0], "runtimeLibPath");
+  if (!rtPath) return nullptr;
+  char *kPath = TakeString(env, argv[1], "kernelLibPath");
+  if (!kPath) { free(rtPath); return nullptr; }
+  char *config = nullptr;
+  if (argc >= 3) {
+    config = TakeString(env, argv[2], "configJson");
+    if (!config) { free(rtPath); free(kPath); return nullptr; }
+  }
 
   if (g_kernelReady) return JsBool(env, true);   // 幂等：换内核须重启进程
 
@@ -93,14 +130,23 @@ napi_value Init(napi_env env, napi_callback_info info) {
       const char *e = dlerror();   // dlerror 只能取一次，先存局部再落
       setHostErr(e ? e : "dlopen runtime failed");
       napi_throw_error(env, nullptr, g_lastHostErr);
+      free(rtPath); free(kPath); free(config);
       return nullptr;
     }
     g_rt = rt;
     void *symInitRt = dlsym(rt, "InitCJRuntime");
-    if (!symInitRt) { setHostErr("dlsym InitCJRuntime 失败（运行时库不对？）"); napi_throw_error(env, nullptr, g_lastHostErr); return nullptr; }
+    if (!symInitRt) {
+      setHostErr("dlsym InitCJRuntime 失败（运行时库不对？）"); napi_throw_error(env, nullptr, g_lastHostErr);
+      free(rtPath); free(kPath); free(config);
+      return nullptr;
+    }
     static char param[4096] = {0};               // 零参默认（R97/R98 实测可用）
     int rc = ((int (*)(const void *))symInitRt)(param);
-    if (rc != 0) { setHostErr("InitCJRuntime 返回非 0"); napi_throw_error(env, nullptr, g_lastHostErr); return nullptr; }
+    if (rc != 0) {
+      setHostErr("InitCJRuntime 返回非 0"); napi_throw_error(env, nullptr, g_lastHostErr);
+      free(rtPath); free(kPath); free(config);
+      return nullptr;
+    }
     fnRunCJTask = (void *(*)(void *(*)(void *), void *))dlsym(rt, "RunCJTask");
     fnRunUIScheduler = (int (*)(unsigned long long))dlsym(rt, "RunUIScheduler");
     g_loaded = true;
@@ -111,6 +157,7 @@ napi_value Init(napi_env env, napi_callback_info info) {
     const char *e = dlerror();
     setHostErr(e ? e : "dlopen kernel failed");
     napi_throw_error(env, nullptr, g_lastHostErr);
+    free(rtPath); free(kPath); free(config);
     return nullptr;
   }
   g_kernel = k;
@@ -124,16 +171,30 @@ napi_value Init(napi_env env, napi_callback_info info) {
   K.pending = (int (*)(void))dlsym(k, "kernel_pending");
   K.draining = (int (*)(void))dlsym(k, "kernel_draining");
   K.drainEntry = (void *(*)(void *))dlsym(k, "kernel_drain_entry");
+  /* R102：ABI 版本握手（可选；缺席 = v1.0 旧内核容忍） */
+  fnKernelAbiVersion = (int (*)(void))dlsym(k, "kernel_abi_version");
+  g_kernelAbiVersion = fnKernelAbiVersion ? fnKernelAbiVersion() : 0;
   if (!K.init || !K.shutdown || !K.ping || !K.call || !K.free || !K.lastError) {
     setHostErr("dlsym 内核契约符号不全（须实现 kernel/c-abi.h 全部 6 符号）");
     napi_throw_error(env, nullptr, g_lastHostErr);
+    free(rtPath); free(kPath); free(config);
     return nullptr;
   }
-  if (K.init(config) != 0) {
+  if (g_kernelAbiVersion / 10000 > HOST_ABI_VERSION / 10000) {
+    snprintf(g_lastHostErr, sizeof(g_lastHostErr),
+             "内核 ABI 主版本 %d 高于宿主支持的 %d（向前不兼容，拒绝挂载）",
+             g_kernelAbiVersion / 10000, HOST_ABI_VERSION / 10000);
+    napi_throw_error(env, nullptr, g_lastHostErr);
+    free(rtPath); free(kPath); free(config);
+    return nullptr;
+  }
+  if (K.init(config ? config : "{}") != 0) {
     setHostErr("kernel_init 非零");
     napi_throw_error(env, nullptr, g_lastHostErr);
+    free(rtPath); free(kPath); free(config);
     return nullptr;
   }
+  free(rtPath); free(kPath); free(config);
   g_kernelReady = true;
   return JsBool(env, true);
 }
@@ -153,12 +214,14 @@ napi_value Call(napi_env env, napi_callback_info info) {
   napi_value argv[2];
   napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
   if (argc < 2) { napi_throw_error(env, nullptr, "cjkCall 需要 (method, paramsJson)"); return nullptr; }
-  char method[256] = {0}, params[4096] = {0};
-  size_t len = 0;
-  napi_get_value_string_utf8(env, argv[0], method, sizeof(method), &len);
-  napi_get_value_string_utf8(env, argv[1], params, sizeof(params), &len);
+  char *method = TakeString(env, argv[0], "method");
+  if (!method) return nullptr;
+  char *params = TakeString(env, argv[1], "params");
+  if (!params) { free(method); return nullptr; }
 
   const char *r = K.call(method, params);
+  free(method);
+  free(params);
   if (!r) {
     drive();                          // 失败路径也驱动（不阻塞作业推进）
     napi_value nullv;
@@ -180,6 +243,13 @@ napi_value LastError(napi_env env, napi_callback_info) {
   return out;
 }
 
+/* cjkKernelVersion() → number（R102：内核实现的契约版本；0 = 旧内核无版本符号） */
+napi_value KernelVersion(napi_env env, napi_callback_info) {
+  napi_value out;
+  napi_create_int32(env, g_kernelAbiVersion, &out);
+  return out;
+}
+
 /* cjkShutdown() → bool（kernel_shutdown；运行时本体不卸载——进程级单例） */
 napi_value Shutdown(napi_env env, napi_callback_info) {
   if (!g_kernelReady) return JsBool(env, false);
@@ -194,9 +264,10 @@ napi_value ModuleInit(napi_env env, napi_value exports) {
     { "cjkPing",      nullptr, Ping,      nullptr, nullptr, nullptr, napi_default, nullptr },
     { "cjkCall",      nullptr, Call,      nullptr, nullptr, nullptr, napi_default, nullptr },
     { "cjkLastError", nullptr, LastError, nullptr, nullptr, nullptr, napi_default, nullptr },
+    { "cjkKernelVersion", nullptr, KernelVersion, nullptr, nullptr, nullptr, napi_default, nullptr },
     { "cjkShutdown",  nullptr, Shutdown,  nullptr, nullptr, nullptr, napi_default, nullptr },
   };
-  napi_define_properties(env, exports, 5, desc);
+  napi_define_properties(env, exports, 6, desc);
   return exports;
 }
 

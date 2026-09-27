@@ -336,6 +336,12 @@ public func kernel_draining(): Int32 {
     return if (gDraining) { 1 } else { 0 }
 }
 
+// R102：ABI 版本握手（可选符号；宿主 dlsym 探测，缺席=v1.0 旧内核容忍）
+@C
+public func kernel_abi_version(): Int32 {
+    return 10001
+}
+
 // 有界 drainer：清空 pending 队列即返回（真 cjthread，由宿主 RunCJTask 拉起）
 @C
 public func kernel_drain_entry(_p: CPointer<Unit>): CPointer<Unit> {

@@ -41,6 +41,12 @@ int main(int argc, char *argv[]) {
     err_fn kerr = (err_fn)dlsym(k, "kernel_last_error");
     check(kinit && kshutdown && kping && kcall && kfree && kerr, "dlsym 6 契约符号");
 
+    /* R102：ABI 版本握手（可选符号） */
+    {
+        int (*abiver)(void) = (int (*)(void))dlsym(k, "kernel_abi_version");
+        check(abiver && abiver() == 10001, "kernel_abi_version=10001（v1.1）");
+    }
+
     check(kping() == -1, "未初始化时 ping=-1");
     check(kerr() == NULL || strlen(kerr()) == 0, "初始 last_error 为空");
     check(kinit("{}") == 0, "kernel_init(\\\"{}\\\")=0");

@@ -6,12 +6,28 @@ let fails = 0;
 const check = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fails++; };
 
 const addon = require('./cjk_napi.node');
-check(typeof addon.cjkInit === 'function' && typeof addon.cjkCall === 'function',
-  'addon 导出 cjkInit/cjkPing/cjkCall/cjkLastError/cjkShutdown');
+check(typeof addon.cjkInit === 'function' && typeof addon.cjkCall === 'function' &&
+  typeof addon.cjkKernelVersion === 'function',
+  'addon 导出 cjkInit/cjkPing/cjkCall/cjkLastError/cjkKernelVersion/cjkShutdown');
 
 const rtLib = process.env.CANGJIE_HOME_TEST + '/libcangjie-runtime.so';
 addon.cjkInit(rtLib, process.env.KERNEL_LIB_TEST, '{}');
 check(true, 'cjkInit（运行时+内核+config）不抛');
+
+// R102：ABI 版本握手
+check(addon.cjkKernelVersion() === 10001, 'cjkKernelVersion=10001（v1.1：六核心+三调度符号）');
+
+// R101：大 payload 往返（旧实现 params[4096] 静默截断）
+const big = JSON.stringify({ s: 'x'.repeat(65536), tag: 'R101' });
+const echoed = addon.cjkCall('echo', big);
+check(typeof echoed === 'string' && echoed.length === big.length &&
+  echoed.endsWith('"tag":"R101"}') && echoed.includes('xxxxx'),
+  'R101 64KB echo 完整往返（不截断）');
+let overThrew = '';
+try {
+  addon.cjkCall('echo', JSON.stringify({ s: 'y'.repeat(2 * 1024 * 1024) }));
+} catch (e) { overThrew = String(e && e.message || e); }
+check(/params too large/.test(overThrew), 'R101 超 1MB → 显式抛错（' + overThrew.slice(0, 46) + '…）');
 
 check(addon.cjkPing() === 0, 'cjkPing=0');
 

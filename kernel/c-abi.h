@@ -13,6 +13,15 @@
 #ifndef CJK_KERNEL_ABI_H
 #define CJK_KERNEL_ABI_H
 
+/*
+ * ABI 版本握手（R102，可选符号）：
+ *   int kernel_abi_version(void);
+ * 返回内核实现的契约版本 = 主版本*10000 + 次版本。缺席 = v1.0 旧内核，宿主容忍。
+ * 宿主规则：内核主版本 > 宿主认识的 → 拒绝挂载（向前不兼容防呆）；次版本更高 → 放行。
+ * 当前宿主认识 KERNEL_ABI_VERSION（10001 = 六核心符号 + 三可选调度符号）。
+ */
+#define KERNEL_ABI_VERSION 10001
+
 /* ── 生命周期 ── */
 
 /*
@@ -73,5 +82,8 @@ const char *kernel_last_error(void);
  *     队列同步只用 Mutex（纯 futex，宿主线程安全）。
  * 三个符号全部缺席 = 同步内核（R97-R99 形态），宿主自动跳过驱动，向后兼容。
  */
+
+/* ABI 版本握手（可选；见文件头注释）。内核实现时应返回 KERNEL_ABI_VERSION。 */
+int kernel_abi_version(void);
 
 #endif // CJK_KERNEL_ABI_H
