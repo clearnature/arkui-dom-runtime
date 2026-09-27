@@ -1847,10 +1847,12 @@ spike 实测（`tools/cjk-spike/`，cjc 1.1.3 cjnative）：`@C` 导出产生无
 SIGABRT（`runtime != nullptr`，预载 std-core/runtime 库同样崩）。独立 ELF 自带完整初始化
 （`hello` 直接跑通）。
 
-**定型**：仓颉内核 = **独立 ELF 子进程 + stdio 行协议**（Node `child_process.spawn`；
-协议骨架：`{id, method, params}` / `{id, result|error}`，错误语义含崩溃重启一次）。
-进程内 C ABI **不可用**——触发条件：cjc 公开 dylib 运行时初始化入口。
-正式实现（`@ohos:cjk` 垫片挂 child_process 桥）待内核用途定义后立项。
+**定型（R96.2 修正）**：**进程内 C ABI 可行且官方支持**——`libcangjie-runtime.so` 以
+`MRT_EXPORT` 导出完整初始化序列（`InitCJRuntime` → `LoadCJLibraryWithInit` →
+`FindCJSymbol` → 直调 @C 导出函数，全序列实测通过，仓颉 GC 线程真实启动）。
+R96 首测崩溃系**跳过官方初始化直接调函数**所致，非不可用。
+独立 ELF + stdio 保留为隔离场景选项。`@ohos:cjk` 垫片（主进程一次性 InitCJRuntime +
+按需直调导出函数）挂载契约就此齐备，待内核用途定义后立项。
 
 **参考实现核验（R96.1，2026-09-27）**：
 - **trha**（Haskell 微内核 agent harness，GHC/cabal + Electron+React 壳）——与"仓颉内核 +
