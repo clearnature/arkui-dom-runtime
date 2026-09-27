@@ -2013,15 +2013,20 @@ Mimosa deep 审计 **0 findings**（seal sha256:566b38d0…，覆盖内核 v4/c-
 
 ### R101-R110 预分解——运行时 × 通用语言内核接口（2026-09-27 规划）
 
+**R101-R103 硬化批已完成**（a5fd25b / 4850c67）：契约测试 50 条、smoke 24 条、
+electron cjk 26 条；Mimosa deep 审计 **0 findings**（seal sha256:53d4308e…）。
+后续剩余：R104 日志通道 → R105 多 worker → R106 快照 → R107 多内核共存 →
+R108 .ets fixture → R109 打包 → R110 取消。
+
 **范围裁定（用户裁定）**：trha 微内核 agent harness 重写**不属于本线**——本线只交付
 "运行时 + 通用语言内核接口"自身的完备性；trha 专属方法面由 trha 项目定义。以下每条
 原子可独立提交，顺序即建议执行序：
 
 | # | 任务 | 交付物 | 验收 | 规模 |
 |---|---|---|---|---|
-| R101 | payload 长度修复 | addon 先取全长再分配（现状 `params[4096]` 静默截断），超上限（1MB）显式抛错 | smoke 增 64KB echo 往返断言；三层不回归 | S |
-| R102 | ABI 版本握手 | c-abi.h 增可选 `kernel_abi_version()`；addon 探测+校验+暴露；缺席=旧内核容忍 | 契约测试+smoke；旧内核不回归 | S |
-| R103 | 内核 release 编译 | `cjc -O2` 构建路径；fib 泵窗口耗时前后对比入 CANGJIE-KERNEL.md §10 | 三层绿；electron 全矩阵无回归 | S |
+| ✅ R101 | payload 长度修复 | addon 先取全长再分配（TakeString），超 1MB 显式抛错 | smoke 64KB echo 往返 + 2MB 抛错；三层不回归（a5fd25b） | S |
+| ✅ R102 | ABI 版本握手 | 可选 `kernel_abi_version()`=10001；addon 探测+主版本防呆+`cjkKernelVersion()` | 契约测试+smoke 增版本断言；旧内核容忍（a5fd25b） | S |
+| ✅ R103 | 内核 release 编译 | `kernel/cangjie/build.sh`（默认 -O2）；fib(32) 60ms→20ms（3x，实测入 CANGJIE-KERNEL §10） | 三层绿；electron 全矩阵无回归 | S |
 | R104 | 运行时日志通道 | RuntimeParam.logParam 配置日志（探针定字段语义），消除 stderr 直通污染 | `electron/run.sh cjk` 输出无时间戳行 | M |
 | R105 | 多 worker 并行 drainer | worker 池语义（Mutex 内领取、锁外计算）；并行时钟证据断言 | 契约测试增并行证据；三层绿 | M-L |
 | R106 | 状态快照/恢复 | `sys.snapshot`/`sys.restore` 通用方法（注册表+邮箱+作业 JSON 化） | snapshot→re-init→restore→状态等价断言 | M |

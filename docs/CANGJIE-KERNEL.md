@@ -73,6 +73,9 @@ void* kernel_drain_entry(void*);     // 有界 drainer 入口（清空队列即�
 ```
 
 三符号**全部缺席 = 同步内核**，宿主自动跳过驱动，向后兼容（addon 按 dlsym 探测）。
+另有可选 `kernel_abi_version()`（R102）：返回契约版本 = 主版本*10000 + 次版本
+（当前 10001）；缺席 = v1.0 旧内核；宿主规则：内核主版本 > 宿主认识的 → 拒绝挂载
+（向前不兼容防呆），`cjkKernelVersion()` 可查（0 = 旧内核无符号）。
 宿主义务与嵌入模式约束见 §5 与 c-abi.h 头注。
 
 ### 3.3 演进纪律
@@ -211,8 +214,12 @@ c-abi.h 是纯 C ABI，任何能导出 C 符号、能编译 .so 的语言都可�
   软链后，`libkernel.so` 必须重编并复跑三层测试（`electron/run.sh` 探测的是软链指向，
   不锁具体版本号）。
 - **夜版质量**：坑 101-104 均为 nightly 实测，stable 1.2.0/1.0.5 未验证。
-- **生产编译**：当前内核为 cjc 默认（debug 级）编译，fib(20) 在泵窗口内可达百毫秒级、
-  期间阻塞主进程；生产内核须 `cjc -O2`（release 下递归计算微秒级）。
+- **生产编译**（R103 实测，2026-09-27 nightly 1.3.0-alpha）：构建走
+  `bash kernel/cangjie/build.sh`（默认 `-O2` release；`BUILD=debug` 可切）。同口径
+  对比：drainer cjthread 内 fib(32)（217 万次递归）debug **60 ms** → release **20 ms**
+  （3x）。修正 R100 时的未验证假设——"百毫秒级"并不成立（debug fib(32)=60ms），
+  但 release 对高频调用仍值得。`RunUIScheduler(2ms)` 泵窗口在作业计算期间仍会
+  阻塞主进程对应时长（20ms 级可接受）。
 - **打包**：分发形态需随包携带内核 .so 与仓颉运行时库（依赖清单见 §4 步骤 0），
   `tools/package-app.mjs` 尚未覆盖仓颉运行时——分发场景立项时补。
 
@@ -226,6 +233,7 @@ c-abi.h 是纯 C ABI，任何能导出 C 符号、能编译 .so 的语言都可�
 4. 内核状态纯内存、跨进程重启即失；内核换版需重启进程（addon 幂等加载，不热替换）；
 5. `RunUIScheduler` 泵窗口阻塞 Electron 主进程（§10 生产编译项缓解）；
 6. JSON 手写扫描只支持紧凑形式 + 整数；agent 的 name/text 不处理引号转义。
+   传输层限制已由 R101 消除（addon 取全长再分配，>1MB 显式抛错——不再静默截断）。
 
 ## 12. 相关文档与提交
 
