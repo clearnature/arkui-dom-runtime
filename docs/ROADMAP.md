@@ -2008,6 +2008,8 @@ Mimosa deep 审计 **0 findings**（seal sha256:507a4c5f…，覆盖内核 v3/�
 计算期间会阻塞主进程该窗口（fib 在 debug nightly 下可达百毫秒级，release 编译后
 微秒级——生产内核须用 cjc -O2）。
 Mimosa deep 审计 **0 findings**（seal sha256:566b38d0…，覆盖内核 v4/c-abi 可选节/addon 驱动/测试）。
+仓颉内核线知识已汇编为独立技术文档：**`docs/CANGJIE-KERNEL.md`**（四层架构 / ABI 契约 /
+挂载序列 / 泵模式铁律 / 方法面全表 / 扩展指南 / 坑速查 / 锁版本纪律）。
 
 **触及**：`kernel/cangjie/src/kernel.cj`（v3 → v4，+Job/drainer/可选符号）、
 `kernel/c-abi.h`（可选调度符号节）、`bridge/napi/cjk_napi.cc`（后置驱动）、

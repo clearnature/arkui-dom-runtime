@@ -2,7 +2,8 @@
 
 > 仓库记忆。不在本文件 = 没发生。每次会话开始读它，结束时裁剪它。
 > 细节的唯一权威是五文档：`README.md` / `docs/ROADMAP.md` / `docs/ARCHITECTURE.md` /
-> `docs/CAPABILITY.md` / `docs/DEVELOPING.md`。本文件只做索引与进度，不复制内容。
+> `docs/CAPABILITY.md` / `docs/DEVELOPING.md`；另有专题汇总统稿 `docs/CANGJIE-KERNEL.md`
+> （仓颉内核线：架构/ABI/挂载/泵模式/坑速查）。本文件只做索引与进度，不复制内容。
 
 ## TL;DR（当前 — 下次会话必须 1 分钟内理解）
 
