@@ -1864,7 +1864,12 @@ R96 首测崩溃系**跳过官方初始化直接调函数**所致，非不可用
   但 cjc 无 WASM 后端，此路对仓颉仍是触发条件；
 - **GHC 类比确认**：GHC 的 foreign export + hs_init/hs_exit 正是"AOT 语言 + 富 RTS 被外部
   宿主调用"的教科书方案——仓颉 dylib 缺的就是公开的 hs_init 等价物。GHC 先例证明这不是
-  语言级不可能，而是**工具链公开承诺缺口**（与 R96 触发条件同构）。
+  语言级不可能，而是**工具链公开承诺缺口**（与 R96 触发条件同构）；
+- **官方文档核验（1.2.0 在线文档 + FFI/cangjie-c 页）**：@C 导出规则与 CDECL 调用约定
+  与本项目实测一致；CString 所有权（mallocCString+显式释放）与混合宿主三条约束（fork/
+  进程退出/阻塞）为 dylib 挂载的落地边界；1.2.0 无宿主嵌入 API 条目；**新增 OHOS 版
+  仓颉 SDK（鸿蒙 PC）**确认 2in1 方向为官方在推；**1.1.x STS 2026.10.30 停止维护**——
+  本机 1.1.3 需升级 1.2.0（本地已有）。
 
 **触及**：`tools/cjk-spike/`（kernel.cj / test_ffi.c）、
 `docs/research/cjk-spike.md`（新）、`docs/ROADMAP.md`（本节）

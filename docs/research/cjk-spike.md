@@ -53,3 +53,43 @@ void *fn = FindCJSymbol(libPath, "kernelAdd"); // → 命中
 日志佐证：`Cangjie runtime started.` / `GCThreadPool init` / `FinalizerProcessor thread started`（运行时真实启动）。
 
 **ARCHITECTURE.md §4.21 的修正记录同步更新（R96.2）：进程内 C ABI 从"不可用"改为"可行（官方 C API）"。**
+
+
+## R96.3 附录：官方在线文档核验（仓颉 1.2.0，2026-09-27）
+
+三个权威源（cj-docs.gitcode.com/zh/1.2.0）直接阅读，不猜测：
+
+### FFI/cangjie-c.html（仓颉-C 互操作，权威规则页）
+- `@C` 导出规则实证：修饰 foreign 函数、**顶层非泛型函数**、struct；类型须满足 CType
+  约束；仓颉侧调用需 unsafe；**命名不建议 CJ_ 前缀**（与 std/运行时内部符号冲突）——
+  本项目 kernelAdd 命名合规；
+- 调用约定：`@CallingConv[CDECL]`，默认可省略，仅支持 CDECL（与 R96 实测 System V AMD64
+  直调成功一致）；
+- **CString 所有权**：String→CString 须 `LibC.mallocCString` 且**用后释放**；inout 指针
+  仅保证调用期间有效——跨语言字符串是显式的内存管理责任区（本 spike 未测字符串导出，
+  立项 @ohos:cjk 时列为首批验证项）；
+- **混合宿主约束（官方承认进程内场景存在）**：fork 子进程不支持仓颉逻辑；C 侧退出进程
+  时共享资源已释放可能非法访问；不建议其他语言长时间阻塞——这三条 = 官方默认
+  "C 宿主 + 仓颉逻辑同进程"场景存在，只是**运行时初始化细节不在本页**。
+
+### deploy_and_run/runtime_deploy.html（运行时部署）
+- 只覆盖【仓颉可执行程序自身】的运行时部署（LD_LIBRARY_PATH 指向
+  `${CANGJIE_HOME}/runtime/lib/<arch>_cjnative`；全静态链接可免部署）；
+- **不含宿主嵌入 API**——InitCJRuntime/LoadCJLibraryWithInit 在官方文档中无公开页面，
+  证实"de facto 可用、de jure 未文档化"的判断（入口符号从 libcangjie-runtime.so
+  dlsym 可得，用法要从 cangjie_runtime 源码仓库的 Cangjie.h 抄）。
+
+### release-notes/cangjie_1.2（关键条目）
+- **无宿主嵌入 API 条目**（"C Invoke Cangjie API"仍未进 SDK，与源码分析一致）；
+- 互操作方向 = ObjC/Java 扩展（非 C 宿主嵌入）；
+- **"新增 OHOS 版仓颉 SDK（鸿蒙 PC）"**——2in1/PC 形态的仓颉支持是官方在推的方向；
+- **破坏性变更**：SDK 间编译产物**二进制不兼容**（Exception/TypeInfo 私有成员）——
+  dylib 挂载方案必须**锁定 SDK 版本**并随升级全量重编；
+- **1.1.x STS 于 2026.10.30 停止维护**——本机 1.1.3 需升级到 1.2.0（本地已有）或跟随
+  nightly。
+
+### 对挂载设计的三条落地约束
+1. dylib 挂载必须**锁 SDK 版本**（编译产物二进制不兼容是官方明示的破坏性变更）；
+2. 跨语言字符串必须走 `LibC.mallocCString` + 显式释放，inout 指针仅调用期有效；
+3. fork 场景（子进程跑仓颉逻辑）官方不支持——子进程化挂载方案中，仓颉逻辑必须留在
+   初始化过的那一个进程内。
