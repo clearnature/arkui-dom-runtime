@@ -1,13 +1,16 @@
 /*
  * R98：C 测试器——完整 c-abi 契约验证（test_kernel.c 的 v2 版）
- * 序列：dlopen 运行时 → InitCJRuntime → dlopen 内核 → dlsym 6 符号 →
- *       ping/init/call(echo,add,fib,upper)/错误路径/last_error/free/shutdown/ping
- * 编译：gcc kernel_contract_test.c -o kernel_contract_test -ldl
+ * 序列：dlopen 运行时 → InitCJRuntime → dlopen 内核 → dlsym 符号 →
+ *       ping/init/call(...)/错误路径/last_error/free/shutdown/ping
+ * R104：InitCJRuntime 改用显式 RuntimeParam（logLevel=ERROR，灭启动日志噪声；
+ *       heap/gc/co 字段保持 0 = 各字段文档默认）。
+ * 编译：gcc kernel_contract_test.c -o kernel_contract_test -ldl -I../../c-abi
  * 运行：LD_LIBRARY_PATH=<SDK>/runtime/lib/linux_x86_64_cjnative ./kernel_contract_test
  */
 #include <dlfcn.h>
 #include <stdio.h>
 #include <string.h>
+#include "Cangjie.h"
 
 typedef int (*init_rt_fn)(const void *);
 typedef int (*i_cstr_fn)(const char *);
@@ -26,10 +29,12 @@ int main(int argc, char *argv[]) {
     const char *kernel_path = (argc > 1) ? argv[1] : "../libkernel.so";
     void *rt = dlopen("libcangjie-runtime.so", RTLD_NOW | RTLD_GLOBAL);
     if (!rt) { printf("FAIL dlopen runtime: %s\n", dlerror()); return 1; }
-    /* 零参默认（4096 字节零块）——与 R97 test_kernel.c 相同 */
-    static char param[4096] = {0};
-    int rc = ((init_rt_fn)dlsym(rt, "InitCJRuntime"))(param);
-    check(rc == 0, "InitCJRuntime(零参默认)");
+    /* R104：显式 RuntimeParam（logLevel=ERROR）；heap/gc/co 字段 0 = 文档默认 */
+    static struct RuntimeParam param;
+    memset(&param, 0, sizeof(param));
+    param.logParam.logLevel = RTLOG_ERROR;
+    int rc = ((init_rt_fn)dlsym(rt, "InitCJRuntime"))(&param);
+    check(rc == 0, "InitCJRuntime(RuntimeParam, logLevel=ERROR)");
 
     void *k = dlopen(kernel_path, RTLD_NOW);
     if (!k) { printf("FAIL dlopen kernel: %s\n", dlerror()); return 1; }

@@ -94,10 +94,12 @@ void* kernel_drain_entry(void*);     // 有界 drainer 入口（清空队列即�
      预载无法满足内核 DT_NEEDED 匹配，只能走搜索路径
    （electron/run.sh 自动探测 nightly-current 软链并导出 CANGJIE_RT_LIB + LD_LIBRARY_PATH）
 1. dlopen("libcangjie-runtime.so", RTLD_NOW | RTLD_GLOBAL)
-2. dlsym(rt, "InitCJRuntime"); InitCJRuntime(4096 字节零参默认)   ← 跳过则内核内
-   任何堆操作 SIGABRT（GC/并发线程由它拉起，实测日志：Cangjie runtime started）
+2. dlsym(rt, "InitCJRuntime")
+   显式 RuntimeParam：heap/gc/co 字段保持 0（=各字段文档默认值），仅
+   logParam.logLevel = RTLOG_ERROR（R104）——零内存落成 VERBOSE(0)，运行时
+   启动/GC 日志会全部直通 stderr；跳过 InitCJRuntime 则内核内任何堆操作 SIGABRT
 3. dlopen(内核.so, RTLD_NOW | RTLD_GLOBAL)
-4. dlsym 六核心符号（+可选调度符号，缺席容忍）
+4. dlsym 六核心符号（+可选调度/版本符号，缺席容忍）
 5. kernel_init("{}")   ← re-init = 全新内核（agent/作业状态清零，测试隔离语义）
 ```
 

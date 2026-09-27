@@ -2027,7 +2027,7 @@ R108 .ets fixture → R109 打包 → R110 取消。
 | ✅ R101 | payload 长度修复 | addon 先取全长再分配（TakeString），超 1MB 显式抛错 | smoke 64KB echo 往返 + 2MB 抛错；三层不回归（a5fd25b） | S |
 | ✅ R102 | ABI 版本握手 | 可选 `kernel_abi_version()`=10001；addon 探测+主版本防呆+`cjkKernelVersion()` | 契约测试+smoke 增版本断言；旧内核容忍（a5fd25b） | S |
 | ✅ R103 | 内核 release 编译 | `kernel/cangjie/build.sh`（默认 -O2）；fib(32) 60ms→20ms（3x，实测入 CANGJIE-KERNEL §10） | 三层绿；electron 全矩阵无回归 | S |
-| R104 | 运行时日志通道 | RuntimeParam.logParam 配置日志（探针定字段语义），消除 stderr 直通污染 | `electron/run.sh cjk` 输出无时间戳行 | M |
+| ✅ R104 | 运行时日志通道 | InitCJRuntime 改显式 RuntimeParam（logLevel=ERROR；零内存=VERBOSE 是噪声根因）；addon/契约测试均改 include Cangjie.h 结构体 | 三层绿；smoke/electron 输出时间戳行 0 条 | M→S |
 | R105 | 多 worker 并行 drainer | worker 池语义（Mutex 内领取、锁外计算）；并行时钟证据断言 | 契约测试增并行证据；三层绿 | M-L |
 | R106 | 状态快照/恢复 | `sys.snapshot`/`sys.restore` 通用方法（注册表+邮箱+作业 JSON 化） | snapshot→re-init→restore→状态等价断言 | M |
 | R107 | 多内核共存 | addon 命名内核槽（向后兼容单槽）；50 行纯 C 内核样例做"多语言"实证 | smoke 双内核互不串扰；旧 API 兼容 | L |

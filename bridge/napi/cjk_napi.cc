@@ -22,6 +22,7 @@
 #include <dlfcn.h>
 #include <cstring>
 #include <string>
+#include "Cangjie.h"   // kernel/c-abi/Cangjie.h（-I../../kernel/c-abi）；R104 起用其 RuntimeParam
 
 namespace {
 
@@ -140,8 +141,14 @@ napi_value Init(napi_env env, napi_callback_info info) {
       free(rtPath); free(kPath); free(config);
       return nullptr;
     }
-    static char param[4096] = {0};               // 零参默认（R97/R98 实测可用）
-    int rc = ((int (*)(const void *))symInitRt)(param);
+    /* R104：显式 RuntimeParam——heap/gc/co 字段保持 0（=各字段文档默认值），
+     * 仅 logParam.logLevel 提到 ERROR：零内存会落成 VERBOSE(0)，运行时启动/
+     * GC 日志全部直通 stderr（R97-R103 的输出噪声即此因，JSDoc 的"默认 ERROR"
+     * 指运行时内部默认，不是零内存语义）。 */
+    static RuntimeParam param;
+    memset(&param, 0, sizeof(param));
+    param.logParam.logLevel = RTLOG_ERROR;
+    int rc = ((int (*)(const void *))symInitRt)(&param);
     if (rc != 0) {
       setHostErr("InitCJRuntime 返回非 0"); napi_throw_error(env, nullptr, g_lastHostErr);
       free(rtPath); free(kPath); free(config);
