@@ -1763,22 +1763,22 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   fixtures 转换产物  74 个：AlphabetIndexerDemo AnimDemo AnimatorDemo AsyncIO AttrHeavyDemo BatchFuncDemo BatchLayoutDemo BatchMediaDemo BatchVerifyDemo CalendarPickerDemo Callee CanvasDemo DatePickerDemo Detail DrawDemo GestureDemo GestureGroupDemo GridDemo GridRowDemo Home ImageDemo Index InputDemo Layout Lazy LazyVar ListGroupDemo MeasArea MeasImage MeasNotify Measure MediaDemo NavBarDemo NavDemo NavShimDemo NavTransDemo NetFile NotesDetail NotesHome Observe PanelDemo PerfBigDemo PerfDemo PickerDemo PopDemo PromptAct Provide QrDemo RefreshDemo RelDemo Rich RichVideoDemo ScrollDemo ShapeDemo ShowDemo SideBarDemo SmallDemo SplitDemo StepDemo Stress1kDemo SwiperDemo TabsGrid TextDemo TextMeasure TextPickerDemo TextTimeDemo TimePickerDemo TransitionDemo UiContextDemo V2 WaterFlowDemo Widgets WindowDemo XCompDemo
 
 == 性能基线（Electron 实测）==
-  首渲染            124.8 ms（33 节点：Column+Button+Text+ForEach×30）
-  最小 rerender     12.3 ms（@State 计数脏区单 Text，rAF 口径）
+  首渲染            127.0 ms（33 节点：Column+Button+Text+ForEach×30）
+  最小 rerender     5.7 ms（@State 计数脏区单 Text，rAF 口径）
   rerender 管道     1.1 ms / 1 tick（setTimeout 轮询口径，R70）
   微任务底噪        0.00 ms
   行数              31
-  剖面 R71          loadRoute 同步 3.9 ms（require 0.2）· raf1 0.0 / raf2 120.9 ms（offscreen 首帧）
-  脚本 eval         runtime 23.1 / generated 22.3 / shims 21.6 / module 21.2 ms（计时起点之前）
+  剖面 R71          loadRoute 同步 3.7 ms（require 0.2）· raf1 0.1 / raf2 123.2 ms（offscreen 首帧）
+  脚本 eval         runtime 25.2 / generated 24.1 / shims 23.3 / module 22.4 ms（计时起点之前）
   判定              框架同步构建 3.5ms 无大头；"首渲染"=脚本 eval + offscreen 首帧（非框架成本）
-  千节点 R79        首渲染同步 18.8 ms（350 节点/~3500 属性，亚线性）· 单点 flush 2.7 ms · 批量翻转 flush 6.3 ms
+  千节点 R79        首渲染同步 18.8 ms（350 节点/~3500 属性，亚线性）· 单点 flush 1.6 ms · 批量翻转 flush 3.6 ms
   规模曲线          203→4.8 / 304→11.2 / 1055→19.0 ms（创建路径亚线性）；行复用+守卫千节点级保持
 
 == 体积（源码，不含产物/Electron 运行时）==
   runtime          981.6 KB
   runtime(src)     982.7 KB
   test             848.1 KB
-  tools            83.0 KB
+  tools            166.8 KB
   electron(src)    42.6 KB
   docs             734.6 KB
   fixtures         512.0 KB
