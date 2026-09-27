@@ -90,6 +90,84 @@ int main(int argc, char *argv[]) {
     check(r == NULL, "call(add 缺 a)=NULL");
     check(strstr(kerr(), "a and b") != NULL, "last_error 提示缺 a/b");
 
+    /* ── agent 调度原语（R99，注册表+邮箱，跨调用持久）── */
+    r = kcall("agent.spawn", "{\"name\":\"alice\"}");
+    check(r && strcmp(r, "{\"id\":1,\"name\":\"alice\",\"state\":\"idle\"}") == 0,
+      "agent.spawn #1 → id=1");
+    if (r) kfree(r);
+    r = kcall("agent.spawn", "{\"name\":\"bob\"}");
+    check(r && strcmp(r, "{\"id\":2,\"name\":\"bob\",\"state\":\"idle\"}") == 0,
+      "agent.spawn #2 → id=2（单调）");
+    if (r) kfree(r);
+    r = kcall("agent.spawn", "{}");
+    check(r && strcmp(r, "{\"id\":3,\"name\":\"agent-3\",\"state\":\"idle\"}") == 0,
+      "agent.spawn 无名 → 缺省名 agent-3");
+    if (r) kfree(r);
+
+    r = kcall("agent.list", "{}");
+    check(r && strcmp(r,
+      "{\"count\":3,\"agents\":[{\"id\":1,\"name\":\"alice\",\"state\":\"idle\"},"
+      "{\"id\":2,\"name\":\"bob\",\"state\":\"idle\"},"
+      "{\"id\":3,\"name\":\"agent-3\",\"state\":\"idle\"}]}") == 0,
+      "agent.list 按 spawn 序全量（count=3）");
+    if (r) kfree(r);
+
+    /* 邮箱：两次入队 → 一次排空 → 再排空为空 */
+    r = kcall("agent.send", "{\"id\":1,\"text\":\"任务甲\"}");
+    check(r && strcmp(r, "{\"queued\":1}") == 0, "agent.send #1 → queued=1");
+    if (r) kfree(r);
+    r = kcall("agent.send", "{\"id\":1,\"text\":\"任务乙\"}");
+    check(r && strcmp(r, "{\"queued\":2}") == 0, "agent.send #2 → queued=2");
+    if (r) kfree(r);
+    r = kcall("agent.poll", "{\"id\":1}");
+    check(r && strcmp(r, "{\"messages\":[\"任务甲\",\"任务乙\"],\"drained\":2}") == 0,
+      "agent.poll 按序排空两条（FIFO+drained=2）");
+    if (r) kfree(r);
+    r = kcall("agent.poll", "{\"id\":1}");
+    check(r && strcmp(r, "{\"messages\":[],\"drained\":0}") == 0,
+      "agent.poll 再排空为空（排空语义）");
+    if (r) kfree(r);
+
+    /* 邮箱隔离：bob 的邮箱不受 alice 排空影响 */
+    r = kcall("agent.send", "{\"id\":2,\"text\":\"bob 的\"}");
+    if (r) kfree(r);
+    r = kcall("agent.poll", "{\"id\":2}");
+    check(r && strcmp(r, "{\"messages\":[\"bob 的\"],\"drained\":1}") == 0,
+      "agent 邮箱按 id 隔离");
+    if (r) kfree(r);
+
+    /* kill：从注册表摘除，list 同步收敛 */
+    r = kcall("agent.kill", "{\"id\":2}");
+    check(r && strcmp(r, "{\"killed\":\"bob\"}") == 0, "agent.kill → killed=bob");
+    if (r) kfree(r);
+    r = kcall("agent.list", "{}");
+    check(r && strstr(r, "\"count\":2") && strstr(r, "bob") == NULL,
+      "agent.list kill 后 count=2 且无 bob");
+    if (r) kfree(r);
+
+    /* 未知 id 三条错误路径 */
+    r = kcall("agent.send", "{\"id\":99,\"text\":\"x\"}");
+    check(r == NULL && strstr(kerr(), "no agent id=99") != NULL, "agent.send 未知 id → NULL+报因");
+    if (r) kfree(r);
+    r = kcall("agent.poll", "{\"id\":99}");
+    check(r == NULL && strstr(kerr(), "agent.poll") != NULL, "agent.poll 未知 id → NULL");
+    if (r) kfree(r);
+    r = kcall("agent.kill", "{\"id\":99}");
+    check(r == NULL && strstr(kerr(), "agent.kill") != NULL, "agent.kill 未知 id → NULL");
+    if (r) kfree(r);
+
+    /* shutdown 后注册表仍活着吗？——重新 init 即全新内核（agent 清零、id 归位） */
+    check(kshutdown() == 0, "kernel_shutdown=0");
+    check(kinit("{}") == 0, "再次 kernel_init（全新内核）");
+    r = kcall("agent.list", "{}");
+    check(r && strcmp(r, "{\"count\":0,\"agents\":[]}") == 0,
+      "re-init 后 agent 注册表清零（测试隔离语义）");
+    if (r) kfree(r);
+    r = kcall("agent.spawn", "{\"name\":\"fresh\"}");
+    check(r && strcmp(r, "{\"id\":1,\"name\":\"fresh\",\"state\":\"idle\"}") == 0,
+      "re-init 后 id 计数器归 1");
+    if (r) kfree(r);
+
     /* shutdown 后 ping 失败、call 拒绝 */
     check(kshutdown() == 0, "kernel_shutdown=0");
     check(kping() == -1, "shutdown 后 ping=-1");

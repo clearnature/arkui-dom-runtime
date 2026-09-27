@@ -81,9 +81,32 @@
       check(await cjk.ping() === 0, 'cjk 错误路径后 ping 仍=0');
       const after = await cjk.call('fib', { n: 12 });
       check(!!after && after.result === 144, 'cjk 错误路径后 fib(12)=144（服务连续）');
+
+      // ── ⑩ agent 调度原语（R99：注册表+邮箱，跨调用持久 = trha MVP 数据面）──
+      const a1 = await cjk.call('agent.spawn', { name: '渲染侧-甲' });
+      check(!!a1 && a1.id === 1 && a1.name === '渲染侧-甲' && a1.state === 'idle',
+        'cjk agent.spawn → {id:1,state:idle}（UTF-8 名字）');
+      const q1 = await cjk.call('agent.send', { id: a1.id, text: '给甲的活' });
+      const q2 = await cjk.call('agent.send', { id: a1.id, text: '给甲的活2' });
+      check(!!q1 && q1.queued === 1 && !!q2 && q2.queued === 2,
+        'cjk agent.send 两次 → queued 1→2');
+      const p1 = await cjk.call('agent.poll', { id: a1.id });
+      check(!!p1 && p1.drained === 2 && p1.messages.length === 2 &&
+        p1.messages[0] === '给甲的活' && p1.messages[1] === '给甲的活2',
+        'cjk agent.poll FIFO 排空两条');
+      const p2 = await cjk.call('agent.poll', { id: a1.id });
+      check(!!p2 && p2.drained === 0 && p2.messages.length === 0,
+        'cjk agent.poll 再排空为空');
+      const lst = await cjk.call('agent.list', {});
+      check(!!lst && lst.count === 1 && lst.agents[0].name === '渲染侧-甲',
+        'cjk agent.list 注册表跨调用持久');
+      const kd = await cjk.call('agent.kill', { id: a1.id });
+      const lst2 = await cjk.call('agent.list', {});
+      check(!!kd && kd.killed === '渲染侧-甲' && !!lst2 && lst2.count === 0,
+        'cjk agent.kill 摘除后注册表清空');
     }
 
-    // ── ⑩ 垫片面完整（两端都断言）──
+    // ── 垫片面完整（两端都断言）──
     check(typeof cjk.call === 'function' && typeof cjk.ping === 'function' &&
       typeof cjk.lastError === 'function' && typeof cjk.isAvailable === 'function',
       'cjk 垫片面完整（call/ping/lastError/isAvailable）');

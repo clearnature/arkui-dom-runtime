@@ -23,6 +23,16 @@ check(addon.cjkCall('upper', '{"text":"cjk"}') === '{"text":"CJK"}', 'cjkCall(up
 check(addon.cjkCall('nope', '{}') === null, 'cjkCall(未知方法)=null');
 check(/unknown method/.test(addon.cjkLastError()), 'cjkLastError 报 unknown method');
 
+// R99：agent 调度原语（跨调用持久状态经 addon 透传；addon 返回原始 JSON 串）
+check(addon.cjkCall('agent.spawn', '{"name":"w1"}') === '{"id":1,"name":"w1","state":"idle"}',
+  'cjkCall(agent.spawn) → id=1');
+check(addon.cjkCall('agent.send', '{"id":1,"text":"t1"}') === '{"queued":1}',
+  'cjkCall(agent.send) → queued=1');
+check(addon.cjkCall('agent.poll', '{"id":1}') === '{"messages":["t1"],"drained":1}',
+  'cjkCall(agent.poll) → 排空');
+check(addon.cjkCall('agent.kill', '{"id":1}') === '{"killed":"w1"}',
+  'cjkCall(agent.kill) → killed');
+
 check(addon.cjkShutdown() === true, 'cjkShutdown');
 
 console.log(fails === 0 ? 'ALL PASS' : fails + ' FAILURES');

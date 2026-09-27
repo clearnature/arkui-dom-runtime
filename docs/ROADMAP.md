@@ -1892,7 +1892,8 @@ R96 首测崩溃系**跳过官方初始化直接调函数**所致，非不可用
 - C 宿主契约测试 `kernel/cangjie/test/kernel_contract_test.c` —— **22 条 ALL PASS**
   （生命周期/UTF-8 往返/负数/递归/三类错误路径/shutdown 后拒绝）；
 - NAPI 冒烟 `bridge/napi/smoke.cjs`（node 直载 addon）—— 10 条 ALL PASS；
-- `bash electron/run.sh cjk` —— **15 条断言**（真内核：fib(24)=46368 在仓颉堆上算出）；
+- `bash electron/run.sh cjk` —— **21 条断言：R98 时 15、R99 起 21**（真内核：fib(24)=46368
+  在仓颉堆上算出；R99 增 agent 生命周期 6 条）；
 - `bash run.sh cjk` 单用例可跑（浏览器降级面：isAvailable=false、call 返 null 不抛；
   断言数按端分流 Electron 15 / 浏览器 6，**不进浏览器 all 矩阵**——windowdemo/pickerdemo
   先例：矩阵内只收两端同数用例，计数守门按端核对才不被假声明骗过）；
@@ -1916,6 +1917,51 @@ Mimosa deep 审计 **0 findings**（seal sha256:fe6dcc0b…，覆盖内核/桥/I
 `kernel/cangjie/test/kernel_contract_test.c`（新）、`bridge/napi/`（新：cc/node/smoke.cjs）、
 `electron/main.js`、`electron/preload.js`、`electron/run.sh`、`runtime/ohos-shims.js`、
 `test/cjk.html`（新）、`run.sh`、`docs/DEVELOPING.md`（坑 101）、`docs/ROADMAP.md`（本节）
+
+---
+
+### R99 — 内核状态化 + agent 调度原语（trha MVP 数据面）✅（2026-09-27）
+
+**内容**：R98 的内核是无状态计算（fib/add 算完即弃）；trha 微内核 agent harness 需要的
+第一块地基是**跨调用持久的注册表与邮箱**。本轮内核 v3 交付五个 agent 方法（仍是
+`kernel_call` 的 method 分派，ABI 一字未动——契约稳定性的自证）：
+
+| 方法 | 形 | 语义 |
+|---|---|---|
+| `agent.spawn` | `{"name":"x"}` → `{"id":1,"name":"x","state":"idle"}` | 注册，id 单调递增；无名给 `agent-N` |
+| `agent.list` | `{}` → `{"count":N,"agents":[…]}` | 全量展开，按 spawn 序（HashMap 无序，确定性靠 side 列表） |
+| `agent.send` | `{"id":N,"text":"…"}` → `{"queued":长度}` | 入邮箱（FIFO） |
+| `agent.poll` | `{"id":N}` → `{"messages":[…],"drained":N}` | **排空语义**（读即清） |
+| `agent.kill` | `{"id":N}` → `{"killed":"name"}` | 摘除（spawn 序表同步收敛） |
+
+`kernel_init` 重置注册表 + id 归零（re-init = 全新内核，测试隔离语义，契约测试有断言）。
+
+**两个新实测坑（坑 102 入档）**：
+1. **包级初始化器在 dlopen 装载的 dylib 里不跑**：包级 `let gMap = HashMap<…>()` 的全局槽
+   是垃圾，首个 `HashMap.add` 直接 SIGSEGV（managed frame）。修法：容器全局量一律
+   `Option<容器>` 字面默认 + 首用时惰性构造（`agentsOf()` 模式）；字面量默认
+   （Bool/String/Int64）的全局不受影响（R98 的 `gLastErr=""` 一直正常，正说明是
+   "要跑代码的初始化器"才中招）。
+2. **`ArrayList.get(i)` 在此 nightly 返回 `Option<T>`**（非裸 T）——链式取值处补
+   `.getOrThrow()`。容器 API 返回形态与 stable 文档有出入，以编译器为准。
+
+**验收（已执行）**：
+- C 宿主契约测试扩到 **40 条 ALL PASS**（+18：spawn 单调/缺省名/list spawn 序/
+  send 计数/poll FIFO 排空/邮箱按 id 隔离/kill 收敛/三条未知 id 错误路径/
+  re-init 清零 + id 归位）；
+- NAPI 冒烟扩到 **14 条**（agent 四方法经 addon 透传）；
+- `bash electron/run.sh cjk` —— **21 条 ALL PASS**（渲染进程驱动完整 agent 生命周期，
+  UTF-8 名字与消息保真）；
+- `bash run.sh cjk` —— 6 条（浏览器降级面不变）。
+
+**边界（刻意留白）**：真并发调度（CJThread/std.concurrent spawn、消息驱动的 agent
+执行体）留下一片——数据面（注册表/邮箱）先行，控制面（调度器）有根可挂。JSON 的
+name/text 不处理引号转义（trha 协议层约定控制字符不进 payload）。
+Mimosa deep 审计 **0 findings**（seal sha256:507a4c5f…，覆盖内核 v3/冒烟/断言页）。
+
+**触及**：`kernel/cangjie/src/kernel.cj`（v2 → v3，+agent 注册表/邮箱）、
+`kernel/cangjie/test/kernel_contract_test.c`（22→40 条）、`bridge/napi/smoke.cjs`（10→14 条）、
+`test/cjk.html`（15→21 条）、`docs/DEVELOPING.md`（坑 102）、`docs/ROADMAP.md`（本节）
 
 ---
 

@@ -1,31 +1,44 @@
-// R98：仓颉内核 v2 —— 完整实现 kernel/c-abi.h 的 6 符号契约
+// R98/R99：仓颉内核 —— 完整实现 kernel/c-abi.h 的 6 符号契约 + agent 调度原语
 //
 // 契约（kernel/c-abi.h）：kernel_init / kernel_shutdown / kernel_call /
 // kernel_free / kernel_ping / kernel_last_error。换内核 = 换 .so，宿主零改动。
 //
-// 方法面 v1（method 字符串分派，params/返回均为 JSON 字符串）：
+// 方法面（method 字符串分派，params/返回均为 JSON 字符串）：
+//   基础（R98）：
 //   echo  → params 原样返回（JSON 直通，证明跨语言字符串往返）
 //   add   → {"a":x,"b":y} → {"sum":x+y}          （JSON 解析）
 //   fib   → {"n":k} → {"result":fib(k)}          （递归计算，内核真算力）
 //   upper → {"text":"..."} → {"text":"..."}      （ASCII 大写，字符串处理）
 //   error → 强制失败路径：返回 NULL，kernel_last_error 给出原因
+//   agent 调度原语（R99，trha MVP 数据面——注册表+邮箱，跨调用持久）：
+//   agent.spawn → {"name":"x"} → {"id":N,"name":"x","state":"idle"}   （id 单调）
+//   agent.list  → {} → {"count":N,"agents":[{"id","name"}…]}          （按 spawn 序）
+//   agent.send  → {"id":N,"text":"…"} → {"queued":邮箱长度}
+//   agent.poll  → {"id":N} → {"messages":[…],"drained":N}             （排空语义）
+//   agent.kill  → {"id":N} → {"killed":"name"}
 //
-// 边界（v1 刻意不做，避免引依赖）：无 JSON 库（手写字节扫描，只支持无空白紧凑
-// 形式 + 整数）；upper 不处理转义与多字节。堆分配用 foreign malloc/free，返回
-// 缓冲区由宿主 kernel_free 释放；last_error 缓冲由内核在下次调用时自行释放。
+// 边界（v1 刻意不做，避免引依赖）：JSON 手写字节扫描（紧凑形式+整数；agent 的
+// name/text 不处理引号转义）；真并发调度（CJThread/std.concurrent）留后续切片——
+// 本轮只交付注册表与邮箱两个数据面结构。
 //
 // 编译（SDK 与 Cangjie.h 见 kernel/c-abi/Cangjie.h）：
 //   cjc src/kernel.cj --output-type=dylib -o libkernel.so
-// 运行时依赖：libcangjie-runtime.so / libcangjie-std-core.so / libboundscheck.so
+// 运行时依赖：libcangjie-runtime.so / libcangjie-std-core.so /
+// libcangjie-std-collection.so / libboundscheck.so
 // （均在 <SDK>/runtime/lib/linux_x86_64_cjnative/，宿主须先 RTLD_GLOBAL dlopen
 // 运行时本体——NAPI 桥 bridge/napi/cjk_napi.cc 按此序加载）。
 //
-// 实测约束（2026-09-27 nightly 1.3.0-alpha，坑 101）：
+// 实测约束（2026-09-27 nightly 1.3.0-alpha，坑 101/102）：
 //   1. @C 函数体内使用仓颉 String（堆分配）要求宿主先 InitCJRuntime，实测正常；
 //   2. 【禁用】Int64.toString()：在 @C 帧内返回头部损坏的 String（.size 是垃圾
 //      值 6399178）——所有响应数字一律走手写 writeInt（纯算术→ASCII）；
 //   3. 字面量拼接与 String.fromUtf8 构造的串 toArray() 正常，可安全使用；
-//   4. 默认 CPointer 不是 NULL 位型，free 前必须 isNull() 守卫。
+//   4. 默认 CPointer 不是 NULL 位型，free 前必须 isNull() 守卫；
+//   5. 【包级初始化器在 dlopen 装载的 dylib 里不跑】——包级容器全局量首调用时
+//      是垃圾（HashMap.add 直接 SIGSEGV）；必须 Option<容器> 字面默认 + 首用时
+//      惰性构造（agentsOf()/orderOf() 模式）。字面量默认（Bool/String/Int64）的全局不受影响。
+
+import std.collection.*
 
 @C
 foreign func malloc(size: UInt64): CPointer<UInt8>
@@ -181,12 +194,82 @@ func fib(n: Int64): Int64 {
     return fib(n - 1) + fib(n - 2)
 }
 
+// Int64 → 十进制字符串（ByteBuf.int + done 的常用形态）
+func intToStr(v: Int64): String {
+    let b = ByteBuf(24)
+    b.int(v)
+    return b.done()
+}
+
+// ── agent 注册表 + 邮箱（R99，trha MVP 数据面）──
+// 坑 102：容器全局量必须 Option 字面默认 + 首用时惰性构造（包级 init 在 dylib 不跑）。
+class Agent {
+    var name: String
+    var box: ArrayList<String>
+    init(n: String) {
+        name = n
+        box = ArrayList<String>()
+    }
+}
+
+var gAgents: Option<HashMap<Int64, Agent>> = None
+var gOrder: Option<ArrayList<Int64>> = None     // spawn 序（HashMap 无序，输出确定性靠它）
+var gNextId: Int64 = 0                          // 单调 id；kernel_init 重置
+
+func agentsOf(): HashMap<Int64, Agent> {
+    if (let Some(m) <- gAgents) { return m }
+    let m = HashMap<Int64, Agent>()
+    gAgents = Some(m)
+    return m
+}
+
+func orderOf(): ArrayList<Int64> {
+    if (let Some(l) <- gOrder) { return l }
+    let l = ArrayList<Int64>()
+    gOrder = Some(l)
+    return l
+}
+
+func agentReset(): Unit {
+    gAgents = Some(HashMap<Int64, Agent>())
+    gOrder = Some(ArrayList<Int64>())
+    gNextId = 0
+    return
+}
+
+// 按 spawn 序展开注册表：{"count":N,"agents":[{"id":..,"name":".."},…]}
+func agentListJson(): String {
+    let m = agentsOf()
+    let order = orderOf()
+    let b = ByteBuf(64 + order.size * 48)
+    b.str("{\"count\":")
+    b.int(Int64(order.size))
+    b.str(",\"agents\":[")
+    var first = true
+    for (i in 0..order.size) {
+        let id = order.get(i).getOrThrow()
+        let a = m.get(id)
+        if (let Some(ag) <- a) {
+            if (!first) { b.str(",") }
+            first = false
+            b.str("{\"id\":")
+            b.int(id)
+            b.str(",\"name\":\"")
+            b.str(ag.name)
+            b.str("\",\"state\":\"idle\"}")
+        }
+    }
+    b.str("]}")
+    return b.done()
+}
+
 // ── 契约实现 ──
 
 @C
 public func kernel_init(config: CPointer<UInt8>): Int32 {
     gInitialized = true
     gLastErr = ""
+    agentReset()          // 重新初始化 = 全新内核（agent 注册表清零，测试隔离靠它）
     let cfg = csToString(config)
     // 配置内容 v1 不解析（契约允许各语言自定义内部结构）；非空即记录长度自证可达
     if (cfg.size > 0) {
@@ -277,6 +360,107 @@ public func kernel_call(method: CPointer<UInt8>, params: CPointer<UInt8>): CPoin
         setErr("error: forced failure for testing")
         return CPointer<UInt8>()
     }
+
+    // ── agent 调度原语（R99）──
+    if (m == "agent.spawn") {
+        let nameO = jsonStr(p, "name")
+        gNextId += 1
+        let id = gNextId
+        let name = if (let Some(nv) <- nameO) { nv } else { "agent-" + intToStr(gNextId) }
+        agentsOf().add(id, Agent(name))
+        orderOf().add(id)
+        let b2 = ByteBuf(96)
+        b2.str("{\"id\":")
+        b2.int(id)
+        b2.str(",\"name\":\"")
+        b2.str(name)
+        b2.str("\",\"state\":\"idle\"}")
+        return stringToCs(b2.done())
+    }
+    if (m == "agent.list") {
+        return stringToCs(agentListJson())
+    }
+    if (m == "agent.send") {
+        let idO = jsonInt(p, "id")
+        let textO = jsonStr(p, "text")
+        if (idO.isNone() || textO.isNone()) {
+            setErr("agent.send: params need integer id and string text")
+            return CPointer<UInt8>()
+        }
+        let a = agentsOf().get(idO.getOrThrow())
+        if (let Some(ag) <- a) {
+            ag.box.add(textO.getOrThrow())
+            let b2 = ByteBuf(32)
+            b2.str("{\"queued\":")
+            b2.int(Int64(ag.box.size))
+            b2.str("}")
+            return stringToCs(b2.done())
+        }
+        let eb = ByteBuf(48)
+        eb.str("agent.send: no agent id=")
+        eb.int(idO.getOrThrow())
+        setErr(eb.done())
+        return CPointer<UInt8>()
+    }
+    if (m == "agent.poll") {
+        let idO = jsonInt(p, "id")
+        if (idO.isNone()) {
+            setErr("agent.poll: params need integer id")
+            return CPointer<UInt8>()
+        }
+        let a = agentsOf().get(idO.getOrThrow())
+        if (let Some(ag) <- a) {
+            let n = Int64(ag.box.size)
+            let b2 = ByteBuf(48 + n * 32)
+            b2.str("{\"messages\":[")
+            for (i in 0..ag.box.size) {
+                if (i > 0) { b2.str(",") }
+                b2.str("\"")
+                b2.str(ag.box.get(i).getOrThrow())
+                b2.str("\"")
+            }
+            b2.str("],\"drained\":")
+            b2.int(n)
+            b2.str("}")
+            ag.box = ArrayList<String>()       // 排空语义
+            return stringToCs(b2.done())
+        }
+        let eb = ByteBuf(48)
+        eb.str("agent.poll: no agent id=")
+        eb.int(idO.getOrThrow())
+        setErr(eb.done())
+        return CPointer<UInt8>()
+    }
+    if (m == "agent.kill") {
+        let idO = jsonInt(p, "id")
+        if (idO.isNone()) {
+            setErr("agent.kill: params need integer id")
+            return CPointer<UInt8>()
+        }
+        let id = idO.getOrThrow()
+        let a = agentsOf().get(id)
+        if (let Some(ag) <- a) {
+            // spawn 序重排：滤掉被杀 id（避免依赖 ArrayList.remove 的 API 形态）
+            let keep = ArrayList<Int64>()
+            for (i in 0..orderOf().size) {
+                let x = orderOf().get(i).getOrThrow()
+                if (x != id) { keep.add(x) }
+            }
+            gOrder = Some(keep)
+            agentsOf().remove(id)
+            let b2 = ByteBuf(64)
+            b2.str("{\"killed\":\"")
+            b2.str(ag.name)
+            b2.str("\"}")
+            return stringToCs(b2.done())
+        }
+        let eb = ByteBuf(48)
+        eb.str("agent.kill: no agent id=")
+        eb.int(id)
+        setErr(eb.done())
+        return CPointer<UInt8>()
+    }
+
     setErr("unknown method: " + m)
     return CPointer<UInt8>()
 }
