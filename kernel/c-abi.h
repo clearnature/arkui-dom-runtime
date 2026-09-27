@@ -55,4 +55,23 @@ int kernel_ping(void);
  */
 const char *kernel_last_error(void);
 
+/*
+ * ── 可选调度符号（R100 起，实现异步作业的内核才需要）──
+ *
+ * 内核可声明三个额外符号，把耗时计算交给内核侧 cjthread 异步执行：
+ *   int   kernel_pending(void);   pending 作业队列长度
+ *   int   kernel_draining(void);  drainer 是否在跑（1=在跑）
+ *   void* kernel_drain_entry(void*);  有界 drainer 入口（清空队列即返回）
+ *
+ * 宿主义务（bridge/napi/cjk_napi.cc 的 cjkCall 后置驱动已实现）：
+ *   pending>0 且 draining==0 时 RunCJTask(kernel_drain_entry, NULL) 拉起 drainer，
+ *   然后 RunUIScheduler(2ms) 给它执行窗口。
+ *
+ * 嵌入模式实测约束（坑 103/104，2026-09-27 nightly 1.3.0-alpha）：
+ *   · cjthread 只在 RunUIScheduler 泵的窗口里执行；sleep 是空操作（timer 不跑）；
+ *   · Semaphore/Monitor 等阻塞唤醒原语不能从宿主原生线程调（栈腐蚀）；
+ *     队列同步只用 Mutex（纯 futex，宿主线程安全）。
+ * 三个符号全部缺席 = 同步内核（R97-R99 形态），宿主自动跳过驱动，向后兼容。
+ */
+
 #endif // CJK_KERNEL_ABI_H

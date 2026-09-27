@@ -26,6 +26,7 @@
     const lines = [];
     let pass = 0, fail = 0;
     const check = (c, m) => { if (c) { pass++; lines.push('PASS ' + m); } else { fail++; lines.push('FAIL ' + m); } };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms || 0));
     const root = document.getElementById('root');
     const cjk = __arkui_dom_require('@ohos:cjk');
     const isElectron = !!(globalThis.electronAPI && globalThis.electronAPI.cjk);
@@ -104,6 +105,32 @@
       const lst2 = await cjk.call('agent.list', {});
       check(!!kd && kd.killed === '渲染侧-甲' && !!lst2 && lst2.count === 0,
         'cjk agent.kill 摘除后注册表清空');
+
+      // ── ⑪ 异步作业（R100：submit → 内核 cjthread drainer 真并发 → result 轮询）──
+      const w2 = await cjk.call('agent.spawn', { name: '计算者' });
+      check(!!w2 && w2.id === 2 && w2.name === '计算者', 'cjk spawn 计算者 → id=2（R100 作业主体）');
+      const jb = await cjk.call('agent.submit', { id: 2, kind: 'fib', n: 12 });
+      check(!!jb && jb.jobId === 1 && jb.state === 'pending',
+        'cjk submit(fib 12) → jobId=1 pending');
+      let res = null;
+      for (let i = 0; i < 200 && res === null; i++) {
+        await tick(20);
+        const r = await cjk.call('agent.result', { jobId: 1 });
+        if (r && r.state === 'done') res = r;
+      }
+      check(!!res && res.value === 144,
+        'cjk result 轮询至 done（fib(12)=144，内核 cjthread 真并发算出）');
+      const jb2 = await cjk.call('agent.submit', { id: 2, kind: 'echo', text: '异步回声' });
+      let res2 = null;
+      for (let i = 0; i < 200 && res2 === null; i++) {
+        await tick(20);
+        const r = await cjk.call('agent.result', { jobId: 2 });
+        if (r && r.state === 'done') res2 = r;
+      }
+      check(!!res2 && res2.text === '异步回声', 'cjk echo 作业异步完成（UTF-8 保真）');
+      const badKind = await cjk.call('agent.submit', { id: 2, kind: 'nope' });
+      check(badKind === null && /kind must be/.test(await cjk.lastError()),
+        'cjk submit 未知 kind → null + lastError 报因');
     }
 
     // ── 垫片面完整（两端都断言）──

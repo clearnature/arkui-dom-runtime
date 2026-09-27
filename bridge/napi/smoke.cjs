@@ -33,6 +33,26 @@ check(addon.cjkCall('agent.poll', '{"id":1}') === '{"messages":["t1"],"drained":
 check(addon.cjkCall('agent.kill', '{"id":1}') === '{"killed":"w1"}',
   'cjkCall(agent.kill) → killed');
 
+// R100：异步作业（submit → drainer cjthread 算 → result 轮询；addon 后置驱动自动推进）
+// 注：前面 kill 过 id=1，故这里 spawn 得 id=2；jobId 计数独立于 agent id，首支=1
+const sub2 = addon.cjkCall('agent.spawn', '{"name":"worker"}');
+check(/"id":2/.test(sub2), 'R100 agent.spawn → id=2');
+const sj = addon.cjkCall('agent.submit', '{"id":2,"kind":"fib","n":20}');
+check(sj === '{"jobId":1,"state":"pending"}', 'agent.submit(fib 20) → jobId=1 pending');
+let fibDone = null;
+for (let i = 0; i < 100 && fibDone === null; i++) {
+  const r = addon.cjkCall('agent.result', '{"jobId":1}');
+  if (/done/.test(r)) fibDone = r;
+}
+check(fibDone === '{"state":"done","value":6765}', 'agent.result 轮询至 done（fib(20)=6765，cjthread 真并发）');
+const se = addon.cjkCall('agent.submit', '{"id":2,"kind":"echo","text":"回声"}');
+let echoDone = null;
+for (let i = 0; i < 100 && echoDone === null; i++) {
+  const r = addon.cjkCall('agent.result', '{"jobId":2}');
+  if (/done/.test(r)) echoDone = r;
+}
+check(echoDone === '{"state":"done","text":"回声"}', 'agent.result echo 作业（UTF-8 保真）');
+
 check(addon.cjkShutdown() === true, 'cjkShutdown');
 
 console.log(fails === 0 ? 'ALL PASS' : fails + ' FAILURES');

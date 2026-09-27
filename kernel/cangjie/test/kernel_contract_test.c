@@ -168,6 +168,58 @@ int main(int argc, char *argv[]) {
       "re-init 后 id 计数器归 1");
     if (r) kfree(r);
 
+    /* ── R100：异步作业（C 宿主自驱动：RunCJTask + RunUIScheduler 泵）── */
+    void *(*runTask)(void *(*)(void *), void *) = (void *(*)(void *(*)(void *), void *))dlsym(rt, "RunCJTask");
+    int (*pump)(unsigned long long) = (int (*)(unsigned long long))dlsym(rt, "RunUIScheduler");
+    void *(*drain)(void *) = (void *(*)(void *))dlsym(k, "kernel_drain_entry");
+    int (*pend)(void) = (int (*)(void))dlsym(k, "kernel_pending");
+    check(runTask && pump && drain && pend, "dlsym 调度符号（RunCJTask/RunUIScheduler/drain_entry/pending）");
+    r = kcall("agent.submit", "{\"id\":1,\"kind\":\"fib\",\"n\":20}");
+    check(r && strcmp(r, "{\"jobId\":1,\"state\":\"pending\"}") == 0,
+      "submit(fib 20) → jobId=1 pending");
+    if (r) kfree(r);
+    r = kcall("agent.result", "{\"jobId\":1}");
+    check(r && strcmp(r, "{\"state\":\"pending\"}") == 0, "未驱动时 result 仍 pending");
+    if (r) kfree(r);
+    {
+        int done20 = 0;
+        for (int i = 0; i < 200 && !done20; i++) {
+            if (pend() > 0) runTask(drain, NULL);
+            pump(2);
+            r = kcall("agent.result", "{\"jobId\":1}");
+            if (r && strstr(r, "\"done\"")) done20 = 1;
+            if (r) kfree(r);
+        }
+        check(done20, "C 宿主自驱动 drain → cjthread 算完（pending→done）");
+        r = kcall("agent.result", "{\"jobId\":1}");
+        check(r && strcmp(r, "{\"state\":\"done\",\"value\":6765}") == 0,
+          "fib(20)=6765（drainer cjthread 真算）");
+        if (r) kfree(r);
+    }
+    r = kcall("agent.submit", "{\"id\":1,\"kind\":\"echo\",\"text\":\"异步回声C\"}");
+    check(r && strcmp(r, "{\"jobId\":2,\"state\":\"pending\"}") == 0, "submit(echo) → jobId=2 pending");
+    if (r) kfree(r);
+    {
+        int doneEcho = 0;
+        for (int i = 0; i < 200 && !doneEcho; i++) {
+            if (pend() > 0) runTask(drain, NULL);
+            pump(2);
+            r = kcall("agent.result", "{\"jobId\":2}");
+            if (r && strstr(r, "\"done\"")) doneEcho = 1;
+            if (r) kfree(r);
+        }
+        r = kcall("agent.result", "{\"jobId\":2}");
+        check(r && strcmp(r, "{\"state\":\"done\",\"text\":\"异步回声C\"}") == 0,
+          "echo 作业结果（UTF-8 保真）");
+        if (r) kfree(r);
+    }
+    r = kcall("agent.submit", "{\"id\":1,\"kind\":\"nope\"}");
+    check(r == NULL && strstr(kerr(), "kind must be") != NULL, "submit 未知 kind → NULL+报因");
+    if (r) kfree(r);
+    r = kcall("agent.submit", "{\"id\":99,\"kind\":\"fib\",\"n\":1}");
+    check(r == NULL && strstr(kerr(), "no agent id=99") != NULL, "submit 未知 agent → NULL");
+    if (r) kfree(r);
+
     /* shutdown 后 ping 失败、call 拒绝 */
     check(kshutdown() == 0, "kernel_shutdown=0");
     check(kping() == -1, "shutdown 后 ping=-1");

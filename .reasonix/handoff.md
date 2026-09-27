@@ -8,11 +8,12 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R99**（内核 v3 agent 调度原语：spawn/list/send/poll/kill 注册表+邮箱，
-  跨调用持久 + re-init 重置；契约测试 40 条/冒烟 14/cjk 双端 21+6；trha MVP 数据面就位，
-  坑 102=dylib 包级 init 不跑须惰性构造）；更早：**R98**（@ohos:cjk 全链路：c-abi 6 符号
-  契约 kernel/cangjie + NAPI 桥 bridge/napi + 主进程 IPC + 渲染垫片）；**R85-R97**（定位
-  声明 → 生态调研 → NotesDemo 端到端 → 行为断言三批 → R96 挂载定型 → R97 dylib 生命周期）
+- 上次切片：**R100**（内核并发调度器：agent.submit/result 异步作业 + 有界 drainer
+  cjthread；嵌入泵模式三条铁律入档坑 103/104——Semaphore 宿主线程禁用、
+  cjthread 只在 RunUIScheduler 泵窗口跑、sleep 空操作；契约测试 49/冒烟 18/
+  cjk 双端 26+6；c-abi.h 增可选调度符号节）；更早：**R99**（agent 注册表+邮箱数据面，
+  坑 102=dylib 包级 init 不跑）；**R98**（@ohos:cjk 全链路）；**R85-R97**（定位声明 →
+  生态调研 → NotesDemo 端到端 → 行为断言三批 → R96 挂载定型 → R97 dylib 生命周期）
   — **PASS**
 - 更早：**R67**（R66 批量组件验收：37 结构 + 兜底绊网 + 14 真编译语义；绊网
   `__arkui_dom_generatedFilled`——手写注册缺席时骨架静默兜底，坑 98）；**R24 收口**（渲染
@@ -158,4 +159,5 @@ bash electron/run.sh <用例>   # 单用例·Electron
 | 2026-09-25 | R58 TextPicker 收尾 | c9863de | textpickerdemo 11→19 条双端；破坏 1 红（级联 build 摘除）；门禁 7 步绿 | 多列 string[][] 独立滚轮；级联 children 联动（colCount 按链深动态，父变→截断 sel+子列重置）；TextPickerDialog.show（fixed 面板 OK/Cancel 走 TextPickerResult）；引擎重构 tpxEngine 统一三态+弹层，__txpStep 单列兼容+__txpStepCol 多列；教训：多代理并行期 fixtures 漂移（test 读旧冻结件 tx4 全 null，probe 即知）；引擎重构后 __txp 变包装对象旧 handler 路径失效；dataset.selectedIndex 变 JSON 数组（R56 断言同步改） |
 | 2026-09-25 | R58.1 Mimosa 重跑 | （本提交） | 审计 0 findings | deep 扫描 scan-2026-09-25T12-36-16 seal sha256:bf59cd02…（覆盖 R55~R58 全部新增代码）；依赖 completion=partial（零 npm 依赖不变）；两处流程失误实录：验证链 `\| grep && commit` 吞退出码致红门禁误提交两次（已 amend 修正），后续终验链显式捕获退出码 |
 | 2026-09-27 | R97/R98 @ohos:cjk | （本提交） | cjk 双端（Electron 15 / 浏览器 6）；契约测试 22 条；门禁 7 步全绿 | 内核 v2 实现完整 c-abi 6 符号（echo/add/fib/upper/error + last_error/free）；NAPI 桥 bridge/napi/cjk_napi.node（dlopen→InitCJRuntime→dlsym，惰性挂载）；@ohos:cjk 垫片 + cjk.html 按端分流（不进浏览器 all 矩阵——windowdemo 先例，计数守门按端核对）；**坑 101**：@C 帧内 `Int64.toString()` 头部损坏（.size=6399178）→ 数字手写 ASCII；`libcangjie-std-core.so` 无 DT_SONAME → 必须 LD_LIBRARY_PATH；`dlerror()` 只能取一次；Mimosa deep 审计 0 findings（seal sha256:fe6dcc0b…） |
-| 2026-09-27 | R99 内核 agent 原语 | （本提交） | 契约测试 40 条；冒烟 14 条；cjk 双端（Electron 21 / 浏览器 6）；门禁 7 步全绿 | 内核 v3 agent 调度原语五方法（spawn 单调 id/list 按 spawn 序/send 邮箱/poll 排空/kill 收敛），注册表跨调用持久、kernel_init 重置（测试隔离语义）；trha MVP 数据面就位（控制面 CJThread 调度留下一片）；**坑 102**：包级初始化器在 dlopen dylib 不跑（容器全局量首用即 SIGSEGV）→ Option 字面默认+惰性构造；此 nightly `ArrayList.get` 返回 Option<T>；Mimosa deep 审计 0 findings（seal sha256:507a4c5f…） |
+| 2026-09-27 | R99 内核 agent 原语 | 7991b6d | 契约测试 40 条；冒烟 14 条；cjk 双端（Electron 21 / 浏览器 6）；门禁 7 步全绿 | 内核 v3 agent 调度原语五方法（spawn 单调 id/list 按 spawn 序/send 邮箱/poll 排空/kill 收敛），注册表跨调用持久、kernel_init 重置（测试隔离语义）；trha MVP 数据面就位（控制面 CJThread 调度留下一片）；**坑 102**：包级初始化器在 dlopen dylib 不跑（容器全局量首用即 SIGSEGV）→ Option 字面默认+惰性构造；此 nightly `ArrayList.get` 返回 Option<T>；Mimosa deep 审计 0 findings（seal sha256:507a4c5f…） |
+| 2026-09-27 | R100 内核并发调度器 | （本提交） | 契约测试 49 条；冒烟 18 条；cjk 双端（Electron 26 / 浏览器 6）；门禁 7 步全绿 | 内核 v4 异步作业（agent.submit/result + 有界 drainer cjthread 清空队列即返回）；c-abi.h 增可选调度符号节（pending/draining/drain_entry，缺席=旧内核向后兼容）；addon cjkCall 后置驱动（RunCJTask + RunUIScheduler 泵）；**坑 103**：Semaphore/Monitor 宿主线程不可用（栈腐蚀/6399178 垃圾值）→ 同步只用 Mutex；**坑 104**：嵌入模式 cjthread 只在 RunUIScheduler 泵窗口执行、sleep 空操作（timer 不跑）→ 禁自旋、宿主逐调用驱动；trha MVP 控制面就位；Mimosa deep 审计 0 findings（seal sha256:566b38d0…） |

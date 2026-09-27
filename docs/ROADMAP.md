@@ -1892,8 +1892,8 @@ R96 首测崩溃系**跳过官方初始化直接调函数**所致，非不可用
 - C 宿主契约测试 `kernel/cangjie/test/kernel_contract_test.c` —— **22 条 ALL PASS**
   （生命周期/UTF-8 往返/负数/递归/三类错误路径/shutdown 后拒绝）；
 - NAPI 冒烟 `bridge/napi/smoke.cjs`（node 直载 addon）—— 10 条 ALL PASS；
-- `bash electron/run.sh cjk` —— **21 条断言：R98 时 15、R99 起 21**（真内核：fib(24)=46368
-  在仓颉堆上算出；R99 增 agent 生命周期 6 条）；
+- `bash electron/run.sh cjk` —— **26 条断言：R98 时 15、R99 起 21、R100 起 26**（真内核：
+  fib(24)=46368 在仓颉堆上算出；R99 增 agent 生命周期 6 条；R100 增异步作业 5 条）；
 - `bash run.sh cjk` 单用例可跑（浏览器降级面：isAvailable=false、call 返 null 不抛；
   断言数按端分流 Electron 15 / 浏览器 6，**不进浏览器 all 矩阵**——windowdemo/pickerdemo
   先例：矩阵内只收两端同数用例，计数守门按端核对才不被假声明骗过）；
@@ -1962,6 +1962,54 @@ Mimosa deep 审计 **0 findings**（seal sha256:507a4c5f…，覆盖内核 v3/�
 **触及**：`kernel/cangjie/src/kernel.cj`（v2 → v3，+agent 注册表/邮箱）、
 `kernel/cangjie/test/kernel_contract_test.c`（22→40 条）、`bridge/napi/smoke.cjs`（10→14 条）、
 `test/cjk.html`（15→21 条）、`docs/DEVELOPING.md`（坑 102）、`docs/ROADMAP.md`（本节）
+
+---
+
+### R100 — 内核并发调度器：cjthread 真并发 + 嵌入泵模式定型 ✅（2026-09-27）
+
+**内容**：trha MVP 控制面——作业从"调用线程顺带算"升级为"内核 cjthread 真并发算"。
+新方法一对（仍是 `kernel_call` 分派）：
+
+| 方法 | 形 | 语义 |
+|---|---|---|
+| `agent.submit` | `{"id":2,"kind":"fib","n":20}` → `{"jobId":1,"state":"pending"}` | 入队即返回（kind 校验 fib/echo；agent 必须存在） |
+| `agent.result` | `{"jobId":1}` → `{"state":"pending"}` → `{"state":"done","value":6765}` | 轮询取结果（echo 型返回 `text` 字段） |
+
+**执行模型（本节的真发现——嵌入模式仓颉并发的三条铁律，坑 103/104 入档）**：
+
+1. **cjthread 只在 `RunUIScheduler` 泵的窗口里执行**。宿主 InitCJRuntime 后调度器
+   不会自动跑：`RunCJTask(entry)` 返回句柄但任务不执行，直到宿主显式 `RunUIScheduler(ms)`
+   ——探针实测 loops 从 0（不泵）到每窗数十万次（泵后）。
+2. **`sleep()` 在此模式下是空操作**：timer 线程不跑，睡眠任务永不醒 → drainer 禁止
+   自旋等待，"清空队列即返回"（有界 cjthread，零空闲 CPU）。
+3. **`Semaphore`/`Monitor` 等阻塞唤醒原语不能从宿主原生线程调**：首个探针 SIGSEGV 于
+   `hash_map.cj` 之外还测得 `Semaphore.release()` 返回栈损坏值——阻塞/唤醒涉及
+   cjthread 调度上下文；纯 futex 的 `Mutex` 宿主线程安全，队列同步只用它。
+
+**驱动链路**：内核新增三个**可选**符号（`kernel_pending`/`kernel_draining`/
+`kernel_drain_entry`，入 c-abi.h 可选节）；addon `cjkCall` 后置驱动——`pending>0 且
+空闲 → RunCJTask(drain_entry)`，再 `RunUIScheduler(2ms)` 给窗口；渲染侧零改动
+（垫片/IPC 不感知，submit 后轮询 `agent.result` 即自动推进）。三符号缺席 = 旧同步
+内核，向后兼容。
+
+**验收（已执行）**：
+- C 契约测试扩到 **49 条 ALL PASS**（+9：pending 语义/未驱动仍 pending/自驱动至
+  done/fib(20)=6765 真算/echo UTF-8/未知 kind/未知 agent 两路错误）；
+- NAPI 冒烟扩到 **18 条**（addon 后置驱动自动推进，fib(20) 轮询至 6765）；
+- `bash electron/run.sh cjk` —— **26 条 ALL PASS**（渲染进程 submit → 轮询 result，
+  fib(12)=144 由内核 cjthread 算出）；
+- `bash run.sh cjk` —— 6 条（浏览器降级面不变）。
+
+**边界（刻意留白）**：作业种类 v1 只有 fib/echo（payload 均为标量）；drainer 单支
+（一队一清，多 worker 并行留待 trha 立项后按需扩）；`RunUIScheduler(2ms)` 在作业
+计算期间会阻塞主进程该窗口（fib 在 debug nightly 下可达百毫秒级，release 编译后
+微秒级——生产内核须用 cjc -O2）。
+Mimosa deep 审计 **0 findings**（seal sha256:566b38d0…，覆盖内核 v4/c-abi 可选节/addon 驱动/测试）。
+
+**触及**：`kernel/cangjie/src/kernel.cj`（v3 → v4，+Job/drainer/可选符号）、
+`kernel/c-abi.h`（可选调度符号节）、`bridge/napi/cjk_napi.cc`（后置驱动）、
+`kernel/cangjie/test/kernel_contract_test.c`（40→49 条）、`bridge/napi/smoke.cjs`（14→18 条）、
+`test/cjk.html`（21→26 条）、`docs/DEVELOPING.md`（坑 103/104）、`docs/ROADMAP.md`（本节）
 
 ---
 

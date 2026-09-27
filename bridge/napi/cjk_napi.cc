@@ -33,16 +33,35 @@ struct KernelApi {
   const char *(*call)(const char *, const char *);
   void (*free)(void *);
   const char *(*lastError)(void);
+  /* 可选调度符号（R100 起的内核才有；缺席=无并发，宿主跳过驱动） */
+  int (*pending)(void);        // pending 队列长度
+  int (*draining)(void);       // drainer 是否在跑
+  void *(*drainEntry)(void *); // 有界 drainer 入口（清空队列即返回）
 };
 
 bool g_loaded = false;      // dlopen runtime + InitCJRuntime 完成
 bool g_kernelReady = false; // 内核 dlopen + dlsym + kernel_init 完成
+void *g_rt = nullptr;       // 仓颉运行时句柄（RunCJTask/RunUIScheduler 从这取）
+void *g_kernel = nullptr;   // 内核句柄
 KernelApi K = {};
+void *(*fnRunCJTask)(void *(*)(void *), void *) = nullptr;       // RunCJTask
+int (*fnRunUIScheduler)(unsigned long long) = nullptr;           // RunUIScheduler
 
 char g_lastHostErr[512] = {0};   // 宿主侧（dlopen/dlsym 层）错误，与内核 last_error 分开
 
 void setHostErr(const char *m) {
   snprintf(g_lastHostErr, sizeof(g_lastHostErr), "%s", m);
+}
+
+/* cjkCall 的后置驱动（R100）：作业在途时拉起 drainer cjthread 并泵调度器。
+ * 机制约束（坑 103/104）：嵌入模式 cjthread 只在 RunUIScheduler 泵窗口执行；
+ * sleep/Semaphore 不可用 → drainer 清空队列即返回，宿主逐调用驱动。 */
+void drive() {
+  if (!K.pending || !K.draining || !K.drainEntry || !fnRunCJTask || !fnRunUIScheduler) return;
+  int pend = K.pending();
+  int dr = K.draining();
+  if (pend > 0 && dr == 0) fnRunCJTask((void *(*)(void *))K.drainEntry, nullptr);
+  if (pend > 0 || dr > 0) fnRunUIScheduler(2);   // 给 drainer 执行窗口（≤2ms）
 }
 
 napi_value JsBool(napi_env env, bool v) {
@@ -76,11 +95,14 @@ napi_value Init(napi_env env, napi_callback_info info) {
       napi_throw_error(env, nullptr, g_lastHostErr);
       return nullptr;
     }
+    g_rt = rt;
     void *symInitRt = dlsym(rt, "InitCJRuntime");
     if (!symInitRt) { setHostErr("dlsym InitCJRuntime 失败（运行时库不对？）"); napi_throw_error(env, nullptr, g_lastHostErr); return nullptr; }
     static char param[4096] = {0};               // 零参默认（R97/R98 实测可用）
     int rc = ((int (*)(const void *))symInitRt)(param);
     if (rc != 0) { setHostErr("InitCJRuntime 返回非 0"); napi_throw_error(env, nullptr, g_lastHostErr); return nullptr; }
+    fnRunCJTask = (void *(*)(void *(*)(void *), void *))dlsym(rt, "RunCJTask");
+    fnRunUIScheduler = (int (*)(unsigned long long))dlsym(rt, "RunUIScheduler");
     g_loaded = true;
   }
 
@@ -91,12 +113,17 @@ napi_value Init(napi_env env, napi_callback_info info) {
     napi_throw_error(env, nullptr, g_lastHostErr);
     return nullptr;
   }
+  g_kernel = k;
   K.init = (int (*)(const char *))dlsym(k, "kernel_init");
   K.shutdown = (int (*)(void))dlsym(k, "kernel_shutdown");
   K.ping = (int (*)(void))dlsym(k, "kernel_ping");
   K.call = (const char *(*)(const char *, const char *))dlsym(k, "kernel_call");
   K.free = (void (*)(void *))dlsym(k, "kernel_free");
   K.lastError = (const char *(*)(void))dlsym(k, "kernel_last_error");
+  /* 可选调度符号：缺席容忍（旧内核纯同步） */
+  K.pending = (int (*)(void))dlsym(k, "kernel_pending");
+  K.draining = (int (*)(void))dlsym(k, "kernel_draining");
+  K.drainEntry = (void *(*)(void *))dlsym(k, "kernel_drain_entry");
   if (!K.init || !K.shutdown || !K.ping || !K.call || !K.free || !K.lastError) {
     setHostErr("dlsym 内核契约符号不全（须实现 kernel/c-abi.h 全部 6 符号）");
     napi_throw_error(env, nullptr, g_lastHostErr);
@@ -133,6 +160,7 @@ napi_value Call(napi_env env, napi_callback_info info) {
 
   const char *r = K.call(method, params);
   if (!r) {
+    drive();                          // 失败路径也驱动（不阻塞作业推进）
     napi_value nullv;
     napi_get_null(env, &nullv);
     return nullv;                     // 内核拒绝：null + cjkLastError() 取因
@@ -140,6 +168,7 @@ napi_value Call(napi_env env, napi_callback_info info) {
   napi_value out;
   napi_create_string_utf8(env, r, NAPI_AUTO_LENGTH, &out);
   K.free((void *)r);                  // 契约：读出即释放，内核缓冲不滞留
+  drive();                            // 后置驱动：有在途作业则拉起 drainer + 泵
   return out;
 }
 

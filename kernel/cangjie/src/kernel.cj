@@ -39,6 +39,7 @@
 //      惰性构造（agentsOf()/orderOf() 模式）。字面量默认（Bool/String/Int64）的全局不受影响。
 
 import std.collection.*
+import std.sync.*
 
 @C
 foreign func malloc(size: UInt64): CPointer<UInt8>
@@ -263,6 +264,109 @@ func agentListJson(): String {
     return b.done()
 }
 
+// ── agent 作业与并发 drainer（R100，trha MVP 控制面）──
+//
+// 机制（嵌入模式实测定型，坑 103/104）：
+//   · cjthread 只在宿主 RunUIScheduler 泵的窗口里执行；sleep 在此模式下是空操作
+//     （timer 线程不跑）→ drainer 不许自旋等待；
+//   · Semaphore/Monitor 等阻塞唤醒原语不能从宿主原生线程调（栈腐蚀）→ 队列同步只用
+//     Mutex（纯 futex，宿主线程安全）；
+//   · 因此 drainer = 「清空队列即返回」的有界 cjthread：宿主（addon 的 cjkCall 后置
+//     驱动）看到 pending>0 且空闲时 RunCJTask 拉起一支，泵给它窗口跑，清完即退出。
+class Job {
+    var agentId: Int64
+    var kind: String            // "fib" | "echo"
+    var n: Int64                // fib 参数
+    var text: String            // echo 参数
+    var state: Int64            // 0=pending 1=done
+    var value: Int64            // fib 结果
+    var out: String             // echo 结果
+    init(a: Int64, k: String, nn: Int64, t: String) {
+        agentId = a
+        kind = k
+        n = nn
+        text = t
+        state = 0
+        value = 0
+        out = ""
+    }
+}
+
+var gJobs: Option<HashMap<Int64, Job>> = None
+var gJobQueue: Option<ArrayList<Int64>> = None    // pending FIFO（drain 序）
+var gNextJobId: Int64 = 0
+var gDraining: Bool = false
+var gJobMu: Option<Mutex> = None                  // 队列/结果表锁（宿主线程与 cjthread 共用）
+
+func jobsOf(): HashMap<Int64, Job> {
+    if (let Some(m) <- gJobs) { return m }
+    let m = HashMap<Int64, Job>()
+    gJobs = Some(m)
+    return m
+}
+func jobQueueOf(): ArrayList<Int64> {
+    if (let Some(l) <- gJobQueue) { return l }
+    let l = ArrayList<Int64>()
+    gJobQueue = Some(l)
+    return l
+}
+func jobMu(): Mutex {
+    if (let Some(m) <- gJobMu) { return m }
+    let m = Mutex()
+    gJobMu = Some(m)
+    return m
+}
+
+func jobReset(): Unit {
+    gJobs = Some(HashMap<Int64, Job>())
+    gJobQueue = Some(ArrayList<Int64>())
+    gJobMu = Some(Mutex())
+    gNextJobId = 0
+    gDraining = false
+    return
+}
+
+// 可选调度符号（addon 按 dlsym 探测，缺席=旧内核无并发，向后兼容）
+@C
+public func kernel_pending(): Int32 {
+    return Int32(jobQueueOf().size)
+}
+@C
+public func kernel_draining(): Int32 {
+    return if (gDraining) { 1 } else { 0 }
+}
+
+// 有界 drainer：清空 pending 队列即返回（真 cjthread，由宿主 RunCJTask 拉起）
+@C
+public func kernel_drain_entry(_p: CPointer<Unit>): CPointer<Unit> {
+    gDraining = true
+    while (true) {
+        var job: ?Job = None
+        jobMu().lock()
+        let q = jobQueueOf()
+        if (q.size > 0) {
+            let jid = q.get(0).getOrThrow()
+            let rest = ArrayList<Int64>()
+            for (i in 1..q.size) { rest.add(q.get(i).getOrThrow()) }
+            gJobQueue = Some(rest)
+            job = jobsOf().get(jid)
+        }
+        jobMu().unlock()
+        if (let Some(j) <- job) {
+            if (j.kind == "fib") {
+                j.value = fib(j.n)
+            } else {
+                j.out = j.text
+            }
+            j.state = 1
+        } else {
+            break
+        }
+    }
+    gDraining = false
+    return CPointer<Unit>()
+}
+
 // ── 契约实现 ──
 
 @C
@@ -270,6 +374,7 @@ public func kernel_init(config: CPointer<UInt8>): Int32 {
     gInitialized = true
     gLastErr = ""
     agentReset()          // 重新初始化 = 全新内核（agent 注册表清零，测试隔离靠它）
+    jobReset()            // 作业表与 drainer 状态同步清零
     let cfg = csToString(config)
     // 配置内容 v1 不解析（契约允许各语言自定义内部结构）；非空即记录长度自证可达
     if (cfg.size > 0) {
@@ -457,6 +562,70 @@ public func kernel_call(method: CPointer<UInt8>, params: CPointer<UInt8>): CPoin
         let eb = ByteBuf(48)
         eb.str("agent.kill: no agent id=")
         eb.int(id)
+        setErr(eb.done())
+        return CPointer<UInt8>()
+    }
+
+    // ── agent 作业（R100，异步执行：宿主经 RunCJTask+RunUIScheduler 驱动 drainer）──
+    if (m == "agent.submit") {
+        let idO = jsonInt(p, "id")
+        let kindO = jsonStr(p, "kind")
+        if (idO.isNone() || kindO.isNone()) {
+            setErr("agent.submit: params need integer id and string kind")
+            return CPointer<UInt8>()
+        }
+        let ag = agentsOf().get(idO.getOrThrow())
+        if (let Some(_) <- ag) {
+            let kind = kindO.getOrThrow()
+            if (kind != "fib" && kind != "echo") {
+                setErr("agent.submit: kind must be fib or echo, got " + kind)
+                return CPointer<UInt8>()
+            }
+            gNextJobId += 1
+            let jid = gNextJobId
+            let n: Int64 = if (let Some(nv) <- jsonInt(p, "n")) { nv } else { 0 }
+            let t: String = if (let Some(tv) <- jsonStr(p, "text")) { tv } else { "" }
+            jobMu().lock()
+            jobsOf().add(jid, Job(idO.getOrThrow(), kind, n, t))
+            jobQueueOf().add(jid)
+            jobMu().unlock()
+            let b2 = ByteBuf(48)
+            b2.str("{\"jobId\":")
+            b2.int(jid)
+            b2.str(",\"state\":\"pending\"}")
+            return stringToCs(b2.done())
+        }
+        let eb = ByteBuf(48)
+        eb.str("agent.submit: no agent id=")
+        eb.int(idO.getOrThrow())
+        setErr(eb.done())
+        return CPointer<UInt8>()
+    }
+    if (m == "agent.result") {
+        let jidO = jsonInt(p, "jobId")
+        if (jidO.isNone()) {
+            setErr("agent.result: params need integer jobId")
+            return CPointer<UInt8>()
+        }
+        let j = jobsOf().get(jidO.getOrThrow())
+        if (let Some(job) <- j) {
+            let b2 = ByteBuf(128)
+            if (job.state == 0) {
+                b2.str("{\"state\":\"pending\"}")
+            } else if (job.kind == "fib") {
+                b2.str("{\"state\":\"done\",\"value\":")
+                b2.int(job.value)
+                b2.str("}")
+            } else {
+                b2.str("{\"state\":\"done\",\"text\":\"")
+                b2.str(job.out)
+                b2.str("\"}")
+            }
+            return stringToCs(b2.done())
+        }
+        let eb = ByteBuf(48)
+        eb.str("agent.result: no job id=")
+        eb.int(jidO.getOrThrow())
         setErr(eb.done())
         return CPointer<UInt8>()
     }

@@ -1764,23 +1764,23 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
 
 == 性能基线（Electron 实测）==
   首渲染            127.5 ms（33 节点：Column+Button+Text+ForEach×30）
-  最小 rerender     5.3 ms（@State 计数脏区单 Text，rAF 口径）
-  rerender 管道     1.0 ms / 1 tick（setTimeout 轮询口径，R70）
+  最小 rerender     10.0 ms（@State 计数脏区单 Text，rAF 口径）
+  rerender 管道     1.1 ms / 1 tick（setTimeout 轮询口径，R70）
   微任务底噪        0.00 ms
   行数              31
-  剖面 R71          loadRoute 同步 3.7 ms（require 0.3）· raf1 0.0 / raf2 123.8 ms（offscreen 首帧）
-  脚本 eval         runtime 20.2 / generated 18.9 / shims 19.2 / module 18.3 ms（计时起点之前）
+  剖面 R71          loadRoute 同步 3.6 ms（require 0.1）· raf1 0.0 / raf2 123.9 ms（offscreen 首帧）
+  脚本 eval         runtime 14.5 / generated 11.2 / shims 13.8 / module 13.2 ms（计时起点之前）
   判定              框架同步构建 3.5ms 无大头；"首渲染"=脚本 eval + offscreen 首帧（非框架成本）
-  千节点 R79        首渲染同步 20.7 ms（350 节点/~3500 属性，亚线性）· 单点 flush 2.8 ms · 批量翻转 flush 5.9 ms
+  千节点 R79        首渲染同步 18.5 ms（350 节点/~3500 属性，亚线性）· 单点 flush 2.7 ms · 批量翻转 flush 5.8 ms
   规模曲线          203→4.8 / 304→11.2 / 1055→19.0 ms（创建路径亚线性）；行复用+守卫千节点级保持
 
 == 体积（源码，不含产物/Electron 运行时）==
   runtime          983.7 KB
   runtime(src)     982.7 KB
-  test             854.6 KB
+  test             856.1 KB
   tools            194.9 KB
   electron(src)    46.1 KB
-  docs             743.3 KB
+  docs             748.2 KB
   fixtures         512.0 KB
 
 == 逐文件（文档"文件职责"表的来源）==
@@ -1803,10 +1803,10 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   .gitignore                                757 B  0.7 KB
   README.md                              157245 B  153.6 KB
   THIRD-PARTY-NOTICES.md                  10718 B  10.5 KB
-  docs/ARCHITECTURE.md                   163450 B  159.6 KB
+  docs/ARCHITECTURE.md                   163451 B  159.6 KB
   docs/CAPABILITY.md                      62280 B  60.8 KB
-  docs/DEVELOPING.md                      69999 B  68.4 KB
-  docs/ROADMAP.md                        200222 B  195.5 KB
+  docs/DEVELOPING.md                      71656 B  70.0 KB
+  docs/ROADMAP.md                        203578 B  198.8 KB
   docs/surface-measurement.md              6496 B  6.3 KB
   docs/SESSION-2026-09-20.md              12842 B  12.5 KB
   runtime/src/.mimosa                      4096 B  4.0 KB
@@ -1941,7 +1941,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   test/batchmediademo.html                 6542 B  6.4 KB
   test/calendarpickerdemo.html            11100 B  10.8 KB
   test/canvasedemo.html                    4301 B  4.2 KB
-  test/cjk.html                            6684 B  6.5 KB
+  test/cjk.html                            8233 B  8.0 KB
   test/components.html                     6789 B  6.6 KB
   test/datepickerdemo.html                 8228 B  8.0 KB
   test/drawdemo.html                      12765 B  12.5 KB
