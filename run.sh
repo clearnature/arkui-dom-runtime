@@ -573,6 +573,10 @@ case "${1:-index}" in
     # R93：行为断言二批（input/media/nav 关键语义）
     run_one batchbehavior "$(src_of entryability/EntryAbility.ts)" build/batchbehavior-module.js test/batchbehavior.html \
       "--cjs --register EntryAbility" ;;
+  cjk)
+    # R98：@ohos:cjk 进程内仓颉内核（浏览器端走探测式降级：无主进程桥 → isAvailable=false）
+    run_one cjk "$(src_of entryability/EntryAbility.ts)" build/cjk-module.js test/cjk.html \
+      "--cjs --register EntryAbility" ;;
   notesdemo)
     # R90：NotesDemo 千节点端到端（两模块：Detail 预提取 + Home 主注册）
     "$NODE" tools/extract.mjs "$(src_of pages/NotesDetail.ts)" build/notesdetail-module.js --cjs --register NotesDetail >/dev/null || exit 1
@@ -594,5 +598,5 @@ case "${1:-index}" in
     echo
     run_one netfile-2 "$(src_of pages/NetFile.ts)" build/netfile-module.js test/netfile.html \
       "--cjs --register NetFile" "?phase=2" "$PERSIST_PROFILE" "$PERSIST_PORT" ;;
-  *) echo "用法: bash run.sh [index|rich|leak|layout|widgets|tabgrid|swiper|navdemo|reldemo|drawdemo|textmeasure|lazyvh|measarea|measimage|measnotify|promptaction|realfs|animdemo|gesturedemo|transitiondemo|gesturegroupdemo|navbardemo|navtransdemo|shapedemo|inputdemo|showdemo|popdemo|uictxdemo|canvasedemo|xcompdemo|qrdemo|textdemo|mediademo|smalldemo|stepdemo|imagedemo|scrolldemo|animatordemo|listitemgroup|refreshdemo|datepickerdemo|timepickerdemo|waterflowdemo|calendarpickerdemo|textpickerdemo|griddemo|texttimedemo|alphabetindexerdemo|sidebardemo|splitdemo|paneldemo|gridrowdemo|richvideodemo|measure|lazy|provide|async|ability|router|netfile|all]"; exit 2 ;;
+  *) echo "用法: bash run.sh [index|rich|leak|layout|widgets|tabgrid|swiper|navdemo|reldemo|drawdemo|textmeasure|lazyvh|measarea|measimage|measnotify|promptaction|realfs|animdemo|gesturedemo|transitiondemo|gesturegroupdemo|navbardemo|navtransdemo|shapedemo|inputdemo|showdemo|popdemo|uictxdemo|canvasedemo|xcompdemo|qrdemo|textdemo|mediademo|smalldemo|stepdemo|imagedemo|scrolldemo|animatordemo|listitemgroup|refreshdemo|datepickerdemo|timepickerdemo|waterflowdemo|calendarpickerdemo|textpickerdemo|griddemo|texttimedemo|alphabetindexerdemo|sidebardemo|splitdemo|paneldemo|gridrowdemo|richvideodemo|measure|lazy|provide|async|ability|router|cjk|netfile|all]"; exit 2 ;;
 esac

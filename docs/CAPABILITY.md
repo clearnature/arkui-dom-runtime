@@ -168,6 +168,7 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 | `net.http` `readTimeout` → `code=2300028` | ✅ | **electron: async** |
 | `net.http` `destroy()` 后请求 → `code=2300035` | ✅ | async |
 | `net.http` `expectDataType=ARRAY_BUFFER` → `ArrayBuffer` | ✅ | async |
+| `cjk` 进程内仓颉内核（`isAvailable`/`call(method,params)`/`ping`/`lastError`，c-abi 6 符号契约；`fib(24)` 在仓颉堆上递归算出） | ✅ | **electron: cjk**（浏览器降级面单跑 `bash run.sh cjk`） |
 | 未实现模块的可操作报错（列出已实现 + 指路） | ✅ | ability |
 
 ## 四、持久化（**真实落盘**）
@@ -188,6 +189,7 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 | 真实渲染 + offscreen 截图（非白像素占比判定，非 `isEmpty()`） | ✅ | electron 各用例 |
 | 同一份断言的双端一致（31 个用例两个 runner 都过） | ✅ | run.sh / electron/run.sh |
 | runtime 源码分片与拼接产物一致（`runtime/src/` → `runtime/arkui-dom-runtime.js`，`--check` 只校验不落盘；孤儿分片/成环/漏展开报错） | ✅ | `npm run check:runtime`（`npm run check` 第 3 步）；拆分时用 `md5sum -c` 自证与拆分前逐字节一致 |
+| 进程内仓颉内核（NAPI addon → dlopen 运行时+内核 .so，`InitCJRuntime` 官方序列；惰性挂载，无 SDK 时其余用例零依赖） | ✅ | `electron/run.sh cjk`（15 条；链路 = 渲染进程→preload→IPC→主进程→NAPI→仓颉） |
 
 ---
 

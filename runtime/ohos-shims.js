@@ -1525,4 +1525,43 @@
       });
     },
   });
+
+  // ── @ohos:cjk —— 进程内仓颉内核（R98，桌面线）──
+  //
+  // 形态沿 @ohos.hilog 一类的"静态能力对象"：方法名分派（kernel/c-abi.h 契约的渲染侧投影）。
+  // 链路：垫片 → preload electronAPI.cjk → main ipcMain.handle('arkui:cjk:*') →
+  // NAPI addon → dlopen 仓颉运行时 + kernel/cangjie/libkernel.so → dlsym 直调。
+  // 浏览器端：无主进程桥 → 探测式降级（R21 先例）：call 返回 null + isAvailable()=false，
+  // 断言页按端分流（桌面真调内核，浏览器只断言降级面不崩）。
+  const cjkEapi = ((/** @type {any} */ (global)).electronAPI || {});
+  const cjkWarn = (m) => { try { console.warn('[arkui-dom] cjk.' + m + '：当前宿主不支持（无 Electron 主进程桥）'); } catch (e) {} };
+  define('cjk', {
+    /** 一次探测：init 成功与否缓存（主进程幂等，重复 init 无副作用） */
+    async isAvailable() {
+      if (!cjkEapi.cjk) return false;
+      const r = await cjkEapi.cjk.init();
+      return !!(r && r.ok);
+    },
+    /**
+     * 万能调用口（c-abi kernel_call 投影）。params 为 JS 对象，内部序列化为 JSON；
+     * 返回解析后的 JSON 对象；内核拒绝（null）→ 返回 null，原因走 lastError()。
+     * @param {string} method @param {object} params
+     */
+    async call(method, params) {
+      if (!cjkEapi.cjk) { cjkWarn('call'); return null; }
+      const raw = await cjkEapi.cjk.call(String(method), JSON.stringify(params == null ? {} : params));
+      if (raw == null) return null;
+      try { return JSON.parse(raw); } catch (e) { return raw; }   // 非 JSON 返回按原文透传
+    },
+    /** 内核视角最近一次错误（c-abi kernel_last_error 投影） */
+    async lastError() {
+      if (!cjkEapi.cjk) { cjkWarn('lastError'); return ''; }
+      return String(await cjkEapi.cjk.lastError() || '');
+    },
+    /** 健康检查（c-abi kernel_ping 投影）：0=正常，-1=不可用 */
+    async ping() {
+      if (!cjkEapi.cjk) return -1;
+      return Number(await cjkEapi.cjk.ping());
+    },
+  });
 })(typeof globalThis !== 'undefined' ? globalThis : self);

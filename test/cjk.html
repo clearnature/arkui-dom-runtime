@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R98：@ohos:cjk 进程内仓颉内核（c-abi 契约端到端）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 380px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; font-size: 12px; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R98：@ohos:cjk——渲染进程 → preload → 主进程 → NAPI → 仓颉内核</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script>
+  window.addEventListener('unhandledrejection', (e) => {
+    document.getElementById('result').textContent = 'UNHANDLED ' + (e.reason && e.reason.message || e.reason);
+  });
+  (async function () {
+    const lines = [];
+    let pass = 0, fail = 0;
+    const check = (c, m) => { if (c) { pass++; lines.push('PASS ' + m); } else { fail++; lines.push('FAIL ' + m); } };
+    const root = document.getElementById('root');
+    const cjk = __arkui_dom_require('@ohos:cjk');
+    const isElectron = !!(globalThis.electronAPI && globalThis.electronAPI.cjk);
+    const available = await cjk.isAvailable();
+
+    // ── ① 可用性分端：桌面真调内核；浏览器断言降级面 ──
+    if (isElectron) {
+      check(available === true, 'cjk 桌面可用（init ok，仓颉运行时+内核已挂载）');
+    } else {
+      check(available === false, 'cjk 浏览器降级：isAvailable=false（无主进程桥）');
+      check(await cjk.call('echo', {}) === null, 'cjk 浏览器降级：call 返回 null 不抛');
+      check(await cjk.ping() === -1, 'cjk 浏览器降级：ping=-1');
+      check(typeof (await cjk.lastError()) === 'string', 'cjk 浏览器降级：lastError 字符串');
+    }
+
+    if (available) {
+      // ── ② 健康检查 ──
+      check(await cjk.ping() === 0, 'cjk ping=0（内核活着）');
+
+      // ── ③ echo：跨语言字符串往返（含 UTF-8）──
+      const echoed = await cjk.call('echo', { hello: '仓颉', n: 1 });
+      check(!!echoed && echoed.hello === '仓颉' && echoed.n === 1,
+        'cjk echo 往返（UTF-8 保留）');
+
+      // ── ④ add：JSON 解析 + 计算 ──
+      const sum = await cjk.call('add', { a: 20, b: 22 });
+      check(!!sum && sum.sum === 42, 'cjk add {a:20,b:22} → {sum:42}');
+      const neg = await cjk.call('add', { a: -7, b: 3 });
+      check(!!neg && neg.sum === -4, 'cjk add 负数 {a:-7,b:3} → {sum:-4}');
+
+      // ── ⑤ fib：内核递归真算力 ──
+      const f10 = await cjk.call('fib', { n: 10 });
+      check(!!f10 && f10.result === 55, 'cjk fib(10)=55');
+      const f24 = await cjk.call('fib', { n: 24 });
+      check(!!f24 && f24.result === 46368, 'cjk fib(24)=46368（递归 75k 次调用）');
+
+      // ── ⑥ upper：字符串处理 ──
+      const up = await cjk.call('upper', { text: 'cangjie kernel' });
+      check(!!up && up.text === 'CANGJIE KERNEL', 'cjk upper ASCII 大写');
+
+      // ── ⑦ 错误路径：内核拒绝 → null + lastError 可取因 ──
+      const bad = await cjk.call('no_such_method', { x: 1 });
+      check(bad === null, 'cjk 未知方法 → null（内核契约：失败返回 NULL）');
+      const err = await cjk.lastError();
+      check(/unknown method/.test(err), 'cjk lastError 报 unknown method（' + err.slice(0, 40) + '…）');
+
+      // ── ⑧ 参数缺失（第二类错误）──
+      const miss = await cjk.call('add', { b: 1 });
+      check(miss === null && /a and b/.test(await cjk.lastError()),
+        'cjk add 缺参数 → null + lastError 提示');
+
+      // ── ⑨ 失败后内核仍健康（错误不破坏服务）──
+      check(await cjk.ping() === 0, 'cjk 错误路径后 ping 仍=0');
+      const after = await cjk.call('fib', { n: 12 });
+      check(!!after && after.result === 144, 'cjk 错误路径后 fib(12)=144（服务连续）');
+    }
+
+    // ── ⑩ 垫片面完整（两端都断言）──
+    check(typeof cjk.call === 'function' && typeof cjk.ping === 'function' &&
+      typeof cjk.lastError === 'function' && typeof cjk.isAvailable === 'function',
+      'cjk 垫片面完整（call/ping/lastError/isAvailable）');
+
+    // 挂一张 UI 标识（走真渲染管线，页面非空白）
+    const badge = document.createElement('div');
+    badge.id = 'cjk-badge';
+    badge.textContent = 'cjk:' + (available ? 'kernel-live' : 'degraded');
+    root.appendChild(badge);
+    check(badge.textContent.indexOf('cjk:') === 0, 'cjk 页面渲染标识已挂载');
+
+    lines.push('CJKMODE ' + (available ? 'electron-kernel' : 'browser-degraded'));
+
+    if (fail === 0) lines.unshift(`=== ALL PASS (${pass}) ===`);
+    else lines.unshift(`=== ${fail} FAILURES / ${pass} PASS ===`);
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = fail === 0 ? 'pass' : 'fail';
+    document.title = fail === 0 ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

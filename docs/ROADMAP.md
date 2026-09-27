@@ -1876,6 +1876,49 @@ R96 首测崩溃系**跳过官方初始化直接调函数**所致，非不可用
 
 ---
 
+### R97/R98 — `@ohos:cjk` 立项交付：仓颉内核 6 符号契约 + NAPI 桥 + 渲染进程垫片 ✅（2026-09-27）
+
+**内容**：R96 定型的挂载契约正式立项落地——渲染进程一行 `cjk.call('fib',{n:24})` 直达
+进程内仓颉内核。四层结构：
+
+| 层 | 文件 | 职责 |
+|---|---|---|
+| 内核 | `kernel/cangjie/src/kernel.cj` → `libkernel.so` | 实现 `kernel/c-abi.h` 全部 6 符号；方法面 v1：`echo`（UTF-8 直通）/`add`（JSON 解析+负数）/`fib`（递归真算力，n≤40）/`upper`（ASCII 大写）/`error`（强制失败路径）；JSON 手写字节扫描（无 stdlib 依赖，仅 std-core/runtime/boundscheck 三库） |
+| 桥 | `bridge/napi/cjk_napi.cc` → `cjk_napi.node` | dlopen 运行时 → `InitCJRuntime`（4096 字节零参默认）→ dlopen 内核 → dlsym 6 符号 → `kernel_init`；导出 `cjkInit/cjkPing/cjkCall/cjkLastError/cjkShutdown`；NAPI ABI 跨 Node/Electron 通用（系统头编译、Electron 44 加载实测） |
+| 主进程 | `electron/main.js` + `electron/preload.js` | `ipcMain.handle('arkui:cjk:*')` 四处理器；**惰性初始化**（首个 cjk 调用才 dlopen，其余测试页零开销、无 SDK 时零依赖）；preload `electronAPI.cjk` 失败免疫（R74 模板） |
+| 垫片 | `runtime/ohos-shims.js` `@ohos:cjk` | `isAvailable/call/ping/lastError`；params 对象自动 JSON 序列化、返回自动解析；浏览器端探测式降级（R21 先例） |
+
+**验收（已执行）**：
+- C 宿主契约测试 `kernel/cangjie/test/kernel_contract_test.c` —— **22 条 ALL PASS**
+  （生命周期/UTF-8 往返/负数/递归/三类错误路径/shutdown 后拒绝）；
+- NAPI 冒烟 `bridge/napi/smoke.cjs`（node 直载 addon）—— 10 条 ALL PASS；
+- `bash electron/run.sh cjk` —— **15 条断言**（真内核：fib(24)=46368 在仓颉堆上算出）；
+- `bash run.sh cjk` 单用例可跑（浏览器降级面：isAvailable=false、call 返 null 不抛；
+  断言数按端分流 Electron 15 / 浏览器 6，**不进浏览器 all 矩阵**——windowdemo/pickerdemo
+  先例：矩阵内只收两端同数用例，计数守门按端核对才不被假声明骗过）；
+- 门禁 7 步全绿（浏览器 + Electron 全矩阵含新用例）。
+
+**三个实测坑（细节入 DEVELOPING 坑 101）**：
+1. `libcangjie-std-core.so` **无 DT_SONAME** → 宿主预载无法满足内核的 DT_NEEDED 匹配，
+   依赖解析只能走 `LD_LIBRARY_PATH` 搜索路径——`electron/run.sh` 在 Electron 启动前导出
+   `CANGJIE_RT_LIB` + `LD_LIBRARY_PATH`（nightly-current 软链自动探测）；
+2. **`Int64.toString()` 在 `@C` 帧内返回头部损坏的 String**（`.size`=垃圾值 6399178）——
+   响应里的数字全部改手写 ASCII 转换（`ByteBuf.int`）；字面量拼接与 `String.fromUtf8` 正常；
+3. addon 首版 `setHostErr(dlerror() ? dlerror() : …)` 双重调用把错误串消费掉，所有失败
+   都报 "(null)"——`dlerror` 只能取一次，先存局部（顺带暴露真实失败：缺 `LD_LIBRARY_PATH`）。
+
+**已知边界（v1 刻意不做）**：JSON 只支持紧凑形式+整数；`upper` 不处理转义/多字节；
+内核换版需重启进程（addon 幂等加载，不热替换）；`InitCJRuntime` 零参默认（GC/堆参数
+未调优）；仓颉运行时日志打到 stderr（Cangjie runtime 自身行为，测试过滤后不影响判定）。
+Mimosa deep 审计 **0 findings**（seal sha256:fe6dcc0b…，覆盖内核/桥/IPC/垫片/测试页）。
+
+**触及**：`kernel/cangjie/src/kernel.cj`（v1 数字签名 → v2 全契约）、
+`kernel/cangjie/test/kernel_contract_test.c`（新）、`bridge/napi/`（新：cc/node/smoke.cjs）、
+`electron/main.js`、`electron/preload.js`、`electron/run.sh`、`runtime/ohos-shims.js`、
+`test/cjk.html`（新）、`run.sh`、`docs/DEVELOPING.md`（坑 101）、`docs/ROADMAP.md`（本节）
+
+---
+
 ## P3 布局引擎
 
 ### ~~R13 — 数据可视化类：`Progress` / `Gauge` / `DataPanel` / `Rating`~~ ✅ 已完成

@@ -160,6 +160,45 @@ app.whenReady().then(async () => {
   // R89：pasteboard 的主进程执行端（Electron 44 clipboard 仅主进程可用）
   ipcMain.handle('arkui:clip:read', () => clipboard.readText());
   ipcMain.handle('arkui:clip:write', (_e, t) => { clipboard.writeText(String(t)); return true; });
+
+  // ── @ohos:cjk 的主进程执行端（R98，进程内仓颉内核）──
+  // 渲染侧 @ohos:cjk 垫片 → preload cjk 桥 → 这里 → NAPI addon（bridge/napi/cjk_napi.node）
+  // → dlopen 仓颉运行时 + 内核 .so（挂载序列与实测约束见 addon 头注与 kernel/c-abi.h）。
+  // 初始化惰性：首个 cjk 调用才加载（其余测试页零开销、零依赖）；
+  // 环境要求：CANGJIE_RT_LIB 指向 <SDK>/runtime/lib/linux_x86_64_cjnative，且
+  // LD_LIBRARY_PATH 含同一目录（std-core 无 DT_SONAME，只能走搜索路径——run.sh 负责导出）。
+  let cjkAddon = null;
+  let cjkReady = false;
+  let cjkErr = '仓颉 SDK 未找到（CANGJIE_RT_LIB 未设置）';
+  const cjkEnsure = () => {
+    if (cjkReady) return true;
+    if (cjkAddon) return false;            // 已试过且失败：错误保持 cjkErr
+    const rtLib = process.env.CANGJIE_RT_LIB || '';
+    const kernelLib = path.resolve(__dirname, '..', 'kernel', 'cangjie', 'libkernel.so');
+    if (!rtLib || !fs.existsSync(rtLib) || !fs.existsSync(kernelLib)) return false;
+    try {
+      // 字面量路径：相对 main.js 解析（electron/../bridge/…），且便于静态审计
+      cjkAddon = require('../bridge/napi/cjk_napi.node');
+      cjkAddon.cjkInit(path.join(rtLib, 'libcangjie-runtime.so'), kernelLib, '{}');
+      cjkReady = true;
+      return true;
+    } catch (e) {
+      cjkErr = String(e && e.message || e);
+      return false;
+    }
+  };
+  ipcMain.handle('arkui:cjk:init', () => (cjkEnsure() ? { ok: true } : { error: cjkErr }));
+  ipcMain.handle('arkui:cjk:ping', () => (cjkEnsure() ? cjkAddon.cjkPing() : -1));
+  ipcMain.handle('arkui:cjk:call', (_e, method, paramsJson) => {
+    if (!cjkEnsure()) return null;
+    try { return cjkAddon.cjkCall(String(method), String(paramsJson)); }
+    catch (e) { cjkErr = String(e && e.message || e); return null; }
+  });
+  ipcMain.handle('arkui:cjk:lastError', () => {
+    if (cjkReady) return String(cjkAddon.cjkLastError() || '');
+    return cjkErr;
+  });
+
   ipcMain.handle('arkui:ability:startForResult', (e, payload) => {
     callerWC = e.sender;
     if (abilityWin && !abilityWin.isDestroyed()) abilityWin.close();  // 顺序启动：上一窗已让位

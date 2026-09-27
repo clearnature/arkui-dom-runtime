@@ -117,4 +117,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
       try { return await ipcRenderer.invoke('arkui:clip:write', String(t)); } catch (e) { return false; }
     },
   },
+  // R98：进程内仓颉内核桥（@ohos:cjk 的 Electron 侧）。
+  // 与 fs/window 桥同约定：失败免疫（init 失败返回 {error}，call 失败返回 null）。
+  // 内核拒绝（返回 null）与桥故障（异常）在渲染侧都表现为 null，原因统一走 lastError。
+  cjk: {
+    init: async () => {
+      try { return await ipcRenderer.invoke('arkui:cjk:init'); } catch (e) { return { error: String(e && e.message || e) }; }
+    },
+    call: async (method, paramsJson) => {
+      try { return await ipcRenderer.invoke('arkui:cjk:call', String(method), String(paramsJson)); } catch (e) { return null; }
+    },
+    lastError: async () => {
+      try { return await ipcRenderer.invoke('arkui:cjk:lastError'); } catch (e) { return ''; }
+    },
+    ping: async () => {
+      try { return await ipcRenderer.invoke('arkui:cjk:ping'); } catch (e) { return -1; }
+    },
+  },
 });

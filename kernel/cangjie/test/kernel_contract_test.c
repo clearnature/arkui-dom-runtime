@@ -1,0 +1,103 @@
+/*
+ * R98：C 测试器——完整 c-abi 契约验证（test_kernel.c 的 v2 版）
+ * 序列：dlopen 运行时 → InitCJRuntime → dlopen 内核 → dlsym 6 符号 →
+ *       ping/init/call(echo,add,fib,upper)/错误路径/last_error/free/shutdown/ping
+ * 编译：gcc kernel_contract_test.c -o kernel_contract_test -ldl
+ * 运行：LD_LIBRARY_PATH=<SDK>/runtime/lib/linux_x86_64_cjnative ./kernel_contract_test
+ */
+#include <dlfcn.h>
+#include <stdio.h>
+#include <string.h>
+
+typedef int (*init_rt_fn)(const void *);
+typedef int (*i_cstr_fn)(const char *);
+typedef int (*v_fn)(void);
+typedef char *(*call_fn)(const char *, const char *);
+typedef void (*free_fn)(void *);
+typedef const char *(*err_fn)(void);
+
+static int fails = 0;
+static void check(int cond, const char *m) {
+    printf("%s %s\n", cond ? "PASS" : "FAIL", m);
+    if (!cond) fails++;
+}
+
+int main(int argc, char *argv[]) {
+    const char *kernel_path = (argc > 1) ? argv[1] : "../libkernel.so";
+    void *rt = dlopen("libcangjie-runtime.so", RTLD_NOW | RTLD_GLOBAL);
+    if (!rt) { printf("FAIL dlopen runtime: %s\n", dlerror()); return 1; }
+    /* 零参默认（4096 字节零块）——与 R97 test_kernel.c 相同 */
+    static char param[4096] = {0};
+    int rc = ((init_rt_fn)dlsym(rt, "InitCJRuntime"))(param);
+    check(rc == 0, "InitCJRuntime(零参默认)");
+
+    void *k = dlopen(kernel_path, RTLD_NOW);
+    if (!k) { printf("FAIL dlopen kernel: %s\n", dlerror()); return 1; }
+    i_cstr_fn kinit = (i_cstr_fn)dlsym(k, "kernel_init");
+    v_fn kshutdown = (v_fn)dlsym(k, "kernel_shutdown");
+    v_fn kping = (v_fn)dlsym(k, "kernel_ping");
+    call_fn kcall = (call_fn)dlsym(k, "kernel_call");
+    free_fn kfree = (free_fn)dlsym(k, "kernel_free");
+    err_fn kerr = (err_fn)dlsym(k, "kernel_last_error");
+    check(kinit && kshutdown && kping && kcall && kfree && kerr, "dlsym 6 契约符号");
+
+    check(kping() == -1, "未初始化时 ping=-1");
+    check(kerr() == NULL || strlen(kerr()) == 0, "初始 last_error 为空");
+    check(kinit("{}") == 0, "kernel_init(\\\"{}\\\")=0");
+    check(kping() == 0, "初始化后 ping=0");
+
+    /* echo：字符串往返 */
+    char *r = kcall("echo", "{\"hello\":\"仓颉\"}");
+    check(r && strcmp(r, "{\"hello\":\"仓颉\"}") == 0, "call(echo) JSON 直通往返");
+    if (r) kfree(r);
+
+    /* add：JSON 解析 + 计算 */
+    r = kcall("add", "{\"a\":20,\"b\":22}");
+    check(r && strcmp(r, "{\"sum\":42}") == 0, "call(add 20,22)={\"sum\":42}");
+    if (r) kfree(r);
+    r = kcall("add", "{\"a\":-7,\"b\":3}");
+    check(r && strcmp(r, "{\"sum\":-4}") == 0, "call(add -7,3)={\"sum\":-4}（负数）");
+    if (r) kfree(r);
+
+    /* fib：递归真算力 */
+    r = kcall("fib", "{\"n\":10}");
+    check(r && strcmp(r, "{\"result\":55}") == 0, "call(fib 10)={\"result\":55}");
+    if (r) kfree(r);
+    r = kcall("fib", "{\"n\":24}");
+    check(r && strcmp(r, "{\"result\":46368}") == 0, "call(fib 24)={\"result\":46368}");
+    if (r) kfree(r);
+
+    /* upper：字符串处理 */
+    r = kcall("upper", "{\"text\":\"cangjie kernel\"}");
+    check(r && strcmp(r, "{\"text\":\"CANGJIE KERNEL\"}") == 0, "call(upper) ASCII 大写");
+    if (r) kfree(r);
+
+    /* 错误路径：未知方法 → NULL + last_error */
+    r = kcall("nope", "{}");
+    check(r == NULL, "call(未知方法)=NULL");
+    const char *e = kerr();
+    check(e && strstr(e, "unknown method") != NULL, "last_error 报 unknown method");
+    if (r) kfree(r);
+
+    /* 错误路径：强制失败 */
+    r = kcall("error", "{\"x\":1}");
+    check(r == NULL, "call(error)=NULL");
+    e = kerr();
+    check(e && strstr(e, "forced failure") != NULL, "last_error 报 forced failure");
+
+    /* 错误路径：参数缺失 */
+    r = kcall("add", "{\"b\":1}");
+    check(r == NULL, "call(add 缺 a)=NULL");
+    check(strstr(kerr(), "a and b") != NULL, "last_error 提示缺 a/b");
+
+    /* shutdown 后 ping 失败、call 拒绝 */
+    check(kshutdown() == 0, "kernel_shutdown=0");
+    check(kping() == -1, "shutdown 后 ping=-1");
+    r = kcall("echo", "x");
+    check(r == NULL, "shutdown 后 call=NULL");
+    check(strstr(kerr(), "not initialized") != NULL, "last_error 报 not initialized");
+
+    if (fails == 0) printf("ALL PASS\n");
+    else printf("%d FAILURES\n", fails);
+    return fails == 0 ? 0 : 1;
+}
