@@ -25,13 +25,14 @@ static void check(int cond, const char *m) {
 static call_fn Kcall = NULL;
 static free_fn Kfree = NULL;
 
-/* 调用并校验返回串（NULL 时给期望提示） */
+/* 调用并校验返回串（Kcall 判空防御——dlsym 失败不该走到这里，但显式兜底） */
 static void expect_call(const char *method, const char *params, const char *want, const char *m) {
-    char *r = Kcall(method, params);
     char buf[512];
+    if (!Kcall) { snprintf(buf, sizeof(buf), "%s → 跳过（Kcall 未就绪）", m); check(0, buf); return; }
+    char *r = Kcall(method, params);
     snprintf(buf, sizeof(buf), "%s → %s（期望 %s）", m, r ? r : "(null)", want);
     check(r && strcmp(r, want) == 0, buf);
-    if (r) Kfree(r);
+    if (r && Kfree) Kfree(r);
 }
 
 int main(int argc, char *argv[]) {
@@ -46,9 +47,11 @@ int main(int argc, char *argv[]) {
     snprintf(path, sizeof(path), "%s/libHSghc-internal-9.1401.0-inplace-ghc9.14.1.so", libdir);
     void *gi = dlopen(path, RTLD_NOW | RTLD_GLOBAL);
     check(gi != NULL, "dlopen ghc-internal（NOW——stg 由已载 RTS 补）");
+    if (!rts || !gi) { printf("FAIL RTS 挂载，中止\n"); return 1; }   /* 静态分析防线：空指针即退 */
     void *hsi = dlsym(RTLD_DEFAULT, "hs_init");
     check(hsi != NULL, "hs_init 可见");
     if (hsi) ((void (*)(int *, char ***))hsi)(NULL, NULL);
+    else { printf("FAIL hs_init 缺席，中止\n"); return 1; }
 
     void *k = dlopen(kernel, RTLD_NOW | RTLD_GLOBAL);
     if (!k) { printf("FAIL dlopen kernel: %s\n", dlerror()); return 1; }
@@ -62,6 +65,10 @@ int main(int argc, char *argv[]) {
     err_fn kerr = (err_fn)dlsym(k, "kernel_last_error");
     int (*kver)(void) = (int (*)(void))dlsym(k, "kernel_abi_version");
     check(kinit && kshutdown && kping && Kcall && Kfree && kerr, "dlsym 6 核心符号");
+    if (!kinit || !kshutdown || !kping || !Kcall || !Kfree || !kerr) {
+        printf("FAIL 契约符号不全，中止\n");   /* 静态分析防线：check 不阻断，这里补 */
+        return 1;
+    }
     check(kver && kver() == 10001, "kernel_abi_version=10001（v1.1，无调度符号）");
 
     check(kinit("{}") == 0, "kernel_init");
@@ -72,10 +79,10 @@ int main(int argc, char *argv[]) {
     expect_call("add", "{\"a\":20,\"b\":22}", "{\"sum\":42}", "add");
     expect_call("add", "{\"a\":-7,\"b\":3}", "{\"sum\":-4}", "add 负数");
     expect_call("fib", "{\"n\":10}", "{\"result\":55}", "fib(10)");
-    char *r = Kcall("fib", "{\"n\":99}");
+    char *r = Kcall ? Kcall("fib", "{\"n\":99}") : NULL;
     check(r == NULL, "fib 越界 → NULL");
     if (r) Kfree(r);
-    r = Kcall("nope", "{}");
+    r = Kcall ? Kcall("nope", "{}") : NULL;
     check(r == NULL && strstr(kerr(), "unknown method") != NULL, "未知方法 → NULL+last_error");
     if (r) Kfree(r);
 
@@ -90,11 +97,11 @@ int main(int argc, char *argv[]) {
                 "{\"messages\":[\"任务甲\",\"任务乙\"],\"drained\":2}", "poll FIFO 排空");
     expect_call("agent.poll", "{\"id\":1}",
                 "{\"messages\":[],\"drained\":0}", "poll 再排空为空");
-    r = Kcall("agent.send", "{\"id\":9,\"text\":\"x\"}");
+    r = Kcall ? Kcall("agent.send", "{\"id\":9,\"text\":\"x\"}") : NULL;
     check(r == NULL && strstr(kerr(), "no agent id=9") != NULL, "send 未知 id → NULL");
     if (r) Kfree(r);
     expect_call("agent.kill", "{\"id\":2}", "{\"killed\":\"agent-2\"}", "kill");
-    r = Kcall("agent.list", "{}");
+    r = Kcall ? Kcall("agent.list", "{}") : NULL;
     check(r && strstr(r, "\"count\":1") && strstr(r, "alice") && !strstr(r, "agent-2"),
           "list kill 后收敛");
     if (r) Kfree(r);
@@ -134,13 +141,13 @@ int main(int argc, char *argv[]) {
     expect_call("agent.transition", "{\"id\":4,\"cmd\":\"start\",\"step\":\"step-9\"}",
                 "{\"before\":{\"state\":\"Idle\"},\"after\":{\"state\":\"Processing\",\"step\":\"step-9\"}}",
                 "FSM: Idle+start(step-9 参数生效——trha 占位字面量的参数化)");
-    r = Kcall("agent.transition", "{\"id\":9,\"cmd\":\"start\"}");
+    r = Kcall ? Kcall("agent.transition", "{\"id\":9,\"cmd\":\"start\"}") : NULL;
     check(r == NULL && strstr(kerr(), "no agent id=9") != NULL, "transition 未知 id → NULL");
     if (r) Kfree(r);
 
     /* re-init = 全新内核（注册表清零） */
     check(kshutdown() == 0 && kinit("{}") == 0, "shutdown+init 重置");
-    r = Kcall("agent.list", "{}");
+    r = Kcall ? Kcall("agent.list", "{}") : NULL;
     check(r && strstr(r, "\"count\":0"), "重置后注册表清零");
     if (r) Kfree(r);
 

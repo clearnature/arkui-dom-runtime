@@ -2039,7 +2039,7 @@ R108 .ets fixture → R109 打包 → R110 取消。
 | ✅ R113 | 临时区迁移 | `/tmp` → `/data/tmp`（`TMPDIR` 导出 + mktemp 硬编码路径改写，双端 run.sh）；/tmp tmpfs inode 打满曾致门禁三步假红 | 门禁全绿后 profile/mktemp 落 /data/tmp | S |
 | ✅ R109 | 打包覆盖仓颉运行时 | 内核打 **RPATH=$ORIGIN**（`--link-options '--disable-new-dtags -rpath=$ORIGIN'`，老式 tag 链式传递到二层依赖——RUNPATH 不传递、glibc 对无 SONAME 库不按 basename 匹配，两案实测否决）；package-app 携带 data/kernel/ 平铺（内核+53 运行时 .so，31MB）+ bridge addon + main.js 打包态路径（app.isPackaged）；冒烟 env 删三变量零依赖；顺修 hasZip 目录误判 bug | `node tools/package-app.mjs --page cjk` 零仓颉环境冒烟 **35 断言 PASS**（无 SDK 机器形态） | M |
 | ✅ R110 | 作业取消 | `agent.cancel`：pending 锁内出队标 state=3（worker 领不到，驱动不复活）；result 显式认领 cancelled 新态（坑 105 纪律）；done/in-flight 如实返回 none（不可回滚/不可中断——fib 无让点）；幂等 | 契约 77 条（含出队归零/幂等/不复活）；smoke 47；cjk 双端 38+6（7ab8167，Mimosa seal sha256:145b0acf… 0 findings；打包复验 38 断言零环境 PASS） | S-M |
-| ✅ R114 | Haskell/GHC 内核 + 多 RTS 泛化 | `kernel/hs/kernel.hs`（GHC 9.14.1，trha 数据面对齐：Agent 注册表+TQueue 邮箱+五态 FSM transition/自环/Error 任意入，逐条对 `src/Core/Agent/{Types,StateMachine}.hs`）；addon `ensureRuntime` 双布局（文件=仓颉序列/目录=GHC 序列扫描+hs_init 宿主方案 A，双标志幂等）；坑 106（RTS 循环引用加载序 + unsafePerformIO CSE 共享态） | hs 契约测试 37 条 ALL PASS；smoke 三内核同进程（仓颉+C+Haskell 槽互不串扰）46+9；门禁全绿 | M-L |
+| ✅ R114 | Haskell/GHC 内核 + 多 RTS 泛化 | `kernel/hs/kernel.hs`（GHC 9.14.1，trha 数据面对齐：Agent 注册表+TQueue 邮箱+五态 FSM transition/自环/Error 任意入，逐条对 `src/Core/Agent/{Types,StateMachine}.hs`）；addon `ensureRuntime` 双布局（文件=仓颉序列/目录=GHC 序列扫描+hs_init 宿主方案 A，双标志幂等）；坑 106（RTS 循环引用加载序 + unsafePerformIO CSE 共享态） | hs 契约测试 37 条 ALL PASS；smoke 三内核同进程（仓颉+C+Haskell 槽互不串扰）46+9；门禁全绿（233cce4，Mimosa 三轮收紧后 0 findings seal sha256:a744d640…） | M-L |
 
 **明确不做（本线内留白）**：trha 本体及一切 trha 专属方法（已划出）；内核热替换
 （收益低风险高）；stable SDK 交叉验证（锁 nightly 纪律，非任务）。

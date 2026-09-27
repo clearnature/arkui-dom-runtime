@@ -22,3 +22,8 @@ npm-debug.log*
 
 # ── 安全扫描插件的产物（mimosa，非项目文件）──
 .mimosa/
+
+# GHC 编译中间产物（kernel/hs）
+*.hi
+*.o
+kernel_stub.h
