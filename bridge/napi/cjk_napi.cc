@@ -36,6 +36,7 @@
 #include <string>
 #include <map>
 #include "Cangjie.h"   // kernel/c-abi/Cangjie.h（-I../../kernel/c-abi）；R104 起用其 RuntimeParam
+                       // 契约本体在 kernel/shared/protocol/kernel_abi.h（-I 同加，R111）
 
 namespace {
 
@@ -53,6 +54,9 @@ struct KernelApi {
   int (*pending)(void);        // pending 队列长度
   int (*draining)(void);       // 活跃 worker 数
   void *(*drainEntry)(void *); // 有界 worker 入口（清空队列即返回，可重入）
+  /* 可选类型化直调符号（R112；缺席回落 kernel_call JSON 万能口） */
+  int64_t (*add)(int64_t, int64_t);
+  const char *(*echo)(const char *);
 };
 
 /* 命名内核槽（R107） */
@@ -154,6 +158,9 @@ bool openKernel(Slot &s, const char *kPath, const char *config) {
   s.K.pending = (int (*)(void))dlsym(k, "kernel_pending");
   s.K.draining = (int (*)(void))dlsym(k, "kernel_draining");
   s.K.drainEntry = (void *(*)(void *))dlsym(k, "kernel_drain_entry");
+  /* R112：类型化直调符号（可选；缺席回落 kernel_call JSON 万能口） */
+  s.K.add = (int64_t (*)(int64_t, int64_t))dlsym(k, "kernel_add");
+  s.K.echo = (const char *(*)(const char *))dlsym(k, "kernel_echo");
   /* R102：ABI 版本握手（可选；缺席 = v1.0 旧内核容忍） */
   int (*abiver)(void) = (int (*)(void))dlsym(k, "kernel_abi_version");
   s.abiVersion = abiver ? abiver() : 0;
@@ -428,6 +435,84 @@ napi_value Shutdown(napi_env env, napi_callback_info info) {
   return JsBool(env, ok);
 }
 
+/* ── R112：类型化直调（零序列化；缺席回落 JSON 口）── */
+
+napi_value AddK(napi_env env, napi_callback_info info) {
+  size_t argc = 3;
+  napi_value argv[3];
+  napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
+  if (argc < 3) { napi_throw_error(env, nullptr, "cjkAddK 需要 (name, a, b)"); return nullptr; }
+  char *name = TakeString(env, argv[0], "name");
+  if (!name) return nullptr;
+  Slot *s = requireSlot(env, name);
+  free(name);
+  if (!s) return nullptr;
+  if (!s->K.add) { napi_throw_error(env, nullptr, "该内核未导出 kernel_add（typed 直调不可用，走 cjkCall JSON 口）"); return nullptr; }
+  double a = 0, b = 0;
+  napi_get_value_double(env, argv[1], &a);
+  napi_get_value_double(env, argv[2], &b);
+  napi_value out;
+  napi_create_double(env, (double)s->K.add((int64_t)a, (int64_t)b), &out);
+  return out;
+}
+
+napi_value Add(napi_env env, napi_callback_info info) {
+  size_t argc = 2;
+  napi_value argv[2];
+  napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
+  if (argc < 2) { napi_throw_error(env, nullptr, "cjkAdd 需要 (a, b)"); return nullptr; }
+  Slot *s = requireSlot(env, "default");
+  if (!s) return nullptr;
+  if (!s->K.add) { napi_throw_error(env, nullptr, "该内核未导出 kernel_add（typed 直调不可用，走 cjkCall JSON 口）"); return nullptr; }
+  double a = 0, b = 0;
+  napi_get_value_double(env, argv[0], &a);
+  napi_get_value_double(env, argv[1], &b);
+  napi_value out;
+  napi_create_double(env, (double)s->K.add((int64_t)a, (int64_t)b), &out);
+  return out;
+}
+
+napi_value EchoK(napi_env env, napi_callback_info info) {
+  size_t argc = 2;
+  napi_value argv[2];
+  napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
+  if (argc < 2) { napi_throw_error(env, nullptr, "cjkEchoK 需要 (name, input)"); return nullptr; }
+  char *name = TakeString(env, argv[0], "name");
+  if (!name) return nullptr;
+  Slot *s = requireSlot(env, name);
+  free(name);
+  if (!s) return nullptr;
+  if (!s->K.echo) { napi_throw_error(env, nullptr, "该内核未导出 kernel_echo（typed 直调不可用，走 cjkCall JSON 口）"); return nullptr; }
+  char *input = TakeString(env, argv[1], "input");
+  if (!input) return nullptr;
+  const char *r = s->K.echo(input);
+  free(input);
+  if (!r) { napi_value nullv; napi_get_null(env, &nullv); return nullv; }
+  napi_value out;
+  napi_create_string_utf8(env, r, NAPI_AUTO_LENGTH, &out);
+  s->K.free((void *)r);
+  return out;
+}
+
+napi_value Echo(napi_env env, napi_callback_info info) {
+  size_t argc = 1;
+  napi_value argv[1];
+  napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
+  if (argc < 1) { napi_throw_error(env, nullptr, "cjkEcho 需要 (input)"); return nullptr; }
+  Slot *s = requireSlot(env, "default");
+  if (!s) return nullptr;
+  if (!s->K.echo) { napi_throw_error(env, nullptr, "该内核未导出 kernel_echo（typed 直调不可用，走 cjkCall JSON 口）"); return nullptr; }
+  char *input = TakeString(env, argv[0], "input");
+  if (!input) return nullptr;
+  const char *r = s->K.echo(input);
+  free(input);
+  if (!r) { napi_value nullv; napi_get_null(env, &nullv); return nullv; }
+  napi_value out;
+  napi_create_string_utf8(env, r, NAPI_AUTO_LENGTH, &out);
+  s->K.free((void *)r);
+  return out;
+}
+
 napi_value ModuleInit(napi_env env, napi_value exports) {
   napi_property_descriptor desc[] = {
     { "cjkInit",      nullptr, Init,      nullptr, nullptr, nullptr, napi_default, nullptr },
@@ -442,8 +527,12 @@ napi_value ModuleInit(napi_env env, napi_value exports) {
     { "cjkLastErrorK", nullptr, LastErrorK, nullptr, nullptr, nullptr, napi_default, nullptr },
     { "cjkKernelVersionK", nullptr, KernelVersionK, nullptr, nullptr, nullptr, napi_default, nullptr },
     { "cjkShutdownK", nullptr, ShutdownK, nullptr, nullptr, nullptr, napi_default, nullptr },
+    { "cjkAdd",       nullptr, Add,       nullptr, nullptr, nullptr, napi_default, nullptr },
+    { "cjkEcho",      nullptr, Echo,      nullptr, nullptr, nullptr, napi_default, nullptr },
+    { "cjkAddK",      nullptr, AddK,      nullptr, nullptr, nullptr, napi_default, nullptr },
+    { "cjkEchoK",     nullptr, EchoK,     nullptr, nullptr, nullptr, napi_default, nullptr },
   };
-  napi_define_properties(env, exports, 12, desc);
+  napi_define_properties(env, exports, 16, desc);
   return exports;
 }
 

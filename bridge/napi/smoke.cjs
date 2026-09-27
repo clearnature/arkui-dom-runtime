@@ -124,6 +124,14 @@ check(addon.cjkKernelVersionK('c') === 0, 'R107 c 槽无版本符号 → 0（旧
 check(addon.cjkShutdownK('c') === true, 'R107 shutdownK("c") 只关 c 槽');
 check(addon.cjkCall('fib', '{"n":10}') === '{"result":55}', 'R107 c 槽关闭后 default 仍服务');
 
+// R112：类型化直调（零序列化；两内核同名同签名，符号表一致——nm -D 对比可见）
+// 注：c 槽在 R107 段末已 shutdown——此处重新挂载，顺带证明幂等挂载可重入
+check(addon.cjkInitK('c', '', K_C_LIB, '{}') === true, 'R112 c 槽重新挂载（幂等挂载可重入）');
+check(addon.cjkAdd(20, 22) === 42, 'R112 cjkAdd 直调（default 仓颉内核）');
+check(addon.cjkEcho('直调回声') === '直调回声', 'R112 cjkEcho 直调（UTF-8）');
+check(addon.cjkAddK('c', 7, 35) === 42, 'R112 c 槽 kernel_add（同符号同签名）');
+check(addon.cjkEchoK('c', 'c-kernel') === 'c-kernel', 'R112 c 槽 kernel_echo');
+
 check(addon.cjkShutdown() === true, 'cjkShutdown');
 
 console.log(fails === 0 ? 'ALL PASS' : fails + ' FAILURES');

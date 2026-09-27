@@ -53,6 +53,18 @@ int main(int argc, char *argv[]) {
         check(abiver && abiver() == 10001, "kernel_abi_version=10001（v1.1）");
     }
 
+    /* R112：类型化直调符号（可选；与 JSON 方法面双轨） */
+    {
+        int64_t (*kadd)(int64_t, int64_t) = (int64_t (*)(int64_t, int64_t))dlsym(k, "kernel_add");
+        const char *(*kecho)(const char *) = (const char *(*)(const char *))dlsym(k, "kernel_echo");
+        check(kadd != NULL && kadd(20, 22) == 42, "kernel_add 直调（typed，零序列化）");
+        if (kecho) {
+            const char *e = kecho("typed-echo");
+            check(e != NULL && strcmp(e, "typed-echo") == 0, "kernel_echo 直调（UTF-8）");
+            if (e) kfree((void *)e);
+        } else check(0, "kernel_echo 直调（typed，零序列化）");
+    }
+
     check(kping() == -1, "未初始化时 ping=-1");
     check(kerr() == NULL || strlen(kerr()) == 0, "初始 last_error 为空");
     check(kinit("{}") == 0, "kernel_init(\\\"{}\\\")=0");

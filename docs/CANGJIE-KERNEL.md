@@ -14,15 +14,22 @@ arkui-dom-runtime（自研 JS DOM 运行时）与自研仓颉内核的**进程�
 本架构无 PandaVM）。渲染侧一行 `cjk.call('fib', {n: 24})` 直达内核，46368 由仓颉堆上的
 递归真实算出（见 `test/cjk.html`）。
 
-设计目标（`kernel/c-abi.h` 头注原文）：**内核能做什么由 method 字符串决定，ABI 永不变化；
-换内核 = 换 .so，宿主零改动**。c-abi.h 按多语言内核设计（仓颉/Rust/Go/Haskell 皆可实现
-同一契约），当前唯一已验证的内核是仓颉版。
+设计目标（`kernel/shared/protocol/kernel_abi.h` 头注原文）：**内核能做什么由 method 字符串决定，ABI 永不变化；
+换内核 = 换 .so，宿主零改动**。按多语言内核设计（仓颉/Rust/Go/Haskell 皆可实现同一契约），
+已实证语言：仓颉（kernel/cangjie/）、纯 C（kernel/c-sample/，R107）。
+
+**双路线（2026-09-27 用户裁定）**：
+
+| 路线 | 语义 | 支撑 |
+|---|---|---|
+| **单内核（主路线）** | 一次一个内核；换内核 = 换 `.so` 路径（`ARKUI_KERNEL_LIB` 环境变量覆盖默认仓颉内核） | 契约头文件 + 符号直调（无 VTable/IDL/工厂函数）；R112 起 typed 直调符号零序列化走热路径 |
+| **混合（按需能力）** | 同进程多内核共存（如仓颉计算内核 + C 工具内核） | R107 命名内核槽（`cjkInitK/cjkCallK/…`），rtLib 空串挂原生内核 |
 
 ## 2. 四层架构
 
 | 层 | 文件 | 职责 |
 |---|---|---|
-| 内核 | `kernel/cangjie/src/kernel.cj` → `libkernel.so` | 实现 `kernel/c-abi.h` 全部符号；注册表/邮箱/作业队列 + 递归计算等业务逻辑 |
+| 内核 | `kernel/cangjie/src/kernel.cj` → `libkernel.so` | 实现 `kernel/shared/protocol/kernel_abi.h` 全部符号；注册表/邮箱/作业队列 + 递归计算等业务逻辑 |
 | 桥 | `bridge/napi/cjk_napi.cc` → `cjk_napi.node` | dlopen 运行时 → InitCJRuntime → dlopen 内核 → dlsym → 后置驱动（泵调度）；NAPI ABI 跨 Node/Electron 通用；**R107 起为命名内核槽注册表**——旧 6 平面 API = "default" 槽别名，`cjkInitK/cjkCallK/…` 变体首参槽名，rtLib 传空串可挂载无运行时依赖的原生内核 |
 | 主进程 | `electron/main.js` + `electron/preload.js` | `ipcMain.handle('arkui:cjk:*')` 四处理器；**惰性挂载**（首个 cjk 调用才 dlopen，无 SDK 时其余页面零依赖）；preload `electronAPI.cjk` 失败免疫 |
 | 垫片 | `runtime/ohos-shims.js` 的 `@ohos:cjk` | `isAvailable/call/ping/lastError`；params 对象自动 JSON 序列化；浏览器端探测式降级 |
@@ -45,7 +52,7 @@ arkui-dom-runtime（自研 JS DOM 运行时）与自研仓颉内核的**进程�
 浏览器端：无主进程桥 → 探测式降级（R21 先例）：`isAvailable()=false`、`call` 返 null
 不抛、`ping=-1`。断言页按端分流（见 §8）。
 
-## 3. ABI 契约（`kernel/c-abi.h`）
+## 3. ABI 契约（`kernel/shared/protocol/kernel_abi.h`）
 
 ### 3.1 六个核心符号（必备）
 
@@ -76,11 +83,25 @@ void* kernel_drain_entry(void*);     // 有界 drainer 入口（清空队列即�
 另有可选 `kernel_abi_version()`（R102）：返回契约版本 = 主版本*10000 + 次版本
 （当前 10001）；缺席 = v1.0 旧内核；宿主规则：内核主版本 > 宿主认识的 → 拒绝挂载
 （向前不兼容防呆），`cjkKernelVersion()` 可查（0 = 旧内核无符号）。
-宿主义务与嵌入模式约束见 §5 与 c-abi.h 头注。
+宿主义务与嵌入模式约束见 §5 与 Cangjie.h 头注。
 
-### 3.3 演进纪律
+### 3.3 类型化直调双轨（R112）
 
-- 业务扩展 = 加 method，**不加符号**——ABI 一字未动扛过 v2→v3→v4 三次内核演进；
+与万能口并存的可选直调符号（导出即启用、缺席回落 JSON 口，两内核已同名同签名导出）：
+
+```c
+int64_t kernel_add(int64_t a, int64_t b);      // ↔ method "add"
+const char *kernel_echo(const char *input);    // ↔ method "echo"（内核分配，宿主 kernel_free）
+```
+
+宿主口：`cjkAdd(a,b)` / `cjkEcho(s)`（default 槽）与 `cjkAddK/cjkEchoK`（带槽名）；
+未导出的内核调用 typed 口会显式抛错（指引回落 cjkCall JSON）。适用边界：固定热路径
+走 typed（零序列化），结构化/长尾方法走 JSON 万能口——两者语义一致，测试互为对照。
+
+### 3.4 演进纪律
+
+- 业务扩展 = 加 method，**不加符号**——ABI 一字未动扛过 v2→v4 三次内核演进
+  （typed 直调符号是例外：它是"加可选符号"路线的实例，缺席降级不破坏旧内核）；
 - 符号只增不改不删；新增符号必须走"可选 + dlsym 探测 + 缺席降级"路线；
 - 内核签名级改动（如 R97→R98 从数字签名换成全契约）= 破坏性变更，需换 major 并重验三层测试。
 
@@ -125,7 +146,7 @@ Electron 主进程为**惰性挂载**（`electron/main.js` 的 `cjkEnsure`）：
 **驱动链路**（`bridge/napi/cjk_napi.cc` 的 `drive()`，每次 `cjkCall` 后置执行）：
 
 ```
-worker 数目标 = min(pending, 4)                        ← 宿主策略上限（c-abi.h 文档）
+worker 数目标 = min(pending, 4)                        ← 宿主策略上限（kernel_abi.h 文档）
 draining(活跃数) < 目标 → 逐支 RunCJTask(drain_entry)   ← R105：worker 可重入，并发多支
 pending > 0 或 draining > 0 → RunUIScheduler(2ms)       ← 给执行窗口
 ```
@@ -178,7 +199,7 @@ kernel_call 都会触发 drive）。
 
 ### 7.2 用其他语言写内核（契约兼容性）
 
-c-abi.h 是纯 C ABI，任何能导出 C 符号、能编译 .so 的语言都可实现。宿主（addon）零改动：
+kernel_abi.h 是纯 C ABI，任何能导出 C 符号、能编译 .so 的语言都可实现。宿主（addon）零改动：
 
 - **必需**：6 核心符号精确导出（C++ 加 `extern "C"`；Rust `#[no_mangle] pub extern "C"`
   + `panic=abort`；Go 用 cgo `//export`；Haskell `foreign export ccall` + 启动时 hs_init）。
@@ -252,6 +273,6 @@ c-abi.h 是纯 C ABI，任何能导出 C 符号、能编译 .so 的语言都可�
   R100（控制面/泵模式）；
 - 坑全录：`docs/DEVELOPING.md` 坑 101-104；
 - 调研归档：`docs/research/cjk-spike.md`（trha/deepseek-harness/GHC 类比、官方文档核验）；
-- ABI 权威：`kernel/c-abi.h`（本文 §3 是导读，冲突时以头文件为准）；
+- ABI 权威：`kernel/shared/protocol/kernel_abi.h`（本文 §3 是导读，冲突时以头文件为准）；
 - 提交：dffe7cf（R98）、7991b6d（R99）、df11a83（R100）；Mimosa deep 审计逐片 0 findings
   （最新 seal sha256:566b38d0…）。

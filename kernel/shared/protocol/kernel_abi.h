@@ -1,17 +1,27 @@
 /*
- * kernel/c-abi.h — 多语言内核统一 C ABI 契约（R95/R96）
+ * kernel/shared/protocol/kernel_abi.h — 多语言内核统一 C ABI 契约（R95/R96 起；R111 归位于此）
+ *
+ * 旧路径 kernel/c-abi.h（R97-R107 期间）已移至本文件，内容延续。
  *
  * 设计原则：
- *   1. 5 个函数。内核能做什么由 method 字符串决定，ABI 永不变化。
+ *   1. 6 个核心符号。内核能做什么由 method 字符串决定，核心 ABI 永不变化。
  *   2. 数据格式 = JSON 字符串（所有语言都有 JSON 库）。
- *   3. 内存：内核分配（kernel_call 返回值），宿主用 kernel_free 释放。
- *   4. 换内核 = 换 .so，宿主零改动。
+ *   3. 内存：内核分配（kernel_call/kernel_echo 返回值），宿主用 kernel_free 释放。
+ *   4. 换内核 = 换 .so 路径（单内核路线：一次一个内核，配置切换）；同进程多内核
+ *      共存走 addon 命名槽（混合路线，R107）。
+ *   5. 每种语言内核必须实现这些符号（extern "C" / @C / #[no_mangle] / cgo //export），
+ *      编译为 .so 后由宿主 dlopen + dlsym 加载。已实证语言：仓颉（kernel/cangjie/）、
+ *      纯 C（kernel/c-sample/，R107）。
  *
- * 每种语言内核必须实现这 5 个符号（extern "C" / @C / #[no_mangle] / cgo //export），
- * 编译为 .so 后由宿主 dlopen + dlsym 加载。
+ * 双轨调用（R112 起）：
+ *   · 万能口 kernel_call(method, params_json)——所有方法的 JSON 分派（必备）；
+ *   · 类型化直调符号 kernel_add / kernel_echo——固定热路径零序列化直调（可选，
+ *     缺席回落万能口）。语义与 JSON 方法面一致；返回值由内核分配、宿主 kernel_free。
  */
 #ifndef CJK_KERNEL_ABI_H
 #define CJK_KERNEL_ABI_H
+
+#include <stdint.h>
 
 /*
  * ABI 版本握手（R102，可选符号）：
@@ -22,7 +32,7 @@
  */
 #define KERNEL_ABI_VERSION 10001
 
-/* ── 生命周期 ── */
+/* ── 核心 6 符号（必备）── */
 
 /*
  * kernel_init: 初始化内核。
@@ -41,7 +51,7 @@ int kernel_shutdown(void);
 
 /*
  * kernel_call: 按方法名分派到对应处理器。
- * method:      方法名（如 "agent.spawn", "llm.chat", "state.query", "compute.run"）
+ * method:      方法名（如 "echo", "add", "agent.spawn", "sys.snapshot"）
  * params_json: JSON 格式参数
  * 返回:        JSON 字符串（由内核 malloc），宿主用 kernel_free 释放。
  *              失败返回 NULL（错误详情可调 kernel_last_error 获取）。
@@ -49,7 +59,7 @@ int kernel_shutdown(void);
 const char *kernel_call(const char *method, const char *params_json);
 
 /*
- * kernel_free: 释放由内核分配的内存（kernel_call 返回值）。
+ * kernel_free: 释放由内核分配的内存（kernel_call / kernel_echo 返回值）。
  */
 void kernel_free(void *ptr);
 
@@ -88,5 +98,15 @@ const char *kernel_last_error(void);
 
 /* ABI 版本握手（可选；见文件头注释）。内核实现时应返回 KERNEL_ABI_VERSION。 */
 int kernel_abi_version(void);
+
+/*
+ * ── 类型化直调符号（R112 起，可选；单内核热路径零序列化）──
+ *
+ * 与 kernel_call(JSON) 双轨：导出即启用直调，缺席回落万能口。
+ * 语义与 JSON 方法面一致：kernel_add ↔ method "add"；kernel_echo ↔ method "echo"。
+ * 所有权：kernel_echo 返回值由内核分配，宿主用 kernel_free 释放。
+ */
+int64_t kernel_add(int64_t a, int64_t b);
+const char *kernel_echo(const char *input);
 
 #endif // CJK_KERNEL_ABI_H

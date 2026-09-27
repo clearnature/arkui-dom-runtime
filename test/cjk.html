@@ -133,11 +133,13 @@
         'cjk submit 未知 kind → null + lastError 报因');
 
       // ── ⑫ 多 worker 并行（R105：4 作业时间戳重叠 = 真并发证据）──
+      // 负载取 fib(30)：release -O2 下 ~8ms/作业——太短（如 fib(24)≈2ms）会让
+      // 跨 worker 窗口不交叠，重叠断言在快机器上竞态假红（R105 收口实测）
       const w3 = await cjk.call('agent.spawn', { name: '并行组' });
       check(!!w3 && w3.id === 3 && w3.name === '并行组', 'cjk spawn 并行组 → id=3');
       let sub4 = true;
       for (let i = 0; i < 4; i++) {
-        const s = await cjk.call('agent.submit', { id: 3, kind: 'fib', n: 24 });
+        const s = await cjk.call('agent.submit', { id: 3, kind: 'fib', n: 30 });
         if (!s) sub4 = false;
       }
       check(sub4, 'cjk 并行批 submit 4 支（jobId 3..6）');
@@ -147,10 +149,10 @@
         await tick(20);
         for (let j = 3; j <= 6; j++) {
           const r = await cjk.call('agent.result', { jobId: j });
-          if (r && r.state === 'done' && r.value === 46368) dones++;
+          if (r && r.state === 'done' && r.value === 832040) dones++;
         }
       }
-      check(dones === 4, 'cjk 4×fib(24)=46368 全部完成（多 worker 真算）');
+      check(dones === 4, 'cjk 4×fib(30)=832040 全部完成（多 worker 真算）');
       const tm = await cjk.call('agent.timings', {});
       let ov = 0;
       if (tm && tm.t) {

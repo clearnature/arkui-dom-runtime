@@ -471,6 +471,16 @@ public func kernel_abi_version(): Int32 {
     return 10001
 }
 
+// R112：类型化直调符号（可选；与 JSON 方法面 "add"/"echo" 双轨，零序列化）
+@C
+public func kernel_add(a: Int64, b: Int64): Int64 {
+    return a + b
+}
+@C
+public func kernel_echo(input: CPointer<UInt8>): CPointer<UInt8> {
+    return stringToCs(csToString(input))
+}
+
 // 有界 worker 主循环（R105：可重入，宿主可并发拉起多支）：
 // 领取（锁内出队+打时间戳）→ 锁外计算 → 存结果（锁内）→ 队空即退
 @C

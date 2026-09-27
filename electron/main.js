@@ -174,7 +174,9 @@ app.whenReady().then(async () => {
     if (cjkReady) return true;
     if (cjkAddon) return false;            // 已试过且失败：错误保持 cjkErr
     const rtLib = process.env.CANGJIE_RT_LIB || '';
-    const kernelLib = path.resolve(__dirname, '..', 'kernel', 'cangjie', 'libkernel.so');
+    // R111 单内核路线：换内核 = 换 .so 路径（ARKUI_KERNEL_LIB 覆盖；默认仓颉内核）
+    const kernelLib = process.env.ARKUI_KERNEL_LIB ||
+      path.resolve(__dirname, '..', 'kernel', 'cangjie', 'libkernel.so');
     if (!rtLib || !fs.existsSync(rtLib) || !fs.existsSync(kernelLib)) return false;
     try {
       // 字面量路径：相对 main.js 解析（electron/../bridge/…），且便于静态审计
