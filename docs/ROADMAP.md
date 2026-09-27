@@ -2011,6 +2011,28 @@ Mimosa deep 审计 **0 findings**（seal sha256:566b38d0…，覆盖内核 v4/c-
 仓颉内核线知识已汇编为独立技术文档：**`docs/CANGJIE-KERNEL.md`**（四层架构 / ABI 契约 /
 挂载序列 / 泵模式铁律 / 方法面全表 / 扩展指南 / 坑速查 / 锁版本纪律）。
 
+### R101-R110 预分解——运行时 × 通用语言内核接口（2026-09-27 规划）
+
+**范围裁定（用户裁定）**：trha 微内核 agent harness 重写**不属于本线**——本线只交付
+"运行时 + 通用语言内核接口"自身的完备性；trha 专属方法面由 trha 项目定义。以下每条
+原子可独立提交，顺序即建议执行序：
+
+| # | 任务 | 交付物 | 验收 | 规模 |
+|---|---|---|---|---|
+| R101 | payload 长度修复 | addon 先取全长再分配（现状 `params[4096]` 静默截断），超上限（1MB）显式抛错 | smoke 增 64KB echo 往返断言；三层不回归 | S |
+| R102 | ABI 版本握手 | c-abi.h 增可选 `kernel_abi_version()`；addon 探测+校验+暴露；缺席=旧内核容忍 | 契约测试+smoke；旧内核不回归 | S |
+| R103 | 内核 release 编译 | `cjc -O2` 构建路径；fib 泵窗口耗时前后对比入 CANGJIE-KERNEL.md §10 | 三层绿；electron 全矩阵无回归 | S |
+| R104 | 运行时日志通道 | RuntimeParam.logParam 配置日志（探针定字段语义），消除 stderr 直通污染 | `electron/run.sh cjk` 输出无时间戳行 | M |
+| R105 | 多 worker 并行 drainer | worker 池语义（Mutex 内领取、锁外计算）；并行时钟证据断言 | 契约测试增并行证据；三层绿 | M-L |
+| R106 | 状态快照/恢复 | `sys.snapshot`/`sys.restore` 通用方法（注册表+邮箱+作业 JSON 化） | snapshot→re-init→restore→状态等价断言 | M |
+| R107 | 多内核共存 | addon 命名内核槽（向后兼容单槽）；50 行纯 C 内核样例做"多语言"实证 | smoke 双内核互不串扰；旧 API 兼容 | L |
+| R108 | 真实 .ets fixture 消费 | CjkDemo.ets 四件套（`import cjk from '@ohos:cjk'`） | 新用例双端绿（桌面真内核/浏览器降级） | M |
+| R109 | 打包覆盖仓颉运行时 | package-app.mjs 携带内核+4 运行时 .so + LD_LIBRARY_PATH 处理 | 无 SDK 机器 AppImage 冒烟 cjk PASS | M |
+| R110 | 作业取消/超时 | `agent.cancel`（pending 摘除；in-flight 只能丢弃结果——边界如实文档化） | cancel pending/done 两路断言 | S-M |
+
+**明确不做（本线内留白）**：trha 本体及一切 trha 专属方法（已划出）；内核热替换
+（收益低风险高）；stable SDK 交叉验证（锁 nightly 纪律，非任务）。
+
 **触及**：`kernel/cangjie/src/kernel.cj`（v3 → v4，+Job/drainer/可选符号）、
 `kernel/c-abi.h`（可选调度符号节）、`bridge/napi/cjk_napi.cc`（后置驱动）、
 `kernel/cangjie/test/kernel_contract_test.c`（40→49 条）、`bridge/napi/smoke.cjs`（14→18 条）、

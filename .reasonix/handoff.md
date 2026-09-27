@@ -9,12 +9,11 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R100**（内核并发调度器：agent.submit/result 异步作业 + 有界 drainer
-  cjthread；嵌入泵模式三条铁律入档坑 103/104——Semaphore 宿主线程禁用、
-  cjthread 只在 RunUIScheduler 泵窗口跑、sleep 空操作；契约测试 49/冒烟 18/
-  cjk 双端 26+6；c-abi.h 增可选调度符号节）；更早：**R99**（agent 注册表+邮箱数据面，
-  坑 102=dylib 包级 init 不跑）；**R98**（@ohos:cjk 全链路）；**R85-R97**（定位声明 →
-  生态调研 → NotesDemo 端到端 → 行为断言三批 → R96 挂载定型 → R97 dylib 生命周期）
+- 上次切片：**R101-R110 预分解**（运行时 × 通用语言内核接口；**trha 重写经用户裁定划出本线**，
+  只剩接口自身完备性）。执行序：R101 payload 修复 → R102 ABI 版本握手 → R103 release
+  编译 → R104 日志通道 → R105 多 worker → R106 快照 → R107 多内核共存 → R108 .ets
+  fixture → R109 打包 → R110 取消。明细表见 ROADMAP「R101-R110 预分解」；
+  更早：**R100**（内核并发调度器）；**R99**（agent 注册表+邮箱）；**R98**（@ohos:cjk 全链路）
   — **PASS**
 - 更早：**R67**（R66 批量组件验收：37 结构 + 兜底绊网 + 14 真编译语义；绊网
   `__arkui_dom_generatedFilled`——手写注册缺席时骨架静默兜底，坑 98）；**R24 收口**（渲染
