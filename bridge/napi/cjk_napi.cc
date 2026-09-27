@@ -161,7 +161,9 @@ bool ensureRuntimeGhc(const char *dir) {
   }
   void *hsi = dlsym(RTLD_DEFAULT, "hs_init");
   if (!hsi) { setHostErr("hs_init 不可见（RTS 未就位）"); return false; }
-  ((void (*)(int *, char ***))hsi)(nullptr, nullptr);   // 宿主方案 A：hs_init/hs_exit 归宿主
+  // 宿主方案 A：hs_init/hs_exit 归宿主。能力数不走 argv（-N 在嵌入宿主下段错误、
+  // shared lib 的 -with-rtsopts 无效）——由内核 kernel_init 的 setNumCapabilities 设。
+  ((void (*)(int *, char ***))hsi)(nullptr, nullptr);
   g_ghcLoaded = true;
   return true;
 }

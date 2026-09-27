@@ -9,7 +9,11 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R114 Haskell/GHC 内核（第三语言）+ 多 RTS 泛化**——`kernel/hs/kernel.hs`
+- 上次切片：**R115 Haskell 内核工业级验证**（作业面 forkIO 零驱动+协作 CAS 取消+
+  快照跨语言互通+错误矩阵；hs 契约 37→72 ALL PASS、smoke→59、node 层并行重叠 6/6；
+  **坑 107：writeIORef 惰性 thunk 时间戳（evaluate 强制）+ setNumCapabilities 在 C 原生
+  宿主无效（atInit=1）vs node=8——并行断言安置 addon 层，C 层条件 SKIP 如实**）。
+  更早：**R114 Haskell/GHC 内核（第三语言）+ 多 RTS 泛化**——`kernel/hs/kernel.hs`
   按参考 trha 数据面（Agent{state, inbox}+五态 FSM transition 逐条对 StateMachine.hs）；
   addon ensureRuntime 双布局（文件=仓颉/目录=GHC 扫描，双标志幂等）；**坑 106：GHC
   RTS↔ghc-internal 循环引用（stg 数据符号→RTS 必须 LAZY 先行）+ unsafePerformIO

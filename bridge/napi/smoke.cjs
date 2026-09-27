@@ -174,6 +174,26 @@ if (HS_LIB && require('node:fs').existsSync(GHC_LIB_DIR)) {
     '{"before":{"state":"Processing","step":"step-1"},"after":{"state":"Processing","step":"step-1"}}',
     'R114 hs 非法转移自环（transition state _ = state）');
   check(addon.cjkCallK('hs', 'echo', '{"v":1}') === '{"v":1}', 'R114 hs echo');
+  // R115：并行证据的家在 addon 层（node 宿主下 setNumCapabilities=8 生效；
+  // C 原生嵌入宿主下单能力——hs_contract_test 条件 SKIP，见坑 107）
+  check(JSON.parse(addon.cjkCallK('hs', 'sys.caps', '{}')).now >= 2,
+    'R115 hs 能力数 ≥2（node 宿主 setNumCapabilities 生效）');
+  for (let i = 0; i < 4; i++) addon.cjkCallK('hs', 'agent.submit', '{"id":1,"kind":"fib","n":30}');
+  let pDone = 0, pGuard = 0;
+  while (pDone < 4 && pGuard < 400) {
+    pDone = 0; pGuard++;
+    for (let j = 1; j <= 4; j++) {
+      const x = addon.cjkCallK('hs', 'agent.result', '{"jobId":' + j + '}');
+      if (x && /"state":"done"/.test(x)) pDone++;
+    }
+  }
+  check(pDone === 4, 'R115 hs 4×fib(30) 全部 done（零驱动轮询）');
+  const hst = JSON.parse(addon.cjkCallK('hs', 'agent.timings', '{}'));
+  let hsov = 0;
+  for (let i = 0; i < hst.n; i++)
+    for (let j = i + 1; j < hst.n; j++)
+      if (hst.t[i][0] < hst.t[j][1] && hst.t[j][0] < hst.t[i][1]) hsov++;
+  check(hsov > 0, 'R115 hs 时间戳重叠 ' + hsov + '/6 对（forkIO 真并发——宿主零泵）');
   check(addon.cjkShutdownK('hs') === true, 'R114 shutdownK("hs")');
 } else {
   console.log('SKIP R114 hs 槽（GHC_LIB_DIR_TEST/HS_KERNEL_LIB_TEST 未注入或 GHC 缺席）');

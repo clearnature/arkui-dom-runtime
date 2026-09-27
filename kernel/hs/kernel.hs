@@ -39,6 +39,48 @@ import Data.IORef
 import System.IO.Unsafe (unsafePerformIO)
 import qualified Data.Map.Strict as M
 import Control.Concurrent.STM
+import Control.Concurrent (forkIO)
+import Control.Exception (evaluate)
+import GHC.Conc (setNumCapabilities, getNumCapabilities)
+import GHC.Clock (getMonotonicTimeNSec)
+import Data.Maybe (fromMaybe)
+
+-- ── 作业面（R115：forkIO 真线程——GHC 独有优势，宿主零驱动） ──────────────────────
+-- 状态与仓颉对齐（坑 105 纪律：每个读取方显式认领）：
+--   0=pending 2=claimed(in-flight) 1=done 3=cancelled
+-- GHC 差异：不需要 kernel_pending/drain_entry/宿主泵（RTS 自跑）——forkIO 即起。
+data Job = Job
+  { jbState :: IORef Int
+  , jbKind  :: String
+  , jbN     :: Int
+  , jbText  :: String
+  , jbValue :: IORef Int64
+  , jbOut   :: IORef String
+  , jbStart :: IORef Integer          -- getMonotonicTimeNSec（ns）
+  , jbEnd   :: IORef Integer
+  }
+
+{-# NOINLINE gJobs #-}
+gJobs :: IORef (M.Map Int Job)
+gJobs = unsafePerformIO (newIORef M.empty)
+
+{-# NOINLINE gNextJob #-}
+gNextJob :: IORef Int
+gNextJob = unsafePerformIO (newIORef 0)
+
+{-# NOINLINE gDoneOrder #-}
+gDoneOrder :: IORef [Int]              -- 完成序（timings 遍历序）
+gDoneOrder = unsafePerformIO (newIORef [])
+
+{-# NOINLINE gCapsAtInit #-}
+gCapsAtInit :: IORef Int                -- setNumCapabilities 后的当场快照（诊断）
+gCapsAtInit = unsafePerformIO (newIORef 0)
+
+resetJobs :: IO ()
+resetJobs = do
+  writeIORef gJobs M.empty
+  writeIORef gNextJob 0
+  writeIORef gDoneOrder []
 
 -- ── trha 数据模型（Types.hs + StateMachine.hs 语义） ──────────────────────────────
 
@@ -94,18 +136,21 @@ stateJson (AError e)            = "{\"state\":\"Error\",\"error\":\"" ++ esc e +
 esc :: String -> String
 esc = concatMap f
   where
-    f '"'  = "\\\""
-    f '\\' = "\\\\"
-    f '\n' = "\\n"
-    f c    = [c]
+    f '"'     = "\\\""
+    f '\\'    = "\\\\"
+    f '\n'    = "\\n"
+    f '\SOH' = "\\u0001"      -- 消息分隔符转义（对齐仓颉 jsonEsc——互通前提）
+    f c       = [c]
 
 -- 扫 "key":"<value>" 的字符串值（不处理转义，样例级——与仓颉 jsonStr 同边界）。
 -- 必须在 src 中滑动搜索（key 在对象中间，不是开头——首版只匹配头部全 Nothing）。
 jsonStr :: String -> String -> Maybe String
-jsonStr src key = search ('"' : key ++ "\":\"") src
+jsonStr src key = search ('"' : key ++ "\":") src   -- pat 不含值开引号——pStr 要吃它
   where
     search pat xs = case dropPrefix pat xs of
-      Just rest -> Just (takeWhile (/= '"') rest)
+      Just rest -> case pStr (dropWhile (== ' ') rest) of
+        Just (v, _) -> Just v             -- 不解转义，带\\\"引号 截成 带\\——R115 抓到）
+        Nothing     -> Just (takeWhile (/= '"') rest)
       Nothing   -> case xs of
         []     -> Nothing
         (_:ys) -> search pat ys
@@ -277,6 +322,134 @@ dispatch m p
             Just a -> do s <- readIORef (agState a); return (Just (stateJson s))
             Nothing -> setErr ("agent.state: no agent id=" ++ show i) >> return Nothing
         Nothing -> setErr "agent.state: params need integer id" >> return Nothing
+
+  -- ── 作业面（R115：forkIO 真线程，宿主零驱动——GHC 与仓颉泵模型的关键差异） ────
+  | m == "agent.submit" = do
+      case (jsonInt p "id", jsonStr p "kind") of
+        (Just aid, Just kind) -> do
+          ma <- lookupAgent aid
+          case ma of
+            Nothing -> setErr ("agent.submit: no agent id=" ++ show aid) >> return Nothing
+            Just _ | kind /= "fib" && kind /= "echo" ->
+              setErr ("agent.submit: kind must be fib or echo, got " ++ kind) >> return Nothing
+            Just _ -> do
+              let n = fromMaybe 0 (jsonInt p "n")
+                  t = fromMaybe "" (jsonStr p "text")
+              if kind == "fib" && (n < 0 || n > 40) then do
+                setErr ("agent.submit: n out of range [0,40], got " ++ show n)
+                return Nothing
+              else do
+                st <- newIORef 0
+                val <- newIORef 0
+                out <- newIORef ""
+                stt <- newIORef 0
+                en <- newIORef 0
+                let j = Job st kind n t val out stt en
+                jid <- atomicModifyIORef' gNextJob (\i -> (i + 1, i + 1))
+                atomicModifyIORef' gJobs (\m -> (M.insert jid j m, ()))
+                _ <- forkIO $ do
+                  -- 协作取消：worker 领取时 CAS 0→2；已 3(cancelled) 则放弃
+                  -- （与仓颉出队语义等价——GHC 无队列，靠状态 CAS）
+                  claimed <- atomicModifyIORef' st (\s -> if s == 0 then (2, True) else (s, False))
+                  if not claimed then return () else do
+                    t0 <- getMonotonicTimeNSec
+                    writeIORef stt (toInteger t0)
+                    if kind == "fib" then do
+                      -- 惰性坑：writeIORef val (fibN n) 写入 thunk，fib 会推迟到
+                      -- result 查询时才算（时间戳窗只剩 1µs 的实测根因）——evaluate 强制
+                      v <- evaluate (fromIntegral (fibN n) :: Int64)
+                      writeIORef val v
+                    else writeIORef out t
+                    t1 <- getMonotonicTimeNSec
+                    writeIORef en (toInteger t1)
+                    writeIORef st 1
+                    atomicModifyIORef' gDoneOrder (\o -> (o ++ [jid], ()))
+                return (Just $ "{\"jobId\":" ++ show jid ++ ",\"state\":\"pending\"}")
+        _ -> setErr "agent.submit: params need integer id and string kind" >> return Nothing
+  | m == "agent.result" = do
+      case jsonInt p "jobId" of
+        Just jid -> do
+          jm <- readIORef gJobs
+          case M.lookup jid jm of
+            Nothing -> setErr ("agent.result: no job id=" ++ show jid) >> return Nothing
+            Just j -> do
+              s <- readIORef (jbState j)
+              case s of
+                1 -> do   -- done（state==1 显式认领，坑 105 纪律）
+                  if jbKind j == "fib" then do
+                    v <- readIORef (jbValue j)
+                    return (Just $ "{\"state\":\"done\",\"value\":" ++ show v ++ "}")
+                  else do
+                    o <- readIORef (jbOut j)
+                    return (Just $ "{\"state\":\"done\",\"text\":\"" ++ esc o ++ "\"}")
+                3 -> return (Just "{\"state\":\"cancelled\"}")
+                _ -> return (Just "{\"state\":\"pending\"}")   -- 0 pending / 2 in-flight
+        Nothing -> setErr "agent.result: params need integer jobId" >> return Nothing
+  | m == "agent.cancel" = do
+      case jsonInt p "jobId" of
+        Just jid -> do
+          jm <- readIORef gJobs
+          case M.lookup jid jm of
+            Nothing -> setErr ("agent.cancel: no job id=" ++ show jid) >> return Nothing
+            Just j -> do
+              won <- atomicModifyIORef' (jbState j) $ \s ->
+                if s == 0 then (3, True) else (s, False)
+              if won then return (Just "{\"cancelled\":\"pending\"}") else do
+                s <- readIORef (jbState j)
+                case s of
+                  3 -> return (Just "{\"cancelled\":\"pending\"}")   -- 幂等
+                  1 -> return (Just "{\"cancelled\":\"none\",\"state\":\"done\"}")
+                  _ -> return (Just "{\"cancelled\":\"none\",\"state\":\"in-flight\"}")
+        Nothing -> setErr "agent.cancel: params need integer jobId" >> return Nothing
+  | m == "agent.timings" = do
+      order <- readIORef gDoneOrder
+      jm <- readIORef gJobs
+      entries <- mapM (\jid -> case M.lookup jid jm of
+        Just j -> do a <- readIORef (jbStart j); b <- readIORef (jbEnd j)
+                     return ("[" ++ show a ++ "," ++ show b ++ "]")
+        Nothing -> return "[0,0]") order
+      return (Just $ "{\"n\":" ++ show (length order) ++ ",\"t\":["
+                      ++ concat (zipWith (\k e -> (if k > (0::Int) then "," else "") ++ e)
+                                        [(0::Int)..] entries) ++ "]}")
+
+  -- 可观测：当前能力数（诊断 setNumCapabilities 是否生效——C/node 差异定位）
+  | m == "sys.caps" = do
+      c <- getNumCapabilities
+      a <- readIORef gCapsAtInit
+      return (Just $ "{\"now\":" ++ show c ++ ",\"atInit\":" ++ show a ++ "}")
+
+  -- ── 状态快照（R115：与仓颉 sys.snapshot 同格式——跨语言互通断言） ──────────────
+  | m == "sys.snapshot" = do
+      Reg regMap order nid <- readIORef gReg
+      entries <- mapM (\i -> case M.lookup i regMap of
+        Just a -> do
+          msgs <- peekBox (agBox a)
+          return ("[" ++ show i ++ ",\"" ++ esc (agName a) ++ "\",\""
+                   ++ esc (joinSOH msgs) ++ "\"]")
+        Nothing -> return "") order
+      let body = concat (zipWith (\k e -> (if k > (0::Int) then "," else "") ++ e)
+                                 [(0::Int)..] entries)
+      return (Just $ "{\"v\":1,\"nextId\":" ++ show nid
+                      ++ ",\"n\":" ++ show (length order) ++ ",\"a\":[" ++ body ++ "]}")
+  | m == "sys.restore" = do
+      case (jsonInt p "v", jsonInt p "nextId", jsonInt p "n") of
+        (Just 1, Just nid, Just n) -> do
+          parsed <- parseSnapshotEntries p n
+          case parsed of
+            Nothing -> do setErr "sys.restore: malformed snapshot"; return Nothing
+            Just es -> do
+              agents <- mapM (\(i, nm, box) -> do
+                a <- newAgent nm
+                let msgs = splitSOH box
+                atomically (mapM_ (writeTQueue (agBox a)) msgs)
+                writeIORef (agCount a) (length msgs)
+                return (i, a)) es
+              writeIORef gReg (Reg (M.fromList agents) (map fst agents) nid)
+              return (Just $ "{\"restored\":" ++ show (length es) ++ "}")
+        _ -> do setErr ("sys.restore: bad snapshot (v="
+                        ++ show (fromMaybe 0 (jsonInt p "v")) ++ ")")
+                return Nothing
+
   | otherwise = do setErr ("unknown method: " ++ m); return Nothing
   where
     fibN n = if n <= 1 then n else fibN (n - 1) + fibN (n - 2)
@@ -291,6 +464,95 @@ parseCmd c p
   | c == "complete"   = Just (CmdComplete (maybe "" id (jsonStr p "text")))
   | c == "error"      = Just (CmdError (maybe "" id (jsonStr p "error")))
   | otherwise         = Nothing
+
+-- ── 快照/邮箱辅助（R115） ─────────────────────────────────────────────────────────
+
+-- 邮箱只读视图：flush 后原样写回（STM 原子，snapshot 不消费消息）
+peekBox :: TQueue String -> IO [String]
+peekBox q = atomically $ do
+  xs <- flushTQueue q
+  mapM_ (writeTQueue q) xs
+  return xs
+
+-- 消息以 SOH(\x01) 分隔（与仓颉 jsonEsc 同约定：emit 转义 \" \\ SOH）
+joinSOH :: [String] -> String
+joinSOH [] = ""
+joinSOH xs = foldr1 (\a b -> a ++ "\SOH" ++ b) xs
+
+splitSOH :: String -> [String]
+splitSOH s =
+  let (h, t) = break (== '\SOH') s
+  in if null t then (if null s then [] else [s]) else h : splitSOH (drop 1 t)
+
+-- 定位式解析 snapshot 固定形状：..."a":[[id,"name","box"],...]
+-- 先找 "a":[，逐条解析 entry（带 \" \\ \u0001 转义），n 条收尾
+parseSnapshotEntries :: String -> Int -> IO (Maybe [(Int, String, String)])
+parseSnapshotEntries src n = do
+  case breakOn "\"a\":[" src of
+    Nothing -> return Nothing
+    Just rest0 -> go rest0 n []   -- breakOn 已吞掉 pat（"a":[），rest0 首字符就是 entry 的 [
+  where
+    go s 0 acc = return (Just (reverse acc))
+    go s k acc = case pEntry (dropWhile (== ' ') s) of
+      Just (i, nm, box, s') ->
+        let acc' = (i, nm, box) : acc
+            s''  = dropWhile (== ' ') s'
+        in if k == 1 then return (Just (reverse acc'))
+           else case s'' of
+             (',':r) -> go r (k - 1) acc'
+             _       -> return Nothing
+      Nothing -> return Nothing
+
+-- 子串搜索（含则返回其后缀）
+breakOn :: String -> String -> Maybe String
+breakOn pat xs = case xs of
+  [] -> Nothing
+  _  | take (length pat) xs == pat -> Just (drop (length pat) xs)
+     | otherwise -> breakOn pat (drop 1 xs)
+
+-- entry: [123,"name","box"] → (id, name, box, 剩余)
+pEntry :: String -> Maybe (Int, String, String, String)
+pEntry ('[':s0) = do
+  (i, s1) <- pInt s0
+  s2 <- pChar ',' s1
+  (nm, s3) <- pStr s2
+  s4 <- pChar ',' s3
+  (box, s5) <- pStr s4
+  s6 <- pChar ']' s5
+  return (i, nm, box, s6)
+pEntry _ = Nothing
+
+pChar :: Char -> String -> Maybe String
+pChar c s = case dropWhile (== ' ') s of
+  (x:xs) | x == c -> Just xs
+  _               -> Nothing
+
+pInt :: String -> Maybe (Int, String)
+pInt s0 =
+  let s = dropWhile (== ' ') s0
+      (neg, ds) = case s of ('-':r) -> (True, r); r -> (False, r)
+      digits = takeWhile (\c -> c >= '0' && c <= '9') ds
+  in if null digits then Nothing
+     else Just (read (if neg then '-' : digits else digits),
+                drop (length digits) ds)
+
+-- 带转义的字符串值（snapshot 自产集：\" \\ \u0001 → SOH；宽松回落）
+pStr :: String -> Maybe (String, String)
+pStr s0 = case dropWhile (== ' ') s0 of
+  ('"':s1) -> Just (go s1 "")
+  _        -> Nothing
+  where
+    go [] _ = ("", "")                      -- 失配兜底（外层 pChar ']' 会失败）
+    go ('"':r) acc = (reverse acc, r)
+    go ('\\':c:r) acc = case c of
+      '"'  -> go r ('"':acc)
+      '\\' -> go r ('\\':acc)
+      'n'  -> go r ('\n':acc)
+      'u'  | take 4 r == "0001" -> go (drop 4 r) ('\SOH':acc)   -- \u0001 → SOH
+           | otherwise -> go (drop 4 r) acc
+      other -> go r (other:acc)
+    go (c:r) acc = go r (c:acc)
+
 
 -- ── 错误缓冲（g_last_error 语义：下次调用前可读，读出由内核接管生命周期） ─────────
 
@@ -314,10 +576,16 @@ kernel_abi_version = return 10001
 
 -- C ABI 六核心（名字即 c 符号名，foreign export 原样导出）
 kernel_init :: CString -> IO CInt
-kernel_init _cfg = do resetReg; writeIORef gErr ""; return 0
+kernel_init _cfg = do
+    -- 真并行能力数（-threaded 只启用能力系统；shared lib 的 -with-rtsopts 无效、
+    -- hs_init 带 -N argv 在嵌入宿主下段错误——本 API 是安全路径）
+    setNumCapabilities 8
+    c <- getNumCapabilities
+    writeIORef gCapsAtInit c
+    resetReg; resetJobs; writeIORef gErr ""; return 0
 
 kernel_shutdown :: IO CInt
-kernel_shutdown = resetReg >> return 0
+kernel_shutdown = resetReg >> resetJobs >> return 0
 
 kernel_ping :: IO CInt
 kernel_ping = return 0

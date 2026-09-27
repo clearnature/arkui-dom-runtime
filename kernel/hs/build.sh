@@ -5,8 +5,9 @@
 # 两个必须旗标（实测，见 kernel.hs 头注）：
 #   -package-env=-  全局环境带 ollama/req 等无关包会全量链入
 #   -dynamic        inplace GHC 静态包非 PIC，链共享对象报 R_X86_64_32S
+#   -threaded       真多核并行（缺它=单能力协作串行，forkIO 作业时间戳永不重叠）
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$HERE"
-ghc -package-env=- -shared -fPIC -dynamic -O2 kernel.hs -o libkernel_hs.so
+ghc -package-env=- -shared -fPIC -dynamic -threaded -with-rtsopts=-N -O2 kernel.hs -o libkernel_hs.so
 echo "✅ libkernel_hs.so 构建完成（GHC $(ghc --numeric-version)，trha 数据面）"
