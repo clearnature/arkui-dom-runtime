@@ -156,6 +156,8 @@ kernel_call 都会触发 drive）。
 | `agent.submit` | `{"id":2,"kind":"fib","n":20}` → `{"jobId":1,"state":"pending"}` | 异步作业入队即返回；kind 校验 fib/echo；agent 必须存在 |
 | `agent.result` | `{"jobId":1}` → `{"state":"pending"}` / `{"state":"done","value":6765}`（echo 型返回 `text`） | 轮询取结果；**仅 state==1 报 done**，claimed/in-flight 报 pending（坑 105）；宿主后置驱动自动推进 |
 | `agent.timings` | `{}` → `{"n":K,"t":[[startNs,endNs],…]}` | 已完成作业时间窗（完成序）——两两窗口重叠 = 多 worker 真并发证据（R105） |
+| `sys.snapshot` | `{}` → `{"v":1,"nextId":N,"n":K,"a":[[id,"name","box"],…]}` | 快照注册表+邮箱+id 计数器（box 内消息以 SOH 分隔、转义 `"`/`\`/SOH）；**作业不快照**（R106） |
+| `sys.restore` | snapshot 原文 → `{"restored":K}` | 整体替换注册表+邮箱，nextId 随快照、作业计数器归位；定位解析只认 snapshot 自产格式（R106） |
 
 三类失败路径统一形态：返回 NULL + `kernel_last_error` 给因（未知 method / 参数缺失 /
 未知 id / 越界），错误不破坏服务（`ping` 仍 0，后续调用正常）。

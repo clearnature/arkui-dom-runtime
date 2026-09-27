@@ -10,6 +10,7 @@
 #include <dlfcn.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #include "Cangjie.h"
 
 typedef int (*init_rt_fn)(const void *);
@@ -290,6 +291,57 @@ int main(int argc, char *argv[]) {
         }
         if (r) kfree(r);
     }
+
+    /* ── R106：状态快照/恢复（真重启路径：shutdown→init→restore）── */
+    r = kcall("agent.spawn", "{\"name\":\"bob\"}");
+    if (r) kfree(r);
+    r = kcall("agent.send", "{\"id\":1,\"text\":\"快照甲\"}");
+    if (r) kfree(r);
+    r = kcall("agent.send", "{\"id\":1,\"text\":\"快照乙\"}");
+    if (r) kfree(r);
+    r = kcall("sys.snapshot", "{}");
+    check(r != NULL && strstr(r, "\"v\":1") != NULL, "sys.snapshot 可快照（v1）");
+    char *snap = r ? strdup(r) : NULL;      /* 宿主持久化快照的等价动作 */
+    if (r) kfree(r);
+    check(snap != NULL, "快照已留存宿主侧");
+    /* 破坏现场：杀 1、另立新 agent */
+    r = kcall("agent.kill", "{\"id\":1}");
+    if (r) kfree(r);
+    r = kcall("agent.spawn", "{\"name\":\"carol\"}");
+    if (r) kfree(r);
+    /* 真重启：shutdown → init → restore */
+    check(kshutdown() == 0 && kinit("{}") == 0, "R106 shutdown+init（模拟进程重启）");
+    /* 重启后 re-init 使 agent 清零，重新构造快照前状态：先 spawn fresh/bob 不可行——
+     * restore 本身整体替换状态，直接恢复快照 */
+    r = kcall("sys.restore", snap);
+    check(r && strcmp(r, "{\"restored\":2}") == 0, "sys.restore → restored=2");
+    if (r) kfree(r);
+    r = kcall("agent.list", "{}");
+    check(r && strstr(r, "\"count\":2") && strstr(r, "fresh") != NULL &&
+      strstr(r, "bob") != NULL && strstr(r, "carol") == NULL,
+      "restore 后注册表等价（fresh+bob，无 carol）");
+    if (r) kfree(r);
+    r = kcall("agent.poll", "{\"id\":1}");
+    check(r && strcmp(r, "{\"messages\":[\"快照甲\",\"快照乙\"],\"drained\":2}") == 0,
+      "restore 后邮箱 FIFO 保序（UTF-8）");
+    if (r) kfree(r);
+    r = kcall("agent.spawn", "{}");
+    check(r && strcmp(r, "{\"id\":3,\"name\":\"agent-3\",\"state\":\"idle\"}") == 0,
+      "restore 后 id 续号（nextId 随快照恢复）");
+    if (r) kfree(r);
+    /* 作业不快照（文档化边界）：restore 后 submit 从 jobId=1 重新计 */
+    r = kcall("agent.submit", "{\"id\":1,\"kind\":\"fib\",\"n\":5}");
+    check(r && strcmp(r, "{\"jobId\":1,\"state\":\"pending\"}") == 0,
+      "restore 后作业计数器归位（作业不快照）");
+    if (r) kfree(r);
+    /* 清掉这支作业驱动到 done，避免影响后续 shutdown 断言语义 */
+    {
+        for (int i = 0; i < 2 && pend() > 0; i++) { runTask(drain, NULL); pump(2); }
+    }
+    r = kcall("sys.restore", "{\"v\":9}");
+    check(r == NULL && strstr(kerr(), "bad snapshot") != NULL, "坏版本快照 → NULL+报因");
+    if (r) kfree(r);
+    free(snap);
 
     /* shutdown 后 ping 失败、call 拒绝 */
     check(kshutdown() == 0, "kernel_shutdown=0");

@@ -160,6 +160,24 @@
           }
       }
       check(ov > 0, 'cjk 时间戳重叠 ' + ov + ' 对（多 worker 真并发，非协作串行）');
+
+      // ── ⑬ 状态快照/恢复（R106：restore 整体替换 + 续号；作业不快照）──
+      // 此刻存活 = 计算者(id2)+并行组(id3)（甲 id1 已在 R99 段被 kill）→ 快照 n=2
+      const snap = await cjk.call('sys.snapshot', {});
+      check(!!snap && snap.v === 1 && snap.n === 2,
+        'cjk sys.snapshot → v1（存活 agents=2）');
+      await cjk.call('agent.kill', { id: 3 });
+      await cjk.call('agent.spawn', { name: 'intruder' });
+      const rs = await cjk.call('sys.restore', snap);
+      check(!!rs && rs.restored === 2, 'cjk sys.restore → restored=2');
+      const lst3 = await cjk.call('agent.list', {});
+      check(!!lst3 && lst3.count === 2 && lst3.agents.every(g => g.name !== 'intruder'),
+        'cjk restore 后注册表等价（intruder 清除、并行组归位）');
+      const cont = await cjk.call('agent.spawn', {});
+      check(!!cont && cont.id === 4, 'cjk restore 后 spawn 续号 id=4（nextId 随快照）');
+      const badSnap = await cjk.call('sys.restore', { v: 9 });
+      check(badSnap === null && /bad snapshot/.test(await cjk.lastError()),
+        'cjk 坏版本快照 → null + lastError 报因');
     }
 
     // ── 垫片面完整（两端都断言）──

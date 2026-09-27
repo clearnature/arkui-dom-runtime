@@ -203,6 +203,112 @@ func intToStr(v: Int64): String {
     return b.done()
 }
 
+// ── R106：快照序列化辅助 ──
+// 邮箱消息分隔符（SOH）；emit 侧转义为 6 字符 "\u0001"，restore 侧解码
+func jsonEsc(s: String): String {
+    let raw = s.toArray()
+    let b = ByteBuf(raw.size * 2 + 8)
+    for (i in 0..raw.size) {
+        let c = raw[i]
+        if (c == 92) { b.raw(92); b.raw(92) }            // \ → \\
+        else if (c == 34) { b.raw(92); b.raw(34) }       // " → \"
+        else if (c == 1) {                               // SOH → \u0001（6 字符转义）
+            b.raw(92); b.raw(117); b.raw(48); b.raw(48); b.raw(48); b.raw(49)
+        } else { b.raw(c) }
+    }
+    return b.done()
+}
+
+// 定位式读取器（R106：restore 只解析 snapshot 自产的固定形状 JSON）
+class Rd {
+    var b: Array<UInt8>
+    var i: Int64
+    var ok: Bool
+    init(s: String) {
+        b = s.toArray()
+        i = 0
+        ok = true
+    }
+    func ch(c: UInt8): Unit {
+        if (!ok) { return }
+        if (i < b.size && b[i] == c) { i += 1 } else { ok = false }
+        return
+    }
+    func lit(s: String): Unit {
+        if (!ok) { return }
+        let p = s.toArray()
+        for (k in 0..p.size) {
+            if (i >= b.size || b[i] != p[k]) { ok = false; return }
+            i += 1
+        }
+        return
+    }
+    func int(): Int64 {
+        if (!ok) { return 0 }
+        var neg = false
+        if (i < b.size && b[i] == 45) { neg = true; i += 1 }
+        var v: Int64 = 0
+        var any = false
+        while (i < b.size && b[i] >= 48 && b[i] <= 57) {
+            v = v * 10 + Int64(b[i] - 48)
+            any = true
+            i += 1
+        }
+        if (!any) { ok = false; return 0 }
+        return if (neg) { -v } else { v }
+    }
+    // 带转义的字符串值：\" \\ \u0001；其他 \x 宽松解码为 x
+    func str(): String {
+        if (!ok) { return "" }
+        if (i >= b.size || b[i] != 34) { ok = false; return "" }
+        i += 1
+        let out = ByteBuf(32)
+        while (ok && i < b.size && b[i] != 34) {
+            let c = b[i]
+            if (c == 92) {
+                i += 1
+                if (i >= b.size) { ok = false; break }
+                let e = b[i]
+                if (e == 34) { out.raw(34) }
+                else if (e == 92) { out.raw(92) }
+                else if (e == 117 && i + 4 < b.size && b[i+1] == 48 && b[i+2] == 48
+                         && b[i+3] == 48 && b[i+4] == 49) {          // \u0001 → SOH
+                    i += 4
+                    out.raw(1)
+                } else { out.raw(e) }
+            } else {
+                out.raw(c)
+            }
+            i += 1
+        }
+        if (!ok) { return "" }
+        if (i >= b.size || b[i] != 34) { ok = false; return "" }
+        i += 1
+        return out.done()
+    }
+}
+
+// 按 SOH 分隔符拆邮箱消息
+func splitMailbox(joined: String): ArrayList<String> {
+    let parts = ArrayList<String>()
+    let bytes = joined.toArray()
+    var cur = ByteBuf(32)
+    for (i in 0..bytes.size) {
+        if (bytes[i] == 1) {
+            parts.add(cur.done())
+            cur = ByteBuf(32)
+        } else {
+            cur.raw(bytes[i])
+        }
+    }
+    parts.add(cur.done())
+    // 空串单段 = 无消息（emit 侧空邮箱 join 结果恰为 ""）→ 返回空箱
+    if (parts.size == 1 && parts.get(0).getOrThrow().size == 0) {
+        return ArrayList<String>()
+    }
+    return parts
+}
+
 // ── agent 注册表 + 邮箱（R99，trha MVP 数据面）──
 // 坑 102：容器全局量必须 Option 字面默认 + 首用时惰性构造（包级 init 在 dylib 不跑）。
 class Agent {
@@ -698,6 +804,90 @@ public func kernel_call(method: CPointer<UInt8>, params: CPointer<UInt8>): CPoin
         }
         b2.str("]}")
         return stringToCs(b2.done())
+    }
+
+    // ── 状态快照/恢复（R106：agent 注册表+邮箱+id 计数器；作业不快照）──
+    if (m == "sys.snapshot") {
+        let b2 = ByteBuf(128)
+        b2.str("{\"v\":1,\"nextId\":")
+        b2.int(gNextId)
+        b2.str(",\"n\":")
+        b2.int(Int64(orderOf().size))
+        b2.str(",\"a\":[")
+        var first = true
+        for (i in 0..orderOf().size) {
+            let id = orderOf().get(i).getOrThrow()
+            let a = agentsOf().get(id)
+            if (let Some(ag) <- a) {
+                if (!first) { b2.str(",") }
+                first = false
+                b2.str("[")
+                b2.int(id)
+                b2.str(",\"")
+                b2.str(jsonEsc(ag.name))
+                b2.str("\",\"")
+                for (k in 0..ag.box.size) {
+                    if (k > 0) { b2.raw(1) }
+                    b2.str(jsonEsc(ag.box.get(k).getOrThrow()))
+                }
+                b2.str("\"]")
+            }
+        }
+        b2.str("]}")
+        return stringToCs(b2.done())
+    }
+    if (m == "sys.restore") {
+        // 定位解析（形状=sys.snapshot 输出）；先整体解析成功再重建（半途失败不动现状态）
+        let rd = Rd(p)
+        rd.ch(123)
+        rd.lit("\"v\":")
+        let v = rd.int()
+        rd.ch(44)
+        rd.lit("\"nextId\":")
+        let nextId = rd.int()
+        rd.ch(44)
+        rd.lit("\"n\":")
+        let n = rd.int()
+        rd.ch(44)
+        rd.lit("\"a\":")
+        rd.ch(91)
+        if (!rd.ok || v != 1) {
+            setErr("sys.restore: bad snapshot (v=" + intToStr(v) + ")")
+            return CPointer<UInt8>()
+        }
+        var ids = ArrayList<Int64>()
+        var names = ArrayList<String>()
+        var boxes = ArrayList<String>()
+        for (k in 0..n) {
+            if (k > 0) { rd.ch(44) }
+            rd.ch(91)
+            let id = rd.int()
+            rd.ch(44)
+            let name = rd.str()
+            rd.ch(44)
+            let boxJoined = rd.str()
+            rd.ch(93)
+            if (!rd.ok) { break }
+            ids.add(id)
+            names.add(name)
+            boxes.add(boxJoined)
+        }
+        rd.ch(93)
+        rd.ch(125)
+        if (!rd.ok) {
+            setErr("sys.restore: malformed snapshot")
+            return CPointer<UInt8>()
+        }
+        agentReset()                       // restore = 状态整体替换
+        for (k in 0..ids.size) {
+            let id = ids.get(k).getOrThrow()
+            let ag = Agent(names.get(k).getOrThrow())
+            ag.box = splitMailbox(boxes.get(k).getOrThrow())
+            agentsOf().add(id, ag)
+            orderOf().add(id)
+        }
+        gNextId = nextId
+        return stringToCs("{\"restored\":" + intToStr(Int64(ids.size)) + "}")
     }
 
     setErr("unknown method: " + m)

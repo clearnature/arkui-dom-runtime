@@ -91,6 +91,21 @@ for (let i = 0; i < tm.n; i++)
   }
 check(ov > 0 && tm.n === 6, 'R105 时间戳重叠 ' + ov + ' 对（真并发非协作串行；n=6 含历史 2 作业）');
 
+// R106：状态快照/恢复（restore 整体替换状态 + id 续号）
+// 注：此前 w1(id1) 已被 kill，存活 = worker(id2)+par(id3) → 快照 n=2
+const snap106 = addon.cjkCall('sys.snapshot', '{}');
+check(/"v":1/.test(snap106) && /"n":2/.test(snap106), 'R106 sys.snapshot 可快照（含 2 存活 agents）');
+addon.cjkCall('agent.kill', '{"id":3}');
+addon.cjkCall('agent.spawn', '{"name":"intruder"}');
+const restored = addon.cjkCall('sys.restore', snap106);
+check(restored === '{"restored":2}', 'R106 sys.restore → restored=2');
+const list106 = JSON.parse(addon.cjkCall('agent.list', '{}'));
+check(list106.count === 2 && list106.agents.every(g => g.name !== 'intruder'),
+  'R106 restore 后注册表等价（intruder 被清除）');
+const cont = addon.cjkCall('agent.spawn', '{}');
+check(/"id":4/.test(cont), 'R106 restore 后 id 续号（nextId 随快照）');
+check(addon.cjkCall('sys.restore', '{"v":9}') === null, 'R106 坏版本快照 → null');
+
 check(addon.cjkShutdown() === true, 'cjkShutdown');
 
 console.log(fails === 0 ? 'ALL PASS' : fails + ' FAILURES');
