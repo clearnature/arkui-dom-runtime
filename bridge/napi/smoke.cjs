@@ -120,7 +120,7 @@ check(addon.cjkCallK('c', 'fib', '{"n":10}') === null &&
 check(addon.cjkCall('fib', '{"n":10}') === '{"result":55}',
   'R107 隔离：default 槽 fib 照常（c 槽挂载零影响）');
 check(addon.cjkPingK('c') === 0 && addon.cjkPing() === 0, 'R107 双槽 ping 均 0');
-check(addon.cjkKernelVersionK('c') === 0, 'R107 c 槽无版本符号 → 0（旧内核容忍路径）');
+check(addon.cjkKernelVersionK('c') === 10001, 'R118 c 槽实现版本符号 10001（R107 的历史「无符号→0」容忍断言由实现演进取代——五内核现均实现版本握手）');
 check(addon.cjkShutdownK('c') === true, 'R107 shutdownK("c") 只关 c 槽');
 check(addon.cjkCall('fib', '{"n":10}') === '{"result":55}', 'R107 c 槽关闭后 default 仍服务');
 
@@ -131,6 +131,35 @@ check(addon.cjkAdd(20, 22) === 42, 'R112 cjkAdd 直调（default 仓颉内核）
 check(addon.cjkEcho('直调回声') === '直调回声', 'R112 cjkEcho 直调（UTF-8）');
 check(addon.cjkAddK('c', 7, 35) === 42, 'R112 c 槽 kernel_add（同符号同签名）');
 check(addon.cjkEchoK('c', 'c-kernel') === 'c-kernel', 'R112 c 槽 kernel_echo');
+
+// R118：纯 C 补全——agent 五件 + pthread 作业面（宿主零驱动，五语言作业面同构）
+check(addon.cjkCallK('c', 'agent.spawn', '{"name":"c-worker"}') ===
+  '{"id":1,"name":"c-worker","state":"idle"}', 'R118 c agent.spawn');
+addon.cjkCallK('c', 'agent.send', '{"id":1,"text":"c-mail"}');
+check(addon.cjkCallK('c', 'agent.send', '{"id":1,"text":"第二封"}') === '{"queued":2}',
+  'R118 c agent.send 计数');
+check(addon.cjkCallK('c', 'agent.poll', '{"id":1}') ===
+  '{"messages":["c-mail","第二封"],"drained":2}', 'R118 c poll FIFO+转义（UTF-8）');
+check(addon.cjkCallK('c', 'agent.list', '{"x":1}').includes('"count":1'),
+  'R118 c agent.list');
+check(addon.cjkCallK('c', 'agent.kill', '{"id":1}') === '{"killed":"c-worker"}',
+  'R118 c agent.kill');
+// pthread 作业（宿主零驱动）
+addon.cjkCallK('c', 'agent.spawn', '{"name":"c-jobber"}');
+addon.cjkCallK('c', 'agent.submit', '{"id":2,"kind":"fib","n":40}');
+const cSleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+let cDone = null;
+for (let i = 0; i < 400 && cDone === null; i++) {
+  const r = addon.cjkCallK('c', 'agent.result', '{"jobId":1}');
+  if (r && /"state":"done"/.test(r)) cDone = r;
+  else cSleep(5);
+}
+check(cDone === '{"state":"done","value":102334155}',
+  'R118 c pthread 作业（fib(40)=102334155 迭代实现零驱动）');
+const ctm = JSON.parse(addon.cjkCallK('c', 'agent.timings', '{}'));
+check(ctm.n === 1 && ctm.t[0][1] > ctm.t[0][0], 'R118 c timings 时间窗有效');
+check(addon.cjkCallK('c', 'agent.cancel', '{"jobId":99}') === null,
+  'R118 c cancel 未知 job → null');
 
 // R110：作业取消——精确态语义由契约测试覆盖（C 宿主无后置驱动，pending 路径稳定）；
 // addon 侧 submit 即 drive（claim 后 in-flight），此处只断言返回形合法 + 未知 job null

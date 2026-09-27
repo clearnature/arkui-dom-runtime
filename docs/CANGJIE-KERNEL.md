@@ -204,10 +204,14 @@ kernel_abi.h 是纯 C ABI，任何能导出 C 符号、能编译 .so 的语言�
 
 - **必需**：6 核心符号精确导出（C++ 加 `extern "C"`；Rust `#[no_mangle] pub extern "C"`
   + `panic=abort`；Go 用 cgo `//export`；Haskell `foreign export ccall` + 启动时 hs_init）。
-- **已实证的第二语言（R107）**：`kernel/c-sample/`（纯 C，~100 行，rev/len 两方法，
+- **已实证的第二语言（R107 起；R118 补全作业面）**：`kernel/c-sample/`（纯 C，
   **零运行时依赖**）——宿主 `cjkInitK("c", "", libkernel_c.so, "{}")` 即挂，rtLib 空串
   表示该槽不需要仓颉运行时；与仓颉内核同进程共存、互不串扰（smoke 有隔离断言）。
-  编译：`bash kernel/c-sample/build.sh`。
+  R118 补全：agent 五件 + **pthread 作业面**（宿主零驱动，与 Go/Rust/Haskell 同构——
+  五语言作业面断言现在同一套语义）+ 版本握手；`rev`/`len` 隔离件保留（"c 槽没有 fib"
+  断言的牙）。**坑 108 教训**：`kernel_shutdown` 自引用必须 static（RTLD_GLOBAL 下
+  同名导出被仓颉胜出，PLT 调用跳进别人）。编译：`bash kernel/c-sample/build.sh`
+  （-pthread）。
 - **已实证的第五语言（R117）**：`kernel/rust/`（Rust 1.93，claurst 对齐）——
   `rustc --crate-type=cdylib`，Rust 运行时静态链进 .so 依赖仅 libgcc_s+libc、
   零宿主序直调、**零外部 crate**（手写 JSON，serde 未引入——仓库零依赖纪律；
@@ -249,7 +253,7 @@ kernel_abi.h 是纯 C ABI，任何能导出 C 符号、能编译 .so 的语言�
 
 ## 8. 测试与守门
 
-三层，全部可独立复跑（本机实测数：77 / 98 / 38+6，另有 cjkdemo 6+4、hs 契约 72、go 槽 20、rs 槽 20）：
+三层，全部可独立复跑（本机实测数：77 / 106 / 38+6，另有 cjkdemo 6+4、hs 契约 72、go 槽 20、rs 槽 20、c 槽 R118+8）：
 
 | 层 | 命令 | 覆盖 |
 |---|---|---|

@@ -5,5 +5,5 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$HERE"
-gcc -shared -fPIC -O2 -Wall kernel.c -o libkernel_c.so
+gcc -shared -fPIC -O2 -pthread kernel.c -o libkernel_c.so
 echo "✅ libkernel_c.so 构建完成（纯 C，无运行时依赖）"
