@@ -131,6 +131,35 @@
       const badKind = await cjk.call('agent.submit', { id: 2, kind: 'nope' });
       check(badKind === null && /kind must be/.test(await cjk.lastError()),
         'cjk submit 未知 kind → null + lastError 报因');
+
+      // ── ⑫ 多 worker 并行（R105：4 作业时间戳重叠 = 真并发证据）──
+      const w3 = await cjk.call('agent.spawn', { name: '并行组' });
+      check(!!w3 && w3.id === 3 && w3.name === '并行组', 'cjk spawn 并行组 → id=3');
+      let sub4 = true;
+      for (let i = 0; i < 4; i++) {
+        const s = await cjk.call('agent.submit', { id: 3, kind: 'fib', n: 24 });
+        if (!s) sub4 = false;
+      }
+      check(sub4, 'cjk 并行批 submit 4 支（jobId 3..6）');
+      let dones = 0, guard = 0;
+      while (dones < 4 && guard < 500) {
+        dones = 0; guard++;
+        await tick(20);
+        for (let j = 3; j <= 6; j++) {
+          const r = await cjk.call('agent.result', { jobId: j });
+          if (r && r.state === 'done' && r.value === 46368) dones++;
+        }
+      }
+      check(dones === 4, 'cjk 4×fib(24)=46368 全部完成（多 worker 真算）');
+      const tm = await cjk.call('agent.timings', {});
+      let ov = 0;
+      if (tm && tm.t) {
+        for (let i = 0; i < tm.n; i++)
+          for (let j = i + 1; j < tm.n; j++) {
+            if (tm.t[i][0] < tm.t[j][1] && tm.t[j][0] < tm.t[i][1]) ov++;
+          }
+      }
+      check(ov > 0, 'cjk 时间戳重叠 ' + ov + ' 对（多 worker 真并发，非协作串行）');
     }
 
     // ── 垫片面完整（两端都断言）──

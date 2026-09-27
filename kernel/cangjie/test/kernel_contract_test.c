@@ -231,6 +231,66 @@ int main(int argc, char *argv[]) {
     check(r == NULL && strstr(kerr(), "no agent id=99") != NULL, "submit 未知 agent → NULL");
     if (r) kfree(r);
 
+    /* ── R105：多 worker 并行（时间戳重叠证据）── */
+    for (int i = 0; i < 4; i++) {
+        r = kcall("agent.submit", "{\"id\":1,\"kind\":\"fib\",\"n\":28}");
+        check(r != NULL, "并行批 submit");
+        if (r) kfree(r);
+    }
+    {
+        /* 手动拉起 2 支 worker + 泵至全 done */
+        for (int i = 0; i < 2; i++) runTask(drain, NULL);
+        int allDone = 0, guard = 0;
+        while (!allDone && guard < 2000) {
+            allDone = 1; guard++;
+            for (int j = 3; j <= 6; j++) {
+                char q[64];
+                snprintf(q, sizeof(q), "{\"jobId\":%d}", j);
+                r = kcall("agent.result", q);
+                if (!r || !strstr(r, "\"done\"")) allDone = 0;
+                if (r) kfree(r);
+            }
+            pump(2);
+        }
+        check(allDone, "2 worker 并行清空 4×fib(28)");
+        /* 值正确性 */
+        int valsOk = 1;
+        for (int j = 3; j <= 6 && valsOk; j++) {
+            char q[64];
+            snprintf(q, sizeof(q), "{\"jobId\":%d}", j);
+            r = kcall("agent.result", q);
+            if (!r || !strstr(r, "317811")) valsOk = 0;
+            if (r) kfree(r);
+        }
+        check(valsOk, "并行批 4 值全部 = 317811");
+        /* 时间戳重叠：取 agent.timings 的全部整数，两两判重叠 */
+        r = kcall("agent.timings", "{}");
+        check(r != NULL, "agent.timings 可读");
+        if (r) {
+            long long v[64] = {0};
+            int n = 0;
+            const char *p = r;
+            while (*p && n < 64) {
+                if (*p >= '0' && *p <= '9') {
+                    long long x = 0;
+                    while (*p >= '0' && *p <= '9') { x = x * 10 + (*p - '0'); p++; }
+                    v[n++] = x;
+                } else p++;
+            }
+            /* v = [n?, s0,e0, s1,e1, ...]：首个数字是 "n":4（kv 对），其余为两两窗口 */
+            int pairs = (n - 1) / 2;
+            int overlaps = 0;
+            for (int a = 0; a < pairs; a++)
+                for (int b = a + 1; b < pairs; b++) {
+                    long long s1 = v[1 + a * 2], e1 = v[2 + a * 2];
+                    long long s2 = v[1 + b * 2], e2 = v[2 + b * 2];
+                    if (s1 < e2 && s2 < e1) overlaps++;
+                }
+            check(overlaps > 0, "时间戳重叠 >0 对（真并发，非协作串行）");
+        }
+        if (r) kfree(r);
+    }
+
     /* shutdown 后 ping 失败、call 拒绝 */
     check(kshutdown() == 0, "kernel_shutdown=0");
     check(kping() == -1, "shutdown 后 ping=-1");

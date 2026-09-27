@@ -1895,8 +1895,9 @@ R96 首测崩溃系**跳过官方初始化直接调函数**所致，非不可用
 - C 宿主契约测试 `kernel/cangjie/test/kernel_contract_test.c` —— **22 条 ALL PASS**
   （生命周期/UTF-8 往返/负数/递归/三类错误路径/shutdown 后拒绝）；
 - NAPI 冒烟 `bridge/napi/smoke.cjs`（node 直载 addon）—— 10 条 ALL PASS；
-- `bash electron/run.sh cjk` —— **26 条断言：R98 时 15、R99 起 21、R100 起 26**（真内核：
-  fib(24)=46368 在仓颉堆上算出；R99 增 agent 生命周期 6 条；R100 增异步作业 5 条）；
+- `bash electron/run.sh cjk` —— **30 条断言：R98 时 15、R99 起 21、R100 起 26、R105 起 30**
+  （真内核：fib(24)=46368 在仓颉堆上算出；R99 增 agent 生命周期 6 条；R100 增异步作业
+  5 条；R105 增多 worker 并行证据 4 条）；
 - `bash run.sh cjk` 单用例可跑（浏览器降级面：isAvailable=false、call 返 null 不抛；
   断言数按端分流 Electron 15 / 浏览器 6，**不进浏览器 all 矩阵**——windowdemo/pickerdemo
   先例：矩阵内只收两端同数用例，计数守门按端核对才不被假声明骗过）；
@@ -2028,7 +2029,7 @@ R108 .ets fixture → R109 打包 → R110 取消。
 | ✅ R102 | ABI 版本握手 | 可选 `kernel_abi_version()`=10001；addon 探测+主版本防呆+`cjkKernelVersion()` | 契约测试+smoke 增版本断言；旧内核容忍（a5fd25b） | S |
 | ✅ R103 | 内核 release 编译 | `kernel/cangjie/build.sh`（默认 -O2）；fib(32) 60ms→20ms（3x，实测入 CANGJIE-KERNEL §10） | 三层绿；electron 全矩阵无回归 | S |
 | ✅ R104 | 运行时日志通道 | InitCJRuntime 改显式 RuntimeParam（logLevel=ERROR；零内存=VERBOSE 是噪声根因）；addon/契约测试均改 include Cangjie.h 结构体 | 三层绿；smoke/electron 输出时间戳行 0 条 | M→S |
-| R105 | 多 worker 并行 drainer | worker 池语义（Mutex 内领取、锁外计算）；并行时钟证据断言 | 契约测试增并行证据；三层绿 | M-L |
+| ✅ R105 | 多 worker 并行 drainer | Job 三态+时间戳；drain_entry 可重入；draining=活跃计数；`agent.timings` 证据口 | 4×fib(28) 重叠对 6/6、加速 3.17x；契约测试 58 条（e6a5d98） | M-L |
 | R106 | 状态快照/恢复 | `sys.snapshot`/`sys.restore` 通用方法（注册表+邮箱+作业 JSON 化） | snapshot→re-init→restore→状态等价断言 | M |
 | R107 | 多内核共存 | addon 命名内核槽（向后兼容单槽）；50 行纯 C 内核样例做"多语言"实证 | smoke 双内核互不串扰；旧 API 兼容 | L |
 | R108 | 真实 .ets fixture 消费 | CjkDemo.ets 四件套（`import cjk from '@ohos:cjk'`） | 新用例双端绿（桌面真内核/浏览器降级） | M |

@@ -125,11 +125,14 @@ Electron 主进程为**惰性挂载**（`electron/main.js` 的 `cjkEnsure`）：
 **驱动链路**（`bridge/napi/cjk_napi.cc` 的 `drive()`，每次 `cjkCall` 后置执行）：
 
 ```
-kernel_pending() > 0 且 kernel_draining() == 0
-    → RunCJTask(kernel_drain_entry, NULL)      // 拉起有界 drainer
-pending > 0 或 draining > 0
-    → RunUIScheduler(2ms)                      // 给 drainer 执行窗口
+worker 数目标 = min(pending, 4)                        ← 宿主策略上限（c-abi.h 文档）
+draining(活跃数) < 目标 → 逐支 RunCJTask(drain_entry)   ← R105：worker 可重入，并发多支
+pending > 0 或 draining > 0 → RunUIScheduler(2ms)       ← 给执行窗口
 ```
+
+**并行证据（R105 实测）**：4×fib(28) 由 4 支 worker 并行执行，`agent.timings` 的两两
+时间窗 **6/6 全重叠**、总窗 3.4ms vs 作业时和 10.9ms = **3.17x 加速**——时间戳重叠
+排除"协作式单线程交错"（fib 无让点，串行窗口必然不相交）。
 
 渲染侧零感知：`agent.submit` 后反复调用 `agent.result` 轮询即自然推进（每次轮询的
 kernel_call 都会触发 drive）。
@@ -151,7 +154,8 @@ kernel_call 都会触发 drive）。
 | `agent.poll` | `{"id":N}` → `{"messages":[…],"drained":N}` | **排空语义**（读即清） |
 | `agent.kill` | `{"id":N}` → `{"killed":"name"}` | 摘除，spawn 序表同步收敛 |
 | `agent.submit` | `{"id":2,"kind":"fib","n":20}` → `{"jobId":1,"state":"pending"}` | 异步作业入队即返回；kind 校验 fib/echo；agent 必须存在 |
-| `agent.result` | `{"jobId":1}` → `{"state":"pending"}` / `{"state":"done","value":6765}`（echo 型返回 `text`） | 轮询取结果；宿主后置驱动自动推进 |
+| `agent.result` | `{"jobId":1}` → `{"state":"pending"}` / `{"state":"done","value":6765}`（echo 型返回 `text`） | 轮询取结果；**仅 state==1 报 done**，claimed/in-flight 报 pending（坑 105）；宿主后置驱动自动推进 |
+| `agent.timings` | `{}` → `{"n":K,"t":[[startNs,endNs],…]}` | 已完成作业时间窗（完成序）——两两窗口重叠 = 多 worker 真并发证据（R105） |
 
 三类失败路径统一形态：返回 NULL + `kernel_last_error` 给因（未知 method / 参数缺失 /
 未知 id / 越界），错误不破坏服务（`ping` 仍 0，后续调用正常）。

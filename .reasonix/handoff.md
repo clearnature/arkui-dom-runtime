@@ -9,13 +9,13 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R101-R103 收口**（硬化批：addon payload 取全长+1MB 显式拒、c-abi.h
-  可选 kernel_abi_version=10001+主版本防呆+cjkKernelVersion、build.sh 默认 -O2
-  release——fib(32) 60ms→20ms 3x 实测，修正 R100"百毫秒级"未验证假设）。
-  剩余执行序：R104 日志通道 → R105 多 worker → R106 快照 → R107 多内核共存 →
-  R108 .ets fixture → R109 打包 → R110 取消（明细表 ROADMAP「R101-R110 预分解」；
-  **trha 重写经用户裁定划出本线**）；更早：**R100**（并发调度器）→ **R99**（数据面）→
-  **R98**（@ohos:cjk 全链路）— **PASS**
+- 上次切片：**R105 多 worker 并行 drainer**（Job 三态+时间戳、drain_entry 可重入、
+  `agent.timings` 证据口；4×fib(28) 重叠 6/6、3.17x；**坑 105：新增中间态时旧二值
+  读取方变谎**——claimed 被 result 兜底误报 done）。更早本线：**R104**（RuntimeParam
+  logLevel=ERROR 灭 stderr 噪声）、**R101-R103**（payload 1MB 显式拒/ABI 版本握手/
+  release 编译 3x）。剩余执行序：R106 快照 → R107 多内核共存 → R108 .ets fixture →
+  R109 打包 → R110 取消（明细表 ROADMAP「R101-R110 预分解」；**trha 划出本线**）；
+  内核线全史：R96-R100 见 ROADMAP — **PASS**
 - 更早：**R67**（R66 批量组件验收：37 结构 + 兜底绊网 + 14 真编译语义；绊网
   `__arkui_dom_generatedFilled`——手写注册缺席时骨架静默兜底，坑 98）；**R24 收口**（渲染
   路径决策 3f6e209：previewer 实证点火崩在窗口层、es2abc 无 JS 输出——留在分支 B）；

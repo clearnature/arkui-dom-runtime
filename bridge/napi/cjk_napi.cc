@@ -87,15 +87,18 @@ char *TakeString(napi_env env, napi_value v, const char *what) {
   return buf;
 }
 
-/* cjkCall 的后置驱动（R100）：作业在途时拉起 drainer cjthread 并泵调度器。
+/* cjkCall 的后置驱动（R100/R105）：有在途作业时拉起 worker cjthread 并泵调度器。
  * 机制约束（坑 103/104）：嵌入模式 cjthread 只在 RunUIScheduler 泵窗口执行；
- * sleep/Semaphore 不可用 → drainer 清空队列即返回，宿主逐调用驱动。 */
+ * sleep/Semaphore 不可用 → worker 清空队列即返回，宿主逐调用驱动。
+ * R105 多 worker 策略：worker 数 = min(pending, kMaxWorkers)，drain_entry 可重入。 */
 void drive() {
   if (!K.pending || !K.draining || !K.drainEntry || !fnRunCJTask || !fnRunUIScheduler) return;
+  static const int kMaxWorkers = 4;
   int pend = K.pending();
   int dr = K.draining();
-  if (pend > 0 && dr == 0) fnRunCJTask((void *(*)(void *))K.drainEntry, nullptr);
-  if (pend > 0 || dr > 0) fnRunUIScheduler(2);   // 给 drainer 执行窗口（≤2ms）
+  int want = pend < kMaxWorkers ? pend : kMaxWorkers;
+  for (int i = dr; i < want; i++) fnRunCJTask((void *(*)(void *))K.drainEntry, nullptr);
+  if (pend > 0 || dr > 0) fnRunUIScheduler(2);   // 给 worker 执行窗口（≤2ms）
 }
 
 napi_value JsBool(napi_env env, bool v) {

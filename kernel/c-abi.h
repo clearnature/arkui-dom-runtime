@@ -67,20 +67,23 @@ const char *kernel_last_error(void);
 /*
  * ── 可选调度符号（R100 起，实现异步作业的内核才需要）──
  *
- * 内核可声明三个额外符号，把耗时计算交给内核侧 cjthread 异步执行：
- *   int   kernel_pending(void);   pending 作业队列长度
- *   int   kernel_draining(void);  drainer 是否在跑（1=在跑）
- *   void* kernel_drain_entry(void*);  有界 drainer 入口（清空队列即返回）
+ * 内核可声明这些额外符号，把耗时计算交给内核侧 cjthread 异步执行：
+ *   int   kernel_pending(void);       pending 作业队列长度
+ *   int   kernel_draining(void);      活跃 worker 数（R105 起为计数；R100-R104 为 0/1）
+ *   void* kernel_drain_entry(void*);  有界 worker 入口（清空队列即返回；
+ *                                     R105 起可重入——多支并发拉起即多 worker，
+ *                                     领取互斥由内核 Mutex 保证）
+ *   int   kernel_abi_version(void);   契约版本（R102，见文件头）
  *
  * 宿主义务（bridge/napi/cjk_napi.cc 的 cjkCall 后置驱动已实现）：
- *   pending>0 且 draining==0 时 RunCJTask(kernel_drain_entry, NULL) 拉起 drainer，
- *   然后 RunUIScheduler(2ms) 给它执行窗口。
+ *   worker 数 = min(pending, 4)（宿主策略上限 4）；draining < 目标数的差额逐支
+ *   RunCJTask(kernel_drain_entry, NULL) 拉起，然后 RunUIScheduler(2ms) 给执行窗口。
  *
  * 嵌入模式实测约束（坑 103/104，2026-09-27 nightly 1.3.0-alpha）：
  *   · cjthread 只在 RunUIScheduler 泵的窗口里执行；sleep 是空操作（timer 不跑）；
  *   · Semaphore/Monitor 等阻塞唤醒原语不能从宿主原生线程调（栈腐蚀）；
  *     队列同步只用 Mutex（纯 futex，宿主线程安全）。
- * 三个符号全部缺席 = 同步内核（R97-R99 形态），宿主自动跳过驱动，向后兼容。
+ * 符号缺席 = 同步内核（R97-R99 形态），宿主自动跳过驱动，向后兼容。
  */
 
 /* ABI 版本握手（可选；见文件头注释）。内核实现时应返回 KERNEL_ABI_VERSION。 */

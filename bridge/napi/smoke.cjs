@@ -69,6 +69,28 @@ for (let i = 0; i < 100 && echoDone === null; i++) {
 }
 check(echoDone === '{"state":"done","text":"回声"}', 'agent.result echo 作业（UTF-8 保真）');
 
+// R105：多 worker 并行（addon drive 上限 4；时间戳重叠 = 真并发证据）
+// 注：spawn 过 w1(id1,已 kill)/worker(id2) → 此处得 id=3；jobId 计数独立，本批 = 3..6
+const par = addon.cjkCall('agent.spawn', '{"name":"par"}');
+check(/"id":3/.test(par), 'R105 agent.spawn 并行组 → id=3');
+for (let i = 0; i < 4; i++) addon.cjkCall('agent.submit', '{"id":3,"kind":"fib","n":28}');
+let pdone = 0, guard = 0;
+while (pdone < 4 && guard < 2000) {
+  pdone = 0; guard++;
+  for (let j = 3; j <= 6; j++) {
+    const r = addon.cjkCall('agent.result', '{"jobId":' + j + '}');
+    if (r && /"state":"done"/.test(r)) pdone++;
+  }
+}
+check(pdone === 4, 'R105 4×fib(28) 全部完成（多 worker）');
+const tm = JSON.parse(addon.cjkCall('agent.timings', '{}'));
+let ov = 0;
+for (let i = 0; i < tm.n; i++)
+  for (let j = i + 1; j < tm.n; j++) {
+    if (tm.t[i][0] < tm.t[j][1] && tm.t[j][0] < tm.t[i][1]) ov++;
+  }
+check(ov > 0 && tm.n === 6, 'R105 时间戳重叠 ' + ov + ' 对（真并发非协作串行；n=6 含历史 2 作业）');
+
 check(addon.cjkShutdown() === true, 'cjkShutdown');
 
 console.log(fails === 0 ? 'ALL PASS' : fails + ' FAILURES');

@@ -40,6 +40,7 @@
 
 import std.collection.*
 import std.sync.*
+import std.time.*
 
 @C
 foreign func malloc(size: UInt64): CPointer<UInt8>
@@ -278,9 +279,11 @@ class Job {
     var kind: String            // "fib" | "echo"
     var n: Int64                // fib 参数
     var text: String            // echo 参数
-    var state: Int64            // 0=pending 1=done
+    var state: Int64            // 0=pending 2=claimed(in-flight) 1=done
     var value: Int64            // fib 结果
     var out: String             // echo 结果
+    var startNs: Int64          // 领取时刻（进程内相对 ns，0=未领取）——R105 并行证据
+    var endNs: Int64            // 完成时刻
     init(a: Int64, k: String, nn: Int64, t: String) {
         agentId = a
         kind = k
@@ -289,14 +292,18 @@ class Job {
         state = 0
         value = 0
         out = ""
+        startNs = 0
+        endNs = 0
     }
 }
 
 var gJobs: Option<HashMap<Int64, Job>> = None
-var gJobQueue: Option<ArrayList<Int64>> = None    // pending FIFO（drain 序）
+var gJobQueue: Option<ArrayList<Int64>> = None    // pending FIFO（drain 序；claimed 即出队）
+var gDoneOrder: Option<ArrayList<Int64>> = None   // 完成序（agent.timings 的遍历序）
 var gNextJobId: Int64 = 0
-var gDraining: Bool = false
+var gActiveWorkers: Int64 = 0                     // R105：活跃 worker 数（draining 新语义）
 var gJobMu: Option<Mutex> = None                  // 队列/结果表锁（宿主线程与 cjthread 共用）
+var gT0: Option<MonoTime> = None                  // 时间戳基准（进程内相对 ns）
 
 func jobsOf(): HashMap<Int64, Job> {
     if (let Some(m) <- gJobs) { return m }
@@ -316,13 +323,28 @@ func jobMu(): Mutex {
     gJobMu = Some(m)
     return m
 }
+func doneOrderOf(): ArrayList<Int64> {
+    if (let Some(l) <- gDoneOrder) { return l }
+    let l = ArrayList<Int64>()
+    gDoneOrder = Some(l)
+    return l
+}
+func monoNs(): Int64 {
+    if (let Some(t) <- gT0) {
+        return (MonoTime.now() - t).toNanoseconds()
+    }
+    gT0 = Some(MonoTime.now())
+    return 0
+}
 
 func jobReset(): Unit {
     gJobs = Some(HashMap<Int64, Job>())
     gJobQueue = Some(ArrayList<Int64>())
+    gDoneOrder = Some(ArrayList<Int64>())
     gJobMu = Some(Mutex())
     gNextJobId = 0
-    gDraining = false
+    gActiveWorkers = 0
+    gT0 = Some(MonoTime.now())
     return
 }
 
@@ -331,9 +353,10 @@ func jobReset(): Unit {
 public func kernel_pending(): Int32 {
     return Int32(jobQueueOf().size)
 }
+// R105 新语义：活跃 worker 数（R100-R104 为 0/1 布尔）
 @C
 public func kernel_draining(): Int32 {
-    return if (gDraining) { 1 } else { 0 }
+    return Int32(gActiveWorkers)
 }
 
 // R102：ABI 版本握手（可选符号；宿主 dlsym 探测，缺席=v1.0 旧内核容忍）
@@ -342,12 +365,16 @@ public func kernel_abi_version(): Int32 {
     return 10001
 }
 
-// 有界 drainer：清空 pending 队列即返回（真 cjthread，由宿主 RunCJTask 拉起）
+// 有界 worker 主循环（R105：可重入，宿主可并发拉起多支）：
+// 领取（锁内出队+打时间戳）→ 锁外计算 → 存结果（锁内）→ 队空即退
 @C
 public func kernel_drain_entry(_p: CPointer<Unit>): CPointer<Unit> {
-    gDraining = true
+    jobMu().lock()
+    gActiveWorkers += 1
+    jobMu().unlock()
     while (true) {
         var job: ?Job = None
+        var curJid: Int64 = -1
         jobMu().lock()
         let q = jobQueueOf()
         if (q.size > 0) {
@@ -356,6 +383,11 @@ public func kernel_drain_entry(_p: CPointer<Unit>): CPointer<Unit> {
             for (i in 1..q.size) { rest.add(q.get(i).getOrThrow()) }
             gJobQueue = Some(rest)
             job = jobsOf().get(jid)
+            if (let Some(j) <- job) {
+                j.state = 2                       // claimed（其他 worker 跳过）
+                j.startNs = monoNs()
+                curJid = jid
+            }
         }
         jobMu().unlock()
         if (let Some(j) <- job) {
@@ -364,12 +396,18 @@ public func kernel_drain_entry(_p: CPointer<Unit>): CPointer<Unit> {
             } else {
                 j.out = j.text
             }
+            jobMu().lock()
             j.state = 1
+            j.endNs = monoNs()
+            doneOrderOf().add(curJid)
+            jobMu().unlock()
         } else {
             break
         }
     }
-    gDraining = false
+    jobMu().lock()
+    gActiveWorkers -= 1
+    jobMu().unlock()
     return CPointer<Unit>()
 }
 
@@ -616,16 +654,20 @@ public func kernel_call(method: CPointer<UInt8>, params: CPointer<UInt8>): CPoin
         let j = jobsOf().get(jidO.getOrThrow())
         if (let Some(job) <- j) {
             let b2 = ByteBuf(128)
-            if (job.state == 0) {
-                b2.str("{\"state\":\"pending\"}")
-            } else if (job.kind == "fib") {
-                b2.str("{\"state\":\"done\",\"value\":")
-                b2.int(job.value)
-                b2.str("}")
+            if (job.state == 1) {
+                // 仅 state==1 视为完成；2=claimed(in-flight) 必须报 pending（R105 修正：
+                // 旧写法 else 兜底会把 claimed 误报成 done+value=0）
+                if (job.kind == "fib") {
+                    b2.str("{\"state\":\"done\",\"value\":")
+                    b2.int(job.value)
+                    b2.str("}")
+                } else {
+                    b2.str("{\"state\":\"done\",\"text\":\"")
+                    b2.str(job.out)
+                    b2.str("\"}")
+                }
             } else {
-                b2.str("{\"state\":\"done\",\"text\":\"")
-                b2.str(job.out)
-                b2.str("\"}")
+                b2.str("{\"state\":\"pending\"}")
             }
             return stringToCs(b2.done())
         }
@@ -634,6 +676,28 @@ public func kernel_call(method: CPointer<UInt8>, params: CPointer<UInt8>): CPoin
         eb.int(jidO.getOrThrow())
         setErr(eb.done())
         return CPointer<UInt8>()
+    }
+    if (m == "agent.timings") {
+        // R105 并行证据：已完成作业的 [startNs,endNs]（完成序）
+        let order = doneOrderOf()
+        let m2 = jobsOf()
+        let b2 = ByteBuf(64 + order.size * 48)
+        b2.str("{\"n\":")
+        b2.int(Int64(order.size))
+        b2.str(",\"t\":[")
+        for (i in 0..order.size) {
+            if (i > 0) { b2.str(",") }
+            let j = m2.get(order.get(i).getOrThrow())
+            if (let Some(jb) <- j) {
+                b2.str("[")
+                b2.int(jb.startNs)
+                b2.str(",")
+                b2.int(jb.endNs)
+                b2.str("]")
+            }
+        }
+        b2.str("]}")
+        return stringToCs(b2.done())
     }
 
     setErr("unknown method: " + m)
