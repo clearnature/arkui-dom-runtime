@@ -147,6 +147,38 @@ check(/"state":"(cancelled|done)"/.test(crest), 'R110 result 收敛终态（' + 
 check(addon.cjkCall('agent.cancel', '{"jobId":99}') === null,
   'R110 cancel 未知 job → null');
 
+// R114：Haskell/GHC 内核槽（trha 数据面）——第三种语言同一契约
+// rtLib 传【目录】= GHC 序列（多 RTS 泛化：目录扫描 libHSrts→ghc-internal→…→hs_init）
+const GHC_LIB_DIR = process.env.GHC_LIB_DIR_TEST ||
+  '/usr/local/lib/ghc-9.14.1/lib/x86_64-linux-ghc-9.14.1-inplace';
+const HS_LIB = process.env.HS_KERNEL_LIB_TEST;
+if (HS_LIB && require('node:fs').existsSync(GHC_LIB_DIR)) {
+  check(addon.cjkInitK('hs', GHC_LIB_DIR, HS_LIB, '{}') === true,
+    'R114 cjkInitK("hs", GHC目录) 挂载 Haskell 内核（hs_init 宿主方案 A）');
+  check(addon.cjkKernelVersionK('hs') === 10001, 'R114 hs 槽 abi 版本 10001');
+  check(addon.cjkCallK('hs', 'add', '{"a":20,"b":22}') === '{"sum":42}',
+    'R114 hs 内核 add（同契约第三语言）');
+  check(addon.cjkCallK('hs', 'agent.spawn', '{"name":"trha-ling"}') ===
+    '{"id":1,"name":"trha-ling","state":"idle"}',
+    'R114 hs trha 数据面 spawn');
+  addon.cjkCallK('hs', 'agent.send', '{"id":1,"text":"haskell-mail"}');
+  check(addon.cjkCallK('hs', 'agent.poll', '{"id":1}') ===
+    '{"messages":["haskell-mail"],"drained":1}',
+    'R114 hs 邮箱 FIFO 排空（trha TQueue 同构）');
+  check(addon.cjkCallK('hs', 'agent.transition',
+    '{"id":1,"cmd":"start"}') ===
+    '{"before":{"state":"Idle"},"after":{"state":"Processing","step":"step-1"}}',
+    'R114 hs trha 状态机 Idle→Processing（StateMachine.hs 语义）');
+  check(addon.cjkCallK('hs', 'agent.transition',
+    '{"id":1,"cmd":"start"}') ===
+    '{"before":{"state":"Processing","step":"step-1"},"after":{"state":"Processing","step":"step-1"}}',
+    'R114 hs 非法转移自环（transition state _ = state）');
+  check(addon.cjkCallK('hs', 'echo', '{"v":1}') === '{"v":1}', 'R114 hs echo');
+  check(addon.cjkShutdownK('hs') === true, 'R114 shutdownK("hs")');
+} else {
+  console.log('SKIP R114 hs 槽（GHC_LIB_DIR_TEST/HS_KERNEL_LIB_TEST 未注入或 GHC 缺席）');
+}
+
 check(addon.cjkShutdown() === true, 'cjkShutdown');
 
 console.log(fails === 0 ? 'ALL PASS' : fails + ' FAILURES');

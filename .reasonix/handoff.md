@@ -9,13 +9,14 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R109+R110 打包零依赖 + 作业取消（R101-R113 全线完成）**——内核打
-  RPATH=$ORIGIN（老式 tag；RUNPATH 不传递/无 SONAME 不按 basename 匹配两案实测
-  否决），package-app 携带 data/kernel/ 53 个 .so 平铺 + bridge addon，零仓颉环境
-  冒烟 35 断言 PASS（顺修 hasZip 目录误判）；agent.cancel（pending 出队标
-  state=3、驱动不复活、幂等；done/in-flight 如实 none——坑 105 纪律分支显式认领）；
-  契约 77/smoke 47/cjk 双端 38+6。**R101-R113 全部 ✅**（明细 ROADMAP 预分解表）；
-  坑 101-105 — **PASS**
+- 上次切片：**R114 Haskell/GHC 内核（第三语言）+ 多 RTS 泛化**——`kernel/hs/kernel.hs`
+  按参考 trha 数据面（Agent{state, inbox}+五态 FSM transition 逐条对 StateMachine.hs）；
+  addon ensureRuntime 双布局（文件=仓颉/目录=GHC 扫描，双标志幂等）；**坑 106：GHC
+  RTS↔ghc-internal 循环引用（stg 数据符号→RTS 必须 LAZY 先行）+ unsafePerformIO
+  CSE 共享态（可变分配必须在 IO 里）**；hs 契约 37 条、smoke 三内核同进程全通、
+  门禁 7 步全绿。**已实证语言：仓颉（生产）/纯 C（样例）/Haskell（trha 数据面）**；
+  剩余候选：hs 打包（98 .so 搬运+$ORIGIN，dev级暂缓）、Rust/Go stub、trha 本体
+  （用户裁定划出本线）— **PASS**
 - 更早：**R67**（R66 批量组件验收：37 结构 + 兜底绊网 + 14 真编译语义；绊网
   `__arkui_dom_generatedFilled`——手写注册缺席时骨架静默兜底，坑 98）；**R24 收口**（渲染
   路径决策 3f6e209：previewer 实证点火崩在窗口层、es2abc 无 JS 输出——留在分支 B）；

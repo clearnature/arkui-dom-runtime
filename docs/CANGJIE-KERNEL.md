@@ -208,6 +208,23 @@ kernel_abi.h 是纯 C ABI，任何能导出 C 符号、能编译 .so 的语言�
   **零运行时依赖**）——宿主 `cjkInitK("c", "", libkernel_c.so, "{}")` 即挂，rtLib 空串
   表示该槽不需要仓颉运行时；与仓颉内核同进程共存、互不串扰（smoke 有隔离断言）。
   编译：`bash kernel/c-sample/build.sh`。
+- **已实证的第三语言（R114）**：`kernel/hs/`（Haskell/GHC 9.14.1，trha 数据面对齐）
+  ——`cjkInitK("hs", <GHC libdir 目录>, libkernel_hs.so, "{}")`；rtLib 传【目录】即
+  触发 **GHC 序列**（多 RTS 泛化：扫描 libHSrts→ghc-internal→ghc-prim→base 依序
+  加载→`hs_init(NULL,NULL)` 宿主方案 A）。方法面 = 仓颉可测子集（echo/add/fib/error
+  + agent spawn/list/send/poll/kill）+ **trha 扩展两件**（`agent.transition`/`agent.state`
+  ——五态 FSM、非法转移自环、Error 任意态可入，逐条对齐 trha StateMachine.hs）。
+  三内核同进程共存已过 smoke（仓颉+C+Haskell 各自槽、互不串扰）。编译：
+  `bash kernel/hs/build.sh`（`-package-env=- -dynamic` 两个必须旗标）；
+  C 契约测试 `kernel/hs/hs_contract_test.c` **37 条 ALL PASS**。
+  **加载三律（坑 106）**：①GHC 循环引用——ghc-internal 的 `stg_*` 是数据符号
+  （dlopen 即解析），RTS 的 `init_ghc_hs_iface` 是函数（可挂起）→ **RTS 必须
+  RTLD_LAZY 先行**；②`hs_init`/`hs_exit` 归宿主（方案 A，与仓颉 InitCJRuntime 同构）；
+  ③GHC 给产物打绝对 RUNPATH（本机 libdir）——**hs 内核是 dev 级**，打包态需搬
+  libdir（98 个 .so）+重打 $ORIGIN RPATH，暂不做（边界如实）。
+  另一独立坑（仓颉内核不涉及、Haskell 特有）：**`unsafePerformIO(newIORef …)` 内联
+  在函数体会被 GHC CSE 提升成全程序共享**——所有 Agent 抢同一状态（实测 alice 的
+  Completed 泄进 bob）。铁律：可变分配必须在 IO 里（`newAgent :: String -> IO Agent`）。
 - **可选**：三调度符号 + 宿主泵契约——等价于 GHC 的 hs_init/hs_exit 教科书方案
   （"AOT 语言 + 富 RTS 被外部宿主调用"），仓颉的 InitCJRuntime 即其对应物。
 - **诚实边界**：Rust/Go/Haskell 仍是可行方向而非已验证事实（C 已实证）；各语言运行时
@@ -215,7 +232,7 @@ kernel_abi.h 是纯 C ABI，任何能导出 C 符号、能编译 .so 的语言�
 
 ## 8. 测试与守门
 
-三层，全部可独立复跑（本机实测数：77 / 47 / 38+6，另有 cjkdemo 6+4）：
+三层，全部可独立复跑（本机实测数：77 / 47+9 / 38+6，另有 cjkdemo 6+4、hs 契约 37）：
 
 | 层 | 命令 | 覆盖 |
 |---|---|---|

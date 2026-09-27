@@ -30,6 +30,8 @@
  */
 #include <node_api.h>
 #include <dlfcn.h>
+#include <sys/stat.h>
+#include <dirent.h>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -68,6 +70,8 @@ struct Slot {
 };
 
 bool g_loaded = false;   // 仓颉运行时 dlopen + InitCJRuntime 完成（进程级单例）
+bool g_ghcLoaded = false; // GHC RTS 挂载完成（R114：与仓颉序列各自幂等——
+                           // 两 RTS 并存于进程时 g_loaded 单例会让 GHC 序列被跳过）
 void *g_rt = nullptr;
 void *(*fnRunCJTask)(void *(*)(void *), void *) = nullptr;
 int (*fnRunUIScheduler)(unsigned long long) = nullptr;
@@ -114,8 +118,66 @@ char *TakeString(napi_env env, napi_value v, const char *what) {
   return buf;
 }
 
-/* 仓颉运行时挂载（进程级单例；纯 C 内核槽不触发） */
+bool ensureRuntimeCangjie(const char *rtPath);   // 前向声明（定义在分流入口之后）
+
+/* R114：GHC RTS 挂载（循环引用裁决序——实测见 kernel/hs/kernel.hs 头注）：
+ *   libHSrts-*.so 先 RTLD_LAZY|GLOBAL（其引用 init_ghc_hs_iface 是函数符号可挂起），
+ *   ghc-internal NOW|GLOBAL（stg_* 数据符号由已载 RTS 提供；先载它会因缺 stg 立败），
+ *   ghc-prim/base NOW 补全内核 NEEDED，最后 hs_init(NULL,NULL)（宿主方案 A）。 */
+bool ensureRuntimeGhc(const char *dir) {
+  if (g_ghcLoaded) return true;
+  const char *prefs[] = { "libHSrts-", "libHSghc-internal-", "libHSghc-prim-", "libHSbase-" };
+  char paths[4][1024] = {{0}};
+  DIR *d = opendir(dir);
+  if (!d) { setHostErr("GHC libdir 无法打开"); return false; }
+  for (struct dirent *e; (e = readdir(d)) != nullptr;) {
+    for (int i = 0; i < 4; i++) {
+      if (paths[i][0] == '\0' && strncmp(e->d_name, prefs[i], strlen(prefs[i])) == 0
+          && strstr(e->d_name, "_debug") == nullptr && strstr(e->d_name, "_p-") == nullptr
+          && strlen(e->d_name) < 1000) {
+        snprintf(paths[i], sizeof(paths[i]), "%s/%s", dir, e->d_name);
+      }
+    }
+  }
+  closedir(d);
+  for (int i = 0; i < 4; i++) {
+    if (paths[i][0] == '\0') {
+      snprintf(g_lastHostErr, sizeof(g_lastHostErr), "GHC libdir 缺 %s*.so", prefs[i]);
+      return false;
+    }
+  }
+  if (!dlopen(paths[0], RTLD_LAZY | RTLD_GLOBAL)) {   // RTS 必须 LAZY 先行
+    const char *e = dlerror();
+    setHostErr(e ? e : "dlopen libHSrts failed");
+    return false;
+  }
+  for (int i = 1; i < 4; i++) {
+    if (!dlopen(paths[i], RTLD_NOW | RTLD_GLOBAL)) {
+      const char *e = dlerror();
+      snprintf(g_lastHostErr, sizeof(g_lastHostErr), "dlopen %s: %s",
+               strrchr(paths[i], '/') + 1, e ? e : "?");
+      return false;
+    }
+  }
+  void *hsi = dlsym(RTLD_DEFAULT, "hs_init");
+  if (!hsi) { setHostErr("hs_init 不可见（RTS 未就位）"); return false; }
+  ((void (*)(int *, char ***))hsi)(nullptr, nullptr);   // 宿主方案 A：hs_init/hs_exit 归宿主
+  g_ghcLoaded = true;
+  return true;
+}
+
+/* 仓颉运行时挂载（进程级单例；纯 C 内核槽不触发）。
+ * rtPath 双布局（R114 多 RTS 泛化）：
+ *   - 文件 → 仓颉序列（path.join(rtLib, "libcangjie-runtime.so")）
+ *   - 目录 → GHC 序列（扫描 libHSrts 前缀、ghc-internal、ghc-prim、base，再 hs_init）
+ * 统一入口：按 stat 分流。 */
 bool ensureRuntime(const char *rtPath) {
+  struct stat st;
+  if (stat(rtPath, &st) == 0 && S_ISDIR(st.st_mode)) return ensureRuntimeGhc(rtPath);
+  return ensureRuntimeCangjie(rtPath);
+}
+
+bool ensureRuntimeCangjie(const char *rtPath) {
   if (g_loaded) return true;
   void *rt = dlopen(rtPath, RTLD_NOW | RTLD_GLOBAL);
   if (!rt) {
