@@ -9,7 +9,10 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R115 Haskell 内核工业级验证**（作业面 forkIO 零驱动+协作 CAS 取消+
+- 上次切片：**R116 Go 内核（第四语言）**——kernel/go cgo+c-shared（仅 libc 依赖、
+  零宿主序、标准库 JSON、goroutine 作业）；Reasonix 对齐 session.get/set Generation
+  CAS + lifecycle 三态；smoke 77（go 段 20 断言）；**四语言齐：仓颉/纯C/Haskell/Go**。
+  更早：**R115 Haskell 内核工业级验证**（作业面 forkIO 零驱动+协作 CAS 取消+
   快照跨语言互通+错误矩阵；hs 契约 37→72 ALL PASS、smoke→59、node 层并行重叠 6/6；
   **坑 107：writeIORef 惰性 thunk 时间戳（evaluate 强制）+ setNumCapabilities 在 C 原生
   宿主无效（atInit=1）vs node=8——并行断言安置 addon 层，C 层条件 SKIP 如实**）。

@@ -208,6 +208,14 @@ kernel_abi.h 是纯 C ABI，任何能导出 C 符号、能编译 .so 的语言�
   **零运行时依赖**）——宿主 `cjkInitK("c", "", libkernel_c.so, "{}")` 即挂，rtLib 空串
   表示该槽不需要仓颉运行时；与仓颉内核同进程共存、互不串扰（smoke 有隔离断言）。
   编译：`bash kernel/c-sample/build.sh`。
+- **已实证的第四语言（R116）**：`kernel/go/`（Go 1.27，DeepSeek-Reasonix 对齐）——
+  cgo + `-buildmode=c-shared`，**分发形态最优**：Go runtime 静态链进 .so 仅依赖
+  libc、dlopen constructor 自初始化（**零宿主序**，rtLib="" 挂载）；JSON 标准库；
+  goroutine 作业零驱动。Reasonix 特色：`session.get`/`session.set` 的 **Generation
+  CAS**（旧 generation → conflict、deleted 终态——对齐其 lifecycle.go 模式）+
+  lifecycle 三态（active/archived/deleted）。编译 `bash kernel/go/build.sh`；
+  smoke go 段 20 断言。**注意：DeepSeek-Reasonix 仓库本身 CGO_ENABLED=0 且无
+  c-shared 先例——本内核是新路径，仅借其数据语义与 darwin cgo 写法惯例。**
 - **已实证的第三语言（R114）**：`kernel/hs/`（Haskell/GHC 9.14.1，trha 数据面对齐）
   ——`cjkInitK("hs", <GHC libdir 目录>, libkernel_hs.so, "{}")`；rtLib 传【目录】即
   触发 **GHC 序列**（多 RTS 泛化：扫描 libHSrts→ghc-internal→ghc-prim→base 依序
@@ -232,7 +240,7 @@ kernel_abi.h 是纯 C ABI，任何能导出 C 符号、能编译 .so 的语言�
 
 ## 8. 测试与守门
 
-三层，全部可独立复跑（本机实测数：77 / 59 / 38+6，另有 cjkdemo 6+4、hs 契约 72）：
+三层，全部可独立复跑（本机实测数：77 / 77 / 38+6，另有 cjkdemo 6+4、hs 契约 72、go 槽 20）：
 
 | 层 | 命令 | 覆盖 |
 |---|---|---|

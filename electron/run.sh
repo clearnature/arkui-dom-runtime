@@ -182,7 +182,7 @@ run_one() {
   ARKUI_TEST="$label" \
   ARKUI_PAGE_URL="http://127.0.0.1:$port/test/$(page_of "$page").html$query" \
   ARKUI_OFFSCREEN="${ARKUI_OFFSCREEN:-1}" \
-    timeout 180 "$ELECTRON" --no-sandbox --disable-gpu "$HERE" 2>&1 \
+    timeout 180 "$ELECTRON" --no-sandbox --disable-gpu --ozone-platform=x11 "$HERE" 2>&1 \
     | grep -v -E 'Fontconfig|libva|GLX|dbus|MESA|Mesa|vulkan|Vulkan|gbm|DRM|drm' \
     | tee "$outf" \
     | sed 's/^/  /'

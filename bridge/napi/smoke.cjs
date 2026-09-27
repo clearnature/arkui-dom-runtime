@@ -199,6 +199,63 @@ if (HS_LIB && require('node:fs').existsSync(GHC_LIB_DIR)) {
   console.log('SKIP R114 hs 槽（GHC_LIB_DIR_TEST/HS_KERNEL_LIB_TEST 未注入或 GHC 缺席）');
 }
 
+// R116：Go 内核槽（DeepSeek-Reasonix 线索，第四语言）——rtLib 空串零宿主序，
+// c-shared 仅依赖 libc，goroutine 自调度作业
+{
+  const fs = require('node:fs');
+  const GO_LIB = process.env.GO_KERNEL_LIB_TEST ||
+    require('node:path').join(__dirname, '..', '..', 'kernel', 'go', 'libkernel_go.so');
+  if (fs.existsSync(GO_LIB)) {
+    check(addon.cjkInitK('go', '', GO_LIB, '{}') === true, 'R116 cjkInitK("go", "") 零宿主序挂载');
+    check(addon.cjkKernelVersionK('go') === 10001, 'R116 go 槽 abi 10001');
+    check(addon.cjkCallK('go', 'add', '{"a":20,"b":22}') === '{"sum":42}', 'R116 go add');
+    check(addon.cjkCallK('go', 'fib', '{"n":12}') === '{"result":144}', 'R116 go fib');
+    check(addon.cjkAddK('go', 7, 35) === 42, 'R116 go typed add（kernel_add 同签名）');
+    check(addon.cjkCallK('go', 'echo', '{"v":1}') === '{"v":1}', 'R116 go echo');
+    check(addon.cjkCallK('go', 'agent.spawn', '{"name":"go-ling"}') ===
+      '{"id":1,"name":"go-ling","state":"idle"}', 'R116 go spawn');
+    addon.cjkCallK('go', 'agent.send', '{"id":1,"text":"go-mail"}');
+    check(addon.cjkCallK('go', 'agent.poll', '{"id":1}') ===
+      '{"messages":["go-mail"],"drained":1}', 'R116 go 邮箱 FIFO');
+    check(addon.cjkCallK('go', 'agent.kill', '{"id":1}') === '{"killed":"go-ling"}',
+      'R116 go kill');
+    // goroutine 作业（宿主零驱动）——同步 sleep 让出 CPU（纯忙轮询 200 轮
+    // 在 fib(30)≈12ms 完成窗口内跑完 → 误判未完成）
+    const syncSleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+    addon.cjkCallK('go', 'agent.spawn', '{"name":"worker"}');
+    addon.cjkCallK('go', 'agent.submit', '{"id":2,"kind":"fib","n":30}');
+    let gDone = null;
+    for (let i = 0; i < 300 && gDone === null; i++) {
+      const r = addon.cjkCallK('go', 'agent.result', '{"jobId":1}');
+      if (r && /"state":"done"/.test(r)) gDone = r;
+      else syncSleep(5);
+    }
+    check(gDone === '{"state":"done","value":832040}',
+      'R116 go goroutine 作业（fib(30)=832040 零驱动）');
+    const gtm = JSON.parse(addon.cjkCallK('go', 'agent.timings', '{}'));
+    check(gtm.n === 1 && gtm.t[0][1] > gtm.t[0][0], 'R116 go timings 时间窗有效');
+    check(addon.cjkCallK('go', 'nope', '{}') === null &&
+      /unknown method/.test(addon.cjkLastErrorK('go')), 'R116 go 未知方法+lastError');
+    // Reasonix 特色（DeepSeek-Reasonix 对齐）：lifecycle 枚举 + Generation CAS
+    check(addon.cjkCallK('go', 'session.get', '{"id":2}') ===
+      '{"lifecycle":"active","generation":0}', 'R116 session.get 初始 active/gen0');
+    check(addon.cjkCallK('go', 'session.set', '{"id":2,"lifecycle":"archived","generation":0}') ===
+      '{"lifecycle":"archived","generation":1}', 'R116 session.set CAS 成功 → gen1');
+    check(addon.cjkCallK('go', 'session.set', '{"id":2,"lifecycle":"active","generation":0}') === null &&
+      /generation conflict/.test(addon.cjkLastErrorK('go')),
+      'R116 旧 generation → conflict（ErrOperationConflict 同义）');
+    check(addon.cjkCallK('go', 'session.set', '{"id":2,"lifecycle":"zombie","generation":1}') === null &&
+      /bad lifecycle/.test(addon.cjkLastErrorK('go')), 'R116 非法 lifecycle → 报错');
+    check(addon.cjkCallK('go', 'session.set', '{"id":2,"lifecycle":"deleted","generation":1}') ===
+      '{"lifecycle":"deleted","generation":2}', 'R116 deleted 迁移成功 → gen2');
+    check(addon.cjkCallK('go', 'session.set', '{"id":2,"lifecycle":"active","generation":2}') === null &&
+      /terminal/.test(addon.cjkLastErrorK('go')), 'R116 deleted 是终态（purge 语义）');
+    check(addon.cjkShutdownK('go') === true, 'R116 shutdownK("go")');
+  } else {
+    console.log('SKIP R116 go 槽（libkernel_go.so 未构建）');
+  }
+}
+
 check(addon.cjkShutdown() === true, 'cjkShutdown');
 
 console.log(fails === 0 ? 'ALL PASS' : fails + ' FAILURES');
