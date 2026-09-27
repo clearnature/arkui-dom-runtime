@@ -180,6 +180,18 @@
       const badSnap = await cjk.call('sys.restore', { v: 9 });
       check(badSnap === null && /bad snapshot/.test(await cjk.lastError()),
         'cjk 坏版本快照 → null + lastError 报因');
+
+      // ── ⑭ 作业取消（R110：渲染侧 addon 后置驱动已 claim，返回形按宽容判据；
+      //      pending 摘除的精确语义由 C 契约测试覆盖——C 宿主无后置驱动）──
+      const csub = await cjk.call('agent.submit', { id: 4, kind: 'fib', n: 30 });
+      check(!!csub && typeof csub.jobId === 'number', 'cjk cancel 场景 submit → jobId');
+      const cx = await cjk.call('agent.cancel', { jobId: csub.jobId });
+      check(!!cx && (cx.cancelled === 'pending' ||
+        (cx.cancelled === 'none' && (cx.state === 'in-flight' || cx.state === 'done'))),
+        'cjk agent.cancel 返回形合法（observed=' + JSON.stringify(cx) + '）');
+      const cunk = await cjk.call('agent.cancel', { jobId: 99999 });
+      check(cunk === null && /no job id/.test(await cjk.lastError()),
+        'cjk cancel 未知 job → null + lastError 报因');
     }
 
     // ── 垫片面完整（两端都断言）──

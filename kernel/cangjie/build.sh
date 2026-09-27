@@ -19,6 +19,10 @@ case "$BUILD" in
 esac
 
 cd "$HERE"
-cjc src/kernel.cj --output-type=dylib "${OPT[@]}" -o libkernel.so
+# R109：RPATH=$ORIGIN（老式 tag，链式传递到二层依赖）——打包态把 仓颉运行时 .so 集
+# 与 libkernel.so 放同目录即可零 LD_LIBRARY_PATH 加载（RUNPATH 不传递、glibc 对无
+# SONAME 库不按 basename 匹配，两个实测否决见 ROADMAP R109）。
+cjc src/kernel.cj --output-type=dylib "${OPT[@]}" \
+    --link-options '--disable-new-dtags -rpath=$ORIGIN' -o libkernel.so
 printf '%s\n' "$BUILD" > .build-profile
-echo "✅ libkernel.so 构建完成（$BUILD，cjc ${OPT[*]}）"
+echo "✅ libkernel.so 构建完成（$BUILD，cjc ${OPT[*]}，RPATH=\$ORIGIN）"

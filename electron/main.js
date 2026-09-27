@@ -173,10 +173,15 @@ app.whenReady().then(async () => {
   const cjkEnsure = () => {
     if (cjkReady) return true;
     if (cjkAddon) return false;            // 已试过且失败：错误保持 cjkErr
-    const rtLib = process.env.CANGJIE_RT_LIB || '';
+    // R109 打包态：data/kernel/ 平铺内核+仓颉运行时 .so 集（内核带 RPATH=$ORIGIN，
+    // 零 LD_LIBRARY_PATH）；dev 态沿 env（run.sh 探测 nightly）+ 仓库内核。
+    const packedKernelDir = app.isPackaged ? path.resolve(__dirname, '..', 'data', 'kernel') : null;
+    const rtLib = process.env.CANGJIE_RT_LIB || packedKernelDir || '';
     // R111 单内核路线：换内核 = 换 .so 路径（ARKUI_KERNEL_LIB 覆盖；默认仓颉内核）
     const kernelLib = process.env.ARKUI_KERNEL_LIB ||
-      path.resolve(__dirname, '..', 'kernel', 'cangjie', 'libkernel.so');
+      (packedKernelDir
+        ? path.join(packedKernelDir, 'libkernel.so')
+        : path.resolve(__dirname, '..', 'kernel', 'cangjie', 'libkernel.so'));
     if (!rtLib || !fs.existsSync(rtLib) || !fs.existsSync(kernelLib)) return false;
     try {
       // 字面量路径：相对 main.js 解析（electron/../bridge/…），且便于静态审计

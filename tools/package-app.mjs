@@ -30,21 +30,27 @@ const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..')
 const args = process.argv.slice(2);
 const flag = (name, def) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : def; };
 const MODE = flag('--mode', 'packager');
-const OUT = flag('--out', '/tmp/arkui-pkg-out');
+const OUT = flag('--out', '/data/tmp/arkui-pkg-out');
 const PAGE = flag('--page', 'perfdemo');
 const ELECTRON_VERSION = '44.2.0';
 const APP_NAME = 'arkui-dom-electron';
 const PRODUCT = 'arkui-dom-desktop';
+
+// R113：临时区 /data/tmp（/tmp tmpfs inode 打满曾致门禁假红）
+const TMP = '/data/tmp';
 
 const step = (m) => console.log('══ ' + m);
 
 // ── 0) 前提检查 ──
 step('前提检查');
 const cache = path.join(process.env.HOME, '.cache/electron');
-const zipCandidate = fs.existsSync(cache)
-  ? path.join(cache, fs.readdirSync(cache).find((d) => d.startsWith(`electron-v${ELECTRON_VERSION}-linux-x64.zip`)) || '')
+const zipName = fs.existsSync(cache)
+  ? (fs.readdirSync(cache).find((d) => d.startsWith(`electron-v${ELECTRON_VERSION}-linux-x64.zip`)) || '')
   : '';
-const hasZip = zipCandidate && fs.existsSync(zipCandidate);
+const zipCandidate = zipName ? path.join(cache, zipName) : '';
+// 必须是【文件】——只判 existsSync 会把 cache 目录本身当 zip（R109 实测：
+// cache 清空后 basename 变成 "electron"、软链指向目录，packager 报 zip 不存在）
+const hasZip = !!zipCandidate && fs.existsSync(zipCandidate) && fs.statSync(zipCandidate).isFile();
 const electronBin = path.join(ROOT, 'electron/runtime/electron');
 if (!hasZip && !fs.existsSync(electronBin)) {
   console.error(`❌ 找不到 Electron v${ELECTRON_VERSION}（~/.cache/electron/ 的 zip 或 electron/runtime/ 解包）`);
@@ -56,15 +62,35 @@ for (const f of ['electron/main.js', 'electron/preload.js', 'runtime/arkui-dom-r
 console.log('  zip=' + (hasZip ? zipCandidate : '（用本地解包）'));
 
 // ── 1) staging ──
-step('staging（/tmp，不污染仓库）');
-const S = '/tmp/arkui-pkg-staging';
+step('staging（/data/tmp，不污染仓库）');
+const S = path.join(TMP, 'arkui-pkg-staging');
 fs.rmSync(S, { recursive: true, force: true });
-for (const d of ['electron', 'test', 'build', 'runtime']) fs.mkdirSync(path.join(S, d), { recursive: true });
+for (const d of ['electron', 'test', 'build', 'runtime', 'bridge/napi', 'data/kernel']) fs.mkdirSync(path.join(S, d), { recursive: true });
 for (const f of ['main.js', 'preload.js']) fs.copyFileSync(path.join(ROOT, 'electron', f), path.join(S, 'electron', f));
 fs.cpSync(path.join(ROOT, 'runtime'), path.join(S, 'runtime'), { recursive: true });
 // 全部测试页 + 全部页面模块（分发包要能跑整个用例矩阵，不只冒烟页）
 for (const f of fs.readdirSync(path.join(ROOT, 'test'))) if (f.endsWith('.html')) fs.copyFileSync(path.join(ROOT, 'test', f), path.join(S, 'test', f));
 for (const f of fs.readdirSync(path.join(ROOT, 'build'))) if (f.endsWith('.js') && !f.endsWith('.result.txt')) fs.copyFileSync(path.join(ROOT, 'build', f), path.join(S, 'build', f));
+
+// ── R109：仓颉内核分发集 ──
+// data/kernel/ 平铺：libkernel.so（RPATH=$ORIGIN）+ 仓颉运行时全部 .so——
+// 打包态主进程零 LD_LIBRARY_PATH 加载（内核 RPATH 链式覆盖二层依赖）。
+// addon .node 必须随包（main.js require('../bridge/napi/…')）。
+fs.copyFileSync(path.join(ROOT, 'bridge/napi/cjk_napi.node'), path.join(S, 'bridge/napi/cjk_napi.node'));
+const rtDir = process.env.CANGJIE_RT_LIB ||
+  '/data/work/compiler/cangjie/Nightly/cangjie-nightly-current/runtime/lib/linux_x86_64_cjnative';
+const kernelSo = path.join(ROOT, 'kernel/cangjie/libkernel.so');
+let cjkPacked = false;
+if (fs.existsSync(kernelSo) && fs.existsSync(path.join(rtDir, 'libcangjie-runtime.so'))) {
+  fs.copyFileSync(kernelSo, path.join(S, 'data/kernel/libkernel.so'));
+  for (const f of fs.readdirSync(rtDir)) if (f.endsWith('.so')) {
+    fs.copyFileSync(path.join(rtDir, f), path.join(S, 'data/kernel', f));
+  }
+  cjkPacked = true;
+  console.log(`  cjk 分发集: libkernel.so + ${fs.readdirSync(rtDir).filter((f) => f.endsWith('.so')).length} 个运行时 .so（31MB）`);
+} else {
+  console.log('  ⚠️ 未找到仓颉运行时/内核——cjk 用例在包内将降级（其余不受影响）');
+}
 fs.writeFileSync(path.join(S, 'package.json'), JSON.stringify({
   name: APP_NAME, productName: PRODUCT, version: '0.1.0',
   description: 'ArkTS->DOM runtime desktop', main: 'electron/main.js',
@@ -77,14 +103,14 @@ step('打包（--mode ' + MODE + '）');
 fs.rmSync(OUT, { recursive: true, force: true });
 fs.mkdirSync(OUT, { recursive: true });
 if (MODE === 'packager') {
-  const zdir = '/tmp/arkui-electron-zips';
+  const zdir = path.join(TMP, 'arkui-electron-zips');
   if (hasZip) {
     fs.mkdirSync(zdir, { recursive: true });
     const link = path.join(zdir, path.basename(zipCandidate));
     fs.rmSync(link, { force: true });
     fs.symlinkSync(zipCandidate, link);          // packager 只认目录里的 zip；软链零拷贝
   }
-  execSync(`cd /tmp && npx --yes @electron/packager ${S} ${APP_NAME} ` +
+  execSync(`cd ${TMP} && npx --yes @electron/packager ${S} ${APP_NAME} ` +
     `--platform=linux --arch=x64 --electron-version=${ELECTRON_VERSION} ` +
     (hasZip ? `--electron-zip-dir=${zdir} ` : '--download.mirror=https://npmmirror.com/mirrors/electron/ ') +
     `--asar=false --out=${OUT} --overwrite`, { stdio: 'inherit' });
@@ -118,14 +144,24 @@ const findBin = (dir) => {
 };
 const bin = findBin(OUT);
 if (!bin) { console.error('❌ 打包产物里没找到可执行文件'); process.exit(1); }
+if (PAGE === 'cjk' && !cjkPacked) {
+  console.error('❌ --page cjk 需要 cjk 分发集（CANGJIE_RT_LIB 指向运行时库目录后重跑）');
+  process.exit(1);
+}
 
 const isAppImage = bin.endsWith('.AppImage');
 const runArgs = (isAppImage ? '--appimage-extract-and-run ' : '') + '--no-sandbox --disable-gpu';
 const cwd = isAppImage ? path.dirname(bin) : path.dirname(bin);
+// R109 零依赖冒烟：清空仓颉环境（CANGJIE_RT_LIB/ARKUI_KERNEL_LIB/LD_LIBRARY_PATH），
+// 模拟无 SDK 机器——cjk 用例必须靠包内 data/kernel/（内核 RPATH=$ORIGIN）通过
+const smokeEnv = { ...process.env, ARKUI_TEST: PAGE, ARKUI_OFFSCREEN: '1' };
+delete smokeEnv.CANGJIE_RT_LIB;
+delete smokeEnv.ARKUI_KERNEL_LIB;
+delete smokeEnv.LD_LIBRARY_PATH;
 let result = '';
 try {
   result = execSync(`cd ${cwd} && ${JSON.stringify(bin)} ${runArgs} .`, {
-    env: { ...process.env, ARKUI_TEST: PAGE, ARKUI_OFFSCREEN: '1' },
+    env: smokeEnv,
     encoding: 'utf8', timeout: 180000,
   });
 } catch (e) { result = (e.stdout || '') + (e.stderr || ''); }

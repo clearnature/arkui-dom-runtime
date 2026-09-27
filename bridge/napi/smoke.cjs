@@ -132,6 +132,21 @@ check(addon.cjkEcho('直调回声') === '直调回声', 'R112 cjkEcho 直调（U
 check(addon.cjkAddK('c', 7, 35) === 42, 'R112 c 槽 kernel_add（同符号同签名）');
 check(addon.cjkEchoK('c', 'c-kernel') === 'c-kernel', 'R112 c 槽 kernel_echo');
 
+// R110：作业取消——精确态语义由契约测试覆盖（C 宿主无后置驱动，pending 路径稳定）；
+// addon 侧 submit 即 drive（claim 后 in-flight），此处只断言返回形合法 + 未知 job null
+const csub = addon.cjkCall('agent.submit', '{"id":2,"kind":"fib","n":30}');
+const cjob = JSON.parse(csub).jobId;
+const cx = JSON.parse(addon.cjkCall('agent.cancel', '{"jobId":' + cjob + '}'));
+check(cx && (cx.cancelled === 'pending' || (cx.cancelled === 'none' && cx.state === 'in-flight')),
+  'R110 agent.cancel 返回形合法（observed=' + JSON.stringify(cx) + '）');
+let crest = '';
+for (let i = 0; i < 200 && !/cancelled|done/.test(crest); i++) {
+  crest = addon.cjkCall('agent.result', '{"jobId":' + cjob + '}');
+}
+check(/"state":"(cancelled|done)"/.test(crest), 'R110 result 收敛终态（' + crest + '）');
+check(addon.cjkCall('agent.cancel', '{"jobId":99}') === null,
+  'R110 cancel 未知 job → null');
+
 check(addon.cjkShutdown() === true, 'cjkShutdown');
 
 console.log(fails === 0 ? 'ALL PASS' : fails + ' FAILURES');

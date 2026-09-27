@@ -385,7 +385,7 @@ class Job {
     var kind: String            // "fib" | "echo"
     var n: Int64                // fib 参数
     var text: String            // echo 参数
-    var state: Int64            // 0=pending 2=claimed(in-flight) 1=done
+    var state: Int64            // 0=pending 2=claimed(in-flight) 1=done 3=cancelled（R110）
     var value: Int64            // fib 结果
     var out: String             // echo 结果
     var startNs: Int64          // 领取时刻（进程内相对 ns，0=未领取）——R105 并行证据
@@ -782,6 +782,8 @@ public func kernel_call(method: CPointer<UInt8>, params: CPointer<UInt8>): CPoin
                     b2.str(job.out)
                     b2.str("\"}")
                 }
+            } else if (job.state == 3) {
+                b2.str("{\"state\":\"cancelled\"}")     // R110：显式认领（坑 105 纪律）
             } else {
                 b2.str("{\"state\":\"pending\"}")
             }
@@ -790,6 +792,47 @@ public func kernel_call(method: CPointer<UInt8>, params: CPointer<UInt8>): CPoin
         let eb = ByteBuf(48)
         eb.str("agent.result: no job id=")
         eb.int(jidO.getOrThrow())
+        setErr(eb.done())
+        return CPointer<UInt8>()
+    }
+    // ── 作业取消（R110）──
+    if (m == "agent.cancel") {
+        let jidO = jsonInt(p, "jobId")
+        if (jidO.isNone()) {
+            setErr("agent.cancel: params need integer jobId")
+            return CPointer<UInt8>()
+        }
+        let jid = jidO.getOrThrow()
+        let j = jobsOf().get(jid)
+        if (let Some(job) <- j) {
+            if (job.state == 0) {
+                // pending：锁内出队 + 标 cancelled（worker 领取与取消同锁，不会交错）
+                jobMu().lock()
+                let keep = ArrayList<Int64>()
+                for (i in 0..jobQueueOf().size) {
+                    let x = jobQueueOf().get(i).getOrThrow()
+                    if (x != jid) { keep.add(x) }
+                }
+                gJobQueue = Some(keep)
+                job.state = 3
+                jobMu().unlock()
+                return stringToCs("{\"cancelled\":\"pending\"}")
+            }
+            if (job.state == 3) {
+                return stringToCs("{\"cancelled\":\"pending\"}")   // 幂等：重复取消
+            }
+            // done / in-flight：如实边界——无法回滚已算结果；in-flight 无法中断
+            // （worker 在 fib 里没有让点），跑完结果丢弃（result 报 cancelled 之外由
+            // 调用方决定不再取）
+            let b2 = ByteBuf(48)
+            b2.str("{\"cancelled\":\"none\",\"state\":\"")
+            if (job.state == 1) { b2.str("done") } else { b2.str("in-flight") }
+            b2.str("\"}")
+            return stringToCs(b2.done())
+        }
+        let eb = ByteBuf(48)
+        eb.str("agent.cancel: no job id=")
+        eb.int(jid)
         setErr(eb.done())
         return CPointer<UInt8>()
     }

@@ -177,6 +177,7 @@ kernel_call 都会触发 drive）。
 | `agent.submit` | `{"id":2,"kind":"fib","n":20}` → `{"jobId":1,"state":"pending"}` | 异步作业入队即返回；kind 校验 fib/echo；agent 必须存在 |
 | `agent.result` | `{"jobId":1}` → `{"state":"pending"}` / `{"state":"done","value":6765}`（echo 型返回 `text`） | 轮询取结果；**仅 state==1 报 done**，claimed/in-flight 报 pending（坑 105）；宿主后置驱动自动推进 |
 | `agent.timings` | `{}` → `{"n":K,"t":[[startNs,endNs],…]}` | 已完成作业时间窗（完成序）——两两窗口重叠 = 多 worker 真并发证据（R105） |
+| `agent.cancel` | `{"jobId":N}` → `{"cancelled":"pending"}` / `{"cancelled":"none","state":"done"\|"in-flight"}` | pending 锁内出队标 cancelled（驱动不复活、幂等）；**done 不可回滚、in-flight 不可中断**（fib 无让点）——none 如实返回（R110）；result 对 cancelled 报 `{"state":"cancelled"}` |
 | `sys.snapshot` | `{}` → `{"v":1,"nextId":N,"n":K,"a":[[id,"name","box"],…]}` | 快照注册表+邮箱+id 计数器（box 内消息以 SOH 分隔、转义 `"`/`\`/SOH）；**作业不快照**（R106） |
 | `sys.restore` | snapshot 原文 → `{"restored":K}` | 整体替换注册表+邮箱，nextId 随快照、作业计数器归位；定位解析只认 snapshot 自产格式（R106） |
 
@@ -214,7 +215,7 @@ kernel_abi.h 是纯 C ABI，任何能导出 C 符号、能编译 .so 的语言�
 
 ## 8. 测试与守门
 
-三层，全部可独立复跑（本机实测数：69 / 44 / 35+6，另有 cjkdemo 6+4）：
+三层，全部可独立复跑（本机实测数：77 / 47 / 38+6，另有 cjkdemo 6+4）：
 
 | 层 | 命令 | 覆盖 |
 |---|---|---|
@@ -255,6 +256,12 @@ kernel_abi.h 是纯 C ABI，任何能导出 C 符号、能编译 .so 的语言�
   （3x）。修正 R100 时的未验证假设——"百毫秒级"并不成立（debug fib(32)=60ms），
   但 release 对高频调用仍值得。`RunUIScheduler(2ms)` 泵窗口在作业计算期间仍会
   阻塞主进程对应时长（20ms 级可接受）。
+- **打包零依赖加载**（R109 实测）：内核链接打 `RPATH=$ORIGIN`（`--link-options
+  '--disable-new-dtags -rpath=$ORIGIN'`，**老式 tag**——RUNPATH 不传递到二层依赖、
+  glibc 对无 SONAME 库不按 basename 匹配，两者均已实测否决）；package-app 把
+  `libkernel.so` + 53 个仓颉运行时 .so（31MB）平铺进 `data/kernel/`，打包态
+  （`app.isPackaged`）main.js 自动定位；冒烟 env 删三仓颉变量验证零依赖
+  （`node tools/package-app.mjs --page cjk` 无 SDK 机器形态 35 断言 PASS）。
 - **打包**：分发形态需随包携带内核 .so 与仓颉运行时库（依赖清单见 §4 步骤 0），
   `tools/package-app.mjs` 尚未覆盖仓颉运行时——分发场景立项时补。
 

@@ -9,13 +9,13 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R108+R113 真实 .ets 产物页消费 @ohos.cjk + 临时区迁移**（CjkDemo.ets
-  四件套——点号 import+cjk.d.ts+triple-slash 挂编译上下文+hvigorw 编译冻结；
-  垫片补 add/echo typed 方法（IPC 双轨回落 JSON）；electron cjkdemo 6 条/浏览器降级
-  4 条；TMPDIR 迁 /data/tmp 防 tmpfs inode 打满）。本线已完成：R101-R108+R111-R113。
-  剩余：R109 打包 → R110 取消（明细表 ROADMAP「R101-R110 预分解」+ R111-R113；
-  **trha 划出本线**）；坑 101-105；契约测试 69 / smoke 44 / cjk 双端 35+6 /
-  cjkdemo 6+4 — **PASS**
+- 上次切片：**R109+R110 打包零依赖 + 作业取消（R101-R113 全线完成）**——内核打
+  RPATH=$ORIGIN（老式 tag；RUNPATH 不传递/无 SONAME 不按 basename 匹配两案实测
+  否决），package-app 携带 data/kernel/ 53 个 .so 平铺 + bridge addon，零仓颉环境
+  冒烟 35 断言 PASS（顺修 hasZip 目录误判）；agent.cancel（pending 出队标
+  state=3、驱动不复活、幂等；done/in-flight 如实 none——坑 105 纪律分支显式认领）；
+  契约 77/smoke 47/cjk 双端 38+6。**R101-R113 全部 ✅**（明细 ROADMAP 预分解表）；
+  坑 101-105 — **PASS**
 - 更早：**R67**（R66 批量组件验收：37 结构 + 兜底绊网 + 14 真编译语义；绊网
   `__arkui_dom_generatedFilled`——手写注册缺席时骨架静默兜底，坑 98）；**R24 收口**（渲染
   路径决策 3f6e209：previewer 实证点火崩在窗口层、es2abc 无 JS 输出——留在分支 B）；

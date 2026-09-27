@@ -355,6 +355,39 @@ int main(int argc, char *argv[]) {
     if (r) kfree(r);
     free(snap);
 
+    /* ── R110：作业取消（pending 摘除 / done 幂等 / 未知报错；in-flight 边界见文档）── */
+    r = kcall("agent.submit", "{\"id\":1,\"kind\":\"fib\",\"n\":30}");
+    check(r != NULL && strstr(r, "\"jobId\":2") != NULL, "cancel 场景 submit → jobId=2");
+    if (r) kfree(r);
+    r = kcall("agent.cancel", "{\"jobId\":2}");
+    check(r && strcmp(r, "{\"cancelled\":\"pending\"}") == 0, "agent.cancel(pending) → pending");
+    if (r) kfree(r);
+    check(pend() == 0, "取消后 pending 队列归零（出队不残）");
+    r = kcall("agent.result", "{\"jobId\":2}");
+    check(r && strcmp(r, "{\"state\":\"cancelled\"}") == 0, "result(cancelled) → state=cancelled（R110 新态）");
+    if (r) kfree(r);
+    r = kcall("agent.cancel", "{\"jobId\":2}");
+    check(r && strcmp(r, "{\"cancelled\":\"pending\"}") == 0, "重复取消幂等（仍 pending 态报告）");
+    if (r) kfree(r);
+    /* jobId=1 是 R106 段已驱动到 done 的 fib(5) */
+    r = kcall("agent.cancel", "{\"jobId\":1}");
+    check(r && strcmp(r, "{\"cancelled\":\"none\",\"state\":\"done\"}") == 0,
+      "cancel(done) → none/done（结果不可回滚）");
+    if (r) kfree(r);
+    r = kcall("agent.cancel", "{\"jobId\":99}");
+    check(r == NULL && strstr(kerr(), "no job id=99") != NULL, "cancel 未知 job → NULL+报错");
+    if (r) kfree(r);
+    /* 取消的作业不被后续驱动复活：submit→cancel 后驱动一轮，result 仍 cancelled */
+    r = kcall("agent.submit", "{\"id\":1,\"kind\":\"fib\",\"n\":30}");
+    if (r) kfree(r);
+    r = kcall("agent.cancel", "{\"jobId\":3}");
+    if (r) kfree(r);
+    if (pend() > 0) runTask(drain, NULL);
+    pump(2);
+    r = kcall("agent.result", "{\"jobId\":3}");
+    check(r && strcmp(r, "{\"state\":\"cancelled\"}") == 0, "驱动不复活已取消作业（worker 领不到）");
+    if (r) kfree(r);
+
     /* shutdown 后 ping 失败、call 拒绝 */
     check(kshutdown() == 0, "kernel_shutdown=0");
     check(kping() == -1, "shutdown 后 ping=-1");
