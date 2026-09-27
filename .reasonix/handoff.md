@@ -9,7 +9,11 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R116 Go 内核（第四语言）**——kernel/go cgo+c-shared（仅 libc 依赖、
+- 上次切片：**R117 Rust 内核（第五语言）**——kernel/rust cdylib（仅 libgcc_s+libc、
+  零宿主序、零外部 crate；单全局锁+per-Job 锁序无环证明）；claurst 对齐
+  （AgentDefinition model/maxTurns、agent.info、Generation CAS 终态不回流）；
+  smoke 98（rs 段 20）；**五语言齐：仓颉/纯C/Haskell/Go/Rust**。
+  更早：**R116 Go 内核（第四语言）**——kernel/go cgo+c-shared（仅 libc 依赖、
   零宿主序、标准库 JSON、goroutine 作业）；Reasonix 对齐 session.get/set Generation
   CAS + lifecycle 三态；smoke 77（go 段 20 断言）；**四语言齐：仓颉/纯C/Haskell/Go**。
   更早：**R115 Haskell 内核工业级验证**（作业面 forkIO 零驱动+协作 CAS 取消+

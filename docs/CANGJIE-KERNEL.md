@@ -208,6 +208,15 @@ kernel_abi.h 是纯 C ABI，任何能导出 C 符号、能编译 .so 的语言�
   **零运行时依赖**）——宿主 `cjkInitK("c", "", libkernel_c.so, "{}")` 即挂，rtLib 空串
   表示该槽不需要仓颉运行时；与仓颉内核同进程共存、互不串扰（smoke 有隔离断言）。
   编译：`bash kernel/c-sample/build.sh`。
+- **已实证的第五语言（R117）**：`kernel/rust/`（Rust 1.93，claurst 对齐）——
+  `rustc --crate-type=cdylib`，Rust 运行时静态链进 .so 依赖仅 libgcc_s+libc、
+  零宿主序直调、**零外部 crate**（手写 JSON，serde 未引入——仓库零依赖纪律；
+  claurst 自身用 serde_json 但其无 c-shared 先例，本内核是新路径）。锁设计：
+  单全局锁 G + per-Job state 锁（锁序证明：worker 持 state 期间不取 G → 无环）。
+  claurst 特色：`agent.spawn` 收 model/maxTurns（AgentDefinition 精简二字段）、
+  `agent.info` 元数据查询、`session.get/set` Generation CAS（终态不回流——
+  claurst `TaskRegistry::update_status` 同义）。编译 `bash kernel/rust/build.sh`；
+  smoke rs 段 20 断言。
 - **已实证的第四语言（R116）**：`kernel/go/`（Go 1.27，DeepSeek-Reasonix 对齐）——
   cgo + `-buildmode=c-shared`，**分发形态最优**：Go runtime 静态链进 .so 仅依赖
   libc、dlopen constructor 自初始化（**零宿主序**，rtLib="" 挂载）；JSON 标准库；
@@ -240,7 +249,7 @@ kernel_abi.h 是纯 C ABI，任何能导出 C 符号、能编译 .so 的语言�
 
 ## 8. 测试与守门
 
-三层，全部可独立复跑（本机实测数：77 / 77 / 38+6，另有 cjkdemo 6+4、hs 契约 72、go 槽 20）：
+三层，全部可独立复跑（本机实测数：77 / 98 / 38+6，另有 cjkdemo 6+4、hs 契约 72、go 槽 20、rs 槽 20）：
 
 | 层 | 命令 | 覆盖 |
 |---|---|---|

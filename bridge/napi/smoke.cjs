@@ -140,8 +140,10 @@ const cx = JSON.parse(addon.cjkCall('agent.cancel', '{"jobId":' + cjob + '}'));
 check(cx && (cx.cancelled === 'pending' || (cx.cancelled === 'none' && cx.state === 'in-flight')),
   'R110 agent.cancel 返回形合法（observed=' + JSON.stringify(cx) + '）');
 let crest = '';
-for (let i = 0; i < 200 && !/cancelled|done/.test(crest); i++) {
+const rSleep2 = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+for (let i = 0; i < 300 && !/cancelled|done/.test(crest); i++) {
   crest = addon.cjkCall('agent.result', '{"jobId":' + cjob + '}');
+  if (!/cancelled|done/.test(crest)) rSleep2(5);   // 让步：in-flight 路径需等 fib(30)≈20ms
 }
 check(/"state":"(cancelled|done)"/.test(crest), 'R110 result 收敛终态（' + crest + '）');
 check(addon.cjkCall('agent.cancel', '{"jobId":99}') === null,
@@ -253,6 +255,64 @@ if (HS_LIB && require('node:fs').existsSync(GHC_LIB_DIR)) {
     check(addon.cjkShutdownK('go') === true, 'R116 shutdownK("go")');
   } else {
     console.log('SKIP R116 go 槽（libkernel_go.so 未构建）');
+  }
+}
+
+// R117：Rust 内核槽（claurst 线索，第五语言）——cdylib 仅 libgcc_s+libc，零宿主序，
+// std::thread 作业
+{
+  const fs = require('node:fs');
+  const RS_LIB = process.env.RS_KERNEL_LIB_TEST ||
+    require('node:path').join(__dirname, '..', '..', 'kernel', 'rust', 'libkernel_rs.so');
+  if (fs.existsSync(RS_LIB)) {
+    check(addon.cjkInitK('rs', '', RS_LIB, '{}') === true, 'R117 cjkInitK("rs", "") 零宿主序挂载');
+    check(addon.cjkKernelVersionK('rs') === 10001, 'R117 rs 槽 abi 10001');
+    check(addon.cjkCallK('rs', 'add', '{"a":20,"b":22}') === '{"sum":42}', 'R117 rs add');
+    check(addon.cjkCallK('rs', 'fib', '{"n":12}') === '{"result":144}', 'R117 rs fib');
+    check(addon.cjkAddK('rs', 7, 35) === 42, 'R117 rs typed add（kernel_add 同签名）');
+    check(addon.cjkCallK('rs', 'echo', '{"v":1}') === '{"v":1}', 'R117 rs echo');
+    check(addon.cjkCallK('rs', 'agent.spawn', '{"name":"rust-ace"}') ===
+      '{"id":1,"name":"rust-ace","state":"idle"}', 'R117 rs spawn');
+    addon.cjkCallK('rs', 'agent.send', '{"id":1,"text":"rust-mail"}');
+    check(addon.cjkCallK('rs', 'agent.poll', '{"id":1}') ===
+      '{"messages":["rust-mail"],"drained":1}', 'R117 rs 邮箱 FIFO');
+    // std::thread 作业（宿主零驱动）
+    addon.cjkCallK('rs', 'agent.submit', '{"id":1,"kind":"fib","n":30}');
+    let rDone = null;
+    const rSleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+    for (let i = 0; i < 300 && rDone === null; i++) {
+      const r = addon.cjkCallK('rs', 'agent.result', '{"jobId":1}');
+      if (r && /"state":"done"/.test(r)) rDone = r;
+      else rSleep(5);
+    }
+    check(rDone === '{"state":"done","value":832040}',
+      'R117 rs thread 作业（fib(30)=832040 零驱动）');
+    const rtm = JSON.parse(addon.cjkCallK('rs', 'agent.timings', '{}'));
+    check(rtm.n === 1 && rtm.t[0][1] > rtm.t[0][0], 'R117 rs timings 时间窗有效');
+    check(addon.cjkCallK('rs', 'agent.kill', '{"id":1}') === '{"killed":"rust-ace"}',
+      'R117 rs kill');
+    // claurst 特色（AgentDefinition 元数据 + Generation CAS 守卫）
+    check(addon.cjkCallK('rs', 'agent.spawn',
+      '{"name":"claurst","model":"claude-x","maxTurns":42}') ===
+      '{"id":2,"name":"claurst","state":"idle"}', 'R117 claurst spawn（返回形契约互通）');
+    check(addon.cjkCallK('rs', 'agent.info', '{"id":2}') ===
+      '{"id":2,"name":"claurst","model":"claude-x","maxTurns":42,"lifecycle":"active","generation":0}',
+      'R117 claurst agent.info（AgentDefinition 元数据+lifecycle/generation）');
+    check(addon.cjkCallK('rs', 'session.get', '{"id":2}') ===
+      '{"lifecycle":"active","generation":0}', 'R117 session.get 初始态');
+    check(addon.cjkCallK('rs', 'session.set', '{"id":2,"lifecycle":"archived","generation":0}') ===
+      '{"lifecycle":"archived","generation":1}', 'R117 Generation CAS 成功 → gen1');
+    check(addon.cjkCallK('rs', 'session.set', '{"id":2,"lifecycle":"active","generation":0}') === null &&
+      /generation conflict/.test(addon.cjkLastErrorK('rs')), 'R117 旧 generation → conflict');
+    check(addon.cjkCallK('rs', 'session.set', '{"id":2,"lifecycle":"deleted","generation":1}') ===
+      '{"lifecycle":"deleted","generation":2}', 'R117 deleted 迁移 → gen2');
+    check(addon.cjkCallK('rs', 'session.set', '{"id":2,"lifecycle":"active","generation":2}') === null &&
+      /terminal/.test(addon.cjkLastErrorK('rs')), 'R117 终态不回流（claurst update_status 同义）');
+    check(addon.cjkCallK('rs', 'nope', '{}') === null &&
+      /unknown method/.test(addon.cjkLastErrorK('rs')), 'R117 rs 未知方法+lastError');
+    check(addon.cjkShutdownK('rs') === true, 'R117 shutdownK("rs")');
+  } else {
+    console.log('SKIP R117 rs 槽（libkernel_rs.so 未构建）');
   }
 }
 
