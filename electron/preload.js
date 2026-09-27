@@ -133,5 +133,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ping: async () => {
       try { return await ipcRenderer.invoke('arkui:cjk:ping'); } catch (e) { return -1; }
     },
+    // R112 类型化直调（零序列化热路径；主进程内核未导出 typed 符号时返回 null
+    // → 垫片回落 JSON 万能口）
+    add: async (a, b) => {
+      try { return await ipcRenderer.invoke('arkui:cjk:add', Number(a), Number(b)); }
+      catch (e) { return null; }
+    },
+    echo: async (s) => {
+      try { return await ipcRenderer.invoke('arkui:cjk:echo', String(s)); }
+      catch (e) { return null; }
+    },
   },
 });

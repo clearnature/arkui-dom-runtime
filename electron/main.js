@@ -200,6 +200,17 @@ app.whenReady().then(async () => {
     if (cjkReady) return String(cjkAddon.cjkLastError() || '');
     return cjkErr;
   });
+  // R112 类型化直调：内核未导出 kernel_add/kernel_echo 时返回 null（垫片回落 JSON 口）
+  ipcMain.handle('arkui:cjk:add', (_e, a, b) => {
+    if (!cjkEnsure() || typeof cjkAddon.cjkAdd !== 'function') return null;
+    try { return cjkAddon.cjkAdd(Number(a) || 0, Number(b) || 0); }
+    catch (e) { cjkErr = String(e && e.message || e); return null; }
+  });
+  ipcMain.handle('arkui:cjk:echo', (_e, s) => {
+    if (!cjkEnsure() || typeof cjkAddon.cjkEcho !== 'function') return null;
+    try { return cjkAddon.cjkEcho(String(s)); }
+    catch (e) { cjkErr = String(e && e.message || e); return null; }
+  });
 
   ipcMain.handle('arkui:ability:startForResult', (e, payload) => {
     callerWC = e.sender;

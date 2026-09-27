@@ -48,6 +48,7 @@
         "pages/NotesHome",
         "pages/NotesDetail",
         "pages/WindowDemo",
-        "pages/PickerDemo"
+        "pages/PickerDemo",
+        "pages/CjkDemo"
     ]
 }

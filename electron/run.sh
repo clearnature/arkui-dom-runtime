@@ -10,6 +10,11 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(dirname "$HERE")"
 ELECTRON="$HERE/runtime/electron"
 
+# R113：临时区 /tmp → /data/tmp（/tmp tmpfs inode 100% 打满曾致门禁三步假红；
+# /data 为真实磁盘无 inode 限制）。mktemp 全部尊重 TMPDIR。
+mkdir -p /data/tmp
+export TMPDIR=/data/tmp
+
 if [ ! -x "$ELECTRON" ]; then
   echo "找不到 Electron：$ELECTRON"
   echo "（从 ~/.cache/electron/ 里的 zip 解包到 electron/runtime/ 即可）"
@@ -137,6 +142,7 @@ prepare() {
     batchbehavior) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/entryability/EntryAbility.ts" "$ROOT/build/batchbehavior-module.js" --cjs --register EntryAbility >/dev/null || return 1 ;;
     batchfunc) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/BatchFuncDemo.ts" "$ROOT/build/batchfunc-module.js" --cjs --register BatchFuncDemo >/dev/null || return 1 ;;
     funcbehavior) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/entryability/EntryAbility.ts" "$ROOT/build/funcbehavior-module.js" --cjs --register EntryAbility >/dev/null || return 1 ;;
+    cjkdemo) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/CjkDemo.ts" "$ROOT/build/cjkdemo-module.js" --cjs --register CjkDemo >/dev/null || return 1 ;;
     notesdemo)
       "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/NotesDetail.ts" "$ROOT/build/notesdetail-module.js" --cjs --register NotesDetail >/dev/null || return 1
       "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/NotesHome.ts" "$ROOT/build/noteshome-module.js" --cjs --register NotesHome >/dev/null || return 1 ;;
@@ -172,7 +178,7 @@ run_one() {
   # ARKUI_OFFSCREEN=1：隐藏窗口的合成器不产帧，capturePage 会挂；offscreen 模式用 paint 帧截图
   # 让输出既实时透出（sed 缩进显示）、又留一份**没有缩进**的原文用于数 PASS 行：
   # 断言计数守门要的是运行期实测值，不能靠 grep test/*.html（realfs 有 28 处 check( 但只跑 21 条）。
-  local outf; outf="$(mktemp /tmp/arkui-electron-out-XXXXXX)"
+  local outf; outf="$(mktemp "$TMPDIR/arkui-electron-out-XXXXXX")"
   ARKUI_TEST="$label" \
   ARKUI_PAGE_URL="http://127.0.0.1:$port/test/$(page_of "$page").html$query" \
   ARKUI_OFFSCREEN="${ARKUI_OFFSCREEN:-1}" \
@@ -211,7 +217,7 @@ case "${1:-layout}" in
   all)
     rc=0
     # 全矩阵：每个用例都是独立 Electron 进程
-    for t in index rich layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo mediademo smalldemo stepdemo imagedemo scrolldemo animatordemo listitemgroup refreshdemo datepickerdemo timepickerdemo waterflowdemo calendarpickerdemo textpickerdemo griddemo texttimedemo alphabetindexerdemo sidebardemo splitdemo paneldemo gridrowdemo richvideodemo batchverify perfdemo perfbig attrheavy stress1k windowdemo pickerdemo abilitydesktop sysapi batchbehavior batchfunc funcbehavior cjk notesdemo measure lazy provide v2 observe ability router async; do
+    for t in index rich layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo mediademo smalldemo stepdemo imagedemo scrolldemo animatordemo listitemgroup refreshdemo datepickerdemo timepickerdemo waterflowdemo calendarpickerdemo textpickerdemo griddemo texttimedemo alphabetindexerdemo sidebardemo splitdemo paneldemo gridrowdemo richvideodemo batchverify perfdemo perfbig attrheavy stress1k windowdemo pickerdemo abilitydesktop sysapi batchbehavior batchfunc funcbehavior cjk cjkdemo notesdemo measure lazy provide v2 observe ability router async; do
       run_one "$t" || rc=1
       echo
     done
@@ -231,6 +237,6 @@ case "${1:-layout}" in
     run_one netfile "?phase=2" netfile-2 || exit 1
     echo
     verify_disk ;;
-  layout|rich|index|leak|ability|router|widgets|tabgrid|swiper|navdemo|reldemo|drawdemo|textmeasure|lazyvh|measarea|measimage|measnotify|promptaction|realfs|animdemo|gesturedemo|transitiondemo|gesturegroupdemo|navbardemo|navtransdemo|shapedemo|inputdemo|showdemo|popdemo|uictxdemo|canvasedemo|xcompdemo|qrdemo|textdemo|mediademo|smalldemo|stepdemo|imagedemo|scrolldemo|animatordemo|listitemgroup|refreshdemo|datepickerdemo|timepickerdemo|waterflowdemo|calendarpickerdemo|textpickerdemo|griddemo|texttimedemo|alphabetindexerdemo|sidebardemo|splitdemo|paneldemo|gridrowdemo|richvideodemo|batchverify|perfdemo|perfbig|attrheavy|stress1k|windowdemo|pickerdemo|abilitydesktop|sysapi|batchbehavior|batchfunc|funcbehavior|cjk|notesdemo|measure|lazy|provide|async|v2|observe) run_one "$1" ;;
-  *) echo "用法: bash electron/run.sh [layout|rich|index|leak|ability|router|widgets|tabgrid|swiper|navdemo|reldemo|drawdemo|textmeasure|lazyvh|measarea|measimage|measnotify|promptaction|realfs|animdemo|gesturedemo|transitiondemo|gesturegroupdemo|navbardemo|navtransdemo|shapedemo|inputdemo|showdemo|popdemo|uictxdemo|canvasedemo|xcompdemo|qrdemo|textdemo|mediademo|smalldemo|stepdemo|imagedemo|scrolldemo|animatordemo|listitemgroup|refreshdemo|datepickerdemo|timepickerdemo|waterflowdemo|calendarpickerdemo|textpickerdemo|griddemo|texttimedemo|alphabetindexerdemo|sidebardemo|splitdemo|paneldemo|gridrowdemo|richvideodemo|batchverify|perfdemo|perfbig|attrheavy|stress1k|windowdemo|pickerdemo|abilitydesktop|sysapi|batchbehavior|batchfunc|funcbehavior|cjk|notesdemo|measure|lazy|provide|async|v2|observe|netfile|all]"; exit 2 ;;
+  layout|rich|index|leak|ability|router|widgets|tabgrid|swiper|navdemo|reldemo|drawdemo|textmeasure|lazyvh|measarea|measimage|measnotify|promptaction|realfs|animdemo|gesturedemo|transitiondemo|gesturegroupdemo|navbardemo|navtransdemo|shapedemo|inputdemo|showdemo|popdemo|uictxdemo|canvasedemo|xcompdemo|qrdemo|textdemo|mediademo|smalldemo|stepdemo|imagedemo|scrolldemo|animatordemo|listitemgroup|refreshdemo|datepickerdemo|timepickerdemo|waterflowdemo|calendarpickerdemo|textpickerdemo|griddemo|texttimedemo|alphabetindexerdemo|sidebardemo|splitdemo|paneldemo|gridrowdemo|richvideodemo|batchverify|perfdemo|perfbig|attrheavy|stress1k|windowdemo|pickerdemo|abilitydesktop|sysapi|batchbehavior|batchfunc|funcbehavior|cjk|cjkdemo|notesdemo|measure|lazy|provide|async|v2|observe) run_one "$1" ;;
+  *) echo "用法: bash electron/run.sh [layout|rich|index|leak|ability|router|widgets|tabgrid|swiper|navdemo|reldemo|drawdemo|textmeasure|lazyvh|measarea|measimage|measnotify|promptaction|realfs|animdemo|gesturedemo|transitiondemo|gesturegroupdemo|navbardemo|navtransdemo|shapedemo|inputdemo|showdemo|popdemo|uictxdemo|canvasedemo|xcompdemo|qrdemo|textdemo|mediademo|smalldemo|stepdemo|imagedemo|scrolldemo|animatordemo|listitemgroup|refreshdemo|datepickerdemo|timepickerdemo|waterflowdemo|calendarpickerdemo|textpickerdemo|griddemo|texttimedemo|alphabetindexerdemo|sidebardemo|splitdemo|paneldemo|gridrowdemo|richvideodemo|batchverify|perfdemo|perfbig|attrheavy|stress1k|windowdemo|pickerdemo|abilitydesktop|sysapi|batchbehavior|batchfunc|funcbehavior|cjk|cjkdemo|notesdemo|measure|lazy|provide|async|v2|observe|netfile|all]"; exit 2 ;;
 esac

@@ -1553,6 +1553,29 @@
       if (raw == null) return null;
       try { return JSON.parse(raw); } catch (e) { return raw; }   // 非 JSON 返回按原文透传
     },
+    /**
+     * 类型化直调（R112 kernel_add 投影；宿主未导出 kernel_add 时回落 JSON 口 add，
+     * 语义一致——见 kernel_abi.h 双轨声明）。
+     * @param {number} a @param {number} b
+     */
+    async add(a, b) {
+      if (!cjkEapi.cjk) { cjkWarn('add'); return 0; }
+      const typed = await cjkEapi.cjk.add(Number(a) || 0, Number(b) || 0);
+      if (typeof typed === 'number') return typed;
+      const r = await this.call('add', { a: Number(a) || 0, b: Number(b) || 0 });
+      return (r && typeof r.sum === 'number') ? r.sum : 0;
+    },
+    /**
+     * 类型化直调 echo（R112 kernel_echo 投影；同 add 的回落纪律）。
+     * @param {string} input
+     */
+    async echo(input) {
+      if (!cjkEapi.cjk) { cjkWarn('echo'); return ''; }
+      const t = await cjkEapi.cjk.echo(String(input == null ? '' : input));
+      if (typeof t === 'string') return t;
+      const r = await this.call('echo', { s: String(input == null ? '' : input) });
+      return (r && typeof r.v === 'string') ? r.v : '';
+    },
     /** 内核视角最近一次错误（c-abi kernel_last_error 投影） */
     async lastError() {
       if (!cjkEapi.cjk) { cjkWarn('lastError'); return ''; }

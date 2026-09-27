@@ -9,13 +9,13 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R111+R112 单内核路线**（契约归位 kernel/shared/protocol/kernel_abi.h；
-  ARKUI_KERNEL_LIB 换 .so 即换内核；typed 直调可选符号 kernel_add/kernel_echo——
-  仓颉+C 两内核同名同签名，addon cjkAdd/cjkEcho 双槽直调口，缺席回落 JSON 万能口；
-  双路线声明：单内核=主路线、混合=R107 槽按需；并行批负载 fib(24)→fib(30) 修重叠
-  竞态；清 /tmp inode 打满假红）。本线已完成：R101-R112。剩余：R108 .ets fixture →
-  R109 打包 → R110 取消（明细表 ROADMAP「R101-R110 预分解」；**trha 划出本线**）；
-  坑 101-105；契约测试 69 / smoke 44 / cjk 双端 35+6 — **PASS**
+- 上次切片：**R108+R113 真实 .ets 产物页消费 @ohos.cjk + 临时区迁移**（CjkDemo.ets
+  四件套——点号 import+cjk.d.ts+triple-slash 挂编译上下文+hvigorw 编译冻结；
+  垫片补 add/echo typed 方法（IPC 双轨回落 JSON）；electron cjkdemo 6 条/浏览器降级
+  4 条；TMPDIR 迁 /data/tmp 防 tmpfs inode 打满）。本线已完成：R101-R108+R111-R113。
+  剩余：R109 打包 → R110 取消（明细表 ROADMAP「R101-R110 预分解」+ R111-R113；
+  **trha 划出本线**）；坑 101-105；契约测试 69 / smoke 44 / cjk 双端 35+6 /
+  cjkdemo 6+4 — **PASS**
 - 更早：**R67**（R66 批量组件验收：37 结构 + 兜底绊网 + 14 真编译语义；绊网
   `__arkui_dom_generatedFilled`——手写注册缺席时骨架静默兜底，坑 98）；**R24 收口**（渲染
   路径决策 3f6e209：previewer 实证点火崩在窗口层、es2abc 无 JS 输出——留在分支 B）；

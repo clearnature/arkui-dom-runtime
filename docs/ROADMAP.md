@@ -2035,6 +2035,8 @@ R108 .ets fixture → R109 打包 → R110 取消。
 | ✅ R107 | 多内核共存 | addon 命名内核槽注册表（旧 6 平面 API=default 槽别名向后兼容；cjkInitK 等 K 变体；rtLib 空串=原生内核免运行时）+ 纯 C 样例内核 `kernel/c-sample/`（rev/len，零依赖，多语言实证） | smoke 双槽互不串扰 10 断言（隔离/单槽关闭/版本容忍）；旧 API 兼容回归（3263169，Mimosa seal sha256:6fbc3834… 0 findings） | L |
 | ✅ R111 | 契约归位 + 单内核路线 | `kernel/c-abi.h` → `kernel/shared/protocol/kernel_abi.h`（git mv，内容延续+双轨声明）；`ARKUI_KERNEL_LIB` 环境变量切内核路径 | 三层回归全绿；换内核=换路径零宿主改动 | S |
 | ✅ R112 | typed 直调双轨 | 可选 `kernel_add(int64,int64)`/`kernel_echo(const char*)`；仓颉+C 两内核同名同签名导出（nm 对称）；addon `cjkAdd/cjkEcho/cjkAddK/cjkEchoK` 直调口（未导出显式抛错指引回落 JSON） | 契约测试 67→69；smoke 39→44（双槽 typed）；electron cjk 35（8b3585a，Mimosa seal sha256:03e7f657… 0 findings） | S-M |
+| ✅ R108 | 真实 .ets fixture 消费 | CjkDemo.ets 四件套（`import cjk from '@ohos.cjk'` + cjk.d.ts 类型 + triple-slash 挂编译上下文；main_pages 登记；hvigorw 编译→fixtures 冻结）；垫片补 `add/echo` typed 方法（IPC 双轨，宿主无 typed 符号回落 JSON） | `bash electron/run.sh cjkdemo`（6 条断言：typed add=42 与 JSON fib 双轨在真产物页各走一遍）；浏览器降级 4 条单跑（72f8e1c，Mimosa seal sha256:c3e02388… 0 findings） | M |
+| ✅ R113 | 临时区迁移 | `/tmp` → `/data/tmp`（`TMPDIR` 导出 + mktemp 硬编码路径改写，双端 run.sh）；/tmp tmpfs inode 打满曾致门禁三步假红 | 门禁全绿后 profile/mktemp 落 /data/tmp | S |
 | R108 | 真实 .ets fixture 消费 | CjkDemo.ets 四件套（`import cjk from '@ohos:cjk'`） | 新用例双端绿（桌面真内核/浏览器降级） | M |
 | R109 | 打包覆盖仓颉运行时 | package-app.mjs 携带内核+4 运行时 .so + LD_LIBRARY_PATH 处理 | 无 SDK 机器 AppImage 冒烟 cjk PASS | M |
 | R110 | 作业取消/超时 | `agent.cancel`（pending 摘除；in-flight 只能丢弃结果——边界如实文档化） | cancel pending/done 两路断言 | S-M |

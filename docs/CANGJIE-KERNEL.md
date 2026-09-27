@@ -214,21 +214,23 @@ kernel_abi.h 是纯 C ABI，任何能导出 C 符号、能编译 .so 的语言�
 
 ## 8. 测试与守门
 
-三层，全部可独立复跑（本机实测数：49 / 18 / 26+6）：
+三层，全部可独立复跑（本机实测数：69 / 44 / 35+6，另有 cjkdemo 6+4）：
 
 | 层 | 命令 | 覆盖 |
 |---|---|---|
-| C 契约测试 | `cd kernel/cangjie/test && gcc kernel_contract_test.c -o kernel_contract_test -ldl && LD_LIBRARY_PATH=<SDK运行时库目录> ./kernel_contract_test` | 生命周期/全部方法语义/错误路径/re-init 隔离/C 宿主自驱动 drain |
-| NAPI 冒烟 | `cd bridge/napi && CANGJIE_HOME_TEST=<运行时库目录> KERNEL_LIB_TEST=<内核.so> LD_LIBRARY_PATH=$CANGJIE_HOME_TEST node smoke.cjs` | addon 透传 + 后置驱动自动推进 |
+| C 契约测试 | `cd kernel/cangjie/test && gcc kernel_contract_test.c -o kernel_contract_test -ldl && LD_LIBRARY_PATH=<SDK运行时库目录> ./kernel_contract_test` | 生命周期/全部方法语义/错误路径/re-init 隔离/C 宿主自驱动 drain/typed 直调 |
+| NAPI 冒烟 | `cd bridge/napi && CANGJIE_HOME_TEST=<SDK运行时库目录> KERNEL_LIB_TEST=<仓颉内核.so> KERNEL_C_LIB_TEST=<kernel/c-sample/libkernel_c.so> LD_LIBRARY_PATH=$CANGJIE_HOME_TEST node smoke.cjs` | addon 透传 + 后置驱动 + 双槽隔离 + typed 直调 |
 | 端到端 | `bash electron/run.sh cjk`（桌面真内核）；`bash run.sh cjk`（浏览器降级面） | 渲染进程直达内核的完整生命周期 |
+| 产物页（R108） | `bash electron/run.sh cjkdemo`（桌面，6 条：typed add 与 JSON fib 双轨在官方 .ets 产物页各走一遍）；`bash run.sh cjkdemo`（浏览器降级，4 条单跑） | 真实 ArkTS 页面消费 `@ohos.cjk`（fixtures/pages/CjkDemo.ts，hvigorw 编译冻结） |
 
 - `<SDK运行时库目录>` = `/data/work/compiler/cangjie/Nightly/cangjie-nightly-current/runtime/lib/linux_x86_64_cjnative`。
-- **双端分流惯例**：cjk 两端断言数不同（桌面 26 / 浏览器 6），**不进浏览器 all 矩阵**、
-  ROADMAP 只写一处 Electron 声明——计数守门（`tools/assert-counts.mjs`）按端核对且
-  `electron/` 前缀可选，双声明会假红（windowdemo/pickerdemo 先例）。
-- 声明数沿革写法：`26 条断言：R98 时 15、R99 起 21、R100 起 26`。
+- **双端分流惯例**：cjk/cjkdemo 两端断言数不同（cjk 桌面 35 / 浏览器 6；cjkdemo 6 / 4），
+  **不进浏览器 all 矩阵**、ROADMAP 只写一处 Electron 声明——计数守门
+  （`tools/assert-counts.mjs`）按端核对且 `electron/` 前缀可选，双声明会假红
+  （windowdemo/pickerdemo 先例）。
+- 声明数沿革写法：`35 条断言：R98 时 15、R99 起 21、R100 起 26、R105 起 30、R106 起 35`。
 
-## 9. 坑速查（细节权威：`docs/DEVELOPING.md` 坑 101-104）
+## 9. 坑速查（细节权威：`docs/DEVELOPING.md` 坑 101-105）
 
 | 坑 | 症状 | 修法 |
 |---|---|---|
@@ -236,6 +238,7 @@ kernel_abi.h 是纯 C ABI，任何能导出 C 符号、能编译 .so 的语言�
 | 102 | 包级 `let gMap = HashMap()` 全局槽是垃圾，首用 SIGSEGV（栈顶 std/collection） | 容器全局量 `Option<容器>` 字面默认 + 首用时惰性构造（`agentsOf()` 模式）；`ArrayList.get(i)` 返回 `Option<T>` |
 | 103 | Semaphore/Monitor 宿主线程调用栈腐蚀；`spawn{}` 从 @C 帧内 SIGSEGV | 跨线程同步只用 Mutex；cjthread 拉起一律宿主 RunCJTask；等待逻辑禁自旋 |
 | 104 | RunCJTask 句柄非空但任务不跑；sleep 永不醒 | cjthread 只在 RunUIScheduler 泵窗口执行——有界 drainer + 宿主逐调用后置驱动（addon `drive()`） |
+| 105 | 状态机新增中间态（claimed/in-flight）后，按旧二值语义写的读取方把 in-flight 误报 done+零值，异步轮询提前收敛 | 新增中间态须审计全部读取方，每个分支显式认领状态值（`state==1` 才 done，不写 else 兜底）；测试匹配全量状态字面量而非排除法 |
 
 ## 10. 版本与部署约束
 

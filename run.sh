@@ -11,6 +11,11 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$HERE"
 
+# R113：临时区 /tmp → /data/tmp（/tmp tmpfs inode 100% 打满曾致门禁三步假红；
+# Chrome profile 海量小文件是元凶）。mktemp 与探针目录全部尊重 TMPDIR。
+mkdir -p /data/tmp
+export TMPDIR=/data/tmp
+
 NODE=/data/training/cli/commandline-tools-linux-x64-26.0.0.821/command-line-tools/tool/node/bin/node
 CHROME=/opt/google/chrome/chrome
 CACHE="$HERE/harmony-proj/entry/build/default/cache/default/default@CompileArkTS/esmodule/debug/entry/src/main/ets"
@@ -61,7 +66,7 @@ except OSError:
 run_one() {
   local name="$1" src="$2" out="$3" page="$4" extra="${5:-}" query="${6:-}" prof="${7:-}" fixed_port="${8:-}"
   local logf server_pid port result dom profdir
-  profdir="${prof:-$(mktemp -d /tmp/arkui-chrome-XXXX)}"
+  profdir="${prof:-$(mktemp -d "$TMPDIR/arkui-chrome-XXXX")}"
 
   echo "════════════ $name ════════════"
   if [ -z "$src" ] || [ ! -f "$src" ]; then
@@ -577,6 +582,11 @@ case "${1:-index}" in
     # R98：@ohos:cjk 进程内仓颉内核（浏览器端走探测式降级：无主进程桥 → isAvailable=false）
     run_one cjk "$(src_of entryability/EntryAbility.ts)" build/cjk-module.js test/cjk.html \
       "--cjs --register EntryAbility" ;;
+  cjkdemo)
+    # R108：真实 .ets 产物消费 @ohos.cjk（浏览器降级面；断言数与 Electron 分流，
+    # 不进浏览器 all 矩阵——windowdemo/pickerdemo/cjk 先例，只写 Electron 声明）
+    run_one cjkdemo "$(src_of pages/CjkDemo.ts)" build/cjkdemo-module.js test/cjkdemo.html \
+      "--cjs --register CjkDemo" ;;
   notesdemo)
     # R90：NotesDemo 千节点端到端（两模块：Detail 预提取 + Home 主注册）
     "$NODE" tools/extract.mjs "$(src_of pages/NotesDetail.ts)" build/notesdetail-module.js --cjs --register NotesDetail >/dev/null || exit 1

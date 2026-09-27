@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R108：CjkDemo——真实 ArkTS 页面消费 @ohos.cjk</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 380px; border: 1px solid #ccc; padding: 4px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; font-size: 12px; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R108：编译产物页面 CjkDemo 消费 @ohos.cjk（桌面真内核 / 浏览器降级）</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/cjkdemo-module.js"></script>
+  <script>
+  window.addEventListener('unhandledrejection', (e) => {
+    document.getElementById('result').textContent = 'UNHANDLED ' + (e.reason && e.reason.message || e.reason);
+  });
+  (async function () {
+    const lines = [];
+    let pass = 0, fail = 0;
+    const check = (c, m) => { if (c) { pass++; lines.push('PASS ' + m); } else { fail++; lines.push('FAIL ' + m); } };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const isElectron = !!(globalThis.electronAPI && globalThis.electronAPI.cjk);
+
+    // 挂载官方编译产物页面（ViewPU 类 + registerNamedRoute）
+    __arkui_dom_requireModule('CjkDemo');
+    __arkui_dom_loadRoute('pages/CjkDemo', root);
+    // 轮询等待 runKernel 完成（isAvailable→add→call→echo 是 IPC 串行链，
+    // 固定 tick 在热机（all 矩阵）下会读到中间态——首轮实测 kernel-live 已过但
+    // sum/fib/echo 还是初值）。就绪判据 = sum-out 出现非 0 终值或降级态。
+    const deadline = Date.now() + 5000;
+    let ready = false;
+    while (!ready && Date.now() < deadline) {
+      await tick(50);
+      const km = root.querySelector('#kernel-mode');
+      const so = root.querySelector('#sum-out');
+      if (!km) continue;
+      if (km.textContent === 'degraded') { ready = true; break; }
+      if (km.textContent === 'kernel-live' && so && so.textContent === 'sum=42') ready = true;
+    }
+
+    const txt = () => root.textContent || '';
+    const q = (id) => root.querySelector('#' + id);
+
+    // ① 页面已渲染（官方产物走我们的 ViewPU 管线）
+    check(!!q('kernel-mode'), 'cjkdemo 页面已渲染（kernel-mode 节点存在）');
+
+    if (isElectron) {
+      // ── 桌面：真内核经 @ohos.cjk 垫片供数 ──
+      check(q('kernel-mode') && q('kernel-mode').textContent === 'kernel-live',
+        'cjkdemo kernel-mode=kernel-live（真内核）');
+      check(q('sum-out') && q('sum-out').textContent === 'sum=42',
+        'cjkdemo sum=42（typed add 20,22 直调）');
+      check(q('fib-out') && q('fib-out').textContent === 'fib=144',
+        'cjkdemo fib=144（JSON 万能口 fib(12)）');
+      check(q('echo-out') && q('echo-out').textContent === 'echo=arkts-to-cangjie',
+        'cjkdemo echo 往返（UTF-8 透传）');
+    } else {
+      // ── 浏览器：探测式降级，页面如实标注 ──
+      check(q('kernel-mode') && q('kernel-mode').textContent === 'degraded',
+        'cjkdemo kernel-mode=degraded（浏览器降级）');
+      check(q('sum-out') && q('sum-out').textContent === 'sum=0',
+        'cjkdemo 降级态 sum=0（未供数不伪造）');
+    }
+
+    // ② 页面 @State 驱动的 DOM 更新（ViewPU 响应式管线证据）
+    check(q('sum-out') && /sum=\d+/.test(q('sum-out').textContent),
+      'cjkdemo @State → DOM 更新管线（ObservedPropertySimplePU）');
+
+    lines.push('CJKDEMOMODE ' + (isElectron ? 'electron-kernel' : 'browser-degraded'));
+
+    if (fail === 0) lines.unshift(`=== ALL PASS (${pass}) ===`);
+    else lines.unshift(`=== ${fail} FAILURES / ${pass} PASS ===`);
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = fail === 0 ? 'pass' : 'fail';
+    document.title = fail === 0 ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>
