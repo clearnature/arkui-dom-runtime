@@ -9,7 +9,17 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R127 hs/GHC 内核打包态（内核线收官：五语言全部可分发）**——data/kernel/hs/
+- 上次切片：**R128 $r 真实资源解析**——**产物形态实测**：ets-loader 把 $r('app.*') **预展开**
+  成带 app-id 的 Resource 字面量（ids_map：10001=color/10002=float/10003=string/20000=media）；
+  **生成器** gen-app-resources.mjs（源=harmony-proj 资源+ids_map → generated-app-resources.js
+  第 42 分片，--check 防漂移）；resolveResource 扩展（string/color/float 裸数字/media 路径串）
+  ——Text/fontSize/fontColor/Image 全走此路；**双端零 IPC**（electron 也走 http 同源，fetch
+  一态两用）；resourceManager 真实现（getString/getColor 0xAARRGGBB/getMedia Uint8Array+
+  媒体字节预热 __arkui_res_ready）；d.ts 勘误：无 getNumberByNameSync、getMediaByNameSync
+  返回 Uint8Array；未知资源兜底=名字进名字出+警告。resourcedemo 9 条双端全绿；index 旧兜底
+  断言更新（50fp=50px）；门禁 7 步（ca7c16c，Mimosa 0 findings seal sha256:7f5b0992…）。
+  留白：sys.* 资源表烘制（resources.txt id→值，R123 反查法可批量生成）；打包态资源目录拷贝。
+  更早：**R127 hs/GHC 内核打包态（内核线收官：五语言全部可分发）**——data/kernel/hs/
   平铺 GHC 闭包（NEEDED 传递闭包 10 包+thr RTS+libffi，ldd 递归收集）+ **逐个 patchelf
   $ORIGIN**（DT_RUNPATH 不继承；ldconfig 不认识 GHC→packager 内置零依赖静态证）；
   ARKUI_KERNEL_KIND=hs 切内核（cjkEnsure 双分支）；**坑 110：GHC 必须载 _thr- 变体 RTS**
