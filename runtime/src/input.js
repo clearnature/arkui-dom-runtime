@@ -20,6 +20,14 @@
   //   原生控件没有对应属性的（unselectedColor/mark/shape/radioStyle/switchPointColor/…）
   //   照实记 data-*，不静默。select/checked 只改状态【不派发】change —— DOM 语义里
   //   change 是用户交互事件，编程改态是否触发 onChange .d.ts 没写死，取"不派发"并已写进 docs。
+  //
+  // 【主题资源存档（R124 反查 resources.txt；原生控件基座不适用视觉尺寸，值存档备查）】
+  //   checkbox_pattern：default_width/height 24vp、hotzone_padding 12vp
+  //   radio_pattern：default_width/height 24vp、hotzone_padding 12/12vp
+  //   toggle_pattern：button_height 28vp、button_radius 14vp（corner_radius_small_button）、
+  //     text 12fp 字重 4、checked #007dff（emphasize）、unchecked #33ffffff（button_normal）、
+  //     text_margin 8vp；dark 块另有 54vp 老花镜版本（btn 27vp 半径）
+  //   slider_pattern：slider_max_length 360vp、tip/marker/bubble 全套（本实现 range 控件自带）
   const ToggleType = { Switch: 'switch', Checkbox: 'checkbox', Button: 'button' };
   const SliderChangeMode = { Begin: 0, Moving: 1, End: 2, Click: 3 };
 

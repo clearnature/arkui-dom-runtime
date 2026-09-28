@@ -75,6 +75,9 @@
   //   onChange —— 切换完成派发 (prevIndex, index)。ItemState = { Normal, Skip, Waiting }。
   //
   // DOM 映射：Stepper = 竖排容器（页区 + 内置导航条 prev/pages/next）；StepperItem 挂进 pages；
+  // 【主题资源存档（R124 反查 resources.txt）】stepper_pattern：text 16fp（button1）/
+  //   control_height 48vp / arrow 12×24vp / progress_diameter 24vp / 圆角 8vp——本实现导航条
+  //   是行为级 DOM 映射（事件时序照 stepper_pattern.cpp），未复刻这些视觉尺寸，值在此存档。
   // 汇入 label/status 后接通导航条点击 → 按 .d.ts 原文派发事件（Skip 页点 next → onSkip；
   // 最后一页 Normal 点 next → onFinish；其余 → onNext；prev → onPrevious），完成切换再派发
   // onChange(prev, index)。StepperItem.status → data-status（Skip 语义）。

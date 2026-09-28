@@ -15,6 +15,15 @@
   //     数值是本实现的枚举化，产物里只引用名字）
   //   Divider 默认：vertical false、color '#33182431'、strokeWidth 1px、lineCap LineCapStyle.Butt
   //   Marquee 默认：step 6、loop -1、fromStart true；MarqueeOptions 的 start 是必填（编译期实测）
+  //
+  // 【主题资源存档（R124 反查 resources.txt；消费点证据不足者不应用只存档）】
+  //   Badge：ohos_id_color_badge_red #fa2a2d（系统徽章红；JSDoc 默认= Color.Red，d.ts 枚举
+  //     无十六进制值 → 渲染仍走 CSS 'red'，资源值在此存档）、little_badge_size 6vp（点状徽章，
+  //     本实现无点状模式）、border_width 1vp=JSDoc 同
+  //   Marquee：ohos_id_marquee_font_size 37.5px / ohos_id_marquee_text_color #e5000000 ——px
+  //     单位疑似 JS 标签时代遗留，声明式侧消费点未定位，不应用
+  //   Counter：title_font_size 15vp / title_font_color #191919 / title_background_color #ffffff
+  //     —— 本实现无标题元素（DOM 化选择，见 Counter 注释）
   const BadgePosition = { RightTop: 0, Right: 1, Left: 2 };
 
   // Badge：容器（子内容照常挂进来）+ 绝对定位的角标。位置映射是 DOM 化选择（.d.ts 只有名字没数字）
@@ -33,7 +42,9 @@
     mark.style.alignItems = 'center';
     mark.style.justifyContent = 'center';
     mark.style.borderRadius = '8px';
-    mark.style.padding = '0 4px';
+    // 数值徽章水平内边距 6vp：系统资源 numerical_badge_padding（resources.txt:125834809，
+    // R124 反查；JSDoc 对 padding 无声明）
+    mark.style.padding = '0 6px';
     mark.style.background = colorOf(style.badgeColor !== undefined ? style.badgeColor : 'red');
     mark.style.color = colorOf(style.color !== undefined ? style.color : '#ffffff');
     mark.style.fontSize = `${style.fontSize !== undefined ? dimOf(style.fontSize, 10) : 10}px`;

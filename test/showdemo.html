@@ -63,6 +63,8 @@
         check(markOf('bd1').style.color === 'white' || markOf('bd1').style.color === 'rgb(255, 255, 255)',
           `color(Color.White) → 白字（实际 '${markOf('bd1').style.color}'）`);
         check(markOf('bd1').style.fontSize === '10px', `fontSize 10 → 10px（实际 ${markOf('bd1').style.fontSize}）`);
+        check(markOf('bd1').style.padding === '0px 6px',
+          `数值徽章 padding 0 6vp（numerical_badge_padding，R124 resources.txt:125834809；实际 '${markOf('bd1').style.padding}'）`);
         check(bd1.dataset ? el('bd1').dataset.badgePosition === 'RightTop' : false,
           `position=RightTop（实际 '${el('bd1').dataset.badgePosition}'）`);
         check(!!el('bd1').querySelector('#badge1-body'), 'Badge 是容器：子内容真的挂进来了');

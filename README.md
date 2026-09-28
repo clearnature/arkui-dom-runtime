@@ -804,8 +804,8 @@ change 是用户交互事件，`.d.ts` 没写死编程改态是否触发，取"�
 
 ```
 $ bash run.sh showdemo
-=== ALL PASS ===                    （28 条断言，双端同数；R40 +时长公式，R44 +step=0 回归）
-PASS Badge：count→'9'／badgeColor 默认 Color.Red→'red'／color 白字／fontSize 10→10px／
+=== ALL PASS ===                    （29 条断言，双端同数；R40 +时长公式，R44 +step=0 回归，R124 +badge padding 6vp）
+PASS Badge：count→'9'／badgeColor 默认 Color.Red→'red'／color 白字／fontSize 10→10px／padding 0 6vp／
      position RightTop、Right／子内容真的挂进容器／style 定制（#1234ff→rgb(18,52,255)）
 PASS Counter：内置 +/− 元素存在／点 + → onInc、点 − → onDec（事件归属真实）
 PASS Divider：横向 strokeWidth(3)→高 3px／color '#888888'／纵向 vertical(true)→宽 5px

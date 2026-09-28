@@ -35,8 +35,15 @@
   //   Free（默认 = 0）：「In the non-scrolling state, the height of the title bar is the same as in
   //          Full mode」—— 本实现不做滚动收缩，所以 Free 恒等于 Full。
   // TitleHeight 的数值 .d.ts 没给；按它自己的 JSDoc 措辞（"only main title" / "main title and
-  // subtitle are both available"）对应到 Full 那两个已文档化的数字（112 / 138）。**这是推断**，
-  // 已写进 docs 的已知限制。
+  // subtitle are both available"）对应到 Full 那两个已文档化的数字（112 / 138）。
+  // 【R124 升原文】SDK 系统资源 resources.txt 证实且揭开 R42 的"137 之谜"：
+  //   title_default_height 56vp（125831115）/ single_line 56（125835822）→ Mini 与
+  //   NavDestination 紧凑栏；
+  //   title_emphasize_height 112（125831116）/ full_single_line 112（125835824）→ 仅主标题；
+  //   **title_emphasize_twolines_height 137（125831117）**——R42 在 navigation_declaration.h
+  //   见到的 137 真存在于资源（emphasize 双行键），但 Navigation 的 Full 双行走
+  //   full_double_line_titlebar_height **138**（125835825）——两族键并存，当年"未使用常量
+  //   险些误改"的判断正确。JSDoc 138 与资源 138 相互印证。
   const NAV_TITLE_H = { main: 112, mainSub: 138, mini: 56 };
   /** @type {Record<number, number>} */
   const TITLE_HEIGHT_VALUE = { 0: NAV_TITLE_H.main, 1: NAV_TITLE_H.mainSub };
@@ -634,7 +641,8 @@
     }
   }
 
-  // NavDestination 的标题栏 / 工具栏（同一时机同步）。它没有 titleMode，高度恒为紧凑 56vp（推断）。
+  // NavDestination 的标题栏 / 工具栏（同一时机同步）。它没有 titleMode，高度恒为紧凑 56vp
+  // （R124 升原文：title_default_height 56vp，resources.txt:125831115）。
   /** @param {HTMLElement} node */
   function syncOneDest(node) {
     const d = node.__navDest;
@@ -1017,8 +1025,9 @@
       node.__navDestCbs = {};
       node.__arkuiNavNew = true;      // navBuildDest 靠这个标记认领"本次新建的目的地"
       // NavDestination 自己的标题栏 / 工具栏（R12 收口）。它没有 titleMode（.d.ts 里不存在），
-      // 标题栏恒为紧凑高度 56vp（= Mini 高度）。**这一条是推断** —— .d.ts 没写 NavDestination
-      // 标题栏的高度，取 Mini 的依据是"目标页用紧凑标题栏"这一可见事实，已写进 docs 已知限制。
+      // 标题栏恒为紧凑高度 56vp（= Mini 高度）。【R124 升原文】resources.txt
+      // title_default_height=56vp（125831115）/ single_line_titlebar_height=56（125835822）
+      // 双键印证 —— 取紧凑高度从推断变为系统资源确证。
       // @type 档位：barEl/toolbarEl null↔HTMLElement 摆动 → 整袋 any
       node.__navDest = /** @type {any} */ ({
         titleSpec: null, menus: null, toolbar: null,

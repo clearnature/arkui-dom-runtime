@@ -2614,8 +2614,15 @@
   //   Free（默认 = 0）：「In the non-scrolling state, the height of the title bar is the same as in
   //          Full mode」—— 本实现不做滚动收缩，所以 Free 恒等于 Full。
   // TitleHeight 的数值 .d.ts 没给；按它自己的 JSDoc 措辞（"only main title" / "main title and
-  // subtitle are both available"）对应到 Full 那两个已文档化的数字（112 / 138）。**这是推断**，
-  // 已写进 docs 的已知限制。
+  // subtitle are both available"）对应到 Full 那两个已文档化的数字（112 / 138）。
+  // 【R124 升原文】SDK 系统资源 resources.txt 证实且揭开 R42 的"137 之谜"：
+  //   title_default_height 56vp（125831115）/ single_line 56（125835822）→ Mini 与
+  //   NavDestination 紧凑栏；
+  //   title_emphasize_height 112（125831116）/ full_single_line 112（125835824）→ 仅主标题；
+  //   **title_emphasize_twolines_height 137（125831117）**——R42 在 navigation_declaration.h
+  //   见到的 137 真存在于资源（emphasize 双行键），但 Navigation 的 Full 双行走
+  //   full_double_line_titlebar_height **138**（125835825）——两族键并存，当年"未使用常量
+  //   险些误改"的判断正确。JSDoc 138 与资源 138 相互印证。
   const NAV_TITLE_H = { main: 112, mainSub: 138, mini: 56 };
   /** @type {Record<number, number>} */
   const TITLE_HEIGHT_VALUE = { 0: NAV_TITLE_H.main, 1: NAV_TITLE_H.mainSub };
@@ -3213,7 +3220,8 @@
     }
   }
 
-  // NavDestination 的标题栏 / 工具栏（同一时机同步）。它没有 titleMode，高度恒为紧凑 56vp（推断）。
+  // NavDestination 的标题栏 / 工具栏（同一时机同步）。它没有 titleMode，高度恒为紧凑 56vp
+  // （R124 升原文：title_default_height 56vp，resources.txt:125831115）。
   /** @param {HTMLElement} node */
   function syncOneDest(node) {
     const d = node.__navDest;
@@ -3596,8 +3604,9 @@
       node.__navDestCbs = {};
       node.__arkuiNavNew = true;      // navBuildDest 靠这个标记认领"本次新建的目的地"
       // NavDestination 自己的标题栏 / 工具栏（R12 收口）。它没有 titleMode（.d.ts 里不存在），
-      // 标题栏恒为紧凑高度 56vp（= Mini 高度）。**这一条是推断** —— .d.ts 没写 NavDestination
-      // 标题栏的高度，取 Mini 的依据是"目标页用紧凑标题栏"这一可见事实，已写进 docs 已知限制。
+      // 标题栏恒为紧凑高度 56vp（= Mini 高度）。【R124 升原文】resources.txt
+      // title_default_height=56vp（125831115）/ single_line_titlebar_height=56（125835822）
+      // 双键印证 —— 取紧凑高度从推断变为系统资源确证。
       // @type 档位：barEl/toolbarEl null↔HTMLElement 摆动 → 整袋 any
       node.__navDest = /** @type {any} */ ({
         titleSpec: null, menus: null, toolbar: null,
@@ -5642,6 +5651,14 @@
   //   原生控件没有对应属性的（unselectedColor/mark/shape/radioStyle/switchPointColor/…）
   //   照实记 data-*，不静默。select/checked 只改状态【不派发】change —— DOM 语义里
   //   change 是用户交互事件，编程改态是否触发 onChange .d.ts 没写死，取"不派发"并已写进 docs。
+  //
+  // 【主题资源存档（R124 反查 resources.txt；原生控件基座不适用视觉尺寸，值存档备查）】
+  //   checkbox_pattern：default_width/height 24vp、hotzone_padding 12vp
+  //   radio_pattern：default_width/height 24vp、hotzone_padding 12/12vp
+  //   toggle_pattern：button_height 28vp、button_radius 14vp（corner_radius_small_button）、
+  //     text 12fp 字重 4、checked #007dff（emphasize）、unchecked #33ffffff（button_normal）、
+  //     text_margin 8vp；dark 块另有 54vp 老花镜版本（btn 27vp 半径）
+  //   slider_pattern：slider_max_length 360vp、tip/marker/bubble 全套（本实现 range 控件自带）
   const ToggleType = { Switch: 'switch', Checkbox: 'checkbox', Button: 'button' };
   const SliderChangeMode = { Begin: 0, Moving: 1, End: 2, Click: 3 };
 
@@ -5804,6 +5821,15 @@
   //     数值是本实现的枚举化，产物里只引用名字）
   //   Divider 默认：vertical false、color '#33182431'、strokeWidth 1px、lineCap LineCapStyle.Butt
   //   Marquee 默认：step 6、loop -1、fromStart true；MarqueeOptions 的 start 是必填（编译期实测）
+  //
+  // 【主题资源存档（R124 反查 resources.txt；消费点证据不足者不应用只存档）】
+  //   Badge：ohos_id_color_badge_red #fa2a2d（系统徽章红；JSDoc 默认= Color.Red，d.ts 枚举
+  //     无十六进制值 → 渲染仍走 CSS 'red'，资源值在此存档）、little_badge_size 6vp（点状徽章，
+  //     本实现无点状模式）、border_width 1vp=JSDoc 同
+  //   Marquee：ohos_id_marquee_font_size 37.5px / ohos_id_marquee_text_color #e5000000 ——px
+  //     单位疑似 JS 标签时代遗留，声明式侧消费点未定位，不应用
+  //   Counter：title_font_size 15vp / title_font_color #191919 / title_background_color #ffffff
+  //     —— 本实现无标题元素（DOM 化选择，见 Counter 注释）
   const BadgePosition = { RightTop: 0, Right: 1, Left: 2 };
 
   // Badge：容器（子内容照常挂进来）+ 绝对定位的角标。位置映射是 DOM 化选择（.d.ts 只有名字没数字）
@@ -5822,7 +5848,9 @@
     mark.style.alignItems = 'center';
     mark.style.justifyContent = 'center';
     mark.style.borderRadius = '8px';
-    mark.style.padding = '0 4px';
+    // 数值徽章水平内边距 6vp：系统资源 numerical_badge_padding（resources.txt:125834809，
+    // R124 反查；JSDoc 对 padding 无声明）
+    mark.style.padding = '0 6px';
     mark.style.background = colorOf(style.badgeColor !== undefined ? style.badgeColor : 'red');
     mark.style.color = colorOf(style.color !== undefined ? style.color : '#ffffff');
     mark.style.fontSize = `${style.fontSize !== undefined ? dimOf(style.fontSize, 10) : 10}px`;
@@ -9177,6 +9205,9 @@
   //   onChange —— 切换完成派发 (prevIndex, index)。ItemState = { Normal, Skip, Waiting }。
   //
   // DOM 映射：Stepper = 竖排容器（页区 + 内置导航条 prev/pages/next）；StepperItem 挂进 pages；
+  // 【主题资源存档（R124 反查 resources.txt）】stepper_pattern：text 16fp（button1）/
+  //   control_height 48vp / arrow 12×24vp / progress_diameter 24vp / 圆角 8vp——本实现导航条
+  //   是行为级 DOM 映射（事件时序照 stepper_pattern.cpp），未复刻这些视觉尺寸，值在此存档。
   // 汇入 label/status 后接通导航条点击 → 按 .d.ts 原文派发事件（Skip 页点 next → onSkip；
   // 最后一页 Normal 点 next → onFinish；其余 → onNext；prev → onPrevious），完成切换再派发
   // onChange(prev, index)。StepperItem.status → data-status（Skip 语义）。
