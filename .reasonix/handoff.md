@@ -9,7 +9,16 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R125 组件内置手势**——新分片 builtin.js（第 41 个）：Swiper 拖拽翻页
+- 上次切片：**R126 真机确证扫尾（挂账两枚清零）**——**overDrag 回弹**：欠阻尼弹簧
+  （scrollable.cpp:27-29 mass1/k228/c30 → 恒 UNDER_DAMPED；解析解逐式照抄
+  spring_model.cpp:150-174）→ builtinSpringRebound（定时器解算/0.5px 精度收口）；
+  Swiper/Tabs 回弹换弹簧（commit 仍 duration 契约，**两路互斥**——并存会被 duration 兜底
+  提前收口）、Scroll/List 惯性到边→越界冲激回弹（impulse start=end→c2=v0/w，内容 translate
+  呈现越界）；**SLIDE 结案**：JSDoc 原文=asymmetric(appear:move(START), disappear:move(END))
+  LTR 左入右出——NG 效果链确无此枚举、纯 d.ts 层糖（R43/R48 悬案定谳）；**勘错**：
+  TransitionEdge 原名 TOP/BOTTOM/START/END（此前 Left/Right 名字错数值对，幸无引用）。
+  transitiondemo 58→60、builtindemo 26→29 双端全绿；门禁 7 步（d404087，Mimosa 0 findings
+  seal sha256:1d1e3a77…）。**真机确证候选清单至此清零**。更早：**R125 组件内置手势**——新分片 builtin.js（第 41 个）：Swiper 拖拽翻页
   （拖拽舞台 absolute+transform 跟手、邻页前方；半页阈值 swiperProportion_=2.0/速度
   780vp/s/边界摩擦 swiper_helper.cpp:566-578 原文/400ms——参数逐个对真机源码）+ Tabs
   内容区滑动（scrollable 默认 true）+ List/Scroll 拖拽滚动+惯性（**惯性短定时器不用
