@@ -9,7 +9,16 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R126 真机确证扫尾（挂账两枚清零）**——**overDrag 回弹**：欠阻尼弹簧
+- 上次切片：**R127 hs/GHC 内核打包态（内核线收官：五语言全部可分发）**——data/kernel/hs/
+  平铺 GHC 闭包（NEEDED 传递闭包 10 包+thr RTS+libffi，ldd 递归收集）+ **逐个 patchelf
+  $ORIGIN**（DT_RUNPATH 不继承；ldconfig 不认识 GHC→packager 内置零依赖静态证）；
+  ARKUI_KERNEL_KIND=hs 切内核（cjkEnsure 双分支）；**坑 110：GHC 必须载 _thr- 变体 RTS**
+  （非线程下 setNumCapabilities 静默死，dev 态 readdir 碰对/打包即露馅；addon 扫描 thr 优先）；
+  **坑 111：K 变体槽名错位**（cangjie→"default"/hs→"hs"，handler 全走 cjkXxxK(slot)——
+  init 槽与 handler 槽不一致=全调用「内核未初始化」）；hs 内核补 upper+缺参文案对齐仓颉
+  （cjk.html 38 断言双内核共用）；addon 编译配方补录。验收：dev electron 双内核各 38
+  ALL PASS、打包冒烟双份 PASS（hs 零 LD_LIBRARY_PATH）、五内核 smoke 106、门禁 7 步
+  （3e2268a，Mimosa 0 findings seal sha256:77f0048a…）。更早：**R126 真机确证扫尾（挂账两枚清零）**——**overDrag 回弹**：欠阻尼弹簧
   （scrollable.cpp:27-29 mass1/k228/c30 → 恒 UNDER_DAMPED；解析解逐式照抄
   spring_model.cpp:150-174）→ builtinSpringRebound（定时器解算/0.5px 精度收口）；
   Swiper/Tabs 回弹换弹簧（commit 仍 duration 契约，**两路互斥**——并存会被 duration 兜底
