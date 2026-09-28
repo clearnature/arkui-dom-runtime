@@ -91,6 +91,58 @@ if (fs.existsSync(kernelSo) && fs.existsSync(path.join(rtDir, 'libcangjie-runtim
 } else {
   console.log('  ⚠️ 未找到仓颉运行时/内核——cjk 用例在包内将降级（其余不受影响）');
 }
+
+// ── R127：Haskell/GHC 内核分发集 ──
+// data/kernel/hs/ 平铺：libkernel_hs.so + GHC 闭包（内核 NEEDED 传递闭包 + RTS + libffi）。
+// 每个拷入的 .so 都 patchelf --set-rpath $ORIGIN —— GHC 链接时烙的绝对 libdir（dev 级）
+// 在无 GHC 机器上是死路径；glibc 对 dlopen 链按【各对象自身】RUNPATH 解析（DT_RUNPATH 不像
+// DT_RPATH 那样继承），所以必须逐个改。ldconfig 不认识 GHC（本机实测 0 条）——
+// 打包态 ldd 全部落在包内即证零依赖闭包完整。
+function ghcClosure() {
+  // ldd 递归收集 GHC 目录下的依赖（内核 10 包 + ghc-internal 传递）+ RTS + libffi
+  const G = '/usr/local/lib/ghc-9.14.1/lib/x86_64-linux-ghc-9.14.1-inplace';
+  const seen = new Set();
+  const out = [];
+  const walk = (so) => {
+    let text = '';
+    try { text = execSync(`ldd ${JSON.stringify(so)}`, { encoding: 'utf8' }); }
+    catch { return; }
+    for (const m of text.matchAll(/=>\s*(\S+libHS[^\s)]+\.so|\S+libffi\.so\S*)\s*\(/g)) {
+      const p = path.resolve(m[1]);   // ldd 输出可能带 /../（经 RUNPATH 未规范化）——先规范化
+      if (seen.has(p)) continue;
+      seen.add(p);
+      if (p.startsWith(G) || p.includes('libffi.so')) { out.push(p); walk(p); }
+    }
+  };
+  walk(path.join(ROOT, 'kernel/hs/libkernel_hs.so'));
+  // R127：内核恒 -threaded → RTS 必须拷 **thr 变体**（非线程 RTS 会让
+  // kernel_init 的 setNumCapabilities 直接败；addon 扫描同规则 thr 优先）
+  const rts = fs.readdirSync(G).find((f) => f.startsWith('libHSrts-') && f.includes('_thr-') && !f.includes('_debug') && !f.includes('_p-'))
+    || fs.readdirSync(G).find((f) => f.startsWith('libHSrts-') && !f.includes('_debug') && !f.includes('_p-'));
+  if (rts) { const p = path.join(G, rts); if (!seen.has(p)) { seen.add(p); out.push(p); } }
+  return { dir: G, libs: out };
+}
+const hsSo = path.join(ROOT, 'kernel/hs/libkernel_hs.so');
+let hsPacked = false;
+if (fs.existsSync(hsSo)) {
+  const patchelf = process.env.PATCHELF || (process.env.HOME + '/.local/bin/patchelf');
+  if (!fs.existsSync(patchelf)) {
+    console.log('  ⚠️ patchelf 不可用（pip3 install --user --break-system-packages patchelf）——hs 分发集跳过');
+  } else {
+    const hsDir = path.join(S, 'data/kernel/hs');
+    fs.mkdirSync(hsDir, { recursive: true });
+    fs.copyFileSync(hsSo, path.join(hsDir, 'libkernel_hs.so'));
+    const { libs } = ghcClosure();
+    for (const p of libs) fs.copyFileSync(p, path.join(hsDir, path.basename(p)));
+    for (const f of fs.readdirSync(hsDir)) {
+      execSync(`${JSON.stringify(patchelf)} --set-rpath '$ORIGIN' ${JSON.stringify(path.join(hsDir, f))}`);
+    }
+    hsPacked = true;
+    console.log(`  hs 分发集: libkernel_hs.so + ${libs.length} 个 GHC 闭包 .so（RPATH=$ORIGIN）`);
+  }
+} else {
+  console.log('  ⚠️ 未找到 libkernel_hs.so（bash kernel/hs/build.sh）——hs 分发集跳过');
+}
 fs.writeFileSync(path.join(S, 'package.json'), JSON.stringify({
   name: APP_NAME, productName: PRODUCT, version: '0.1.0',
   description: 'ArkTS->DOM runtime desktop', main: 'electron/main.js',
@@ -148,16 +200,46 @@ if (PAGE === 'cjk' && !cjkPacked) {
   console.error('❌ --page cjk 需要 cjk 分发集（CANGJIE_RT_LIB 指向运行时库目录后重跑）');
   process.exit(1);
 }
+// R127：--kernel hs → 打包态整 app 跑 Haskell 内核（main.js ARKUI_KERNEL_KIND）
+const KERNEL = flag('--kernel', 'cangjie');
+if (KERNEL === 'hs') {
+  if (!hsPacked) { console.error('❌ --kernel hs 需要 hs 分发集（先 bash kernel/hs/build.sh）'); process.exit(1); }
+  // 零依赖静态证：staged 内核与其 GHC 闭包的 ldd 解析不得出现包外路径
+  //（ldconfig 不认识 GHC——解析落在包内即证闭包完整；GHC 链接时烙的绝对 libdir 已被 $ORIGIN 覆盖）
+  const staged = path.join(S, 'data/kernel/hs');
+  const bad = [];
+  const walkDeps = (so) => {
+    let text = '';
+    try { text = execSync(`ldd ${JSON.stringify(so)}`, { encoding: 'utf8' }); } catch { return; }
+    for (const m of text.matchAll(/=>\s*(\/\S+)\s*\(/g)) {
+      const p = path.resolve(m[1]);
+      if (p.includes('libHS') || p.includes('libffi.so')) {
+        if (!p.startsWith(staged)) bad.push(`${path.basename(so)} → ${p}`);
+        else walkDeps(p);
+      }
+    }
+  };
+  walkDeps(path.join(staged, 'libkernel_hs.so'));
+  if (bad.length) {
+    console.error(`❌ hs 闭包泄漏包外路径（${bad.length}）：\n  ` + bad.slice(0, 5).join('\n  '));
+    process.exit(1);
+  }
+  console.log(`  hs 零依赖静态证：闭包 ${(() => { let n = 0; const seen = new Set(); const w = (so) => { let t = ''; try { t = execSync(`ldd ${JSON.stringify(so)}`, { encoding: 'utf8' }); } catch { return; } for (const m of t.matchAll(/=>\s*(\/\S+)\s*\(/g)) { const p = m[1]; const p2 = path.resolve(m[1]); if ((p2.includes('libHS') || p2.includes('libffi.so')) && !seen.has(p2)) { seen.add(p2); if (p2.startsWith(staged)) w(p2); } } }; w(path.join(staged, 'libkernel_hs.so')); return seen.size; })()} 个 .so 全部解析于包内`);
+}
 
 const isAppImage = bin.endsWith('.AppImage');
 const runArgs = (isAppImage ? '--appimage-extract-and-run ' : '') + '--no-sandbox --disable-gpu';
 const cwd = isAppImage ? path.dirname(bin) : path.dirname(bin);
 // R109 零依赖冒烟：清空仓颉环境（CANGJIE_RT_LIB/ARKUI_KERNEL_LIB/LD_LIBRARY_PATH），
 // 模拟无 SDK 机器——cjk 用例必须靠包内 data/kernel/（内核 RPATH=$ORIGIN）通过
+// R127：--kernel hs 同证 GHC 侧（LD_LIBRARY_PATH 清空 + 不注入 GHC_LIB_DIR——
+// main.js 只剩包内 data/kernel/hs 可用）
 const smokeEnv = { ...process.env, ARKUI_TEST: PAGE, ARKUI_OFFSCREEN: '1' };
 delete smokeEnv.CANGJIE_RT_LIB;
 delete smokeEnv.ARKUI_KERNEL_LIB;
 delete smokeEnv.LD_LIBRARY_PATH;
+delete smokeEnv.GHC_LIB_DIR;
+if (KERNEL === 'hs') smokeEnv.ARKUI_KERNEL_KIND = 'hs';
 let result = '';
 try {
   result = execSync(`cd ${cwd} && ${JSON.stringify(bin)} ${runArgs} .`, {

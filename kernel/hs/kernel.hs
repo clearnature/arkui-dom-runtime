@@ -142,6 +142,10 @@ esc = concatMap f
     f '\SOH' = "\\u0001"      -- 消息分隔符转义（对齐仓颉 jsonEsc——互通前提）
     f c       = [c]
 
+-- R127：ASCII 大写（upper 用；a-z 区间映射，非 ASCII 原样——与仓颉 kernel.cj upper 同语义）
+toUpperU :: Char -> Char
+toUpperU ch = if ch >= 'a' && ch <= 'z' then toEnum (fromEnum ch - 32) else ch
+
 -- 扫 "key":"<value>" 的字符串值（不处理转义，样例级——与仓颉 jsonStr 同边界）。
 -- 必须在 src 中滑动搜索（key 在对象中间，不是开头——首版只匹配头部全 Nothing）。
 jsonStr :: String -> String -> Maybe String
@@ -246,9 +250,15 @@ drainBox q = do
 dispatch :: String -> String -> IO (Maybe String)
 dispatch m p
   | m == "echo"   = return (Just p)
-  | m == "add"    = return $ do
-      a <- jsonInt p "a"; b <- jsonInt p "b"
-      Just $ "{\"sum\":" ++ show (a + b) ++ "}"
+  | m == "add"    = case (jsonInt p "a", jsonInt p "b") of
+      -- 缺参文案与仓颉内核对齐（cjk.html 双内核共用同一断言；R127）
+      (Just a, Just b) -> return $ Just $ "{\"sum\":" ++ show (a + b) ++ "}"
+      _ -> do setErr "add: params need integer fields a and b"; return Nothing
+  -- R127：upper 与仓颉内核契约面对齐（cjk.html ⑥；ASCII 逐字节大写）
+  | m == "upper"  = return $ do
+      t <- jsonStr p "text"
+      Just $ "{\"text\":\"" ++ map toUpperU t ++ "\"}"
+
   | m == "fib"    = return $ case jsonInt p "n" of
       Just n | n >= 0 && n <= 40 -> Just $ "{\"result\":" ++ show (fibN n) ++ "}"
              | otherwise         -> Nothing

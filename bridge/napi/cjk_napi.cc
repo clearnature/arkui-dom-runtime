@@ -126,12 +126,28 @@ bool ensureRuntimeCangjie(const char *rtPath);   // 前向声明（定义在分�
  *   ghc-prim/base NOW 补全内核 NEEDED，最后 hs_init(NULL,NULL)（宿主方案 A）。 */
 bool ensureRuntimeGhc(const char *dir) {
   if (g_ghcLoaded) return true;
-  const char *prefs[] = { "libHSrts-", "libHSghc-internal-", "libHSghc-prim-", "libHSbase-" };
-  char paths[4][1024] = {{0}};
+  // R127 勘误：内核 build.sh 恒 -threaded（kernel_init 会 setNumCapabilities，:164-165 注），
+  // 必须载 **thr 变体** RTS——载了非线程 RTS 时 setNumCapabilities 报
+  // "not supported in the non-threaded RTS" 且内核永不就绪。dev 态此前是 readdir 顺序
+  // 碰对 _thr 在前；打包目录文件少就露馅。故 RTS 优先 _thr-，找不到才回落普通变体。
+  const char *prefs[] = { "libHSghc-internal-", "libHSghc-prim-", "libHSbase-" };
+  char rtsPath[1024] = {0};
+  char rtsFallback[1024] = {0};
+  char paths[3][1024] = {{0}};
   DIR *d = opendir(dir);
   if (!d) { setHostErr("GHC libdir 无法打开"); return false; }
   for (struct dirent *e; (e = readdir(d)) != nullptr;) {
-    for (int i = 0; i < 4; i++) {
+    if (strncmp(e->d_name, "libHSrts-", 9) == 0
+        && strstr(e->d_name, "_debug") == nullptr && strstr(e->d_name, "_p-") == nullptr
+        && strlen(e->d_name) < 1000) {
+      if (strstr(e->d_name, "_thr-") != nullptr) {
+        if (rtsPath[0] == '\0') snprintf(rtsPath, sizeof(rtsPath), "%s/%s", dir, e->d_name);
+      } else if (rtsFallback[0] == '\0') {
+        snprintf(rtsFallback, sizeof(rtsFallback), "%s/%s", dir, e->d_name);
+      }
+      continue;
+    }
+    for (int i = 0; i < 3; i++) {
       if (paths[i][0] == '\0' && strncmp(e->d_name, prefs[i], strlen(prefs[i])) == 0
           && strstr(e->d_name, "_debug") == nullptr && strstr(e->d_name, "_p-") == nullptr
           && strlen(e->d_name) < 1000) {
@@ -140,13 +156,18 @@ bool ensureRuntimeGhc(const char *dir) {
     }
   }
   closedir(d);
-  for (int i = 0; i < 4; i++) {
-    if (paths[i][0] == '\0') {
-      snprintf(g_lastHostErr, sizeof(g_lastHostErr), "GHC libdir 缺 %s*.so", prefs[i]);
-      return false;
+  if (rtsPath[0] == '\0') snprintf(rtsPath, sizeof(rtsPath), "%s", rtsFallback);
+  {
+    char *all[4] = { rtsPath, paths[0], paths[1], paths[2] };
+    const char *desc[4] = { "libHSrts-*(-thr)", "libHSghc-internal-*", "libHSghc-prim-*", "libHSbase-*" };
+    for (int i = 0; i < 4; i++) {
+      if (all[i][0] == '\0') {
+        snprintf(g_lastHostErr, sizeof(g_lastHostErr), "GHC libdir 缺 %s.so", desc[i]);
+        return false;
+      }
     }
   }
-  if (!dlopen(paths[0], RTLD_LAZY | RTLD_GLOBAL)) {   // RTS 必须 LAZY 先行
+  if (!dlopen(rtsPath, RTLD_LAZY | RTLD_GLOBAL)) {   // RTS 必须 LAZY 先行
     const char *e = dlerror();
     setHostErr(e ? e : "dlopen libHSrts failed");
     return false;

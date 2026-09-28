@@ -323,8 +323,21 @@ kernel_abi.h 是纯 C ABI，任何能导出 C 符号、能编译 .so 的语言�
   `libkernel.so` + 53 个仓颉运行时 .so（31MB）平铺进 `data/kernel/`，打包态
   （`app.isPackaged`）main.js 自动定位；冒烟 env 删三仓颉变量验证零依赖
   （`node tools/package-app.mjs --page cjk` 无 SDK 机器形态 35 断言 PASS）。
+- **hs/GHC 内核打包态（R127 实测）**：`node tools/package-app.mjs --page cjk --kernel hs` ——
+  `data/kernel/hs/` 平铺 libkernel_hs.so + GHC 闭包（内核 NEEDED 传递闭包 10 包 +
+  `libHSrts-*_thr-*` + libffi.so.8，ldd 递归收集）；**每个拷入 .so 都 patchelf
+  `--set-rpath $ORIGIN`**（GHC 链接烙的绝对 libdir 是 dev 级死路径；glibc 对 dlopen 链按
+  各对象自身 RUNPATH 解析、DT_RUNPATH 不像 DT_RPATH 继承——必须逐个改）。ldconfig 不认识
+  GHC → 打包态 ldd 全落包内即证零依赖闭包（packager 内置静态证，泄漏即红）。运行：
+  `ARKUI_KERNEL_KIND=hs` 环境切 Haskell 内核（main.js cjkEnsure 双分支，打包态自动定位
+  包内目录；dev 态 GHC_LIB_DIR 指向 GHC libdir）。cjk.html 38 条断言双内核共用
+  （upper/add-缺参文案已对齐仓颉——kernel.hs R127）。
+- **addon 编译配方（R127 补录，此前散失）**：
+  `g++ -O2 -shared -fPIC -std=c++17 bridge/napi/cjk_napi.cc -o bridge/napi/cjk_napi.node
+  -I/usr/include/node -Ikernel/c-abi -ldl`（改 cjk_napi.cc 后必须重编；系统 g++ 15 +
+  /usr/include/node 的 node_api.h）。
 - **打包**：分发形态需随包携带内核 .so 与仓颉运行时库（依赖清单见 §4 步骤 0），
-  `tools/package-app.mjs` 尚未覆盖仓颉运行时——分发场景立项时补。
+  `tools/package-app.mjs` 已覆盖仓颉运行时（R109）与 GHC 闭包（R127）。
 
 ## 11. 边界与未竟事项（诚实清单）
 

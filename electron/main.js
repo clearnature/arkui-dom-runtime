@@ -169,51 +169,97 @@ app.whenReady().then(async () => {
   // LD_LIBRARY_PATH 含同一目录（std-core 无 DT_SONAME，只能走搜索路径——run.sh 负责导出）。
   let cjkAddon = null;
   let cjkReady = false;
+  // R127 勘误：cjkInitK('hs',…) 挂的是【'hs' 槽】，而无 K 后缀的旧 API=cjkInitK('default')——
+  // 槽名错位会让所有调用打出"内核未初始化"（node 冒烟用 K 变体所以从未暴露）。
+  // 活动槽名随 kind 记录，handler 一律走 K 变体。
+  let cjkSlot = 'default';
   let cjkErr = '仓颉 SDK 未找到（CANGJIE_RT_LIB 未设置）';
   const cjkEnsure = () => {
     if (cjkReady) return true;
     if (cjkAddon) return false;            // 已试过且失败：错误保持 cjkErr
-    // R109 打包态：data/kernel/ 平铺内核+仓颉运行时 .so 集（内核带 RPATH=$ORIGIN，
-    // 零 LD_LIBRARY_PATH）；dev 态沿 env（run.sh 探测 nightly）+ 仓库内核。
-    const packedKernelDir = app.isPackaged ? path.resolve(__dirname, '..', 'data', 'kernel') : null;
-    const rtLib = process.env.CANGJIE_RT_LIB || packedKernelDir || '';
-    // R111 单内核路线：换内核 = 换 .so 路径（ARKUI_KERNEL_LIB 覆盖；默认仓颉内核）
-    const kernelLib = process.env.ARKUI_KERNEL_LIB ||
-      (packedKernelDir
-        ? path.join(packedKernelDir, 'libkernel.so')
-        : path.resolve(__dirname, '..', 'kernel', 'cangjie', 'libkernel.so'));
-    if (!rtLib || !fs.existsSync(rtLib) || !fs.existsSync(kernelLib)) return false;
+    // R111 单内核路线：换内核 = 换 .so 路径（ARKUI_KERNEL_LIB 覆盖；默认仓颉内核）。
+    // R127：ARKUI_KERNEL_KIND=hs 切 Haskell 内核——打包态用包内 data/kernel/hs/
+    //（GHC 闭包 + 全员 RPATH=$ORIGIN，零 LD_LIBRARY_PATH）；dev 态 GHC_LIB_DIR 指向
+    // GHC libdir + 仓库内核（与 smoke 的 GHC_LIB_DIR_TEST 同源）。
+    const kind = process.env.ARKUI_KERNEL_KIND === 'hs' ? 'hs' : 'cangjie';
+    let initArgs;
+    if (kind === 'hs') {
+      const packedHs = app.isPackaged ? path.resolve(__dirname, '..', 'data', 'kernel', 'hs') : null;
+      const ghcDir = process.env.GHC_LIB_DIR || packedHs || '';
+      const kernelLib = process.env.ARKUI_KERNEL_LIB ||
+        (packedHs ? path.join(packedHs, 'libkernel_hs.so')
+                  : path.resolve(__dirname, '..', 'kernel', 'hs', 'libkernel_hs.so'));
+      if (!ghcDir || !fs.existsSync(ghcDir) || !fs.existsSync(kernelLib)) {
+        cjkErr = 'hs 内核不可用（GHC_LIB_DIR 未设置且非打包态，或文件缺失）';
+        return false;
+      }
+      initArgs = [ghcDir, kernelLib, '{}'];
+    } else {
+      // R109 打包态：data/kernel/ 平铺内核+仓颉运行时 .so 集（内核带 RPATH=$ORIGIN，
+      // 零 LD_LIBRARY_PATH）；dev 态沿 env（run.sh 探测 nightly）+ 仓库内核。
+      const packedKernelDir = app.isPackaged ? path.resolve(__dirname, '..', 'data', 'kernel') : null;
+      const rtLib = process.env.CANGJIE_RT_LIB || packedKernelDir || '';
+      const kernelLib = process.env.ARKUI_KERNEL_LIB ||
+        (packedKernelDir
+          ? path.join(packedKernelDir, 'libkernel.so')
+          : path.resolve(__dirname, '..', 'kernel', 'cangjie', 'libkernel.so'));
+      if (!rtLib || !fs.existsSync(rtLib) || !fs.existsSync(kernelLib)) return false;
+      initArgs = [path.join(rtLib, 'libcangjie-runtime.so'), kernelLib, '{}'];
+    }
     try {
       // 字面量路径：相对 main.js 解析（electron/../bridge/…），且便于静态审计
       cjkAddon = require('../bridge/napi/cjk_napi.node');
-      cjkAddon.cjkInit(path.join(rtLib, 'libcangjie-runtime.so'), kernelLib, '{}');
+      // R127：init 返回 false（如 RTS 变体不对）不再静默——读 lastError 进 cjkErr，
+      // 让页面/冒烟看到真实原因（此前 initK 失败仍置 ready 的路不存在，但 false 会被当成功）
+      // R127 勘误续：cangjie 分支也走 K 统一路径（cjkInit=「default」槽；此前 cjkSlot
+      // 记 'cangjie' 而 init 落在 'default'——槽名查空，全 handler 打「内核未初始化」）
+      const slotName = kind === 'hs' ? 'hs' : 'default';
+      const okInit = cjkAddon.cjkInitK(slotName, initArgs[0], initArgs[1], initArgs[2]);
+      if (!okInit) {
+        cjkErr = '内核初始化失败：' + String(cjkAddon.cjkLastError() || '（无 lastError）');
+        console.error('[cjk] ' + cjkErr);      // 主进程日志可见（打包态冒烟诊断面）
+        cjkAddon = null;
+        return false;
+      }
+      cjkSlot = slotName;
       cjkReady = true;
       return true;
     } catch (e) {
       cjkErr = String(e && e.message || e);
+      console.error('[cjk] init 异常: ' + cjkErr + '（kind=' + kind + '）');
       return false;
     }
   };
   ipcMain.handle('arkui:cjk:init', () => (cjkEnsure() ? { ok: true } : { error: cjkErr }));
-  ipcMain.handle('arkui:cjk:ping', () => (cjkEnsure() ? cjkAddon.cjkPing() : -1));
+  ipcMain.handle('arkui:cjk:ping', () => {
+    const ok = cjkEnsure();
+    if (!ok) return -1;
+    try {
+      return cjkAddon.cjkPingK(cjkSlot);
+    } catch (e) {
+      console.error('[cjk:ping] slot=' + cjkSlot + ' ready=' + cjkReady + ' addon=' + !!cjkAddon +
+        ' err=' + (e && e.message));
+      throw e;
+    }
+  });
   ipcMain.handle('arkui:cjk:call', (_e, method, paramsJson) => {
     if (!cjkEnsure()) return null;
-    try { return cjkAddon.cjkCall(String(method), String(paramsJson)); }
+    try { return cjkAddon.cjkCallK(cjkSlot, String(method), String(paramsJson)); }
     catch (e) { cjkErr = String(e && e.message || e); return null; }
   });
   ipcMain.handle('arkui:cjk:lastError', () => {
-    if (cjkReady) return String(cjkAddon.cjkLastError() || '');
+    if (cjkReady) return String(cjkAddon.cjkLastErrorK(cjkSlot) || '');
     return cjkErr;
   });
   // R112 类型化直调：内核未导出 kernel_add/kernel_echo 时返回 null（垫片回落 JSON 口）
   ipcMain.handle('arkui:cjk:add', (_e, a, b) => {
-    if (!cjkEnsure() || typeof cjkAddon.cjkAdd !== 'function') return null;
-    try { return cjkAddon.cjkAdd(Number(a) || 0, Number(b) || 0); }
+    if (!cjkEnsure() || typeof cjkAddon.cjkAddK !== 'function') return null;
+    try { return cjkAddon.cjkAddK(cjkSlot, Number(a) || 0, Number(b) || 0); }
     catch (e) { cjkErr = String(e && e.message || e); return null; }
   });
-  ipcMain.handle('arkui:cjk:echo', (_e, s) => {
-    if (!cjkEnsure() || typeof cjkAddon.cjkEcho !== 'function') return null;
-    try { return cjkAddon.cjkEcho(String(s)); }
+  ipcMain.handle('arkui:cjk:echo', (_e, txt) => {
+    if (!cjkEnsure() || typeof cjkAddon.cjkEchoK !== 'function') return null;
+    try { return cjkAddon.cjkEchoK(cjkSlot, String(txt)); }
     catch (e) { cjkErr = String(e && e.message || e); return null; }
   });
 
