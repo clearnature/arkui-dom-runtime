@@ -1,9 +1,11 @@
   // ────────── R84：DOM 可行骨架批量转真语义（batch-platform，10 个）──────────
   // 来源：stats.mjs"骨架·仅 data-* 33"名单中经语义判定有合理 DOM 对应物的组件。
-  // 其余 23 个（Camera/Component3D/Particle/RemoteWindow/Plugin/UIExtension/Embedded/
+  // 其余组件（Camera/Component3D/Particle/RemoteWindow/Plugin/UIExtension/Embedded/
   // Security/ArcSegmentButton/Ability/Form 系/Screen/WindowScene/RootScene/Isolated/
-  // Dynamic/Effect/ContentSlot/NodeContainer/Piece/WithEnv/Distortion/Depth 等）在浏览器
-  // 形态没有合理 DOM 对应物——硬转语义=造假，保持骨架（R72/R48 平台判定方法论）。
+  // Dynamic/Effect/NodeContainer/Piece/Distortion/Depth 等）在浏览器形态没有合理
+  // DOM 对应物——硬转语义=造假，保持骨架（R72/R48 平台判定方法论）。
+  // 【R120 更新】ContentSlot/WithEnv 经三源核验判 partial（可行半边落地，见 R120-
+  // component-verdicts.md），已在本文件尾部实现；Piece feasible 待产物可达性核实。
   //
   // 权威来源：ets-loader/components/*.json 属性面；Arc 系为穿戴设备组件，无独立 d.ts，
   // 语义按同族组件类比（Swiper/ScrollBar/AlphabetIndexer），标注"近似"。
@@ -322,6 +324,71 @@
       return el;
     });
 
+    // ── ContentSlot（R120 partial 可行半边；content_slot.d.ts，public since 12）──
+    // 语义=命令式内容挂载点：create(NodeContent) 抢占式绑定（content_slot_node.h:49-66
+    // 抢占式 detach），NodeContent.AddNode/RemoveNode 增删挂载点内的"原生侧内容"——
+    // 本运行时中"原生侧内容"由宿主用 DOM 节点模拟（R120 判定：原生 ArkUI_NodeHandle
+    // 节点图与句柄注册表在浏览器无对应，partial 的缺口半边如实保留）。
+    const ContentSlot = ensureComponent('ContentSlot', (args) => {
+      const el = document.createElement('div');
+      el.style.cssText = 'display:contents';
+      el.__arkuiLeaf = true;   // 坑 97：atomic 叶
+      markPlatform(el, 'ContentSlot', {});
+      const nc = args && args[0];
+      if (nc && typeof nc._bindHost === 'function') nc._bindHost(el);
+      return el;
+    });
+
+    // ── WithEnv（R120 partial 可行半边；WithEnv.d.ts public since 26 + common.d.ts 键面）──
+    // 作用域包裹组件：create→env/customEnv→子组件→pop。可写键只收
+    // DIRECTION/FONT_SCALE（with_env_node.cpp:76-87 是真机可写/只读分界），其余记
+    // layoutWarnings；DIRECTION→dir 属性（值语义标推断）、FONT_SCALE→CSS 变量+基准
+    // 字号；customEnv→dataset+CSS 变量（作用域事实）。只读窗口键由宿主近似或缺失，
+    // 见 R120 表。
+    const ENV_DIRECTION = 'system.arkui.layout.direction';   // environment_types.h:28 原文
+    const ENV_FONT_SCALE = 'system.arkui.fontScale';         // environment_types.h:29 原文
+    const WithEnv = ensureComponent('WithEnv', (args) => {
+      const el = document.createElement('div');
+      el.__arkuiWithEnv = true;
+      el.__envValues = {};
+      el.style.display = 'block';
+      markPlatform(el, 'WithEnv', {});
+      return el;
+    });
+    /** @param {string} key @param {any} value（node 取当前栈顶——产物调用形态 WithEnv.env(k,v)） */
+    WithEnv.env = function (key, value) {
+      const node = ViewStackProcessor.top();
+      if (!node || node.__arkuiComp !== 'WithEnv') {
+        layoutWarnings.push('WithEnv.env: 无作用域容器（先 WithEnv.create）');
+        return node;
+      }
+      node.__envValues[key] = value;
+      if (key === ENV_DIRECTION) {
+        // Direction 值语义标推断（R120 partial 边界）：0/'rtl'→rtl，其余→ltr
+        const dir = (value === 0 || value === 'rtl') ? 'rtl' : 'ltr';
+        node.setAttribute('dir', dir);
+      } else if (key === ENV_FONT_SCALE) {
+        const f = Number(value) || 1;
+        node.style.setProperty('--arkui-font-scale', String(f));
+        node.style.fontSize = (16 * f) + 'px';   // 基准缩放：子树用 em 继承
+      } else {
+        layoutWarnings.push('WithEnv.env: 只读键/未知键不可写 ' + key + '（with_env_node.cpp:76-87）');
+      }
+      return node;
+    };
+    /** @param {string} key @param {any} value（node 取当前栈顶） */
+    WithEnv.customEnv = function (key, value) {
+      const node = ViewStackProcessor.top();
+      if (!node || node.__arkuiComp !== 'WithEnv') {
+        layoutWarnings.push('WithEnv.customEnv: 无作用域容器（先 WithEnv.create）');
+        return node;
+      }
+      node.__envValues['custom:' + key] = value;
+      node.dataset['customEnv_' + key] = typeof value === 'object' ? JSON.stringify(value) : String(value);
+      node.style.setProperty('--env-' + String(key).replace(/[^a-zA-Z0-9]/g, '-'), String(value));
+      return node;
+    };
+
     // 归档全局（产物自由变量引用；registerGeneratedComponents 的手写优先逻辑会跳过它们）
     (/** @type {any} */ (global)).ArcSwiper = ArcSwiper;
     (/** @type {any} */ (global)).ArcListItem = ArcListItem;
@@ -330,4 +397,6 @@
     (/** @type {any} */ (global)).DotMatrix = DotMatrix;
     (/** @type {any} */ (global)).MediaCachedImage = MediaCachedImage;
     (/** @type {any} */ (global)).Skeleton2d = Skeleton2d;
+    (/** @type {any} */ (global)).ContentSlot = ContentSlot;
+    (/** @type {any} */ (global)).WithEnv = WithEnv;
   }

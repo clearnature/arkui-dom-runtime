@@ -100,6 +100,7 @@
       ['PasteButton','P',(el)=>el.getAttribute('data-security-btn')==='PasteButton'],
       ['SaveButton','P',(el)=>el.getAttribute('data-security-btn')==='SaveButton'],
       ['Skeleton2d','P',(el)=>el.style.animation.indexOf('arkui-skel')>=0],
+      ['ContentSlot','P',(el)=>el.__arkuiLeaf===true], ['WithEnv','P',(el)=>el.__arkuiWithEnv===true],
       ['FolderStack','A',(el)=>el.tagName==='DIV'], ['GridContainer','A',(el)=>el.tagName==='DIV'],
       ['Section','A',(el)=>el.tagName==='DIV'], ['Sheet','A',(el)=>el.tagName==='DIV'],
       ['UnionEffectContainer','A',(el)=>!!el], ['XComponentNode','A',(el)=>!!el],
@@ -262,6 +263,48 @@
         adopt(skNode);
         check(skNode.style.animation.indexOf('arkui-skel') >= 0, '行为 Skeleton2d 脉冲动画');
         check(!!document.getElementById('arkui-skel-style'), '行为 Skeleton2d keyframes 注入');
+      }
+
+      // ── ContentSlot + WithEnv（R118：10 条——partial 可行半边的真语义） ──
+      {
+        const snap = VSP ? VSP.snapshot() : null;
+        const NodeContent = globalThis.__arkui_dom_require('arkui.node').NodeContent;
+        // ContentSlot：create(NodeContent) 抢占式绑定（content_slot_node.h:49-66）
+        const cs = G('ContentSlot');
+        const nc = new NodeContent();
+        const childA = document.createElement('div'); childA.textContent = 'native-a';
+        const childB = document.createElement('div'); childB.textContent = 'native-中';
+        nc.addFrameNode(childA); nc.addFrameNode(childB);
+        const csNode = cs.create(nc);
+        if (VSP) VSP.restore(snap);
+        const csEl = adopt(csNode);
+        check(csEl && csEl.textContent.indexOf('native-a') >= 0 && csEl.textContent.indexOf('native-中') >= 0,
+          '行为 ContentSlot NodeContent 双子挂载（FIFO+UTF-8）');
+        nc.removeFrameNode(childA);
+        check(csEl && csEl.textContent.indexOf('native-a') < 0 && csEl.textContent.indexOf('native-中') >= 0,
+          '行为 ContentSlot removeFrameNode 摘除');
+        // WithEnv：create→env(DIRECTION/FONT_SCALE)→customEnv→子→pop（作用域包裹）
+        const we = G('WithEnv');
+        const weNode = we.create();
+        we.env('system.arkui.layout.direction', 0);   // RTL（值语义标推断——R120 partial 边界）
+        we.env('system.arkui.fontScale', 1.5);
+        we.env('system.window.size', { width: 1 });   // 只读键——必须记 layoutWarnings
+        we.customEnv('theme', 'dark');
+        G('Text').create('env-sub'); G('Text').pop();
+        we.pop();
+        if (VSP) VSP.restore(snap);
+        const weEl = adopt(weNode);
+        check(weEl && weEl.getAttribute('dir') === 'rtl',
+          '行为 WithEnv DIRECTION→dir（值语义标推断）');
+        check(weEl && weEl.style.getPropertyValue('--arkui-font-scale') === '1.5',
+          '行为 WithEnv FONT_SCALE→CSS 变量+基准字号');
+        check(weEl && weEl.dataset.customEnv_theme === 'dark',
+          '行为 WithEnv customEnv→dataset+CSS 变量（作用域事实）');
+        const warns = (globalThis.__arkui_dom_layout_warnings || []).filter(
+          (w) => w.indexOf('只读键/未知键不可写') >= 0);
+        check(warns.length >= 1, '行为 WithEnv 只读键不可写→layoutWarnings（with_env_node.cpp:76-87 判据）');
+        const sub = weEl && weEl.textContent.indexOf('env-sub') >= 0;
+        check(sub, '行为 WithEnv 子组件正常挂入作用域（包裹器语义）');
       }
       // ── ArcListItem（2）──
       {

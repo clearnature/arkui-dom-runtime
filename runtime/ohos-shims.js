@@ -1526,6 +1526,39 @@
     },
   });
 
+  // ── @ohos:arkui.node —— NodeContent（R118：ContentSlot 的命令式内容持有者）──
+  // d.ts 原文面（api/arkui/NodeContent.d.ts）：constructor() / addFrameNode(node) /
+  // removeFrameNode(node)，extends Content（抽象基占位）。R120 判定 partial 的
+  // 缺口半边：真机的 ArkUI_NodeHandle 节点图与句柄注册表在浏览器无对应——
+  // 本 shim 的"原生侧内容"由宿主用 DOM 节点模拟（_bindHost 是与 ContentSlot
+  // 组件的内部协作接口，非 d.ts API）。抢占式 detach 对齐 content_slot_node.h:49-66。
+  define('arkui.node', {
+    Content: class { },
+    NodeContent: class {
+      constructor() {
+        this._children = [];   // 宿主 DOM 节点（模拟原生 FrameNode）
+        this._host = null;
+      }
+      addFrameNode(node) {
+        this._children.push(node);
+        if (this._host && node && node.parentNode !== this._host) this._host.appendChild(node);
+      }
+      removeFrameNode(node) {
+        const i = this._children.indexOf(node);
+        if (i >= 0) this._children.splice(i, 1);
+        if (node && node.parentNode) node.parentNode.removeChild(node);
+      }
+      /** 内部协作：ContentSlot.create 时抢占式绑定挂载点（旧 host 先摘净） */
+      _bindHost(el) {
+        if (this._host && this._host !== el) {
+          this._children.forEach((c) => { if (c.parentNode === this._host) this._host.removeChild(c); });
+        }
+        this._host = el;
+        this._children.forEach((c) => { if (c.parentNode !== el) el.appendChild(c); });
+      }
+    },
+  });
+
   // ── @ohos:cjk —— 进程内仓颉内核（R98，桌面线）──
   //
   // 形态沿 @ohos.hilog 一类的"静态能力对象"：方法名分派（kernel/c-abi.h 契约的渲染侧投影）。

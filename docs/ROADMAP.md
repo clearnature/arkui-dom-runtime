@@ -1258,7 +1258,7 @@ md5 一致。
 **内容**：R66 六组并行产出的 37 个批量组件只有实现、没有测试。本轮补验收：37 结构断言 +
 兜底绊网 + BatchVerifyDemo（13 组件真编译 fixture）语义断言。
 
-**验收**：`bash run.sh batchverify`（86 条断言：结构 47/兜底绊网 1/语义 14/行为 24；R67 时
+**验收**：`bash run.sh batchverify`（95 条断言：结构 47/兜底绊网 1/语义 14/行为 24/【R118 起新增】ContentSlot+WithEnv 9；R67 时
 52、R84 时 62、R87 起增 platform 行为段）双端通过。
 
 **定路径（混合）**：13 个有 SDK 声明的组件走真编译 fixture（`BatchVerifyDemo.ets`）——编译器
@@ -1633,7 +1633,7 @@ R72/R48 方法论）。
 **分派架构改进**：area.js 不再为每张表硬编码分支——分片以 `__arkuiPlatform` 标记 +
 `__platformAttrs` 表挂节点，area.js 一条通用分派（后续同类扩展零改 area.js）。
 
-**验收**：`bash electron/run.sh batchverify`（R84 时 62 条；R87 起含 platform 行为段共 86 条）——
+**验收**：`bash electron/run.sh batchverify`（R84 时 62 条；R87 起含 platform 行为段；R118 起共 95 条，7bedbfd Mimosa 0 findings seal sha256:5c419723…）——
 双端全绿；绊网确认 10 个新实现全部走手写分片不落 generated 兜底。
 
 **类型化过程坑（坑 92 同族再现）**：`const st = { onSelect: null }` 在 strictNullChecks 下
