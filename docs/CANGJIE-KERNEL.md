@@ -280,6 +280,11 @@ kernel_abi.h 是纯 C ABI，任何能导出 C 符号、能编译 .so 的语言�
 | 端到端 | `bash electron/run.sh cjk`（桌面真内核）；`bash run.sh cjk`（浏览器降级面） | 渲染进程直达内核的完整生命周期 |
 | 产物页（R108） | `bash electron/run.sh cjkdemo`（桌面，6 条：typed add 与 JSON fib 双轨在官方 .ets 产物页各走一遍）；`bash run.sh cjkdemo`（浏览器降级，4 条单跑） | 真实 ArkTS 页面消费 `@ohos.cjk`（fixtures/pages/CjkDemo.ts，hvigorw 编译冻结） |
 
+- **统一契约套件（R119）**：`bash kernel/run-contract.sh`（或指定 `c|go|rs|hs|cangjie`）
+  ——`kernel/contract_common.c` 一份 41 条断言参数化三挂载模式（direct / cangjie 泵 /
+  ghc 序列）跑五内核，**五内核 × 41 条 ALL PASS** = 契约等价性的同一套测试证明
+  （共同 12 方法 + 错误形状矩阵 + re-init + typed + 作业收敛/取消宽容形）；
+  各内核扩展方法仍由各自 smoke 段覆盖。错误文案不作跨内核断言（形状契约，文案伪需求）。
 - `<SDK运行时库目录>` = `/data/work/compiler/cangjie/Nightly/cangjie-nightly-current/runtime/lib/linux_x86_64_cjnative`。
 - **双端分流惯例**：cjk/cjkdemo 两端断言数不同（cjk 桌面 35 / 浏览器 6；cjkdemo 6 / 4），
   **不进浏览器 all 矩阵**、ROADMAP 只写一处 Electron 声明——计数守门

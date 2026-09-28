@@ -27,3 +27,6 @@ npm-debug.log*
 *.hi
 *.o
 kernel_stub.h
+
+# 统一契约套件编译产物（run-contract.sh 可再生）
+kernel/contract_common

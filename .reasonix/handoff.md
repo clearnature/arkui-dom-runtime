@@ -9,7 +9,9 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R118 纯 C 内核补全**（agent 五件+pthread 作业面——五语言作业面同构；
+- 上次切片：**R119 五内核统一契约套件**（kernel/contract_common.c 一份 41 条断言
+  参数化三挂载模式跑五内核——五语言契约等价性从"断言相似"升级为"同一套测试证明"，
+  全绿；run-contract.sh 编排）。更早：**R118 纯 C 内核补全**（agent 五件+pthread 作业面——五语言作业面同构；
   **坑 108：RTLD_GLOBAL 多内核同名符号 PLT 劫持**（C 的 shutdown 自引用 init 跳进
   仓颉）→ static 本地绑定；smoke 106 三连绿）。更早：**R117 Rust 内核（第五语言）**——kernel/rust cdylib（仅 libgcc_s+libc、
   零宿主序、零外部 crate；单全局锁+per-Job 锁序无环证明）；claurst 对齐
