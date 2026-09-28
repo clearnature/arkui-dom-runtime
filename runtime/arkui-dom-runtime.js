@@ -9548,32 +9548,36 @@
   //   js_piece.cpp:108-130  showDelete 容错：boolean 直用；number 只认 0/1；其余→false。
   //   js_piece.cpp:27,194-208  fontStyle 表 [Normal,Italic]，越界忽略；fontWeight 字符串。
   //
-  // 【推断】主题数值（height/paddingH/V/interval/iconSize/文字配色/背景）出自 theme
-  //   pattern JSON（piece_theme.h:58-72 的键），该 JSON 不在本机源码树 —— 以下默认值
-  //   全部标推断：height 28vp / paddingH 12 / paddingV 4 / interval 6 / iconSize 16 /
-  //   文字 14fp rgba(0,0,0,0.9) / 背景 rgba(0,0,0,0.05)；文本 ELLIPSIS+单行（h 主题键）。
-  //
-  // DOM：胶囊 div（inline-flex 居中，min 宽 fit-content 即 flex 默认）→ 文本 span +
-  //   图标 wrap（img，默认图标 = SDK previewer ohos_piece_delete.svg 原文内嵌 data URI）。
-  //   空 content 只空行（外盒仍在——真机 SoleChild 无 child 时盒照画）。
+  // 【主题数值原文（R123 对齐，不再推断）】出自 SDK 系统资源
+  //   previewer/common/resources/entry/resources.txt（restool 反查文本，light 块）：
+  //   piece_pattern（id:125829904）→ text_color=$color:125829210（ohos_id_color_text_primary
+  //   #ff182431）、text_font_size=$float:125829682（14.0fp）、bg_color=$color:125829120
+  //   （ohos_id_color_foreground #ff182431）、bg_color_alpha=$float:125829390（0.05）、
+  //   bg_color_hovered=$color:125829168（#0c182431 = 前景色 α0.047）——与 piece_theme.h:58-72
+  //   的键一一对应。标量：height 28vp / text_lines 1 / font_weight 4 / paddingH 8vp /
+  //   paddingV 0 / iconSize 16vp / interval 4vp（id:125830637-125830643；另
+  //   ohos_id_corner_radius_piece=14vp=高/2 相互印证）。dark 块同 ID 段（text #dbffffff、
+  //   bg #ffffff α0.1）——运行时无暗色模式，light 为准，dark 值在此存档。
+  //   R122 推断值 6 中 3 错（padding 12/4→实 8/0、interval 6→实 4）——推断纪律的理由。
+  const PIECE_THEME = {
+    height: 28, paddingHorizontal: 8, paddingVertical: 0, interval: 4,
+    iconSize: 16, textColor: '#182431', fontSize: 14, fontWeight: 400,
+    backgroundColor: 'rgba(24, 36, 49, 0.05)',      // 前景色 #182431 × alpha 0.05（BlendOpacity）
+    hoverColor: 'rgba(24, 36, 49, 0.047)',          // #0c182431 = 同前景 α 12/255
+  };
   // 默认删除图标：SDK previewer/common/resources/resources/base/media/ohos_piece_delete.svg
-    // 原文（56×56 双圆头线 ✕，stroke #000 0.9 6px）——不重画，逐字内嵌
-    const PIECE_DELETE_SVG = '<?xml version="1.0" encoding="UTF-8"?>'
-      + '<svg viewBox="0 0 56 56" version="1.1" xmlns="http://www.w3.org/2000/svg">'
-      + '<g stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">'
-      + '<line x1="14" y1="14" x2="43" y2="43" stroke="#000000" opacity="0.9" '
-      + 'stroke-width="6" stroke-linecap="round"></line>'
-      + '<line x1="14" y1="14" x2="43" y2="43" stroke="#000000" opacity="0.9" '
-      + 'stroke-width="6" stroke-linecap="round" '
-      + 'transform="translate(28.5,28.5) scale(-1,1) translate(-28.5,-28.5)"></line>'
-      + '</g></svg>';
-    const PIECE_DEFAULT_ICON = 'data:image/svg+xml;utf8,' + encodeURIComponent(PIECE_DELETE_SVG);
-    // 主题默认值【推断】（见上）
-    const PIECE_THEME = {
-      height: 28, paddingHorizontal: 12, paddingVertical: 4, interval: 6,
-      iconSize: 16, textColor: 'rgba(0,0,0,0.9)', fontSize: 14,
-      backgroundColor: 'rgba(0,0,0,0.05)',
-    };
+  // 原文（56×56 双圆头线 ✕，stroke #000 0.9 6px；系统资源名 ohos_piece_delete
+  // id:125829944 → entry/resources/base/media/ohos_piece_delete.svg）——不重画，逐字内嵌
+  const PIECE_DELETE_SVG = '<?xml version="1.0" encoding="UTF-8"?>'
+    + '<svg viewBox="0 0 56 56" version="1.1" xmlns="http://www.w3.org/2000/svg">'
+    + '<g stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">'
+    + '<line x1="14" y1="14" x2="43" y2="43" stroke="#000000" opacity="0.9" '
+    + 'stroke-width="6" stroke-linecap="round"></line>'
+    + '<line x1="14" y1="14" x2="43" y2="43" stroke="#000000" opacity="0.9" '
+    + 'stroke-width="6" stroke-linecap="round" '
+    + 'transform="translate(28.5,28.5) scale(-1,1) translate(-28.5,-28.5)"></line>'
+    + '</g></svg>';
+  const PIECE_DEFAULT_ICON = 'data:image/svg+xml;utf8,' + encodeURIComponent(PIECE_DELETE_SVG);
     /** @param {any} el @param {number} pos */
     function pieceApplyIconPosition(el, pos) {
       const w = /** @type {any} */ (el).__piece;
@@ -9641,11 +9645,20 @@
       el.style.borderRadius = (t.height / 2) + 'px';  // 胶囊：圆角=高/2（js_piece.cpp:66）
       el.style.backgroundColor = t.backgroundColor;
       el.style.padding = t.paddingVertical + 'px ' + t.paddingHorizontal + 'px';
+      // hover 背景（bg_color_hovered，piece_theme.h:72）：CSS :hover 注入（Skeleton2d
+      // keyframes 注入先例——真机是 RenderStatus HOVER 换底色，DOM 等价面）
+      if (!document.getElementById('arkui-piece-style')) {
+        const style = document.createElement('style');
+        style.id = 'arkui-piece-style';
+        style.textContent = '[data-piece]:hover{background-color:' + t.hoverColor + '}';
+        document.head.appendChild(style);
+      }
       // 文本 span（content 空 → 不挂进盒：BuildChild nullptr 语义——真机连行都不建，
       // 图标也在行内，同样不出现；span/iconWrap 对象仍创建，属性派发不炸）
       const textSpan = document.createElement('span');
       textSpan.style.color = t.textColor;
       textSpan.style.fontSize = t.fontSize + 'px';
+      textSpan.style.fontWeight = String(t.fontWeight);   // piece_font_weight 4（resources.txt:125830639）
       textSpan.style.overflow = 'hidden';             // ELLIPSIS + 单行（主题键，推断）
       textSpan.style.textOverflow = 'ellipsis';
       textSpan.style.whiteSpace = 'nowrap';

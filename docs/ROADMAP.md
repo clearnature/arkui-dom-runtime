@@ -1258,7 +1258,7 @@ md5 一致。
 **内容**：R66 六组并行产出的 37 个批量组件只有实现、没有测试。本轮补验收：37 结构断言 +
 兜底绊网 + BatchVerifyDemo（13 组件真编译 fixture）语义断言。
 
-**验收**：`bash run.sh batchverify`（120 条断言：结构 48/兜底绊网 1/语义 14/行为 24/【R118 起新增】ContentSlot+WithEnv 9/【R121 新增】ArcList 8/【R122 新增】Piece 16；R67 时
+**验收**：`bash run.sh batchverify`（124 条断言：结构 48/兜底绊网 1/语义 14/行为 24/【R118 起新增】ContentSlot+WithEnv 9/【R121 新增】ArcList 8/【R122 新增】Piece 16/【R123 新增】Piece theme 对齐 4；R67 时
 52、R84 时 62、R87 起增 platform 行为段）双端通过。
 
 **定路径（混合）**：13 个有 SDK 声明的组件走真编译 fixture（`BatchVerifyDemo.ets`）——编译器
@@ -1633,7 +1633,7 @@ R72/R48 方法论）。
 **分派架构改进**：area.js 不再为每张表硬编码分支——分片以 `__arkuiPlatform` 标记 +
 `__platformAttrs` 表挂节点，area.js 一条通用分派（后续同类扩展零改 area.js）。
 
-**验收**：`bash electron/run.sh batchverify`（R84 时 62 条；R87 起含 platform 行为段；R118 起共 95 条；R121 起共 103 条；R122 起共 120 条，7bedbfd Mimosa 0 findings seal sha256:5c419723…）——
+**验收**：`bash electron/run.sh batchverify`（R84 时 62 条；R87 起含 platform 行为段；R118 起共 95 条；R121 起共 103 条；R122 起共 120 条；R123 起共 124 条，7bedbfd Mimosa 0 findings seal sha256:5c419723…）——
 双端全绿；绊网确认 10 个新实现全部走手写分片不落 generated 兜底。
 
 **类型化过程坑（坑 92 同族再现）**：`const st = { onSelect: null }` 在 strictNullChecks 下
@@ -2048,6 +2048,7 @@ R108 .ets fixture → R109 打包 → R110 取消。
 | ✅ R120 | 剩余骨架批量判定（11 枚） | 三源核验（SDK d.ts / 真机 pattern / DOM 可行性，R48 同口径）：not-found 1（Camera）+ platform-only 6（Component3D/Distortion/Effect/Particle/Screen/DynamicComponent）+ feasible 1（Piece，附产物可达性核实注记）+ partial 3（ContentSlot/WithEnv 细化 + ArcList）；**149 组件终态账收口：145 已决、可实现未实现仅 6 枚**；冲突勘定 batch-platform.js 的 ContentSlot/WithEnv 假设以 R48 为准 | `docs/research/R120-component-verdicts.md`；CAPABILITY 骨架账更新（e35f901，Mimosa 0 findings seal sha256:334409a5…） | S（调研） |
 | ✅ R121 | ArcList（partial 落地，batch-platform Arc 系配对） | 真机三次多项式缩放**逐常量照抄**（arc_list_layout_algorithm.cpp:24-36：A=108/B/C/D/E + 钳位 348.5——中心 1.08/滚到底 0.4823 实测吻合）、ScrollAlign::CENTER 静默收口吸附（80ms，scroll.js 先例）、回调族（onScrollIndex/onDidScroll/onReachStart/onReachEnd）、header builder 展开（__arcHeader 不参与缩放）；缺口如实记录（表冠/ARC 滚动条/链式弹簧→layoutWarnings） `bash run.sh batchverify` 新增 8 条（公式复算两点/回调族/三缺口记录/snap，已计入下方 103 总账）；**Arc 系容器+子项配对齐**（ArcListItem 已真语义）；门禁 7 步全绿（f226d3a，Mimosa 0 findings seal sha256:6375e3eb…） | M |
 | ✅ R122 | Piece（R120 feasible 收官：**可实现组件全部落地**） | 操作块标签（收件人语义，hml piece.json description）：胶囊 div（圆角=主题高/2，js_piece.cpp:66）+ 文本 span + 图标 img；**图标即删除按钮**（showDelete 控 GONE、点击图标→onClose，piece_component.cpp:204-208/js_piece.cpp:132-151——文本点击不触发）；iconPosition{Start=0,End=1} 默认 End + interval padding 落朝文本一侧（:194 RTL/Start→右）；showDelete 三型容错（bool/只认 0|1 的 number/其余→false，js_piece.cpp:108-130）；font 五件落**内层 span**（通用 cssProp 只会打根——area.js 表拦截）；空 content 整行不建（BuildChild nullptr，piece_component.cpp:51-53）；默认图标 = SDK previewer ohos_piece_delete.svg 原文内嵌 data URI；主题数值（高/边距/配色）pattern JSON 不在源码树→**全部标推断**；产物可达性证明 = ets-loader components/piece.json（8 attrs） `bash run.sh batchverify` 新增 16+结构行 1（已计入 120 总账）；**HANDWRITTEN 补账 4 名**（ContentSlot/WithEnv/ArcList R118.2/R121 漏登记 + Piece）→ **手写 129+骨架 20[platform-only 19+not-found 1]=149 清账**；门禁 7 步全绿（909c990，Mimosa 0 findings seal sha256:5782dbeb…） | M |
+| ✅ R123 | Piece theme **原文对齐**（R122 推断值清算） | **真值出处找到了**：SDK 系统资源 `previewer/common/resources/entry/resources.txt`（restool 反查文本）——piece_pattern（id:125829904）五键 text_color/text_font_size/bg_color/bg_color_alpha/bg_color_hovered → ohos_id_color_text_primary/125829682/ohos_id_color_foreground/125829390/ohos_id_color_hover，与 piece_theme.h:58-72 键一一对上；标量 id:125830637-125830643：**height 28vp / text_lines 1 / font_weight 4 / paddingH 8vp / paddingV 0 / iconSize 16vp / interval 4vp**（另 corner_radius_piece=14vp=高/2 相互印证；dark 块同 ID 段存档——运行时无暗色 light 为准）。**R122 推断 6 中 3 错**（padding 12/4→8/0、interval 6→4、文字色 rgba(0,0,0,.9)→#182431）——推断纪律的活案例；**hover 语义补齐**（bg_color_hovered=#0c182431=前景 α0.047→`:hover` 注入，Skeleton2d keyframes 先例）；扩面盘点：FolderStack/GridContainer/XComponentNode/ContainerReader/UIPickerComponent 均已在各自 demo 页有行为覆盖，无真空 `bash run.sh batchverify` +4（胶囊主题 3 断言/hover 注入/interval 精确值，共 124 双端 ALL PASS）；门禁 7 步全绿（d0be282，Mimosa 0 findings seal sha256:59f7f97c…） | S |
 
 **明确不做（本线内留白）**：trha 本体及一切 trha 专属方法（已划出）；内核热替换
 （收益低风险高）；stable SDK 交叉验证（锁 nightly 纪律，非任务）。

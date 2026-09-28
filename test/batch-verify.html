@@ -390,7 +390,7 @@
         check(!!alNode2, '行为 ArcList scroller 参数路径不抛');
       }
 
-      // ── Piece（R122：16 条行为——胶囊结构/图标面/onClose 语义/font 五件/容错） ──
+      // ── Piece（R122 落地 16 条 + R123 theme 原文对齐 +4：胶囊主题值/hover 注入/interval=4） ──
       // 产物调用序 = create → 属性 → pop（applyAttr 打在栈顶——先 pop 再调属性打不中）
       {
         const snap = VSP ? VSP.snapshot() : null;
@@ -404,8 +404,13 @@
         const iconWrap = kids[1];
         check(iconWrap.style.display === 'none',
           '行为 Piece showDelete 默认 false → 图标 GONE（piece_component.cpp:204-208）');
-        check(p1Node.style.borderRadius !== '' && p1Node.style.display === 'inline-flex',
-          '行为 Piece 胶囊外观：圆角=主题高/2 + inline-flex（js_piece.cpp:66）');
+        check(p1Node.style.borderRadius === '14px' && p1Node.style.height === '28px',
+          '行为 Piece 胶囊主题：高 28vp 圆角 14（resources.txt:125830637/cornerRadius_piece=高/2）');
+        check(p1Node.style.display === 'inline-flex' && p1Node.style.padding === '0px 8px',
+          '行为 Piece 主题 padding 8/0 + inline-flex（resources.txt:125830640/125830641）');
+        check(kids[0].style.color === 'rgb(24, 36, 49)' && kids[0].style.fontSize === '14px'
+          && kids[0].style.fontWeight === '400',
+          '行为 Piece 主题文字：#182431/14fp/字重4（piece_pattern 125829904 三键）');
         // ② font 五件落 span（通用 cssProp 只会打根节点——表拦截语义）
         pc.fontColor('#ff0000'); pc.fontSize(18); pc.fontStyle(1);
         pc.fontWeight('600'); pc.fontFamily('serif');
@@ -436,8 +441,14 @@
         const kids2 = Array.prototype.slice.call(p1Node.children);
         check(kids2[0] === iconWrap,
           '行为 Piece iconPosition(0)=Start → 图标在前（piece_component.h:33-36）');
-        check(iconWrap.style.paddingRight !== '0px' && iconWrap.style.paddingLeft === '0px',
-          '行为 Piece interval padding 落朝文本一侧（piece_component.cpp:194）');
+        check(iconWrap.style.paddingRight === '4px' && iconWrap.style.paddingLeft === '0px',
+          '行为 Piece interval=4 落朝文本一侧（resources.txt:125830643；piece_component.cpp:194）');
+        // 主题背景与 hover（R123 对齐）：bg=前景色×5%、hover 走 :hover 注入
+        check(p1Node.style.backgroundColor === 'rgba(24, 36, 49, 0.05)',
+          '行为 Piece 主题背景 #182431×α0.05（piece_pattern bg_color+bg_color_alpha）');
+        const pieceStyle = document.getElementById('arkui-piece-style');
+        check(!!pieceStyle && pieceStyle.textContent.indexOf('rgba(24, 36, 49, 0.047)') >= 0,
+          '行为 Piece hover 背景 α0.047 注入（bg_color_hovered=#0c182431）');
         pc.pop();
         if (VSP) VSP.restore(snap);
         const p1 = adopt(p1Node);
