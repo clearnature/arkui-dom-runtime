@@ -39,21 +39,52 @@ static void check(int cond, const char *m) {
 
 static call_fn Kcall = NULL;
 static free_fn Kfree = NULL;
-/* 仓颉泵驱动（mode=cangjie 时生效——仓颉作业需要宿主 RunCJTask+RunUIScheduler，
- * 坑 104；其余内核自调度零驱动） */
+static void yield_ms(int ms) {
+    usleep(ms * 1000);
+}
+
+/* ── 宿主通用驱动层（R119.1：与 addon drive() 同构的探测式抽象） ──────────────
+ * 语义：任何内核若需要宿主驱动（导出 kernel_pending/draining/drain_entry 且
+ * 宿主有泵 API），本层负责"按需拉起 worker + 给执行窗口"；对自调度内核
+ * （Go/Rust/C/Haskell——goroutine/thread/pthread/forkIO 自跑）全部符号缺席 →
+ * 逐次探测后 no-op，与 addon 的 drive() 判定完全一致。
+ * 泵 API 来源：宿主运行时（仓颉 InitCJRuntime 的 RunCJTask/RunUIScheduler，
+ * 坑 104）——mode=cangjie 挂载时解析；未来新泵模型在此扩展解析点即可，
+ * drive() 的调用方（一切轮询点）不感知。 */
 static void (*runTask)(void *(*)(void *), void *) = NULL;
 static int (*runUISched)(unsigned long long) = NULL;
 static int (*kpending)(void) = NULL;
 static int (*kdraining)(void) = NULL;
 static void *(*kdrainEntry)(void *) = NULL;
 
-static void drive_if_cangjie(void) {
+static void host_drive(void) {
     if (!runTask || !runUISched || !kpending || !kdraining || !kdrainEntry) return;
     int pend = kpending();
     int dr = kdraining();
     int want = pend < 4 ? pend : 4;
     for (int i = dr; i < want; i++) runTask((void *(*)(void *))kdrainEntry, NULL);
     if (pend > 0 || dr > 0) runUISched(2);
+}
+
+/* 通用作业等待：drive + 让步轮询 + 终态判定（done 或 cancelled）——
+ * 三处作业等待点统一走此入口（首版 drive 散在两处循环里、submit 后不驱动） */
+static int wait_jobs_done(const int *ids, int n_ids, int need_done, int timeout_ms) {
+    int elapsed = 0;
+    while (elapsed < timeout_ms) {
+        host_drive();
+        int done = 0;
+        for (int i = 0; i < n_ids; i++) {
+            char q[64];
+            snprintf(q, sizeof(q), "{\"jobId\":%d}", ids[i]);
+            char *r = Kcall ? Kcall("agent.result", q) : NULL;
+            if (r && strstr(r, "\"done\"")) done++;
+            if (r && Kfree) Kfree(r);
+        }
+        if (done >= need_done) return 1;
+        yield_ms(5);
+        elapsed += 5;
+    }
+    return 0;
 }
 
 /* 共同期望：调用并比对返回字节形（NULL 即期望 NULL） */
@@ -83,9 +114,6 @@ static void expect_err_shape(const char *method, const char *params, const char 
     if (r && Kfree) Kfree(r);
 }
 
-static void yield_ms(int ms) {
-    usleep(ms * 1000);
-}
 
 int main(int argc, char *argv[]) {
     const char *mode = (argc > 1) ? argv[1] : "direct";
@@ -189,20 +217,11 @@ int main(int argc, char *argv[]) {
     expect_err_shape("agent.result", "{\"jobId\":99}", "result 未知 job → 错误形状");
     expect_err_shape("agent.cancel", "{\"jobId\":99}", "cancel 未知 job → 错误形状");
 
-    /* 等两作业 done（带让步——五内核作业时序各异） */
+    /* 等两作业 done（host_drive 通用驱动 + 让步轮询——五内核作业时序各异） */
     {
-        int done = 0;
-        for (int i = 0; i < 500 && !done; i++) {
-            done = 1;
-            for (int j = 1; j <= 2; j++) {
-                char q[64];
-                snprintf(q, sizeof(q), "{\"jobId\":%d}", j);
-                char *r = Kcall ? Kcall("agent.result", q) : NULL;
-                if (!r || !strstr(r, "\"done\"")) done = 0;
-                if (r && Kfree) Kfree(r);
-            }
-            if (!done) { drive_if_cangjie(); yield_ms(5); }
-        }
+        host_drive();   /* submit 后立即驱动（首窗不必等让步） */
+        int ids2[2] = {1, 2};
+        int done = wait_jobs_done(ids2, 2, 2, 5000);
         check(done, "两作业收敛 done（fib(30)=832040 + echo）");
         int vals = 1;
         for (int j = 1; j <= 2; j++) {
@@ -257,13 +276,15 @@ int main(int argc, char *argv[]) {
             snprintf(buf, sizeof(buf), "cancel 返回形合法（%s）", rc ? rc : "(null)");
             check(legal, buf);
             if (rc && Kfree) Kfree(rc);
-            /* 收敛：cancelled 或 done 都是合法终态 */
+            /* 收敛：cancelled 或 done 都是合法终态（终态判定含 cancelled——
+             * wait_jobs_done 判 done，此处手写宽容形） */
             int conv = 0;
             for (int i = 0; i < 500 && !conv; i++) {
+                host_drive();
                 char *rr = Kcall ? Kcall("agent.result", q) : NULL;
                 if (rr && (strstr(rr, "cancelled") || strstr(rr, "done"))) conv = 1;
                 if (rr && Kfree) Kfree(rr);
-                if (!conv) { drive_if_cangjie(); yield_ms(5); }
+                if (!conv) yield_ms(5);
             }
             check(conv, "取消后收敛终态（cancelled 或 done——宽容判据）");
         }

@@ -1780,7 +1780,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   test             865.3 KB
   tools            197.1 KB
   electron(src)    48.1 KB
-  docs             788.2 KB
+  docs             788.4 KB
   fixtures         517.2 KB
 
 == 逐文件（文档"文件职责"表的来源）==
@@ -1806,7 +1806,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   docs/ARCHITECTURE.md                   163592 B  159.8 KB
   docs/CAPABILITY.md                      62280 B  60.8 KB
   docs/DEVELOPING.md                      75385 B  73.6 KB
-  docs/ROADMAP.md                        213774 B  208.8 KB
+  docs/ROADMAP.md                        213945 B  208.9 KB
   docs/surface-measurement.md              6496 B  6.3 KB
   docs/SESSION-2026-09-20.md              12842 B  12.5 KB
   runtime/src/.mimosa                      4096 B  4.0 KB
