@@ -9,7 +9,18 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R122 Piece 落地——可实现组件全部清零（里程碑）**——操作块标签（收件人
+- 上次切片：**R123 Piece theme 原文对齐（R122 推断值清算）**——**方法论解锁：SDK 系统资源
+  主题真值可反查**：`previewer/common/resources/entry/resources.txt`（restool 反查文本，
+  含全部 theme pattern 的 id→值 + light/dark 块；sysResource.js 只有 ID 映射，真值在此）。
+  piece_pattern（id:125829904）五键 + 标量 id:125830637-125830643 → height 28vp/
+  text_lines 1/font_weight 4/paddingH 8vp/paddingV 0/iconSize 16vp/interval 4vp、
+  文字 #182431、bg 前景色×α0.05（corner_radius_piece=14vp=高/2 印证）——**R122 推断
+  6 中 3 错**（padding 12/4→8/0、interval 6→4、文字色）→ runtime 已按原文修正；
+  hover 补齐（bg_color_hovered=前景 α0.047→:hover 注入）；扩面盘点：FolderStack/
+  GridContainer/XCN/ContainerReader/UIPicker 均有 demo 页行为覆盖无真空。batchverify
+  120→**124 双端全绿**；**同法可清其余组件的推断值**（badge/calendar/…_pattern 全在
+  resources.txt）。门禁 7 步全绿（ee34d05，Mimosa 0 findings seal sha256:59f7f97c…）。
+  更早：**R122 Piece 落地——可实现组件全部清零（里程碑）**——操作块标签（收件人
   语义）：胶囊 div（圆角=主题高/2）+ 文本 span + 图标 img；**图标即删除按钮**
   （showDelete 控 GONE、点击图标→onClose，文本点击不触发）；iconPosition 默认 End +
   interval padding 朝文本一侧；showDelete 三型容错（bool/0|1 number/其余 false）；
