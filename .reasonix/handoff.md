@@ -9,7 +9,18 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R121 ArcList 落地（partial → 真语义）**——batch-platform 新增 ArcList：
+- 上次切片：**R122 Piece 落地——可实现组件全部清零（里程碑）**——操作块标签（收件人
+  语义）：胶囊 div（圆角=主题高/2）+ 文本 span + 图标 img；**图标即删除按钮**
+  （showDelete 控 GONE、点击图标→onClose，文本点击不触发）；iconPosition 默认 End +
+  interval padding 朝文本一侧；showDelete 三型容错（bool/0|1 number/其余 false）；
+  font 五件落**内层 span**（area.js 表拦截通用 cssProp）；空 content 整行不建
+  （BuildChild nullptr）；默认图标 = SDK previewer ohos_piece_delete.svg 原文内嵌；
+  主题数值 pattern JSON 不在源码树→全部标推断；产物可达性证明 = ets-loader
+  components/piece.json。batchverify 103→**120 条双端全绿**（Piece 16+结构行 1）；
+  **HANDWRITTEN 补账 4 名**（ContentSlot/WithEnv/ArcList R118.2/R121 漏登记 + Piece）
+  → **手写 129 + 骨架 20[platform-only 19+not-found 1] = 149 清账，可实现未实现=0**。
+  调试坑：属性须在 create→pop 之间调（applyAttr 打栈顶）。门禁 7 步全绿
+  （c8ea25f，Mimosa 0 findings seal sha256:5782dbeb…）。更早：**R121 ArcList 落地（partial → 真语义）**——batch-platform 新增 ArcList：
   真机三次多项式缩放**逐常量照抄**（arc_list_layout_algorithm.cpp A-E + 钳位 348.5，
   中心 1.08/滚到底 0.4823 实测吻合）+ ScrollAlign::CENTER 静默吸附（80ms，scroll.js 先例）
   + 回调族 + header builder 展开（__arcHeader 不参与缩放）；缺口如实记录（表冠/ARC
