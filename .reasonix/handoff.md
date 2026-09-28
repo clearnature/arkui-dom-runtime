@@ -9,7 +9,16 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R123 Piece theme 原文对齐（R122 推断值清算）**——**方法论解锁：SDK 系统资源
+- 上次切片：**R124 主题真值清账第二轮**——nav.js 三处「推断」升原文（56/112/138 资源键
+  双证；**R42「137 之谜」结案**：资源真有 title_emphasize_twolines_height=137
+  （125831117），但 Navigation Full 双行走 full_* 家族 138——两族键并存，当年"未使用
+  常量险些误改"判断正确）；Badge 数值徽章 padding 0 4px→0 6px（numerical_badge_padding
+  125834809）+ showdemo +1 断言（28→29，README/ROADMAP/CAPABILITY 三处计数同步）；
+  fontSize 10/badgeSize 16/color White 经查全是 JSDoc 原文（R28 已对）；五组件主题值
+  存档（Marquee 37.5px/Counter/Stepper 48vp/Toggle 28vp/Slider 360vp——消费点证据不足
+  或原生控件不适用者不应用只存档）；全量「推断」grep 复盘 12 处：主题数值类清账完毕，
+  余 2 处语义推断属行为边界。showdemo 29 + batchverify 124 双端全绿；门禁 7 步
+  （f7f24b8，Mimosa 0 findings seal sha256:be3a73a6…）。更早：**R123 Piece theme 原文对齐（R122 推断值清算）**——**方法论解锁：SDK 系统资源
   主题真值可反查**：`previewer/common/resources/entry/resources.txt`（restool 反查文本，
   含全部 theme pattern 的 id→值 + light/dark 块；sysResource.js 只有 ID 映射，真值在此）。
   piece_pattern（id:125829904）五键 + 标量 id:125830637-125830643 → height 28vp/
