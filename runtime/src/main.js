@@ -349,6 +349,7 @@
 
   // @include animation
   // @include gesture
+  // @include builtin
   // ─────────────────────────── ViewPU ───────────────────────────
   class ViewPU {
     /** @param {any} parent @param {any} localStorage @param {any} elmtId @param {any=} [extraInfo] */
@@ -703,6 +704,7 @@
 
   // Tabs 的语义性属性里本实现未覆盖的部分。回调类尤其不能静默——写上去却永远不触发，
   // 比报错更难查。纯外观项（颜色/模糊/divider/fadingEdge）不在此列。
+  // R125：scrollable 移出本表（内置拖拽翻页真语义，默认 true，tabs.d.ts JSDoc 原文）。
   const TABS_UNSUPPORTED = new Set([
     'vertical', 'barMode', 'barWidth', 'barHeight', 'barOverlap', 'barGridAlign',
     'animationDuration', 'animationMode', 'animationCurve', 'customContentTransition',
@@ -732,6 +734,7 @@
     const st = /** @type {any} */ ({
       node, index: 0, barPosition: 'start', controller: null,
       contents: [], onChange: [], barEl: null, contentEl: null,
+      scrollable: true,               // tabs.d.ts JSDoc："**true** (default)"——内容区可滑动翻页
     });
     node.__tabsState = st;
     node.style.display = 'flex';
@@ -753,6 +756,30 @@
     node.appendChild(st.barEl);
     node.appendChild(st.contentEl);
     applyTabsOptions(st, opt);
+    // R125 内置拖拽：内容区横扫翻 TabContent（scrollable 开关控制；恒横向、无 loop）
+    attachPagedDrag(st.contentEl, {
+      /** @returns {string} */
+      axis: () => 'x',
+      /** @returns {boolean} */
+      canDrag: () => st.scrollable,
+      /** @returns {number} */
+      index: () => st.index,
+      /** @returns {number} */
+      count: () => st.contents.length,
+      /** @returns {boolean} */
+      loop: () => false,
+      /** @returns {number} */
+      size: () => st.contentEl.clientWidth,
+      /** @returns {number} */
+      duration: () => 0,              // Tabs 无 duration 属性——切页即显（display 语义）
+      /** @param {number} i */
+      pageAt: (i) => (st.contents[i] ? st.contents[i].el : null),
+      /** @param {number} i */
+      commit: (i) => { setActiveTab(st, i, true); },
+      gesture: () => {},              // Tabs.onGestureSwipe 在 UNSUPPORTED 表（本片不接）
+      animStart: () => {},
+      animEnd: () => {},
+    });
     return st;
   }
 
@@ -879,12 +906,14 @@
   // 本 SDK 的签名是 Swiper(controller?: SwiperController)（不是 options 对象，与 Tabs 不同）——
   // index/loop/autoPlay 全是属性 setter。这条是编译器判错后才查出来的，别凭印象写。
   const SWIPER_UNSUPPORTED = new Set([
-    'vertical', 'displayArrow', 'displayMode', 'displayCount', 'effectMode', 'nextMargin', 'prevMargin',
-    'itemSpace', 'cachedCount', 'disableSwipe', 'curve', 'duration', 'customContentTransition',
+    'displayArrow', 'displayMode', 'displayCount', 'effectMode', 'nextMargin', 'prevMargin',
+    'itemSpace', 'cachedCount', 'curve', 'customContentTransition',
     'pageFlipMode', 'nestedScroll', 'maintainVisibleContentPosition', 'indicatorStyle', 'indicatorInteractive',
-    'onAnimationStart', 'onAnimationEnd', 'onGestureSwipe', 'onContentDidScroll', 'onContentWillScroll',
+    'onContentDidScroll', 'onContentWillScroll',
     'onSelected', 'onUnselected', 'onScrollStateChanged',
   ]);
+  // R125 起真语义：vertical/disableSwipe/duration/onAnimationStart/onAnimationEnd/onGestureSwipe
+  // （内置拖拽，attachPagedDrag）；此前它们与上述一并落 data-*。
 
   let swiperSeq = 0;
   class SwiperController {
@@ -920,21 +949,67 @@
 
   /** @param {HTMLElement} node @param {any=} [args] */
   function createSwiperState(node, args) {
-    const st = {
+    // @type 档位：entries/animStart 等空数组不写会推成 never[]（拖拽 api 里要索引/遍历）
+    const st = /** @type {any} */ ({
       node, index: 0, count: 0, entries: [],
       loop: true,                      // ArkUI 默认开启循环
       autoPlay: false, interval: 3000, // 默认间隔 3000ms
       indicatorWanted: false, controller: null, onChange: [], timer: 0,
       dots: [], indicatorEl: null,
-    };
+      // R125 内置拖拽
+      vertical: false,                 // swiper.d.ts JSDoc：vertical 默认 false（横向）
+      disableSwipe: false,
+      duration: 400,                   // JSDoc "Default value: 400"
+      animStart: [], animEnd: [], gestureSwipe: [],
+    });
     node.__swiperState = st;
     node.style.position = 'relative';
     node.style.overflow = 'hidden';
     node.style.display = 'block';
     bindSwiperController(st, args && args[0]);
+    attachPagedDrag(node, {
+      /** @returns {string} */
+      axis: () => (st.vertical ? 'y' : 'x'),
+      /** @returns {boolean} */
+      canDrag: () => !st.disableSwipe,
+      /** @returns {number} */
+      index: () => st.index,
+      /** @returns {number} */
+      count: () => st.entries.length,
+      /** @returns {boolean} */
+      loop: () => st.loop,
+      /** @returns {number} */
+      size: () => (st.vertical ? st.node.clientHeight : st.node.clientWidth),
+      /** @returns {number} */
+      duration: () => st.duration,
+      /** @param {number} i */
+      pageAt: (i) => (st.entries[i] ? st.entries[i].el : null),
+      /** @param {number} i */
+      commit: (i) => { setActiveSwiper(st, i, true); },
+      /** @param {number} i @param {any} extra */
+      gesture: (i, extra) => {
+        for (const cb of st.gestureSwipe) {
+          try { cb(i, extra); } catch (e) { layoutWarnings.push(`Swiper.onGestureSwipe 抛错：${e && e.message}`); }
+        }
+      },
+      /** @param {number} idx @param {number} target */
+      animStart: (idx, target) => {
+        // 三参签名（swiper.d.ts:1339）：(index, targetIndex, extraInfo)
+        for (const cb of st.animStart) {
+          try { cb(idx, target, { currentOffset: 0, targetOffset: 0, velocity: 0 }); }
+          catch (e) { layoutWarnings.push(`Swiper.onAnimationStart 抛错：${e && e.message}`); }
+        }
+      },
+      /** @param {number} i */
+      animEnd: (i) => {
+        for (const cb of st.animEnd) {
+          try { cb(i, { currentOffset: 0, targetOffset: 0, velocity: 0 }); }
+          catch (e) { layoutWarnings.push(`Swiper.onAnimationEnd 抛错：${e && e.message}`); }
+        }
+      },
+    });
     return st;
   }
-
   /** @param {any} st @param {number} i @param {boolean} fire */
   function setActiveSwiper(st, i, fire) {
     const n = st.entries.length;
@@ -1051,6 +1126,13 @@
       st.indicatorWanted = true;
       layoutWarnings.push('Swiper.indicator 只支持 boolean；DotIndicator/DigitIndicator 的配置未实现（已退化为默认圆点）');
     },
+    // ── R125 内置拖拽六件（此前落 data-*，现真语义；默认值见 createSwiperState 注释）──
+    vertical: (st, v) => { st.vertical = !!v; },
+    disableSwipe: (st, v) => { st.disableSwipe = !!v; },
+    duration: (st, v) => { st.duration = Math.max(0, Number(resolveResource(v)) || 0) || 400; },
+    onAnimationStart: (st, v) => { st.animStart.push(v); },
+    onAnimationEnd: (st, v) => { st.animEnd.push(v); },
+    onGestureSwipe: (st, v) => { st.gestureSwipe.push(v); },
   };
 
   // @include nav
@@ -1496,7 +1578,17 @@
     return el;
   });
   const List = ensureComponent('List',
-    defaultDom('div', { display: 'flex', flexDirection: 'column', overflow: 'auto', position: 'relative' }));
+    () => {
+      const el = document.createElement('div');
+      el.style.display = 'flex';
+      el.style.flexDirection = 'column';
+      el.style.overflow = 'auto';
+      el.style.position = 'relative';
+      // R125：内置拖拽滚动 + 惯性（Scroll 同款；CAPABILITY 内置手势清单最后一件）
+      attachScrollDrag(el);
+      el.dataset.builtinScrollDrag = '1';
+      return el;
+    });
   const ListItem = ensureComponent('ListItem', defaultDom('div', { display: 'block' }));
 
   // ListItemGroup（R49）：List 分组容器——header/items/footer 三段 + item 间距 + divider。

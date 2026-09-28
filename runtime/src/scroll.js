@@ -67,8 +67,11 @@
       (/** @type {any} */ (n.__scrollCbs = n.__scrollCbs || {})).stop = v;
     },
     fling: (n, v) => {
-      n.dataset.fling = String(Number(resolveResource(v)));
-      layoutWarnings.push('Scroll.fling 的真机惯性滚动无 DOM 对应（velocity 记 data-*，不模拟）');
+      // R125：内置惯性有了（builtinFlingScroll）——fling(velocity) 从"记 data-*"升级为
+      // 真惯性滚动（velocity px/s，方向取号；rAF 衰减到 <20px/s 或到边）
+      const vel = Number(resolveResource(v)) || 0;
+      n.dataset.fling = String(vel);
+      builtinFlingScroll(n, 0, -vel);
     },
   };
   /** @param {any[]} args */
@@ -78,6 +81,8 @@
     el.dataset.scroll = '';
     // 默认档：Vertical + scrollBar(Auto) + edgeEffect(Spring)（.d.ts 各自的 @default）
     el.style.overflowY = 'auto';
+    // R125：内置拖拽滚动 + 惯性（触摸/手写笔/鼠标按住拖）
+    attachScrollDrag(el);
     el.__scrollCbs = {};
     let lastEdge = '';
     /** @type {any} */ let settleTimer = null;

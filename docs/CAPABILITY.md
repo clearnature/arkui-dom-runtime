@@ -208,13 +208,14 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
   `animationCurve`/`customContentTransition`/`pageFlipMode`）、以及回调 `onTabBarClick`/`onSelected`/
   `onUnselected`/`onAnimationStart`/`onAnimationEnd`/`onGestureSwipe`/`onContentWillChange`。
   `TabContent.tabBar` **只支持字符串标签**：`SubTabBarStyle`/`BottomTabBarStyle`/自定义 builder 会记警告并留空标签。
-- **`Swiper` 轮播已实现**（切换/指示点/loop/autoPlay），但有两条要紧的限制：
-  1. **手势滑动完全没有**——只有"控制器 / 点指示点 / autoPlay"三条切换路径。真机上的左右滑动在本实现里不会翻页
-     （本项目的手势系统只覆盖显式绑定的 `Gesture`/`XxxGesture`，**组件的内置手势**——`List` 滚动、
-     `Swiper` 翻页、`Scroll` 拖动——都还没有）。`disableSwipe` 也会记 `layoutWarnings`。
-  2. **无动画**：`duration`/`curve`/`effectMode`/`displayMode`/`displayCount`/`itemSpace`/`nextMargin`/`prevMargin`/
-     `vertical`/`cachedCount`/`indicatorStyle`/`indicatorInteractive` 与全部动画/手势回调都记 `layoutWarnings`。
-     `indicator` 只支持 boolean，传 `DotIndicator`/`DigitIndicator` 会**退化为默认圆点**并记警告。
+- **`Swiper` 轮播已实现**（切换/指示点/loop/autoPlay + **R125 内置拖拽翻页**），剩余限制：
+  1. **内置拖拽已落地（R125）**：拖拽跟手 + 松手按"半页阈值/780vp/s 速度"翻页 + 非 loop 边界摩擦
+     （swiper_pattern.h:62/971 + swiper_helper.cpp:566-578 参数原文）+ 回弹；`vertical`/`disableSwipe`/
+     `duration`/`onAnimationStart`(三参)/`onAnimationEnd`/`onGestureSwipe` 真语义；`Tabs.scrollable`
+     内容区滑动翻页（默认 true）+ `List`/`Scroll` 拖拽滚动 + 惯性（`Scroll.fling` 真惯性）。
+     真机的 overDrag 边界回弹曲线（spring）与 `curve`/`effectMode`/`displayCount` 等仍记
+     `layoutWarnings`（overDrag 属"真机确证扫尾"候选）。
+  2. `indicator` 只支持 boolean，传 `DotIndicator`/`DigitIndicator` 会**退化为默认圆点**并记警告。
   `Swiper` 的直接子项必须是"页"本身：若用 `ForEach` 包一层，那个包裹层是 `display:contents`，
   页面边界识别不出来 → 会记警告（请把 `ForEach` 移到 `Swiper` 之外或用 `@Builder` 展开）。
 - **布局仍不是约束求解器**：`alignRules` 现在支持多层链（不动点迭代）、`Guideline`、`bias` 与两套键名，
@@ -292,7 +293,9 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 - v1 深度观测的已知边界：`@Observed` 只观测该类的**自身字段**，嵌套的非 `@Observed` 对象内部变更不触发
   （与真机一致，有负向断言守着）；`@Observed` 经 Proxy 实现，**未验证**对 `instanceof`、序列化、
   展开运算符、`for...in` 之外的反射行为有无边界差异
-- `chainMode`（相对布局的链式排列）、组件**内置手势**（`List` 滚动、`Swiper`/`Tabs` 滑动翻页、`Scroll` 拖动）、`Refresh`；另：`tabBar` 的自定义 builder、`onGestureJudgeBegin`/`shouldBuiltInRecognizerParallelWith` 这类**手势判定回调**未实现
+- `chainMode`（相对布局的链式排列）；**组件内置手势已落地（R125）**：`List`/`Scroll` 拖拽滚动+惯性、
+  `Swiper` 拖拽翻页、`Tabs` 内容区滑动（见 Swiper 限制节）；`Refresh` R50 已实现（见上表）。
+  另：`tabBar` 的自定义 builder、`onGestureJudgeBegin`/`shouldBuiltInRecognizerParallelWith` 这类**手势判定回调**未实现
   （**显式绑定的手势**已完整：`Gesture`/`XxxGesture`/`GestureGroup`/`priorityGesture`/`parallelGesture`/`GestureMask`，见上表 R23 与 R23 收口）
 - **骨架组件终态账（R122 清账，判定见 `docs/research/R120-component-verdicts.md`）**：
   149 元数据 = **手写 129 + 骨架 20**（platform-only 结案 19 + not-found 结案 1）；

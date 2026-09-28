@@ -187,6 +187,10 @@ case "${1:-index}" in
     run_one gesturegroupdemo "$(src_of pages/GestureGroupDemo.ts)" build/gesturegroupdemo-module.js test/gesturegroupdemo.html \
       "--cjs --register GestureGroupDemo" || rc=1
     echo
+    # R125 收口：组件内置手势
+    run_one builtindemo "$(src_of pages/BuiltinDemo.ts)" build/builtindemo-module.js test/builtindemo.html \
+      "--cjs --register BuiltinDemo" || rc=1
+    echo
     # R12 收口：Navigation 标题栏 / 工具栏 / 分栏
     run_one navbardemo "$(src_of pages/NavBarDemo.ts)" build/navbardemo-module.js test/navbardemo.html \
       "--cjs --register NavBarDemo" || rc=1
@@ -414,6 +418,10 @@ case "${1:-index}" in
     # R23 收口：手势分组 / 旋转 / 优先级仲裁
     run_one gesturegroupdemo "$(src_of pages/GestureGroupDemo.ts)" build/gesturegroupdemo-module.js test/gesturegroupdemo.html \
       "--cjs --register GestureGroupDemo" ;;
+  builtindemo)
+    # R125 收口：组件内置手势（Swiper 拖拽翻页 / Tabs 滑动切换 / Scroll+List 拖拽滚动）
+    run_one builtindemo "$(src_of pages/BuiltinDemo.ts)" build/builtindemo-module.js test/builtindemo.html \
+      "--cjs --register BuiltinDemo" ;;
   navbardemo)
     # R12 收口：Navigation 标题栏 / 工具栏 / 分栏
     run_one navbardemo "$(src_of pages/NavBarDemo.ts)" build/navbardemo-module.js test/navbardemo.html \

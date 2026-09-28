@@ -538,6 +538,12 @@
       (node.__tabsState || node.__swiperState).onChange.push(value);
       return;
     }
+    // R125：Swiper 的动画/手势回调由内置拖拽生命周期派发——animationstart 是 CSS 动画事件
+    // 语义不同，落成 addEventListener 就是永不触发（坑 86 同族）
+    if (node.__swiperState && SWIPER_ATTRS[prop] && typeof value === 'function') {
+      SWIPER_ATTRS[prop](node.__swiperState, value);
+      return;
+    }
     // NavDestination 的生命周期回调同理：由栈操作派发，不能变成 'willappear' 监听器
     if (node.__navDestCbs && (/** @type {Record<string, any>} */ (NAVDEST_LIFECYCLE))[prop]) {
       const kind = (/** @type {Record<string, any>} */ (NAVDEST_LIFECYCLE))[prop];
@@ -570,6 +576,8 @@
     if (prop === 'id') { node.id = String(resolveResource(value)); return; }
     if (prop === 'tabBar') { applyTabBar(node, value); return; }
     if (node.__swiperState && SWIPER_ATTRS[prop]) { SWIPER_ATTRS[prop](node.__swiperState, value); return; }
+    // R125：Tabs.scrollable = 内容区滑动翻页开关（默认 true，JSDoc 原文）
+    if (node.__tabsState && prop === 'scrollable') { node.__tabsState.scrollable = !!value; return; }
     if (node.__navState && NAV_ATTRS[prop]) { NAV_ATTRS[prop](node.__navState, value, extra); return; }
     if (node.__navDest && NAVDEST_ATTRS[prop]) { NAVDEST_ATTRS[prop](node, value, extra); return; }
     // Grid 轨道模板要过单位归一化，所以不能走 cssPropEnum 的原样透传

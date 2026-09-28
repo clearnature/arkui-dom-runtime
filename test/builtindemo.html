@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R125 内置手势（Swiper 拖拽翻页 / Tabs 滑动切换 / Scroll+List 拖拽滚动）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 360px; height: 480px; border: 1px solid #ccc; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R125：组件内置手势（真机参数：半页阈值 / 780vp/s / 边界摩擦 / 400ms）</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/builtindemo-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const el = (id) => root.querySelector('#' + id);
+    const txt = (id) => String(el(id) ? el(id).textContent : '<缺>');
+    const group = async (name, fn) => {
+      try { await fn(); } catch (e) {
+        allPass = false;
+        lines.push(`FAIL [${name}] 抛出异常：${e && e.stack ? String(e.stack).split('\n')[0] : e}`);
+      }
+    };
+    // 合成指针事件（与 GestureDemo 同一套）；timeStamp 不可通过 EventInit 注入，
+    // 速度类断言用可编程时钟（劫持 performance.now，同步派发也能造出 dt>0）
+    const pev = (type, x, y, id, extra) => new PointerEvent(type, Object.assign({
+      bubbles: true, cancelable: true, composed: true,
+      clientX: x, clientY: y, pointerId: id || 1, pointerType: 'touch',
+      isPrimary: (id || 1) === 1, button: 0, buttons: type === 'pointerup' ? 0 : 1,
+    }, extra || {}));
+    const down = (t, x, y, id) => t.dispatchEvent(pev('pointerdown', x, y, id));
+    const move = (t, x, y, id) => t.dispatchEvent(pev('pointermove', x, y, id));
+    const up = (t, x, y, id) => t.dispatchEvent(pev('pointerup', x, y, id));
+    // 可编程时钟：test 只在受控段替换，用完还原
+    let fakeNow = null;
+    const realNow = performance.now.bind(performance);
+    const clock = (on) => { performance.now = on ? (() => fakeNow || 0) : realNow; };
+    /** 带时钟推进的拖拽：pts = [[dx 累计, dt(ms)]] 相对起点 */
+    const dragClock = (t, x0, y0, pts, id) => {
+      clock(true);
+      fakeNow = 100;
+      down(t, x0, y0, id);
+      for (const [dx, dt] of pts) {
+        fakeNow += dt;
+        move(t, x0 + dx, y0 + (pts.dy || 0), id);
+      }
+      fakeNow += 10;
+      up(t, x0 + pts[pts.length - 1][0], y0, id);
+      clock(false);
+    };
+
+    try {
+      __arkui_dom_requireModule('BuiltinDemo');
+      __arkui_dom_loadRoute('pages/BuiltinDemo', root);
+      await tick(80);
+      check(!!el('sw') && !!el('tb') && !!el('scr') && !!el('lst'), 'BuiltinDemo 页面已渲染（sw/tb/scr/lst）');
+
+      // ══════════ ① Swiper 初始态 + 跟手 ══════════
+      const st = () => el('sw').__swiperState;
+      const pageOf = (i) => st().entries[i].el;
+      await group('Swiper 初始/跟手', async () => {
+        check(st().entries.length === 3, `Swiper 3 页（实际 ${st().entries.length}）`);
+        check(pageOf(0).style.display !== 'none' && pageOf(1).style.display === 'none',
+          '初始 P0 可见 P1 隐藏（display 切换语义保持）');
+        down(el('sw'), 80, 40);
+        move(el('sw'), 74, 40);          // raw -6 → 越过 5px 启动阈值
+        await tick(5);
+        check(pageOf(0).style.transform.indexOf('translateX(-6') === 0,
+          `拖拽跟手：P0 transform=translateX(-6px)（实际 '${pageOf(0).style.transform}'）`);
+        check(pageOf(1).style.display === 'block' && pageOf(1).style.position === 'absolute',
+          '邻页 P1 已上舞台（display:block + absolute）');
+        up(el('sw'), 74, 40);
+        await tick(300);                  // 回弹收口（rAF + 120ms + 兜底 80）
+        check(pageOf(0).style.transform === '', '松手（未过半页）回弹后 transform 清空');
+        check(pageOf(0).style.position === '' && pageOf(1).style.display === 'none',
+          '拖拽舞台已还原（P0 回流、P1 影藏）');
+      });
+
+      // ══════════ ② 拖过半页翻页：A→C→E 顺序 + 显隐切换 ══════════
+      await group('Swiper 过半页翻页', async () => {
+        const before = txt('sp0').length;   // 只为触发读取；日志看 slog 状态
+        const slogEl = root.querySelector('[data-arkui-comp="Swiper"]');
+        // slog 在组件状态里，直接读 ObservedProperty 的 DOM 不可见——改读 __swiperState 旁证：
+        // 用事件计数代替：翻页后 P1 可见即证 commit
+        dragClock(el('sw'), 80, 40, [[-20, 30], [-95, 30], [-96, 5]], 7);   // 位移 -96 > 半页 80
+        await tick(500);
+        check(st().index === 1, `拖过半页（-96 > -80）→ 翻到 P1（实际 index=${st().index}）`);
+        check(pageOf(1).style.display !== 'none' && pageOf(0).style.display === 'none',
+          'commit 后 P1 可见 P0 隐藏');
+        check(pageOf(0).style.transform === '' && pageOf(1).style.transform === '',
+          '动画收口后 transform 清空（舞台还原）');
+      });
+
+      // ══════════ ③ 速度翻页（快扫小位移）+ 边界摩擦 ══════════
+      await group('Swiper 速度翻页/边界摩擦', async () => {
+        // 当前 index=1。快扫：10ms 内位移 -20 → v = -2000px/s < -780 → 翻页
+        dragClock(el('sw'), 80, 40, [[-5, 5], [-25, 10]], 8);
+        await tick(500);
+        check(st().index === 2, `快扫 v≈-2000px/s → 速度翻页到 P2（实际 index=${st().index}）`);
+        await tick(120);                  // 静置：等邻页收口 rAF 全部落地（避免覆写竞态）
+        // P2（末页，loop=false）继续往左拖 = 朝界外 → 摩擦：显示偏移 < raw
+        down(el('sw'), 80, 40);
+        move(el('sw'), 70, 40);           // raw -10（朝界外，γ=10/360）
+        await tick(5);
+        const tf = pageOf(2).style.transform || '';
+        const m = /translateX\((-?[\d.]+)px\)/.exec(tf);
+        const shown = m ? Math.abs(Number(m[1])) : -1;
+        check(m && shown > 0 && shown < 30,
+          `边界摩擦：显示偏移 |${shown}| < 输入 30（f(γ)=0.72·fx/γ 原文）`);
+        up(el('sw'), 70, 40);
+        await tick(500);
+        check(st().index === 2, '界外松手回弹：仍 P2');
+        // 右拖（raw>0，sign=-1，nIdx=1）→ 正常回拖回 P1：过半页
+        dragClock(el('sw'), 80, 40, [[20, 30], [95, 30], [96, 5]], 9);
+        await tick(500);
+        check(st().index === 1, `末页右拖过半 → 回 P1（实际 index=${st().index}）`);
+      });
+
+      // ══════════ ④ runtime 级：vertical / disableSwipe ══════════
+      await group('Swiper vertical/disableSwipe', async () => {
+        const VSP = globalThis.ViewStackProcessor;
+        const snap = VSP ? VSP.snapshot() : null;
+        const C = globalThis.Swiper;
+        const node = C.create();
+        C.vertical(true);
+        C.loop(false);
+        C.pop();
+        if (VSP) VSP.restore(snap);
+        node.style.width = '120px';
+        node.style.height = '180px';
+        root.appendChild(node);
+        const vst = node.__swiperState;
+        const mk = (t) => { const d = document.createElement('div'); d.textContent = t; d.style.height = '180px'; node.appendChild(d); return d; };
+        mk('V0'); mk('V1');
+        node.__swiperState && node.querySelectorAll('[data-arkui-swiper-page]').length;
+        // 手动收口：直接调 finalize 路径不存在——entries 在 pop 时收集，但页在 pop 后追加；
+        // 这里走 controller 前先补收集：pop 时 children 为空 → entries 空。补：追加后重收
+        vst.entries = [...node.children].filter((c) => !c.hasAttribute('data-arkui-swiper-indicator'))
+          .map((c) => { c.setAttribute('data-arkui-swiper-page', ''); return { el: c }; });
+        vst.count = vst.entries.length;
+        vst.entries.forEach((/** @type {any} */ e, /** @type {number} */ k) => { if (k) e.el.style.display = 'none'; });
+        check(vst.vertical === true, `vertical(true) 进状态（实际 ${vst.vertical}）`);
+        // 竖向拖：raw 以 clientY 计——往下拖 96 > 半页 90 → 应翻到 V1
+        clock(true);
+        fakeNow = 100;
+        down(node, 60, 40);
+        fakeNow += 30; move(node, 60, 30);
+        fakeNow += 30; move(node, 60, -56);   // dy = -96
+        fakeNow += 10; up(node, 60, -56);
+        clock(false);
+        await tick(500);
+        check(vst.index === 1, `vertical 拖拽 -96 越半页（90）→ V1（实际 index=${vst.index}）`);
+        // disableSwipe：拖了不动
+        const snap2 = VSP ? VSP.snapshot() : null;
+        const node2 = C.create();
+        C.disableSwipe(true);
+        C.pop();
+        if (VSP) VSP.restore(snap2);
+        node2.style.width = '120px';
+        node2.style.height = '80px';
+        root.appendChild(node2);
+        const v2 = node2.__swiperState;
+        const mk2 = (t) => { const d = document.createElement('div'); d.textContent = t; d.style.height = '80px'; node2.appendChild(d); return d; };
+        mk2('D0'); mk2('D1');
+        v2.entries = [...node2.children].map((c) => { c.setAttribute('data-arkui-swiper-page', ''); return { el: c }; });
+        v2.count = v2.entries.length;
+        v2.entries.forEach((/** @type {any} */ e, /** @type {number} */ k) => { if (k) e.el.style.display = 'none'; });
+        down(node2, 60, 40);
+        move(node2, 20, 40);
+        up(node2, 20, 40);
+        await tick(300);
+        check(v2.index === 0 && v2.entries[0].el.style.transform === '',
+          `disableSwipe(true) → 拖拽被忽略（index=${v2.index}）`);
+      });
+
+      // ══════════ ⑤ Tabs 内容区滑动翻页 ══════════
+      await group('Tabs 滑动切换', async () => {
+        const tst = el('tb').__tabsState;
+        check(tst.scrollable === true, 'scrollable 默认 true（JSDoc 原文）');
+        const content = el('tb').querySelector('[data-arkui-tabs-content]');
+        dragClock(content, 80, 30, [[-20, 30], [-95, 30], [-96, 5]], 11);
+        await tick(400);
+        check(tst.index === 1, `内容区左拖过半 → Tab1（实际 index=${tst.index}）`);
+        check(tst.contents[0].el.style.display === 'none' && tst.contents[1].el.style.display !== 'none',
+          'Tab0 隐 Tab1 显');
+        // scrollable(false) → 拖动不翻。属性分派走真实路径：把已挂载的 Tabs 临时推上栈
+        const C = globalThis.Tabs;
+        const VSP = globalThis.ViewStackProcessor;
+        VSP.push(el('tb'));
+        C.scrollable(false);
+        VSP.pop();
+        check(tst.scrollable === false, 'scrollable(false) 进状态');
+        dragClock(content, 80, 30, [[-20, 30], [-95, 30]], 12);
+        await tick(300);
+        check(tst.index === 1, 'scrollable=false → 拖拽不再翻页');
+      });
+
+      // ══════════ ⑥ Scroll/List 拖拽滚动 + 惯性 ══════════
+      await group('Scroll/List 拖拽滚动', async () => {
+        const scr = el('scr');
+        // 内容加高（fixture 内容 120/容器 90 只能滚 30px，不够惯性展开）
+        const col = scr.firstElementChild;
+        for (let i = 0; i < 6; i++) {
+          const t = document.createElement('div');
+          t.style.height = '40px';
+          t.textContent = 'X' + i;
+          col.appendChild(t);
+        }
+        // 向上拖（dy 负）→ scrollTop 增
+        clock(true);
+        fakeNow = 100;
+        down(scr, 80, 70);
+        fakeNow += 40; move(scr, 80, 50);
+        fakeNow += 40; move(scr, 80, 10);    // dy = -60
+        fakeNow += 10; up(scr, 80, 10);
+        clock(false);
+        const dragScrolled = scr.scrollTop;
+        check(dragScrolled >= 55, `Scroll 拖拽滚动 60px（实际 scrollTop=${dragScrolled}）`);
+        await tick(600);                      // 惯性衰减（rAF，虚拟时钟下快进）
+        check(scr.scrollTop > dragScrolled,
+          `惯性续走：${dragScrolled} → ${scr.scrollTop}`);
+        const lst = el('lst');
+        down(lst, 80, 70);
+        move(lst, 80, 20);                    // dy=-50，List 内容 116-90=26px 可滚
+        up(lst, 80, 20);
+        await tick(300);
+        check(lst.scrollTop > 0, `List 拖拽滚动（scrollTop=${lst.scrollTop}，上限 26）`);
+        check(lst.scrollTop <= 26, 'List 滚动被内容高度正确钳制');
+      });
+
+      lines.push(`BUILTIN sw=${st().index} tb=${el('tb').__tabsState.index} scr=${el('scr').scrollTop}`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>
