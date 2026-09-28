@@ -198,6 +198,24 @@ kernel_call 都会触发 drive）。
 3. 三层测试同步扩（见 §8）：契约测试 → smoke → cjk.html（Electron 分支）；
    cjk.html 断言数变化须同步 ROADMAP 声明（沿革注记格式，见 §8 计数守门）。
 
+### 7.1.1 多内核符号纪律（R118 坑 108 之后确立——单语言封闭，不混合调用）
+
+每个内核是**单一语言的封闭单元**：
+
+1. **内核间只经宿主 ABI 交互**（`kernel_abi.h` 符号 + `kernel_call` 分派）——永不直接
+   调用另一个内核的代码；
+2. **内核内部对自身导出名（`kernel_*`）的自引用不得依赖动态绑定**：C/C++ 提为
+   `static`（本地绑定）、Go/Rust/Haskell 用非导出名内部函数（编译器链接期解析）。
+   宿主 `RTLD_GLOBAL` 下（仓颉运行时必需）全局符号表同名导出**后加载者胜出**——
+   自引用经 PLT 会跳进别的内核（R118 实测：C 的 shutdown 自引用 init → 仓颉
+   `kernel_init(NULL)` → SIGSEGV，`static do_init` 修复）；
+3. 宿主 `dlsym` 按 handle 限定（无冲突）——风险只在内核自身代码的动态绑定。
+
+**五内核审计（2026-09-27）**：C=static 修复✓；Go=`kernel_init(nil)` 改 `reset_state`
+（当前 Go 编译器模块内直接绑定本安全，smoke 三连绿为活证——仍按纪律消除，不依赖
+跨编译器行为）；Rust/Haskell/仓颉=无自引用（内部全非导出名/mangled）✓。
+**判据：崩溃栈位于另一语言内核而调用方是本内核 → 查自引用绑定，不是串槽。**
+
 ### 7.2 用其他语言写内核（契约兼容性）
 
 kernel_abi.h 是纯 C ABI，任何能导出 C 符号、能编译 .so 的语言都可实现。宿主（addon）零改动：

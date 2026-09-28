@@ -411,8 +411,10 @@ func dispatch(m string, p string) (string, bool) {
 
 // ── C ABI 六核心 + typed + 版本 ─────────────────────────────────────────────────
 
-//export kernel_init
-func kernel_init(config *C.char) C.int {
+// reset_state：内核内部重置——【纪律】导出名不自引用（坑 108：RTLD_GLOBAL 下
+// 单语言内核的自引用可能经动态绑定跳进别的内核；Go 当前编译器是模块内直接
+// 绑定安全，但不依赖跨编译器行为——与 C 的 static do_init 同纪律）
+func reset_state() {
 	reg.mu.Lock()
 	reg.agents = map[int]*Agent{}
 	reg.order = nil
@@ -424,12 +426,17 @@ func kernel_init(config *C.char) C.int {
 	jobs.doneOr = nil
 	jobs.mu.Unlock()
 	lastErr.Store("")
+}
+
+//export kernel_init
+func kernel_init(config *C.char) C.int {
+	reset_state()
 	return 0
 }
 
 //export kernel_shutdown
 func kernel_shutdown() C.int {
-	_ = kernel_init(nil)
+	reset_state()
 	return 0
 }
 
