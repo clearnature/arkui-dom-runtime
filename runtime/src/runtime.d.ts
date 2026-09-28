@@ -92,6 +92,7 @@ interface Element {
   __aix?: any;
   __arkuiLeaf?: boolean;
   __arkuiWithEnv?: boolean;                // WithEnv 作用域容器标记（R118）
+  __arcList?: Record<string, unknown>;     // ArcList 容器状态（scroller/回调族/lastFirst——R121）
   __envValues?: Record<string, unknown>;   // WithEnv env/customEnv 键值事实（R118）
   __arkuiRichEditor?: boolean;
   __rich?: any;

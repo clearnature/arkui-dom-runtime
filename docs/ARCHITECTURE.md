@@ -1763,28 +1763,28 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   fixtures 转换产物  75 个：AlphabetIndexerDemo AnimDemo AnimatorDemo AsyncIO AttrHeavyDemo BatchFuncDemo BatchLayoutDemo BatchMediaDemo BatchVerifyDemo CalendarPickerDemo Callee CanvasDemo CjkDemo DatePickerDemo Detail DrawDemo GestureDemo GestureGroupDemo GridDemo GridRowDemo Home ImageDemo Index InputDemo Layout Lazy LazyVar ListGroupDemo MeasArea MeasImage MeasNotify Measure MediaDemo NavBarDemo NavDemo NavShimDemo NavTransDemo NetFile NotesDetail NotesHome Observe PanelDemo PerfBigDemo PerfDemo PickerDemo PopDemo PromptAct Provide QrDemo RefreshDemo RelDemo Rich RichVideoDemo ScrollDemo ShapeDemo ShowDemo SideBarDemo SmallDemo SplitDemo StepDemo Stress1kDemo SwiperDemo TabsGrid TextDemo TextMeasure TextPickerDemo TextTimeDemo TimePickerDemo TransitionDemo UiContextDemo V2 WaterFlowDemo Widgets WindowDemo XCompDemo
 
 == 性能基线（Electron 实测）==
-  首渲染            118.5 ms（33 节点：Column+Button+Text+ForEach×30）
-  最小 rerender     7.2 ms（@State 计数脏区单 Text，rAF 口径）
+  首渲染            105.7 ms（33 节点：Column+Button+Text+ForEach×30）
+  最小 rerender     6.0 ms（@State 计数脏区单 Text，rAF 口径）
   rerender 管道     1.0 ms / 1 tick（setTimeout 轮询口径，R70）
   微任务底噪        0.00 ms
   行数              31
-  剖面 R71          loadRoute 同步 3.0 ms（require 0.1）· raf1 0.2 / raf2 115.3 ms（offscreen 首帧）
-  脚本 eval         runtime 22.1 / generated 19.9 / shims 20.9 / module 20.3 ms（计时起点之前）
+  剖面 R71          loadRoute 同步 3.6 ms（require 0.2）· raf1 0.1 / raf2 102.0 ms（offscreen 首帧）
+  脚本 eval         runtime 24.3 / generated 22.9 / shims 22.2 / module 21.7 ms（计时起点之前）
   判定              框架同步构建 3.5ms 无大头；"首渲染"=脚本 eval + offscreen 首帧（非框架成本）
-  千节点 R79        首渲染同步 18.9 ms（350 节点/~3500 属性，亚线性）· 单点 flush 2.7 ms · 批量翻转 flush 6.0 ms
+  千节点 R79        首渲染同步 20.5 ms（350 节点/~3500 属性，亚线性）· 单点 flush 2.7 ms · 批量翻转 flush 5.7 ms
   规模曲线          203→4.8 / 304→11.2 / 1055→19.0 ms（创建路径亚线性）；行复用+守卫千节点级保持
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          990.0 KB
-  runtime(src)     986.7 KB
-  test             868.0 KB
+  runtime          997.5 KB
+  runtime(src)     994.2 KB
+  test             872.5 KB
   tools            197.1 KB
   electron(src)    48.1 KB
-  docs             795.0 KB
+  docs             795.7 KB
   fixtures         517.2 KB
 
 == 逐文件（文档"文件职责"表的来源）==
-  runtime/arkui-dom-runtime.js           735134 B  717.9 KB
+  runtime/arkui-dom-runtime.js           742746 B  725.3 KB
   runtime/generated-components.js         57617 B  56.3 KB
   runtime/ohos-shims.js                   80707 B  78.8 KB
   tools/extract.mjs                        6936 B  6.8 KB
@@ -1806,7 +1806,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   docs/ARCHITECTURE.md                   163602 B  159.8 KB
   docs/CAPABILITY.md                      62677 B  61.2 KB
   docs/DEVELOPING.md                      75385 B  73.6 KB
-  docs/ROADMAP.md                        214700 B  209.7 KB
+  docs/ROADMAP.md                        215456 B  210.4 KB
   docs/surface-measurement.md              6496 B  6.3 KB
   docs/SESSION-2026-09-20.md              12842 B  12.5 KB
   runtime/src/.mimosa                      4096 B  4.0 KB
@@ -1821,7 +1821,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   runtime/src/batch-media.js              35046 B  34.2 KB
   runtime/src/batch-motion.js             25199 B  24.6 KB
   runtime/src/batch-nav.js                30228 B  29.5 KB
-  runtime/src/batch-platform.js           22757 B  22.2 KB
+  runtime/src/batch-platform.js           30369 B  29.7 KB
   runtime/src/calendarpicker.js           17806 B  17.4 KB
   runtime/src/canvas.js                   10679 B  10.4 KB
   runtime/src/datepicker.js                8770 B  8.6 KB
@@ -1838,7 +1838,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   runtime/src/popup.js                     5042 B  4.9 KB
   runtime/src/refresh.js                   8193 B  8.0 KB
   runtime/src/richeditor.js                1942 B  1.9 KB
-  runtime/src/runtime.d.ts                 6962 B  6.8 KB
+  runtime/src/runtime.d.ts                 7073 B  6.9 KB
   runtime/src/scroll.js                    6346 B  6.2 KB
   runtime/src/shape.js                     7525 B  7.3 KB
   runtime/src/show.js                     18856 B  18.4 KB
@@ -1934,7 +1934,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   test/animdemo.html                      11498 B  11.2 KB
   test/async.html                          5977 B  5.8 KB
   test/attrheavy.html                      4064 B  4.0 KB
-  test/batch-verify.html                  18545 B  18.1 KB
+  test/batch-verify.html                  23206 B  22.7 KB
   test/batchbehavior.html                  6098 B  6.0 KB
   test/batchfunc.html                     10565 B  10.3 KB
   test/batchinputdemo.html                 9853 B  9.6 KB

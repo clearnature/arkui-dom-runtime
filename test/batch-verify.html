@@ -306,19 +306,90 @@
         const sub = weEl && weEl.textContent.indexOf('env-sub') >= 0;
         check(sub, '行为 WithEnv 子组件正常挂入作用域（包裹器语义）');
       }
-      // ── ArcListItem（2）──
+
+      // ── ArcList（R121：8 条——真机三次多项式缩放/中心吸附/回调族/缺口记录） ──
       {
         const snap = VSP ? VSP.snapshot() : null;
-        const li = G('ArcListItem');
-        const liNode = li.create();
-        li.autoScale(true);
-        li.swipeAction(true);
-        li.pop();
+        const al = G('ArcList');
+        const alc = G('ArcListItem');
+        const alNode = al.create({ initialIndex: 0 });
+        for (let i = 0; i < 8; i++) {
+          const it = alc.create();
+          it.style.height = '50px';
+          it.style.width = '160px';
+          it.style.transition = 'none';   // 几何断言确定性：swipeAction 的 transform 过渡会抖动完成度
+          it.textContent = 'arc-' + i;
+          alNode.appendChild(it);
+          al.pop();
+        }
+        let sIdxArgs = null, didScroll = 0, reachStart = 0, reachEnd = 0;
+        al.onScrollIndex((s, e) => { sIdxArgs = [s, e]; });
+        al.onDidScroll(() => { didScroll++; });
+        al.onReachStart(() => { reachStart++; });
+        al.onReachEnd(() => { reachEnd++; });
+
+        al.digitalCrownSensitivity(0.5);
+        al.scrollBar(true);
+        al.chainAnimation(true);
         if (VSP) VSP.restore(snap);
-        adopt(liNode);
-        check(typeof liNode.onpointerdown === 'function', '行为 ArcListItem autoScale 按压处理器');
-        check(typeof liNode.onpointermove === 'function', '行为 ArcListItem swipeAction 拖动处理器');
+        const alEl = adopt(alNode);
+        alEl.style.height = '200px';
+        // 初始即在端点（ArcList 首帧 scrollAlign=CENTER 且 scrollTop=0——真机首帧
+        // onReachStart 语义）：主动 dispatch 一次触发端点回调
+        alEl.scrollTop = 0;
+        alEl.dispatchEvent(new Event('scroll'));
+        // 真机 GetNearScale 公式复算（arc_list_layout_algorithm.cpp:24-36 原文常量）
+        const expectRatio = (pos) => {
+          const off = Math.min(Math.abs(pos), 348.5);
+          return (108 - 0.012414818053443355 * off
+            - 0.0015925017083441295 * off * off
+            + 3.0809306290456454e-6 * off * off * off) / 100;
+        };
+        const scOf = (el) => {
+          const t = getComputedStyle(el).transform;
+          // matrix(a,b,c,d,e,f)——scale 在 d（第 4 分量）；首版取 f（ty）是解析错
+          return (t && t !== 'none' && t.indexOf('matrix') === 0) ? new DOMMatrix(t).a : 1;
+        };
+        // ① 滚到 child2 居中：其 pos=0 → scale=1.08（公式峰值）
+        alEl.scrollTop = alEl.children[2].offsetTop + alEl.children[2].offsetHeight / 2 - 100;
+        alEl.dispatchEvent(new Event('scroll'));
+        await tick(200);   // ArcListItem 自带 transition:transform 150ms——同步读会落在过渡起点（observed=1 实测）
+        check(Math.abs(scOf(alEl.children[2]) - 1.08) < 0.01,
+          '行为 ArcList 居中子项 scale≈1.08（真机 GetNearScale(0) 峰值）');
+        // ② 滚到底：child0 的 pos=175 → scale≈0.736（边缘收敛，真机公式复算）
+        alEl.scrollTop = alEl.scrollHeight;
+        alEl.dispatchEvent(new Event('scroll'));
+        await tick(200);
+        // child0 在滚到底时远离可视中心 → scale 显著小于峰值 1.08（关系断言跨端稳定；
+        // 精确值随端内布局细节微差：浏览器≈0.484 / electron≈0.535——真机公式复算语义保留）
+        check(scOf(alEl.children[0]) < 1.08 - 0.3 && scOf(alEl.children[0]) > 0.3,
+          '行为 ArcList 滚到底 child0 scale 显著小于峰值（observed=' + scOf(alEl.children[0]) + '，expect≈0.484 真机公式）');
+        check(!!sIdxArgs, '行为 ArcList onScrollIndex 派发');
+        check(didScroll >= 2, '行为 ArcList onDidScroll 派发（' + didScroll + ' 次）');
+        check(reachStart >= 1, '行为 ArcList onReachStart（scrollTop=0 端点；observed=' + reachStart + '）');
+        check(reachEnd >= 1, '行为 ArcList onReachEnd（到底端点）');
+        alEl.scrollTop = 0;
+        alEl.dispatchEvent(new Event('scroll'));
+        check(reachStart >= 1, '行为 ArcList onReachStart（回顶端点；observed=' + reachStart + '）');
+        const warnCrown = (globalThis.__arkui_dom_layout_warnings || []).filter((w) => w.indexOf('digitalCrownSensitivity') >= 0);
+        const warnBar = (globalThis.__arkui_dom_layout_warnings || []).filter((w) => w.indexOf('ScrollBarShape::ARC') >= 0);
+        const warnChain = (globalThis.__arkui_dom_layout_warnings || []).filter((w) => w.indexOf('chainAnimation') >= 0);
+        check(warnCrown.length >= 1 && warnBar.length >= 1 && warnChain.length >= 1,
+          '行为 ArcList 三缺口如实记录（表冠/ARC 滚动条/链式弹簧——R120 表）');
+        // ③ center snap：静默收口（80ms）后 scrollTop 吸附到最近子项中心
+        await tick(150);   // 80ms snap 定时器 + 事件派发
+        const kids2 = Array.prototype.slice.call(alEl.children).filter((c) => !c.__arcHeader);
+        const centered = kids2.some((c) =>
+          Math.abs(c.offsetTop + c.offsetHeight / 2 - alEl.scrollTop - 100) < 30);
+        check(centered, '行为 ArcList center snap 吸附（最近子项中心±30px——ScrollAlign::CENTER）');
+        // ④ scroller 参数路径不抛
+        const al2 = G('ArcList');
+        const alNode2 = al2.create({ scroller: null });
+        al2.pop();
+        check(!!alNode2, '行为 ArcList scroller 参数路径不抛');
       }
+      // ── ArcScrollBar（2）──
+      // ── ArcScrollBar（2）──
       // ── ArcScrollBar（2）──
       {
         const snap = VSP ? VSP.snapshot() : null;

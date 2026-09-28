@@ -13280,6 +13280,135 @@
       if (n && n.__arcThumb) n.__arcThumb.style.top = Math.max(0, Math.min(0.8, Number(ratio) || 0)) * 100 + '%';
     };
 
+    // ── ArcList（R121 partial 可行半边；@ohos.arkui.ArcList.d.ts，public since 18）──
+    // 真机缩放公式照抄（arc_list_layout_algorithm.cpp:24-36 原文常量 + GetNearScale）：
+    //   offset=min(|pos|,348.5); ratio=(108 -0.012414818053443355*offset
+    //     -0.0015925017083441295*offset² +3.0809306290456454e-6*offset³)/100
+    //   中心 1.08 → 钳位 ≈0.405。ScrollAlign::CENTER 吸附。缺口（R120 表）：
+    //   digitalCrownSensitivity 表冠输入、ScrollBarShape::ARC 圆弧滚动条、
+    //   chainAnimation 链式弹簧——dataset+layoutWarnings 如实记录。
+    /** @param {number} pos */
+    function arcListNearScale(pos) {
+      const offset = Math.min(Math.abs(pos), 348.5);
+      return (108 - 0.012414818053443355 * offset
+        - 0.0015925017083441295 * offset * offset
+        + 3.0809306290456454e-6 * offset * offset * offset) / 100;
+    }
+    /** @param {any} el 逐项应用近缩放（transform 不改布局流——子项布局高恒定） */
+    function arcListApplyScale(el) {
+      const st = el.__arcList;
+      if (!st) return;
+      const half = el.clientHeight / 2;
+      /** @type {HTMLElement[]} */ const kids =
+        /** @type {any} */ (Array.prototype.slice.call(el.children)).filter((/** @type {any} */ c) => !c.__arcHeader);
+      kids.forEach((/** @type {any} */ c) => {
+        const center = c.offsetTop + c.offsetHeight / 2 - el.scrollTop;
+        const ratio = arcListNearScale(center - half);
+        c.style.transform = 'scale(' + ratio.toFixed(4) + ')';
+        c.style.transformOrigin = 'center center';
+      });
+    }
+    /** @param {any} el 中心吸附：把最接近可视中心的子项吸到中心（ScrollAlign::CENTER） */
+    function arcListSnap(el) {
+      const st = el.__arcList;
+      if (!st) return;
+      /** @type {HTMLElement[]} */ const kids =
+        /** @type {any} */ (Array.prototype.slice.call(el.children)).filter((/** @type {any} */ c) => !c.__arcHeader);
+      if (!kids.length) return;
+      const half = el.clientHeight / 2;
+      let bestIdx = -1, bestD = Infinity;   // 索引方案：闭包赋值会让 let best 的
+      kids.forEach((/** @type {any} */ c, /** @type {number} */ ci) => {   // null 类型窄化失效（never）
+        const d = Math.abs(c.offsetTop + c.offsetHeight / 2 - el.scrollTop - half);
+        if (d < bestD) { bestD = d; bestIdx = ci; }
+      });
+      if (bestIdx >= 0) {
+        const best = kids[bestIdx];
+        el.scrollTop = best.offsetTop + best.offsetHeight / 2 - half;
+      }
+    }
+    /** @type {Record<string, (n: any, v: any, extra?: any) => void>} */
+    const ARCLIST_ATTRS = {
+      digitalCrownSensitivity: (n, v) => { n.dataset.crownSensitivity = String(v); layoutWarnings.push('ArcList.digitalCrownSensitivity: 表冠输入/触觉无 DOM 对应（R120 缺口记录）'); },
+      space: (n, v) => { n.style.rowGap = (Number(v) || 0) + 'px'; },
+      cachedCount: (n, v) => { n.dataset.cachedCount = String(v); },
+      fadingEdge: (n, v) => { n.dataset.fadingEdge = String(v); },
+      scrollBar: (n, v) => { n.dataset.scrollBar = String(v); layoutWarnings.push('ArcList.scrollBar: ScrollBarShape::ARC 圆弧滚动条无 CSS 对应（R120 缺口记录）'); },
+      scrollBarColor: (n, v) => { n.dataset.scrollBarColor = String(v); },
+      scrollBarWidth: (n, v) => { n.dataset.scrollBarWidth = String(v); },
+      chainAnimation: (n, v) => { n.dataset.chainAnimation = String(v); layoutWarnings.push('ArcList.chainAnimation: 链式弹簧仅 JS 近似（R120 缺口记录）'); },
+      onScrollIndex: (n, v) => { n.__arcList.onScrollIndex = v; },
+      onReachStart: (n, v) => { n.__arcList.onReachStart = v; },
+      onReachEnd: (n, v) => { n.__arcList.onReachEnd = v; },
+      onWillScroll: (n, v) => { n.__arcList.onWillScroll = v; },
+      onDidScroll: (n, v) => { n.__arcList.onDidScroll = v; },
+    };
+    const ArcList = ensureComponent('ArcList', (args) => {
+      const el = document.createElement('div');
+      const opt = args && args[0] || {};
+      el.style.cssText = 'overflow-y:auto;position:relative;display:block;'
+        + 'width:198px;height:400px;scroll-behavior:auto';
+      el.__arcList = {
+        scroller: opt.scroller || null,
+        onScrollIndex: null, onReachStart: null, onReachEnd: null,
+        onWillScroll: null, onDidScroll: null,
+        lastFirst: -1,
+      };
+      // header：CustomBuilder 展开进容器顶（标 __arcHeader——不参与缩放/snap）
+      if (opt.header) {
+        try { runBuilderInto(el, opt.header, 'ArcList.header'); }
+        catch (e) { layoutWarnings.push('ArcList.header: ' + e.message); }
+        Array.prototype.slice.call(el.children).forEach((/** @type {any} */ c) => { c.__arcHeader = true; });
+      }
+      // 滚动驱动：逐项缩放 + 回调族（onDidScroll 每事件、onScrollIndex 变化时、
+      // onReachStart/End 端点一次；80ms 静默收口后 center snap——scroll.js 先例）
+      /** @type {any} */ let snapTimer = null;
+      let lastTop = -1;   // 坑 95：scrollTop 恒等去重（原生 scroll 双发）
+      el.addEventListener('scroll', () => {
+        /** @type {any} */ const st = el.__arcList;
+        if (el.scrollTop === lastTop) return;
+        lastTop = el.scrollTop;
+        arcListApplyScale(el);
+        /** @type {HTMLElement[]} */ const kids =
+          /** @type {any} */ (Array.prototype.slice.call(el.children)).filter((/** @type {any} */ c) => !c.__arcHeader);
+        const itemH = kids.length ? (kids[0].offsetHeight || 1) : 1;
+        const first = Math.max(0, Math.floor(el.scrollTop / itemH));
+        const last = Math.min(kids.length - 1, first + Math.ceil(el.clientHeight / itemH) - 1);
+        if (typeof st.onDidScroll === 'function') {
+          try { st.onDidScroll(el.scrollTop, el.scrollTop); } catch (e) { layoutWarnings.push('ArcList.onDidScroll: ' + e.message); }
+        }
+        if (first !== st.lastFirst) {
+          if (typeof st.onScrollIndex === 'function') {
+            try { st.onScrollIndex(first, last); } catch (e) { layoutWarnings.push('ArcList.onScrollIndex: ' + e.message); }
+          }
+          st.lastFirst = first;
+        }
+        if (el.scrollTop <= 0 && typeof st.onReachStart === 'function') {
+          try { st.onReachStart(); } catch (e) { layoutWarnings.push('ArcList.onReachStart: ' + e.message); }
+        }
+        if (el.scrollTop + el.clientHeight >= el.scrollHeight - 1 && typeof st.onReachEnd === 'function') {
+          try { st.onReachEnd(); } catch (e) { layoutWarnings.push('ArcList.onReachEnd: ' + e.message); }
+        }
+        if (snapTimer) clearTimeout(snapTimer);
+        snapTimer = setTimeout(() => { arcListSnap(el); }, 80);   // 静默收口后 center snap
+      });
+      // scroller 绑定（List/Grid/Scroll 先例——ensureComponent create 内 _bind）
+      markPlatform(el, 'ArcList', ARCLIST_ATTRS);
+      if (opt.initialIndex) {
+        setTimeout(() => {
+          /** @type {HTMLElement[]} */ const kids =
+            /** @type {any} */ (Array.prototype.slice.call(el.children)).filter((/** @type {any} */ c) => !c.__arcHeader);
+          const t = kids[opt.initialIndex];
+          if (t) el.scrollTop = t.offsetTop + t.offsetHeight / 2 - el.clientHeight / 2;
+          arcListApplyScale(el);
+        }, 0);
+      }
+      if (opt.scroller && typeof opt.scroller._bind === 'function') {
+        // 延后绑：此时容器未入 DOM，clientHeight 未知——_bind 只记容器引用
+        opt.scroller._bind(el);
+      }
+      return el;
+    });
+
     // ── ArcAlphabetIndexer ──
     /** @type {Record<string, (n: any, v: any, extra?: any) => void>} */
 /** @type {Record<string, (n: any, v: any, extra?: any) => void>} */
@@ -13544,6 +13673,7 @@
     (/** @type {any} */ (global)).MediaCachedImage = MediaCachedImage;
     (/** @type {any} */ (global)).Skeleton2d = Skeleton2d;
     (/** @type {any} */ (global)).ContentSlot = ContentSlot;
+    (/** @type {any} */ (global)).ArcList = ArcList;
     (/** @type {any} */ (global)).WithEnv = WithEnv;
   }
 

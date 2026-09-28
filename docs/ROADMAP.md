@@ -1258,7 +1258,7 @@ md5 一致。
 **内容**：R66 六组并行产出的 37 个批量组件只有实现、没有测试。本轮补验收：37 结构断言 +
 兜底绊网 + BatchVerifyDemo（13 组件真编译 fixture）语义断言。
 
-**验收**：`bash run.sh batchverify`（95 条断言：结构 47/兜底绊网 1/语义 14/行为 24/【R118 起新增】ContentSlot+WithEnv 9；R67 时
+**验收**：`bash run.sh batchverify`（103 条断言：结构 47/兜底绊网 1/语义 14/行为 24/【R118 起新增】ContentSlot+WithEnv 9/【R121 新增】ArcList 8；R67 时
 52、R84 时 62、R87 起增 platform 行为段）双端通过。
 
 **定路径（混合）**：13 个有 SDK 声明的组件走真编译 fixture（`BatchVerifyDemo.ets`）——编译器
@@ -1633,7 +1633,7 @@ R72/R48 方法论）。
 **分派架构改进**：area.js 不再为每张表硬编码分支——分片以 `__arkuiPlatform` 标记 +
 `__platformAttrs` 表挂节点，area.js 一条通用分派（后续同类扩展零改 area.js）。
 
-**验收**：`bash electron/run.sh batchverify`（R84 时 62 条；R87 起含 platform 行为段；R118 起共 95 条，7bedbfd Mimosa 0 findings seal sha256:5c419723…）——
+**验收**：`bash electron/run.sh batchverify`（R84 时 62 条；R87 起含 platform 行为段；R118 起共 95 条；R121 起共 103 条，7bedbfd Mimosa 0 findings seal sha256:5c419723…）——
 双端全绿；绊网确认 10 个新实现全部走手写分片不落 generated 兜底。
 
 **类型化过程坑（坑 92 同族再现）**：`const st = { onSelect: null }` 在 strictNullChecks 下
@@ -2046,6 +2046,7 @@ R108 .ets fixture → R109 打包 → R110 取消。
 | ✅ R118 | 纯 C 内核补全（五语言作业面同构） | c-sample 补 agent 五件 + **pthread 作业面**（宿主零驱动、四态协作取消、CLOCK_MONOTONIC 时间戳、迭代 fib 防递归爆栈）+ 版本握手；rev/len 隔离件保留；**新坑 108**：RTLD_GLOBAL 下同名导出自引用被仓颉胜出（PLT 劫持→跨语言 SIGSEGV）→ static 本地绑定 | smoke 三连 **ALL PASS（106）**（c 槽 +8 断言）；五语言作业面语义同构达成（997b4a4，Mimosa 0 findings seal sha256:be8289f6…）。R118.1 符号纪律审计（f80bc2b）：五内核导出自引用清查，Go `kernel_init(nil)` 改 `reset_state` 消除、纪律入 kernel_abi.h「内核实现纪律」节（seal sha256:0e43b597…） | M |
 | ✅ R119 | 五内核统一契约套件 | `kernel/contract_common.c` + `run-contract.sh`——**同一份 41 条断言**参数化三挂载模式（direct/cangjie泵/ghc序列）跑五内核：共同 12 方法 + 错误形状矩阵 + re-init 隔离 + typed 直调 + 作业收敛/取消宽容形；文案不作断言（契约只要求 NULL+last_error 形状——跨语言文案统一是伪需求） | **五内核 × 41 条 ALL PASS**（C/Go/Rust/Haskell/仓颉全绿）——契约等价性从"断言相似"升级为"同一套测试证明"；修通用套件自身两 bug（`*/` 注释闭合陷阱第二次、timings 解析配对错位——串行碰巧过）（dc2259e，Mimosa 0 findings seal sha256:fab7ffe6…）。R119.1 驱动层抽象（55259eb）：host_drive 探测式通用化+wait_jobs_done 统一等待+submit 后即驱动，五内核复验全绿（seal sha256:9e19e07c…） | L |
 | ✅ R120 | 剩余骨架批量判定（11 枚） | 三源核验（SDK d.ts / 真机 pattern / DOM 可行性，R48 同口径）：not-found 1（Camera）+ platform-only 6（Component3D/Distortion/Effect/Particle/Screen/DynamicComponent）+ feasible 1（Piece，附产物可达性核实注记）+ partial 3（ContentSlot/WithEnv 细化 + ArcList）；**149 组件终态账收口：145 已决、可实现未实现仅 6 枚**；冲突勘定 batch-platform.js 的 ContentSlot/WithEnv 假设以 R48 为准 | `docs/research/R120-component-verdicts.md`；CAPABILITY 骨架账更新（e35f901，Mimosa 0 findings seal sha256:334409a5…） | S（调研） |
+| ✅ R121 | ArcList（partial 落地，batch-platform Arc 系配对） | 真机三次多项式缩放**逐常量照抄**（arc_list_layout_algorithm.cpp:24-36：A=108/B/C/D/E + 钳位 348.5——中心 1.08/滚到底 0.4823 实测吻合）、ScrollAlign::CENTER 静默收口吸附（80ms，scroll.js 先例）、回调族（onScrollIndex/onDidScroll/onReachStart/onReachEnd）、header builder 展开（__arcHeader 不参与缩放）；缺口如实记录（表冠/ARC 滚动条/链式弹簧→layoutWarnings） `s bash run.sh batchverify` 新增 8 条（公式复算两点/回调族/三缺口记录/snap，已计入下方 103 总账）；**Arc 系容器+子项配对齐**（ArcListItem 已真语义）；门禁 7 步全绿（f226d3a，Mimosa 0 findings seal sha256:6375e3eb…） | M |
 
 **明确不做（本线内留白）**：trha 本体及一切 trha 专属方法（已划出）；内核热替换
 （收益低风险高）；stable SDK 交叉验证（锁 nightly 纪律，非任务）。
