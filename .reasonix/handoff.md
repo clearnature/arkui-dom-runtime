@@ -9,7 +9,12 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R128 $r 真实资源解析**——**产物形态实测**：ets-loader 把 $r('app.*') **预展开**
+- 上次切片：**R129 企业就绪度差距账（规划，零代码）**——`docs/ENTERPRISE-READINESS.md`
+  （第六文档位）：**16 工作流原子分解**，P0 可信度底线 6 项（E0-1 错误边界/E0-2 崩溃
+  上报/E0-3 焦点管理/E0-4 长跑稳态/E0-5 供应链 CSP/E0-6 启动可诊断）→ P1 功能面 7 项
+  （网络/SQLite/i18n/sys.* 资源/多窗口/无障碍/打包态资源）→ P2 规模化 3 项（增量走查/
+  万节点压测/真机差异清单）；每任务带可执行验收与依赖；**完成定义**：P0+P1 主干=可承接
+  内部工具交付，+P1 全部+P2=可签 SLA。下一片默认 E0-1 错误边界。更早：**R128 $r 真实资源解析**——**产物形态实测**：ets-loader 把 $r('app.*') **预展开**
   成带 app-id 的 Resource 字面量（ids_map：10001=color/10002=float/10003=string/20000=media）；
   **生成器** gen-app-resources.mjs（源=harmony-proj 资源+ids_map → generated-app-resources.js
   第 42 分片，--check 防漂移）；resolveResource 扩展（string/color/float 裸数字/media 路径串）
