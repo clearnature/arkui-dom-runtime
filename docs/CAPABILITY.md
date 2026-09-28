@@ -294,7 +294,11 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
   展开运算符、`for...in` 之外的反射行为有无边界差异
 - `chainMode`（相对布局的链式排列）、组件**内置手势**（`List` 滚动、`Swiper`/`Tabs` 滑动翻页、`Scroll` 拖动）、`Refresh`；另：`tabBar` 的自定义 builder、`onGestureJudgeBegin`/`shouldBuiltInRecognizerParallelWith` 这类**手势判定回调**未实现
   （**显式绑定的手势**已完整：`Gesture`/`XxxGesture`/`GestureGroup`/`priorityGesture`/`parallelGesture`/`GestureMask`，见上表 R23 与 R23 收口）
-- **其余 85 个骨架组件的视觉语义**（R13 只把 `Progress`/`Gauge`/`DataPanel`/`Rating` 从骨架升级为手写绘制）
+- **骨架组件终态账（R120 判定后收口，`docs/research/R120-component-verdicts.md`）**：
+  149 元数据 = 手写 125 + platform-only 结案 19 + not-found 结案 1 + **可实现未实现 6**
+  （Piece feasible；ContentSlot/WithEnv/ArcList + R48 遗留 partial）——platform-only
+  与 not-found 的**保留骨架即正确终态**（强行实现是错的），视觉语义升级只剩那 6 枚可选做
+  （旧口径"其余 85 个"系 R13 时点快照，批量轮次已消化大部，本行为更新后账目）
 - `If` 分支的 elmtId 复用优化
 - 父组件重渲染时**子视图内部 elmtId 迁移**未处理（深嵌套自定义组件可能出问题）
 
