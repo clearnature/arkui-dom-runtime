@@ -83,8 +83,13 @@
         check(pageOf(1).style.display === 'block' && pageOf(1).style.position === 'absolute',
           '邻页 P1 已上舞台（display:block + absolute）');
         up(el('sw'), 74, 40);
-        await tick(300);                  // 回弹收口（rAF + 120ms + 兜底 80）
-        check(pageOf(0).style.transform === '', '松手（未过半页）回弹后 transform 清空');
+        const atRelease = pageOf(0).style.transform;
+        await tick(80);
+        const mid = pageOf(0).style.transform;
+        check(atRelease !== '' && mid !== '' && mid !== atRelease,
+          `回弹是欠阻尼弹簧（R126）：释放后 80ms 仍在动（'${atRelease}' → '${mid}'）`);
+        await tick(700);                  // 弹簧收口（精度触发，非固定时长）
+        check(pageOf(0).style.transform === '', '弹簧回弹收口后 transform 清空');
         check(pageOf(0).style.position === '' && pageOf(1).style.display === 'none',
           '拖拽舞台已还原（P0 回流、P1 影藏）');
       });
@@ -96,7 +101,7 @@
         // slog 在组件状态里，直接读 ObservedProperty 的 DOM 不可见——改读 __swiperState 旁证：
         // 用事件计数代替：翻页后 P1 可见即证 commit
         dragClock(el('sw'), 80, 40, [[-20, 30], [-95, 30], [-96, 5]], 7);   // 位移 -96 > 半页 80
-        await tick(500);
+        await tick(900);                  // 全矩阵负载下收口（timeout 200ms + rAF 波动）要给足
         check(st().index === 1, `拖过半页（-96 > -80）→ 翻到 P1（实际 index=${st().index}）`);
         check(pageOf(1).style.display !== 'none' && pageOf(0).style.display === 'none',
           'commit 后 P1 可见 P0 隐藏');
@@ -232,6 +237,20 @@
         await tick(600);                      // 惯性衰减（rAF，虚拟时钟下快进）
         check(scr.scrollTop > dragScrolled,
           `惯性续走：${dragScrolled} → ${scr.scrollTop}`);
+        // R126 越界冲激回弹：滚到底再向外 flick → 内容 translate 弹簧、收口清空
+        scr.scrollTop = scr.scrollHeight;
+        const scrContent = scr.firstElementChild;
+        const maxScrolled = scr.scrollTop;
+        down(scr, 80, 30);
+        move(scr, 80, 10);                // 向上 flick = 朝底边外
+        up(scr, 80, 10);
+        await tick(60);
+        const during = scrContent.style.transform || '';
+        await tick(900);
+        check(during.indexOf('translateY') === 0,
+          `越界冲激：内容弹簧位移可见（'${during}'）`);
+        check(scrContent.style.transform === '' && scr.scrollTop === maxScrolled,
+          `越界弹簧收口清空、scrollTop 保持边界（${scr.scrollTop}/${maxScrolled}）`);
         const lst = el('lst');
         down(lst, 80, 70);
         move(lst, 80, 20);                    // dy=-50，List 内容 116-90=26px 可滚

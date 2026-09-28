@@ -1762,7 +1762,7 @@ Electron 里框宽那几次为 `true` —— **"我们把 transition 挂上又�
 
 ```
 $ bash run.sh transitiondemo
-=== ALL PASS ===                    （58 条断言）
+=== ALL PASS ===                    （60 条断言；R126 +SLIDE 糖 2 条）
 PASS 消失过渡进行中，A 仍在 DOM 里（没被立刻摘掉——否则根本没有消失动画）
 PASS 过渡走完后 A 才被摘掉
 PASS 记录里写下结束方式：endedBy='timer'

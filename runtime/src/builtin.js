@@ -34,6 +34,36 @@
   const BUILTIN_DRAG_PROPORTION = 2.0;    // 半页阈值，swiper_pattern.h:971
 
   /**
+   * 边界回弹弹簧（R126；ScrollSpringMotion 语义，scroll_motion.h:67-70）。
+   * 默认弹簧 scrollable.cpp:27-29：mass=1 / stiffness=228 / damping=30 →
+   * cmk = 900-912 = -12 < 0 **恒欠阻尼**（spring_model.cpp:79-90 的 Build 判分歧，默认参数只落
+   * UNDER_DAMPED 一支）——解析解逐式照抄 spring_model.cpp:150-174 UnderdampedModel。
+   * 坐标系无关：start/end/v0 同一坐标即可（Swiper 用拖拽偏移、Scroll 用内容 translate）。
+   * impulse 技巧：start=end 时 c1=0、c2=v0/w —— 即"边界处受速度冲激"的回弹（Scroll 越界用）。
+   * @param {(p: number) => void} apply @param {number} start @param {number} end @param {number} v0 @param {() => void} done
+   * @returns {() => void} 停止函数
+   */
+  function builtinSpringRebound(apply, start, end, v0, done) {
+    const m = 1, k = 228, c = 30;              // scrollable.cpp:27-29 原文
+    const w = Math.sqrt(4 * m * k - c * c) / (2 * m);
+    const r = -c / (2 * m);
+    const c1 = start - end;                    // SpringMotion：distance = start - end
+    const c2 = (v0 - r * c1) / w;
+    const t0 = performance.now();
+    const h = setInterval(() => {
+      const t = (performance.now() - t0) / 1000;
+      const p = Math.exp(r * t) * (c1 * Math.cos(w * t) + c2 * Math.sin(w * t));
+      apply(end + p);
+      if (Math.abs(p) < 0.5) {                 // ScrollSpringMotion::IsCompleted（NearZero 精度内）
+        clearInterval(h);
+        apply(end);
+        done();
+      }
+    }, 16);
+    return () => clearInterval(h);
+  }
+
+  /**
    * Swiper/Tabs 通用翻页拖拽。
    * sign 约定：sign=+1 表示"拖向下一页"（手指左移 raw<0），sign=-1 上一页。
    * @param {HTMLElement} el 容器（事件绑在这里）
@@ -48,7 +78,7 @@
       if (!api.canDrag() || api.count() < 2) return;
       drag = {
         id: ev.pointerId, x0: ev.clientX, y0: ev.clientY,
-        samples: [], moved: false, sign: 0, raw: 0,
+        samples: [], moved: false, sign: 0, raw: 0, shown: 0,
         cur: null, neighbor: null, nIdx: -1,
       };
       try { el.setPointerCapture(ev.pointerId); } catch (e) { /* 已释放等 */ }
@@ -103,6 +133,7 @@
       if (outward) {
         shown = raw * calculateBuiltinFriction(Math.abs(raw) / size);
       }
+      drag.shown = shown;
       const curEl = drag.cur.el;
       curEl.style.transform = axisX ? `translateX(${shown}px)` : `translateY(${shown}px)`;
       const nbEl = drag.neighbor ? drag.neighbor.el : null;
@@ -138,7 +169,7 @@
         }
         target = nIdx;
       }
-      builtinFinishPagedDrag(d, api, idx, target, size, cancelled);
+      builtinFinishPagedDrag(d, api, idx, target, size, v, cancelled);
     };
     el.addEventListener('pointerup', (/** @type {any} */ ev) => finish(ev, false));
     el.addEventListener('pointercancel', (/** @type {any} */ ev) => finish(ev, true));
@@ -154,10 +185,12 @@
   }
 
   /**
-   * 收口：commit 动画到目标页 / 回弹当前页；定时器兜底 + transitionend 见证（坑 ⑧）。
-   * @param {any} d @param {any} api @param {number} idx @param {number} target @param {number} size @param {boolean} cancelled
+   * 收口：commit 走 duration ease-out（d.ts 契约）；**回弹走真机弹簧**（R126：
+   * ScrollSpringMotion 欠阻尼解析解，scrollable.cpp:27-29 参数）。
+   * 定时器兜底 + transitionend 见证（坑 ⑧）。
+   * @param {any} d @param {any} api @param {number} idx @param {number} target @param {number} size @param {number} v0 @param {boolean} cancelled
    */
-  function builtinFinishPagedDrag(d, api, idx, target, size, cancelled) {
+  function builtinFinishPagedDrag(d, api, idx, target, size, v0, cancelled) {
     const axisX = api.axis() !== 'y';
     const curEl = d.cur.el;
     const nbEl = d.neighbor ? d.neighbor.el : null;
@@ -196,6 +229,20 @@
         api.animEnd(target);
       }
     };
+    if (!flip) {
+      // 回弹 = 弹簧（R126：真机 StartSpringMotion 同一物理，欠阻尼解析解）——弹簧无固定
+      // 时长，transitionend/duration 兜底对它无意义（transform 没挂 transition），二者并存
+      // 会提前收口、弹簧收尾再写 transform → 互斥，收口由解算器精度触发 settle
+      const apply = (/** @type {number} */ p) => {
+        curEl.style.transform = axisX ? `translateX(${p}px)` : `translateY(${p}px)`;
+        if (nbEl) {
+          const np = p + sign * size;
+          nbEl.style.transform = axisX ? `translateX(${np}px)` : `translateY(${np}px)`;
+        }
+      };
+      builtinSpringRebound(apply, d.shown, 0, v0, settle);
+      return;
+    }
     curEl.addEventListener('transitionend', settle, { once: true });
     setTimeout(settle, dur + 80);               // 兜底（headless transitionend 会丢）
   }
@@ -272,7 +319,32 @@
       const st = el.scrollTop;
       el.scrollLeft = sl - vx / 60;
       el.scrollTop = st - vy / 60;
-      if (el.scrollLeft === sl && el.scrollTop === st) { clearInterval(h); return; }   // 到边即停
+      if (el.scrollLeft === sl && el.scrollTop === st) {
+        // 到边：真机 edgeEffect=Spring 不是停而是越界冲激回弹（ProcessScrollOver →
+        // StartSpringMotion，scroll_spring_effect.cpp:37-53）——残余速度交给内容 translate
+        // 弹簧（DOM 的 scrollTop 无法为负，用内容变换呈现越界量）
+        clearInterval(h);
+        builtinFlingOverScrollSpring(el, vx, vy);
+      }
     }, 16);
     return () => clearInterval(h);
+  }
+
+  /**
+   * 越界冲激回弹：内容 firstElementChild 临时 translate，弹簧收口后清干净。
+   * 方向取残余速度的主轴分量（真机 EdgeEffect.Spring 的视觉等价）。
+   * @param {HTMLElement} el @param {number} vx @param {number} vy
+   */
+  function builtinFlingOverScrollSpring(el, vx, vy) {
+    const content = /** @type {HTMLElement} */ (el.firstElementChild);
+    if (!content) return;
+    const vertical = el.scrollHeight > el.clientHeight + 1;
+    const v0 = vertical ? vy : vx;
+    if (Math.abs(v0) < 20) return;
+    content.style.willChange = 'transform';
+    const axisCss = vertical ? 'translateY' : 'translateX';
+    builtinSpringRebound(
+      (/** @type {number} */ p) => { content.style.transform = `${axisCss}(${p}px)`; },
+      0, 0, v0,
+      () => { content.style.transform = ''; content.style.willChange = ''; });
   }

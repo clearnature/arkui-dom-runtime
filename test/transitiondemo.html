@@ -240,6 +240,29 @@
         check(before.kind === 'opacity', '原常量的 kind 未变');
       });
 
+      // ══════════ ⑫ SLIDE 糖（R126 结案：d.ts 层糖，NG 效果链无此枚举）══════════
+      await group('SLIDE 糖', async () => {
+        const sl = TransitionEffect.SLIDE;
+        check(!!sl && sl.kind === 'asymmetric' && sl.value
+          && sl.value.appear.kind === 'move' && sl.value.appear.value === TransitionEdge.START
+          && sl.value.disappear.kind === 'move' && sl.value.disappear.value === TransitionEdge.END,
+          `SLIDE = asymmetric(appear:move(START), disappear:move(END))（common.d.ts:5348 糖定义原文；appear.kind='${sl && sl.value && sl.value.appear.kind}'）`);
+        const n0 = runs().length;
+        const VSP = globalThis.ViewStackProcessor;
+        const snap = VSP ? VSP.snapshot() : null;
+        const T = globalThis.Text;
+        const node = T.create('slide-me');
+        node.id = 'slide-me';
+        T.transition(TransitionEffect.SLIDE);
+        T.pop();
+        if (VSP) VSP.restore(snap);
+        await tick(40);
+        const r = runs().slice(n0).filter((x) => x.id === 'slide-me');
+        check(r.some((x) => x.dir === 'enter' && x.offText === 'transform=translate(-100%, 0)'),
+          `SLIDE 出现=从 START 边滑入（LTR 左；offText='${r.map((x) => x.offText).join(';')}'）`);
+        node.remove();
+      });
+
       // ══════════ ⑪ 降级要出声：SLIDE_SWITCH 与"直接经 builder 栈挂"都能跑出现动画 ══════════
       await group('降级出声', async () => {
         const before = (__arkui_dom_layout_warnings || []).length;

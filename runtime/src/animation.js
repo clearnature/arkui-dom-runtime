@@ -62,7 +62,14 @@
     }
     static get IDENTITY() { return new TransitionEffect('identity', undefined); }
     static get OPACITY() { return new TransitionEffect('opacity', 0); }
-    static get SLIDE() { return new TransitionEffect('slide', undefined); }
+    // SLIDE = asymmetric(appear: move(START), disappear: move(END))——common.d.ts:5348 原文
+    // "sliding in from the start edge … and sliding out from the end edge"（LTR：左入右出）。
+    // R126 结案：NG 效果链确无此枚举（rosen 层不存在）——它是 d.ts 层糖，按糖展开实现
+    static get SLIDE() {
+      return TransitionEffect.asymmetric(
+        TransitionEffect.move(TransitionEdge.START),
+        TransitionEffect.move(TransitionEdge.END));
+    }
     static get SLIDE_SWITCH() { return new TransitionEffect('slideSwitch', undefined); }
     /** @param {any} o */
     static translate(o) { return new TransitionEffect('translate', o); }
@@ -150,16 +157,14 @@
       if (kind === 'translate') { out.transforms.push(`translate(${Number((v && v.x) || 0)}px, ${Number((v && v.y) || 0)}px)`); continue; }
       if (kind === 'scale') { out.transforms.push(`scale(${v && v.x !== undefined ? v.x : 1}, ${v && v.y !== undefined ? v.y : 1})`); continue; }
       if (kind === 'rotate') { out.transforms.push(`rotate(${Number((v && v.angle) || 0)}deg)`); continue; }
-      if (kind === 'move') {                      // 从某条边滑入/滑出
+      if (kind === 'move') {                      // 从某条边滑入/滑出（START/END 按语言方向，LTR 下即左/右）
         const edge = v;
-        const pct = edge === TransitionEdge.Left ? 'translate(-100%, 0)'
-          : edge === TransitionEdge.Right ? 'translate(100%, 0)'
-            : edge === TransitionEdge.Top ? 'translate(0, -100%)' : 'translate(0, 100%)';
+        const pct = edge === TransitionEdge.START ? 'translate(-100%, 0)'
+          : edge === TransitionEdge.END ? 'translate(100%, 0)'
+            : edge === TransitionEdge.TOP ? 'translate(0, -100%)' : 'translate(0, 100%)';
         out.transforms.push(pct);
         continue;
       }
-      if (kind === 'slide') { out.transforms.push('translate(-100%, 0)'); continue; }        // 推断：从左滑入
-      if (kind === 'slide') { out.transforms.push('translate(-100%, 0)'); continue; }        // 推断：从左滑入
       if (kind === 'slideSwitch') {
         // R43 照真机参数（rosen_transition_effect.cpp：SLIDE_SWITCH_SCALE=0.85；真机自带动效
         // curve(0.24,0,0.5,1)/600ms 是渲染层参数，DOM 侧透明度仍取 0、时长走外层窗口）
@@ -173,7 +178,9 @@
     }
     return out;
   }
-  const TransitionEdge = { Top: 0, Bottom: 1, Left: 2, Right: 3 };
+  // TransitionEdge 原文（common.d.ts:5153-5158）：TOP=0 / BOTTOM=1 / START=2 / END=3 ——
+  // R126 勘名：此前写成 Left/Right（数值碰巧对、名字错，产物引用 TransitionEdge.Start 会 undefined）
+  const TransitionEdge = { TOP: 0, BOTTOM: 1, START: 2, END: 3 };
   // 自省用的"偏离态"文本（断言据此核对 translate/scale/opacity 真的被算进去了）
   /** @param {any} off */
   function _offText(off) {

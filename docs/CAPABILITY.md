@@ -145,7 +145,7 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 | **`GestureGroup` 三态**：Exclusive 先认出者独占、其余作废；Sequence 用 `stage` 按序推进、**只有最后一个能收 `onActionEnd`**、半途抬指 → `onCancel`；Parallel 互不影响 | ✅ | `bash run.sh gesturegroupdemo`（`X;`/`UD;` 互斥；`S1;Sc;` vs `S1;S2;S2e;`；**阈值 1px 的 pan 在没轮到它时被门控挡住**） |
 | **手势优先级仲裁（元素级）**：`gesture`="子组件优先"、`priorityGesture`="父组件优先"、`parallelGesture`="准冒泡、父子都响应"、`GestureMask.IgnoreInternal`="禁用子组件手势"（均照 `.d.ts` 原文）；`pointerdown` 时一次性定下（内层先认领、外层可覆盖），**仲裁结论可内省** | ✅ | `bash run.sh gesturegroupdemo`（默认对只出子 `'e;'` vs priority 只出父 `'P;'`；parallel 出 `'d;L;'`；mask 出 `'M;'`；`arb='owner'/'suppressed'`） |
 | **`GesturePriority` 两套名字并存**：产物发的是 ets-loader 约定名 `Low/High/Parallel`（`pre_define.js`），`.d.ts` 声明的是 `NORMAL/PRIORITY` —— 两套必须同值对齐，否则三个属性在运行时区分不开 | ✅ | `bash run.sh gesturegroupdemo`（`Low===NORMAL===0`、`High===PRIORITY===1`、`Parallel===2`） |
-| **出现/消失过渡 `transition`**：`TransitionOptions`（自己没有时间字段 → 用外层 `animateTo` 窗口的参数）与 `TransitionEffect`（自带 `.animation()`，**不依赖** animateTo）；`TransitionType.Insert/Delete` 方向门控；`asymmetric` 两方向各用各的链与时长；`onFinish(transitionIn)`；**消失时节点留在 DOM 里把过渡走完再摘** | ✅ | `bash run.sh transitiondemo`（58 条断言；两档时长来源分别断言，`exit:d` 与 `enter:e` 必须**不存在**） |
+| **出现/消失过渡 `transition`**：`TransitionOptions`（自己没有时间字段 → 用外层 `animateTo` 窗口的参数）与 `TransitionEffect`（自带 `.animation()`，**不依赖** animateTo）；`TransitionType.Insert/Delete` 方向门控；`asymmetric` 两方向各用各的链与时长；`onFinish(transitionIn)`；**消失时节点留在 DOM 里把过渡走完再摘** | ✅ | `bash run.sh transitiondemo`（60 条断言；两档时长来源分别断言，`exit:d` 与 `enter:e` 必须**不存在**） |
 | **`onAreaChange`**：`newValue` = 真实宽高 + 相对父/页坐标；尺寸变化后再次触发，`oldValue` 为上一次真实值 | ✅ | measarea（`120x30` == 真实 rect；`0>100` → `100>140`） |
 | **自定义布局协议**（`onMeasureSize` + `onPlaceChildren`）：`Measurable.measure(c)` 回真实测量、返回值覆盖声明尺寸、`Layoutable.layout(pos)` 真摆放 | ✅ | measarea（`measure` 遵守 maxWidth=60、组件宽 = 返回的 60、三子项依次落位） |
 | **真实行数**（`Range.getClientRects()` 数行盒，非"按字宽累加"的模拟） | ✅ | textmeasure（`__arkui_dom_countLines` 直接断言：宽 100 → 4 行、宽 400 → 1 行、无显式宽 → 按容器 2 行） |
@@ -213,8 +213,11 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
      （swiper_pattern.h:62/971 + swiper_helper.cpp:566-578 参数原文）+ 回弹；`vertical`/`disableSwipe`/
      `duration`/`onAnimationStart`(三参)/`onAnimationEnd`/`onGestureSwipe` 真语义；`Tabs.scrollable`
      内容区滑动翻页（默认 true）+ `List`/`Scroll` 拖拽滚动 + 惯性（`Scroll.fling` 真惯性）。
-     真机的 overDrag 边界回弹曲线（spring）与 `curve`/`effectMode`/`displayCount` 等仍记
-     `layoutWarnings`（overDrag 属"真机确证扫尾"候选）。
+     **回弹/越界是欠阻尼弹簧（R126）**：真机默认弹簧 mass1/stiffness228/damping30
+     （scrollable.cpp:27-29）的解析解逐式照抄（spring_model.cpp:150-174）——回弹由解算器
+     精度收口（非固定时长）；Scroll/List 惯性到边改为越界冲激回弹（内容 translate 弹簧，
+     ProcessScrollOver→StartSpringMotion 同物理）。`curve`/`effectMode`/`displayCount` 等仍记
+     `layoutWarnings`。
   2. `indicator` 只支持 boolean，传 `DotIndicator`/`DigitIndicator` 会**退化为默认圆点**并记警告。
   `Swiper` 的直接子项必须是"页"本身：若用 `ForEach` 包一层，那个包裹层是 `display:contents`，
   页面边界识别不出来 → 会记警告（请把 `ForEach` 移到 `Swiper` 之外或用 `@Builder` 展开）。
