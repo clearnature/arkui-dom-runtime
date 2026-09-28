@@ -9,7 +9,16 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R124 主题真值清账第二轮**——nav.js 三处「推断」升原文（56/112/138 资源键
+- 上次切片：**R125 组件内置手势**——新分片 builtin.js（第 41 个）：Swiper 拖拽翻页
+  （拖拽舞台 absolute+transform 跟手、邻页前方；半页阈值 swiperProportion_=2.0/速度
+  780vp/s/边界摩擦 swiper_helper.cpp:566-578 原文/400ms——参数逐个对真机源码）+ Tabs
+  内容区滑动（scrollable 默认 true）+ List/Scroll 拖拽滚动+惯性（**惯性短定时器不用
+  rAF——headless 节流，坑⑧同族**；Scroll.fling 升级真惯性）；Swiper 六件真语义
+  （vertical/disableSwipe/duration/onAnimationStart 三参/End/GestureSwipe——on* 拦在
+  通用事件分支前，坑 86 同族）；**坑 109：@State 不能包 SwiperController**；四件套
+  BuiltinDemo + test/builtindemo.html（可编程时钟劫持 performance.now 测速度翻页）
+  26 条双端全绿，门禁 7 步（1d564be，Mimosa 0 findings seal sha256:de650eca…）。
+  留白：overDrag 边界回弹 spring 曲线（确证扫尾候选）。更早：**R124 主题真值清账第二轮**——nav.js 三处「推断」升原文（56/112/138 资源键
   双证；**R42「137 之谜」结案**：资源真有 title_emphasize_twolines_height=137
   （125831117），但 Navigation Full 双行走 full_* 家族 138——两族键并存，当年"未使用
   常量险些误改"判断正确）；Badge 数值徽章 padding 0 4px→0 6px（numerical_badge_padding
