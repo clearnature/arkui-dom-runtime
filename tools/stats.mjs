@@ -92,7 +92,9 @@ const HANDWRITTEN = ['Text', 'Button', 'Column', 'Row', 'Stack', 'List', 'ListIt
   'UIPickerComponent', 'UnionEffectContainer', 'Web', 'WithTheme', 'XComponentNode',
   // R84：platform 分片真语义（骨架转真，10 个；其余 23 个平台特定保持骨架）
   'ArcSwiper', 'ArcListItem', 'ArcScrollBar', 'ArcAlphabetIndexer', 'DotMatrix',
-  'MediaCachedImage', 'LocationButton', 'PasteButton', 'SaveButton', 'Skeleton2d'];
+  'MediaCachedImage', 'LocationButton', 'PasteButton', 'SaveButton', 'Skeleton2d',
+  // R118.2/R121 已落地但漏登记（补账）；R122 Piece 收官——可实现组件至此全部落地
+  'ContentSlot', 'WithEnv', 'ArcList', 'Piece'];
 const CONTROL_FLOW = ['If', 'ForEach', 'LazyForEach'];   // 不在 149 注册表内，单独实现
 
 const gen = read('runtime/generated-components.js');

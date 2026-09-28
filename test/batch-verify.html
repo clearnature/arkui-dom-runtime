@@ -104,6 +104,7 @@
       ['FolderStack','A',(el)=>el.tagName==='DIV'], ['GridContainer','A',(el)=>el.tagName==='DIV'],
       ['Section','A',(el)=>el.tagName==='DIV'], ['Sheet','A',(el)=>el.tagName==='DIV'],
       ['UnionEffectContainer','A',(el)=>!!el], ['XComponentNode','A',(el)=>!!el],
+      ['Piece','A',(el)=>el.dataset.piece!==undefined],
       ['CheckboxGroup','B',(el)=>!!el], ['ColorPicker','B',(el)=>!!el],
       ['ColorPickerDialog','B',(el)=>!!el], ['Option','B',(el)=>!!el],
       ['PatternLock','B',(el)=>!!el], ['SelectionContainer','B',(el)=>!!el],
@@ -387,6 +388,79 @@
         const alNode2 = al2.create({ scroller: null });
         al2.pop();
         check(!!alNode2, '行为 ArcList scroller 参数路径不抛');
+      }
+
+      // ── Piece（R122：16 条行为——胶囊结构/图标面/onClose 语义/font 五件/容错） ──
+      // 产物调用序 = create → 属性 → pop（applyAttr 打在栈顶——先 pop 再调属性打不中）
+      {
+        const snap = VSP ? VSP.snapshot() : null;
+        const pc = G('Piece');
+        // ① 默认 End：文本在前、图标在后；showDelete=false → 图标 GONE
+        const p1Node = pc.create({ content: 'inbox' });
+        const kids = Array.prototype.slice.call(p1Node.children);
+        check(kids.length === 2 && kids[0].tagName === 'SPAN' && kids[1].querySelector('img'),
+          '行为 Piece 默认 End 序：文本在前图标在后');
+        check(kids[0].textContent === 'inbox', '行为 Piece content 落文本 span');
+        const iconWrap = kids[1];
+        check(iconWrap.style.display === 'none',
+          '行为 Piece showDelete 默认 false → 图标 GONE（piece_component.cpp:204-208）');
+        check(p1Node.style.borderRadius !== '' && p1Node.style.display === 'inline-flex',
+          '行为 Piece 胶囊外观：圆角=主题高/2 + inline-flex（js_piece.cpp:66）');
+        // ② font 五件落 span（通用 cssProp 只会打根节点——表拦截语义）
+        pc.fontColor('#ff0000'); pc.fontSize(18); pc.fontStyle(1);
+        pc.fontWeight('600'); pc.fontFamily('serif');
+        const span = p1Node.children[0];
+        check(span.style.color === 'rgb(255, 0, 0)' && span.style.fontSize === '18px',
+          '行为 Piece fontColor/fontSize 落内层 span（非胶囊根）');
+        check(span.style.fontStyle === 'italic' && span.style.fontWeight === '600'
+          && span.style.fontFamily === 'serif',
+          '行为 Piece fontStyle(1)=italic / fontWeight / fontFamily（js_piece.cpp:27 FONT_STYLES）');
+        pc.fontStyle(7);   // 越界忽略（js_piece.cpp:201）
+        check(span.style.fontStyle === 'italic', '行为 Piece fontStyle 越界忽略（保持 italic）');
+        // ③ showDelete 容错与可见性
+        pc.showDelete(true);
+        check(iconWrap.style.display === '' && iconWrap.style.display !== 'none',
+          '行为 Piece showDelete(true) → 图标可见');
+        pc.showDelete(2);   // number 只认 0/1，其余→false
+        check(iconWrap.style.display === 'none', '行为 Piece showDelete(2) → false（js_piece.cpp:121 只认 0/1）');
+        pc.showDelete(1);
+        check(iconWrap.style.display !== 'none', '行为 Piece showDelete(1) → 可见（数字容错）');
+        // ④ onClose 只挂图标：点图标触发、点文本不触发
+        let closed = 0;
+        pc.onClose(() => { closed++; });
+        iconWrap.querySelector('img').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        span.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        check(closed === 1, '行为 Piece onClose 只由图标点击触发（js_piece.cpp:132-151；observed=' + closed + '）');
+        // ⑤ iconPosition(0)=Start：图标换到前 + interval padding 换边（End→左、Start→右）
+        pc.iconPosition(0);
+        const kids2 = Array.prototype.slice.call(p1Node.children);
+        check(kids2[0] === iconWrap,
+          '行为 Piece iconPosition(0)=Start → 图标在前（piece_component.h:33-36）');
+        check(iconWrap.style.paddingRight !== '0px' && iconWrap.style.paddingLeft === '0px',
+          '行为 Piece interval padding 落朝文本一侧（piece_component.cpp:194）');
+        pc.pop();
+        if (VSP) VSP.restore(snap);
+        const p1 = adopt(p1Node);
+        // ⑥ 空 content → 整行不建（BuildChild nullptr：span 与图标都不出现，仅剩外盒）
+        const snap2 = VSP ? VSP.snapshot() : null;
+        const p2Node = pc.create({});
+        pc.pop();
+        if (VSP) VSP.restore(snap2);
+        const p2 = adopt(p2Node);
+        check(p2.children.length === 0 && p2.dataset.piece !== undefined,
+          '行为 Piece 空 content → 整行不建（piece_component.cpp:51-53）');
+        // ⑦ 自定义 icon URL 生效
+        const snap3 = VSP ? VSP.snapshot() : null;
+        const p3Node = pc.create({ content: 'x', icon: 'https://example.com/del.png' });
+        pc.pop();
+        if (VSP) VSP.restore(snap3);
+        const p3 = adopt(p3Node);
+        const img3 = p3.querySelector('img');
+        check(img3 && img3.getAttribute('src') === 'https://example.com/del.png',
+          '行为 Piece icon 参数覆盖默认删除图标（piece_component.cpp:186）');
+        // 默认图标：data URI（SDK ohos_piece_delete.svg 原文内嵌）
+        check(img3 && p1.querySelector('img').getAttribute('src').indexOf('data:image/svg+xml') === 0,
+          '行为 Piece 默认图标为内嵌 SVG data URI（ohos_piece_delete.svg）');
       }
       // ── ArcScrollBar（2）──
       // ── ArcScrollBar（2）──

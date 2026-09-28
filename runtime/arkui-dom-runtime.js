@@ -4551,6 +4551,12 @@
       XCNODE_ATTRS[prop](node, value);
       return;
     }
+    // Piece（R122）：font* 必须落到内层文本 span（通用 cssProp 路径只会打到胶囊根节点）、
+    // onClose 只挂图标 —— 都抢在通用分支之前
+    if (node.__arkuiPiece && PIECE_ATTRS[prop]) {
+      PIECE_ATTRS[prop](node, value);
+      return;
+    }
 
     // batch-input（R66）：六组件的函数值回调/语义属性抢在通用 on*/data-* 之前（坑 86 同族）；
     // 表内每个条目按 __arkuiComp/__batchPicker.kind/__selContainer 身份守卫。Option 的字体四件
@@ -9522,6 +9528,160 @@
     el.style.minWidth = '0';
     return el;
   });
+
+  // ────────────────── Piece（操作块标签，R122）──────────────────
+  //
+  // 权威出处（R120 feasible 判定后落地；无公开 d.ts，ets-loader 组件表即可达性证明）：
+  //   build-tools/ets-loader/components/piece.json
+  //     —— attrs 8 个：iconPosition/fontColor/fontSize/fontStyle/fontWeight/fontFamily/
+  //        showDelete/onClose；factories [create]；非容器。
+  //   jsview/js_piece.cpp:39-80  create({content, icon})：主题 height→盒高、paddingH/V、
+  //     圆角 = height/2（胶囊）。
+  //   piece_component.cpp:49-66  BuildChild：content 空 → 整行不建（仅剩外盒）；Row
+  //     FLEX_START/CENTER + mainAxisSize MIN（fit-content）。
+  //   piece_component.cpp:183-210  SetImage：图标=用户 icon URL 或默认删除资源
+  //     （PIECE_DELETE_SVG）；iconSize×iconSize；interval padding 落【朝文本一侧】
+  //     （RTL 或 Start→右，否则→左）；【图标可见性=showDelete】（GONE，占位随消）；
+  //     图标点击=onDelete（js_piece.cpp:132-151 onClose 只挂图标）。
+  //   piece_component.cpp:212-219  SetText：Text(content)+textStyle。
+  //   piece_component.h:33-36,102  IconPosition{Start=0,End=1}，默认 End。
+  //   js_piece.cpp:108-130  showDelete 容错：boolean 直用；number 只认 0/1；其余→false。
+  //   js_piece.cpp:27,194-208  fontStyle 表 [Normal,Italic]，越界忽略；fontWeight 字符串。
+  //
+  // 【推断】主题数值（height/paddingH/V/interval/iconSize/文字配色/背景）出自 theme
+  //   pattern JSON（piece_theme.h:58-72 的键），该 JSON 不在本机源码树 —— 以下默认值
+  //   全部标推断：height 28vp / paddingH 12 / paddingV 4 / interval 6 / iconSize 16 /
+  //   文字 14fp rgba(0,0,0,0.9) / 背景 rgba(0,0,0,0.05)；文本 ELLIPSIS+单行（h 主题键）。
+  //
+  // DOM：胶囊 div（inline-flex 居中，min 宽 fit-content 即 flex 默认）→ 文本 span +
+  //   图标 wrap（img，默认图标 = SDK previewer ohos_piece_delete.svg 原文内嵌 data URI）。
+  //   空 content 只空行（外盒仍在——真机 SoleChild 无 child 时盒照画）。
+  // 默认删除图标：SDK previewer/common/resources/resources/base/media/ohos_piece_delete.svg
+    // 原文（56×56 双圆头线 ✕，stroke #000 0.9 6px）——不重画，逐字内嵌
+    const PIECE_DELETE_SVG = '<?xml version="1.0" encoding="UTF-8"?>'
+      + '<svg viewBox="0 0 56 56" version="1.1" xmlns="http://www.w3.org/2000/svg">'
+      + '<g stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">'
+      + '<line x1="14" y1="14" x2="43" y2="43" stroke="#000000" opacity="0.9" '
+      + 'stroke-width="6" stroke-linecap="round"></line>'
+      + '<line x1="14" y1="14" x2="43" y2="43" stroke="#000000" opacity="0.9" '
+      + 'stroke-width="6" stroke-linecap="round" '
+      + 'transform="translate(28.5,28.5) scale(-1,1) translate(-28.5,-28.5)"></line>'
+      + '</g></svg>';
+    const PIECE_DEFAULT_ICON = 'data:image/svg+xml;utf8,' + encodeURIComponent(PIECE_DELETE_SVG);
+    // 主题默认值【推断】（见上）
+    const PIECE_THEME = {
+      height: 28, paddingHorizontal: 12, paddingVertical: 4, interval: 6,
+      iconSize: 16, textColor: 'rgba(0,0,0,0.9)', fontSize: 14,
+      backgroundColor: 'rgba(0,0,0,0.05)',
+    };
+    /** @param {any} el @param {number} pos */
+    function pieceApplyIconPosition(el, pos) {
+      const w = /** @type {any} */ (el).__piece;
+      if (!w) return;
+      w.iconPosition = pos === 0 ? 0 : 1;            // 非 0 归 End（piece_component.h:102 默认 End）
+      const rtl = el.dir === 'rtl';                  // RTL 或 Start → interval 落右侧（:194）
+      w.iconWrap.style.paddingRight = (w.iconPosition === 0 || rtl) ? w.interval + 'px' : '0';
+      w.iconWrap.style.paddingLeft = (w.iconPosition === 0 || rtl) ? '0' : w.interval + 'px';
+      if (w.textSpan.parentNode !== el) return;      // 空 content：行未建（children 挂不上）
+      // Start→[icon][text]，End→[text][icon]
+      if (w.iconPosition === 0) { el.insertBefore(w.iconWrap, w.textSpan); }
+      else { el.insertBefore(w.textSpan, w.iconWrap); }
+    }
+    /** @type {Record<string, (n: any, v: any, extra?: any) => void>} */
+    const PIECE_ATTRS = {
+      iconPosition: (n, v) => { pieceApplyIconPosition(n, Number(v)); n.dataset.iconPosition = String(Number(v)); },
+      // js_piece.cpp:108-130：boolean 直用；number 只认 0/1；其余一律 false
+      showDelete: (n, v) => {
+        const w = /** @type {any} */ (n).__piece;
+        if (!w) return;
+        let show = false;
+        if (typeof v === 'boolean') show = v;
+        else if (typeof v === 'number' && (v === 0 || v === 1)) show = !!v;
+        w.showDelete = show;
+        w.iconWrap.style.display = show ? '' : 'none';   // GONE：不占位
+        n.dataset.showDelete = String(show);
+      },
+      fontColor: (n, v) => {
+        const w = /** @type {any} */ (n).__piece; if (w) w.textSpan.style.color = String(resolveResource(v));
+      },
+      fontSize: (n, v) => {
+        const w = /** @type {any} */ (n).__piece; if (w) w.textSpan.style.fontSize = toCssSize(v);
+      },
+      fontStyle: (n, v) => {
+        // js_piece.cpp:27 FONT_STYLES=[Normal,Italic]，越界忽略
+        const w = /** @type {any} */ (n).__piece;
+        if (w && (v === 0 || v === 1)) w.textSpan.style.fontStyle = v === 1 ? 'italic' : 'normal';
+      },
+      fontWeight: (n, v) => {
+        const w = /** @type {any} */ (n).__piece; if (w) w.textSpan.style.fontWeight = String(resolveResource(v));
+      },
+      fontFamily: (n, v) => {
+        const w = /** @type {any} */ (n).__piece; if (w) w.textSpan.style.fontFamily = String(resolveResource(v));
+      },
+      // 只挂图标点击（js_piece.cpp:132-151 → piece_component.cpp:190-192）；
+      // 刻意不走通用 on* —— 那会把整颗胶囊变成关闭热区（语义错）
+      onClose: (n, v) => {
+        const w = /** @type {any} */ (n).__piece;
+        if (!w) return;
+        w.onClose = v;
+        n.dataset.hasOnClose = '1';
+      },
+    };
+    /** @param {any[]} args */
+    const Piece = ensureComponent('Piece', (args) => {
+      const o = (args && typeof args[0] === 'object' && args[0] !== null) ? args[0] : {};
+      const el = document.createElement('div');
+      (/** @type {any} */ (el)).__arkuiPiece = true;
+      el.dataset.piece = '';
+      const t = PIECE_THEME;
+      el.style.display = 'inline-flex';               // Row + mainAxisSize MIN（fit-content）
+      el.style.alignItems = 'center';
+      el.style.boxSizing = 'border-box';
+      el.style.height = t.height + 'px';
+      el.style.borderRadius = (t.height / 2) + 'px';  // 胶囊：圆角=高/2（js_piece.cpp:66）
+      el.style.backgroundColor = t.backgroundColor;
+      el.style.padding = t.paddingVertical + 'px ' + t.paddingHorizontal + 'px';
+      // 文本 span（content 空 → 不挂进盒：BuildChild nullptr 语义——真机连行都不建，
+      // 图标也在行内，同样不出现；span/iconWrap 对象仍创建，属性派发不炸）
+      const textSpan = document.createElement('span');
+      textSpan.style.color = t.textColor;
+      textSpan.style.fontSize = t.fontSize + 'px';
+      textSpan.style.overflow = 'hidden';             // ELLIPSIS + 单行（主题键，推断）
+      textSpan.style.textOverflow = 'ellipsis';
+      textSpan.style.whiteSpace = 'nowrap';
+      // 图标 wrap + img（默认删除资源；用户 icon URL 覆盖）
+      const iconWrap = document.createElement('div');
+      iconWrap.style.display = 'flex';
+      iconWrap.style.alignItems = 'center';
+      const img = document.createElement('img');
+      img.style.width = t.iconSize + 'px';
+      img.style.height = t.iconSize + 'px';
+      img.style.display = 'block';
+      img.src = o.icon ? String(o.icon) : PIECE_DEFAULT_ICON;
+      img.alt = '';
+      iconWrap.appendChild(img);
+      if (o.content !== undefined && o.content !== null && String(o.content) !== '') {
+        textSpan.textContent = String(o.content);
+        el.appendChild(textSpan);
+        el.appendChild(iconWrap);
+      }
+      const w = /** @type {any} */ (el).__piece = /** @type {any} */ ({
+        textSpan, iconWrap, interval: t.interval,
+        iconPosition: 1, showDelete: false, onClose: null,
+      });
+      // 默认 End + showDelete=false（图标 GONE）
+      pieceApplyIconPosition(el, 1);
+      w.iconWrap.style.display = 'none';
+      // onClose 只挂 img（冒泡自 img 点击；文本/胶囊点击不触发）
+      img.addEventListener('click', (/** @type {any} */ ev) => {
+        ev.stopPropagation();
+        if (typeof w.onClose === 'function') {
+          try { w.onClose(); }
+          catch (e) { layoutWarnings.push('Piece.onClose 回调抛错：' + e.message); }
+        }
+      });
+      return el;
+    });
 
   // ────────────────── UnionEffectContainer（systemApi 联动光效容器）──────────────────
   //
@@ -14501,6 +14661,7 @@
     // 批量布局分片（batch-layout）。SizeType/NodeRenderType 是 fixture 产物的运行期自由变量
     // （必需）；XComponentType/Alignment 已有导出（R32/安装全局），勿重复
     FolderStack, GridContainer, Section, Sheet, UnionEffectContainer, XComponentNode,
+    Piece,
     FoldStatus, AppRotation, SizeType, NodeRenderType,
     // 批量输入收官（batch-input）：CheckboxGroup/ColorPicker/ColorPickerDialog/Option/
     // PatternLock/SelectionContainer。generated-components.js 骨架表虽有这些名字，但其注册

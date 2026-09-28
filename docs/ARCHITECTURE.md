@@ -1731,16 +1731,16 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
 ```
 == 组件库 ==
   ets-loader 注册名    149
-  手写实现（真布局语义）125：Text Button Column Row Stack List ListItem RelativeContainer Tabs TabContent Swiper Navigation NavDestination Progress Gauge DataPanel Rating Circle Ellipse Rect Line Path Polygon Polyline Shape Checkbox Radio Toggle Slider Badge Counter Divider Marquee Select Menu MenuItem Canvas XComponent Flex Span LoadingProgress Blank Stepper StepperItem Image Scroll ImageAnimator ListItemGroup Refresh DatePicker TimePicker WaterFlow FlowItem CalendarPicker TextPicker Grid GridItem TextClock TextTimer AlphabetIndexer RichEditor Video SideBarContainer RowSplit ColumnSplit GridRow GridCol TextInput TextArea Search Hyperlink QRCode Panel DynamicLayout LazyColumnLayout LazyDynamicLayout LazyVGridLayout LazyVWaterFlowLayout Animator Calendar CheckboxGroup ColorPicker ColorPickerDialog ContainerReader ContainerSpan FolderStack FrictionMotion GeometryView GridContainer ImageSpan IndicatorComponent MenuItemGroup NavRouter Navigator Option PageTransitionEnter PageTransitionExit PatternLock Repeat RichText ScrollBar ScrollMotion Section SelectionContainer Sheet SpringMotion SpringProp SymbolGlyph SymbolSpan ToolBarItem UIPickerComponent UnionEffectContainer Web WithTheme XComponentNode ArcSwiper ArcListItem ArcScrollBar ArcAlphabetIndexer DotMatrix MediaCachedImage LocationButton PasteButton SaveButton Skeleton2d
+  手写实现（真布局语义）129：Text Button Column Row Stack List ListItem RelativeContainer Tabs TabContent Swiper Navigation NavDestination Progress Gauge DataPanel Rating Circle Ellipse Rect Line Path Polygon Polyline Shape Checkbox Radio Toggle Slider Badge Counter Divider Marquee Select Menu MenuItem Canvas XComponent Flex Span LoadingProgress Blank Stepper StepperItem Image Scroll ImageAnimator ListItemGroup Refresh DatePicker TimePicker WaterFlow FlowItem CalendarPicker TextPicker Grid GridItem TextClock TextTimer AlphabetIndexer RichEditor Video SideBarContainer RowSplit ColumnSplit GridRow GridCol TextInput TextArea Search Hyperlink QRCode Panel DynamicLayout LazyColumnLayout LazyDynamicLayout LazyVGridLayout LazyVWaterFlowLayout Animator Calendar CheckboxGroup ColorPicker ColorPickerDialog ContainerReader ContainerSpan FolderStack FrictionMotion GeometryView GridContainer ImageSpan IndicatorComponent MenuItemGroup NavRouter Navigator Option PageTransitionEnter PageTransitionExit PatternLock Repeat RichText ScrollBar ScrollMotion Section SelectionContainer Sheet SpringMotion SpringProp SymbolGlyph SymbolSpan ToolBarItem UIPickerComponent UnionEffectContainer Web WithTheme XComponentNode ArcSwiper ArcListItem ArcScrollBar ArcAlphabetIndexer DotMatrix MediaCachedImage LocationButton PasteButton SaveButton Skeleton2d ContentSlot WithEnv ArcList Piece
   控制流宏（非组件）    3：If ForEach LazyForEach
-  骨架·有 DOM 画像     1（容器 1 / 叶子 0）
-  骨架·仅 data-*       23
+  骨架·有 DOM 画像     0（容器 0 / 叶子 0）
+  骨架·仅 data-*       20
   ⇒ 可建出的组件名      149 / 149
   原生输入类控件       0
-  属性元数据总数       76（平均 0.5／组件，最多 ArcList=19）
+  属性元数据总数       47（平均 0.3／组件，最多 FormComponent=9）
 
 == 运行时 API ==
-  global 导出        401 个
+  global 导出        402 个
   状态类            ObservedPropertySimplePU ObservedPropertyObjectPU SynchedPropertySimpleOneWayPU SynchedPropertySimpleTwoWayPU SynchedPropertyNesedObjectPU
   内置组件          Text Button Column Row Stack List ListItem If ForEach LazyForEach RelativeContainer Tabs TabContent Swiper Navigation NavDestination Progress Gauge DataPanel Rating
   内部钩子 __arkui_dom_*  32 个
@@ -1763,34 +1763,34 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   fixtures 转换产物  75 个：AlphabetIndexerDemo AnimDemo AnimatorDemo AsyncIO AttrHeavyDemo BatchFuncDemo BatchLayoutDemo BatchMediaDemo BatchVerifyDemo CalendarPickerDemo Callee CanvasDemo CjkDemo DatePickerDemo Detail DrawDemo GestureDemo GestureGroupDemo GridDemo GridRowDemo Home ImageDemo Index InputDemo Layout Lazy LazyVar ListGroupDemo MeasArea MeasImage MeasNotify Measure MediaDemo NavBarDemo NavDemo NavShimDemo NavTransDemo NetFile NotesDetail NotesHome Observe PanelDemo PerfBigDemo PerfDemo PickerDemo PopDemo PromptAct Provide QrDemo RefreshDemo RelDemo Rich RichVideoDemo ScrollDemo ShapeDemo ShowDemo SideBarDemo SmallDemo SplitDemo StepDemo Stress1kDemo SwiperDemo TabsGrid TextDemo TextMeasure TextPickerDemo TextTimeDemo TimePickerDemo TransitionDemo UiContextDemo V2 WaterFlowDemo Widgets WindowDemo XCompDemo
 
 == 性能基线（Electron 实测）==
-  首渲染            105.7 ms（33 节点：Column+Button+Text+ForEach×30）
-  最小 rerender     6.0 ms（@State 计数脏区单 Text，rAF 口径）
+  首渲染            106.5 ms（33 节点：Column+Button+Text+ForEach×30）
+  最小 rerender     10.8 ms（@State 计数脏区单 Text，rAF 口径）
   rerender 管道     1.0 ms / 1 tick（setTimeout 轮询口径，R70）
   微任务底噪        0.00 ms
   行数              31
-  剖面 R71          loadRoute 同步 3.6 ms（require 0.2）· raf1 0.1 / raf2 102.0 ms（offscreen 首帧）
-  脚本 eval         runtime 24.3 / generated 22.9 / shims 22.2 / module 21.7 ms（计时起点之前）
+  剖面 R71          loadRoute 同步 3.6 ms（require 0.1）· raf1 0.2 / raf2 102.7 ms（offscreen 首帧）
+  脚本 eval         runtime 19.6 / generated 18.1 / shims 18.6 / module 18.1 ms（计时起点之前）
   判定              框架同步构建 3.5ms 无大头；"首渲染"=脚本 eval + offscreen 首帧（非框架成本）
-  千节点 R79        首渲染同步 20.5 ms（350 节点/~3500 属性，亚线性）· 单点 flush 2.7 ms · 批量翻转 flush 5.7 ms
+  千节点 R79        首渲染同步 18.5 ms（350 节点/~3500 属性，亚线性）· 单点 flush 2.7 ms · 批量翻转 flush 5.9 ms
   规模曲线          203→4.8 / 304→11.2 / 1055→19.0 ms（创建路径亚线性）；行复用+守卫千节点级保持
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          997.5 KB
-  runtime(src)     994.2 KB
-  test             872.5 KB
-  tools            197.1 KB
+  runtime          1006.5 KB
+  runtime(src)     1003.3 KB
+  test             877.3 KB
+  tools            197.2 KB
   electron(src)    48.1 KB
-  docs             795.7 KB
+  docs             797.1 KB
   fixtures         517.2 KB
 
 == 逐文件（文档"文件职责"表的来源）==
-  runtime/arkui-dom-runtime.js           742746 B  725.3 KB
+  runtime/arkui-dom-runtime.js           752012 B  734.4 KB
   runtime/generated-components.js         57617 B  56.3 KB
   runtime/ohos-shims.js                   80707 B  78.8 KB
   tools/extract.mjs                        6936 B  6.8 KB
   tools/gen-components.mjs                 7775 B  7.6 KB
   tools/serve.py                           3887 B  3.8 KB
-  tools/stats.mjs                         22064 B  21.5 KB
+  tools/stats.mjs                         22222 B  21.7 KB
   tools/assert-counts.mjs                  7476 B  7.3 KB
   tools/preflight.mjs                      5422 B  5.3 KB
   tools/check-all.sh                       4053 B  4.0 KB
@@ -1803,10 +1803,10 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   .gitignore                                909 B  0.9 KB
   README.md                              157245 B  153.6 KB
   THIRD-PARTY-NOTICES.md                  10718 B  10.5 KB
-  docs/ARCHITECTURE.md                   163602 B  159.8 KB
-  docs/CAPABILITY.md                      62677 B  61.2 KB
+  docs/ARCHITECTURE.md                   163644 B  159.8 KB
+  docs/CAPABILITY.md                      62741 B  61.3 KB
   docs/DEVELOPING.md                      75385 B  73.6 KB
-  docs/ROADMAP.md                        215456 B  210.4 KB
+  docs/ROADMAP.md                        216812 B  211.7 KB
   docs/surface-measurement.md              6496 B  6.3 KB
   docs/SESSION-2026-09-20.md              12842 B  12.5 KB
   runtime/src/.mimosa                      4096 B  4.0 KB
@@ -1814,10 +1814,10 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   runtime/src/alphabetindexer.js           5155 B  5.0 KB
   runtime/src/animation.js                29450 B  28.8 KB
   runtime/src/animator.js                  6308 B  6.2 KB
-  runtime/src/area.js                     32008 B  31.3 KB
+  runtime/src/area.js                     32297 B  31.5 KB
   runtime/src/batch-func.js               39494 B  38.6 KB
   runtime/src/batch-input.js              37979 B  37.1 KB
-  runtime/src/batch-layout.js             19520 B  19.1 KB
+  runtime/src/batch-layout.js             28486 B  27.8 KB
   runtime/src/batch-media.js              35046 B  34.2 KB
   runtime/src/batch-motion.js             25199 B  24.6 KB
   runtime/src/batch-nav.js                30228 B  29.5 KB
@@ -1832,7 +1832,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   runtime/src/image.js                     7000 B  6.8 KB
   runtime/src/input.js                    10663 B  10.4 KB
   runtime/src/layout.js                   18442 B  18.0 KB
-  runtime/src/main.js                    114592 B  111.9 KB
+  runtime/src/main.js                    114603 B  111.9 KB
   runtime/src/nav.js                      56681 B  55.4 KB
   runtime/src/panel.js                     3360 B  3.3 KB
   runtime/src/popup.js                     5042 B  4.9 KB
@@ -1934,7 +1934,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   test/animdemo.html                      11498 B  11.2 KB
   test/async.html                          5977 B  5.8 KB
   test/attrheavy.html                      4064 B  4.0 KB
-  test/batch-verify.html                  23206 B  22.7 KB
+  test/batch-verify.html                  28060 B  27.4 KB
   test/batchbehavior.html                  6098 B  6.0 KB
   test/batchfunc.html                     10565 B  10.3 KB
   test/batchinputdemo.html                 9853 B  9.6 KB

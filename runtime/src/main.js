@@ -2088,6 +2088,7 @@
     // 批量布局分片（batch-layout）。SizeType/NodeRenderType 是 fixture 产物的运行期自由变量
     // （必需）；XComponentType/Alignment 已有导出（R32/安装全局），勿重复
     FolderStack, GridContainer, Section, Sheet, UnionEffectContainer, XComponentNode,
+    Piece,
     FoldStatus, AppRotation, SizeType, NodeRenderType,
     // 批量输入收官（batch-input）：CheckboxGroup/ColorPicker/ColorPickerDialog/Option/
     // PatternLock/SelectionContainer。generated-components.js 骨架表虽有这些名字，但其注册

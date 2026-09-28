@@ -389,6 +389,12 @@
       XCNODE_ATTRS[prop](node, value);
       return;
     }
+    // Piece（R122）：font* 必须落到内层文本 span（通用 cssProp 路径只会打到胶囊根节点）、
+    // onClose 只挂图标 —— 都抢在通用分支之前
+    if (node.__arkuiPiece && PIECE_ATTRS[prop]) {
+      PIECE_ATTRS[prop](node, value);
+      return;
+    }
 
     // batch-input（R66）：六组件的函数值回调/语义属性抢在通用 on*/data-* 之前（坑 86 同族）；
     // 表内每个条目按 __arkuiComp/__batchPicker.kind/__selContainer 身份守卫。Option 的字体四件
