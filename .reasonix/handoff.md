@@ -9,7 +9,14 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R120 剩余骨架批量判定（11 枚）**——三源核验收口 149 组件终态账
+- 上次切片：**R121 ArcList 落地（partial → 真语义）**——batch-platform 新增 ArcList：
+  真机三次多项式缩放**逐常量照抄**（arc_list_layout_algorithm.cpp A-E + 钳位 348.5，
+  中心 1.08/滚到底 0.4823 实测吻合）+ ScrollAlign::CENTER 静默吸附（80ms，scroll.js 先例）
+  + 回调族 + header builder 展开（__arcHeader 不参与缩放）；缺口如实记录（表冠/ARC
+  滚动条/链式弹簧→layoutWarnings）；调试坑：子项 transition 污染 computed style→
+  transition:none、reachStart 断言须安置在回顶端点；batchverify 95→**103 条双端全绿**
+  （ArcList 段 8）；**Arc 系配对齐**（ArcListItem 已真语义）。门禁 7 步全绿
+  （2c5b241，Mimosa 0 findings seal sha256:6375e3eb…）。更早：**R120 剩余骨架批量判定（11 枚）**——三源核验收口 149 组件终态账
   （145 已决：手写 125+platform-only 19+not-found 1；可实现未实现仅 6 枚：Piece
   feasible + ContentSlot/WithEnv/ArcList partial + R48 遗留 partial），产出
   docs/research/R120-component-verdicts.md。更早：**R119 五内核统一契约套件**（kernel/contract_common.c 一份 41 条断言
