@@ -11,6 +11,14 @@
     {
       "name": "EntryAbility_label",
       "value": "label"
+    },
+    {
+      "name": "res_hello",
+      "value": "你好，资源"
+    },
+    {
+      "name": "res_desc",
+      "value": "R128 真实资源解析"
     }
   ]
 }

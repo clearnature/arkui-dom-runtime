@@ -41,8 +41,8 @@
         `初始文本 = '${textNode?.textContent}'（期望含 Hello World）`
       );
       check(
-        textNode?.style.fontSize === '16px',
-        `fontSize 资源对象已解析 = '${textNode?.style.fontSize}'（type 10002 兜底 16px）`
+        textNode?.style.fontSize === '50px',
+        `fontSize 资源对象已解析 = '${textNode?.style.fontSize}'（R128 真解析 50fp=50px；旧兜底 16px 已退役）`
       );
       check(
         textNode?.style.fontWeight === '700',

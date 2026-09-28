@@ -350,6 +350,7 @@
   // @include animation
   // @include gesture
   // @include builtin
+  // @include generated-app-resources
   // ─────────────────────────── ViewPU ───────────────────────────
   class ViewPU {
     /** @param {any} parent @param {any} localStorage @param {any} elmtId @param {any=} [extraInfo] */
@@ -556,6 +557,21 @@
   /** @param {any} v */
   const resolveResource = (v) => {
     if (v && typeof v === 'object' && 'id' in v && 'type' in v) {
+      // R128：app.* 资源（编译器把 $r 预展开成带 app-id 的字面量）→ 生成表解析。
+      // string → 文本；color → '#RRGGBB'（CSS 同构）；float/integer → 裸数字
+      //（'24fp'→24，vp/fp 与 px 1:1 项目口径）；media → 仓库相对路径串（双端 <img> 可用）
+      const app = (/** @type {any} */ (global)).__arkui_app_res;
+      if (app && app.byId[v.id]) {
+        const r = app.byId[v.id];
+        if (r.type === 'string') return app.values.string[r.name] !== undefined ? app.values.string[r.name] : r.name;
+        if (r.type === 'color') return app.values.color[r.name] !== undefined ? app.values.color[r.name] : v;
+        if (r.type === 'float' || r.type === 'integer') {
+          const raw = app.values[r.type][r.name];
+          return typeof raw === 'string' ? (parseFloat(raw) || 0) : raw;
+        }
+        if (r.type === 'media') return app.media[r.name] !== undefined ? app.media[r.name] : v;
+        return v;
+      }
       const table = (/** @type {any} */ (global)).__arkui_dom_resources || {};
       return table[v.id] !== undefined ? table[v.id] : DEFAULT_RESOURCES[v.type];
     }
@@ -1140,6 +1156,24 @@
   // @include draw
 
   // @include area
+
+  // R128：媒体字节预热（resourceManager.getMediaByNameSync 是【同步】API——字节必须
+  // 提前取好；双端同源 http（run.sh 起服务），fetch 相对路径即可；失败免疫（file:// 等场景
+  // 字节缺席 → getMediaByNameSync 返回空数组 + layoutWarnings，不炸）
+  /** @returns {Promise<void>} */
+  function resourceBytesWarm() {
+    const app = (/** @type {any} */ (global)).__arkui_app_res;
+    const bytes = /** @type {Record<string, Uint8Array>} */ ({});
+    (/** @type {any} */ (global)).__arkui_app_media_bytes = bytes;
+    if (!app || !app.media) return Promise.resolve();
+    const jobs = Object.keys(app.media).map(async (name) => {
+      try {
+        const resp = await fetch(app.media[name]);
+        bytes[name] = new Uint8Array(await resp.arrayBuffer());
+      } catch (e) { /* 字节缺席容忍 */ }
+    });
+    return Promise.all(jobs).then(() => {});
+  }
 
   // ────────────────────── 组件注册表 ──────────────────────
   /** @type {Record<string, any>} */ const components = {};
@@ -2232,6 +2266,8 @@
     TransitionType, TransitionEffect, TransitionEdge,
     // 过渡自省：登记了什么、每次出现/消失实际用了多久/哪个来源（effect / animateTo / default）
     __arkui_dom_transitions: transitionsDescribe,
+    // R128：app 资源装载完成信号（媒体字节预热是异步 fetch——测试页 await 它再断言）
+    __arkui_res_ready: resourceBytesWarm(),
     // R25：Nav 转场自省（push/pop 各一条运行记录 + 当前挂着的数目），测试轮询"滑完没有"用
     __arkui_dom_navTrans: navTransDescribe,
     // R23：手势。产物里是 `globalThis.Gesture.create(...)` + `PanGesture.create(...)` 这类

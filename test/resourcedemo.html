@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R128 真实资源解析（$r 四类型 + resourceManager 同步 API）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 320px; height: 300px; border: 1px solid #ccc; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R128：app.* 资源表（编译期展开 id ↔ 生成表）+ resourceManager 同步 API</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/resourcedemo-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const el = (id) => root.querySelector('#' + id);
+    const group = async (name, fn) => {
+      try { await fn(); } catch (e) {
+        allPass = false;
+        lines.push(`FAIL [${name}] 抛出异常：${e && e.stack ? String(e.stack).split('\n')[0] : e}`);
+      }
+    };
+
+    try {
+      // 媒体字节预热是异步 fetch（runtime 启动即开跑）——断言前等它落地
+      await globalThis.__arkui_res_ready;
+      __arkui_dom_requireModule('ResourceDemo');
+      __arkui_dom_loadRoute('pages/ResourceDemo', root);
+      await tick(60);
+
+      // ══════════ ① $r 字符串：Text.create(Resource) → 文本内容 ══════════
+      await group('字符串资源', async () => {
+        check(el('t-str') && el('t-str').textContent === '你好，资源',
+          `Text($r(string)) → 真文本（实际 '${el('t-str') && el('t-str').textContent}'）`);
+        check(el('t-color') && el('t-color').textContent === 'R128 真实资源解析',
+          `第二处字符串资源解析（实际 '${el('t-color') && el('t-color').textContent}'）`);
+      });
+
+      // ══════════ ② 颜色/浮点资源：fontColor/fontSize 落 CSS ══════════
+      await group('颜色/浮点资源', async () => {
+        check(el('t-color') && el('t-color').style.color === 'rgb(26, 106, 251)',
+          `fontColor($r(color)) → #1A6AFB（实际 '${el('t-color') && el('t-color').style.color}'）`);
+        check(el('t-float') && el('t-float').style.fontSize === '24px',
+          `fontSize($r(float '24fp')) → 24px（fp=px 1:1 口径；实际 '${el('t-float') && el('t-float').style.fontSize}'）`);
+      });
+
+      // ══════════ ③ 媒体资源：Image.create(Resource) → 可加载 URL ══════════
+      await group('媒体资源', async () => {
+        const img = el('img-media') && el('img-media').querySelector('img');
+        check(img && (img.getAttribute('src') || '').indexOf('startIcon.png') >= 0,
+          `Image($r(media)) → 路径串（src='${img && img.getAttribute('src')}'）`);
+      });
+
+      // ══════════ ④ resourceManager 同步 API（aboutToAppear 里的 slog）══════════
+      await group('resourceManager API', async () => {
+        // '#1A6AFB' → 0xFF1A6AFB（alpha FF 的 ARGB number）
+        const expectNum = 0xff000000 + parseInt('1A6AFB', 16);
+        const slog = el('t-slog') ? el('t-slog').textContent : '';
+        const pngLen = (globalThis.__arkui_app_media_bytes && globalThis.__arkui_app_media_bytes.startIcon) || { length: 0 };
+        check(slog === `你好，资源|R128 真实资源解析|${expectNum}|${pngLen.length}`,
+          `getString 双形态 + getColor number + 媒体字节（'${slog}'，期望色值 ${expectNum}）`);
+        check(pngLen.length > 0, `getMediaByNameSync 字节预热（startIcon ${pngLen.length}B）`);
+        // 兜底语义：未知名字 → 名字进名字出（不炸、有警告）
+        const rm = globalThis.getContext ? getContext().resourceManager : null;
+        const fb = rm ? rm.getStringByNameSync('no_such_res') : '';
+        check(fb === 'no_such_res', `未知资源兜底：名字进名字出（'${fb}'）`);
+        check(rm.getMediaByNameSync('no_such_media').length === 0, '未知媒体 → 空 Uint8Array');
+      });
+
+      lines.push(`RES t-str='${el('t-str') && el('t-str').textContent}' slog='${el('t-slog') && el('t-slog').textContent}'`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

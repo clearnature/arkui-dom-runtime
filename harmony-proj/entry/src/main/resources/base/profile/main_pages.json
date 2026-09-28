@@ -50,6 +50,7 @@
     "pages/WindowDemo",
     "pages/PickerDemo",
     "pages/CjkDemo",
-    "pages/BuiltinDemo"
+    "pages/BuiltinDemo",
+    "pages/ResourceDemo"
   ]
 }

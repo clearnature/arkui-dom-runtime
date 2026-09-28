@@ -191,6 +191,10 @@ case "${1:-index}" in
     run_one builtindemo "$(src_of pages/BuiltinDemo.ts)" build/builtindemo-module.js test/builtindemo.html \
       "--cjs --register BuiltinDemo" || rc=1
     echo
+    # R128 收口：真实资源解析
+    run_one resourcedemo "$(src_of pages/ResourceDemo.ts)" build/resourcedemo-module.js test/resourcedemo.html \
+      "--cjs --register ResourceDemo" || rc=1
+    echo
     # R12 收口：Navigation 标题栏 / 工具栏 / 分栏
     run_one navbardemo "$(src_of pages/NavBarDemo.ts)" build/navbardemo-module.js test/navbardemo.html \
       "--cjs --register NavBarDemo" || rc=1
@@ -422,6 +426,10 @@ case "${1:-index}" in
     # R125 收口：组件内置手势（Swiper 拖拽翻页 / Tabs 滑动切换 / Scroll+List 拖拽滚动）
     run_one builtindemo "$(src_of pages/BuiltinDemo.ts)" build/builtindemo-module.js test/builtindemo.html \
       "--cjs --register BuiltinDemo" ;;
+  resourcedemo)
+    # R128 收口：真实资源解析（$r 四类型 + resourceManager 同步 API）
+    run_one resourcedemo "$(src_of pages/ResourceDemo.ts)" build/resourcedemo-module.js test/resourcedemo.html \
+      "--cjs --register ResourceDemo" ;;
   navbardemo)
     # R12 收口：Navigation 标题栏 / 工具栏 / 分栏
     run_one navbardemo "$(src_of pages/NavBarDemo.ts)" build/navbardemo-module.js test/navbardemo.html \

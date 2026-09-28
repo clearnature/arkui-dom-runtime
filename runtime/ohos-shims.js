@@ -818,6 +818,9 @@
       },
     };
   }
+  // R128：@ohos:resourceManager（类型命名空间——产物 import type 也会生成 require，
+  // 运行时值面只有 ResourceManager 占位类；真 API 在 getContext().resourceManager）
+  define('resourceManager', { ResourceManager: class ResourceManager {} });
   define('data.preferences', {
     getPreferences(_context, name) {
       const key = name || 'default';
@@ -832,6 +835,57 @@
   // ── 全局 getContext(component) ──
   global.getContext = function getContext(_component) {
     if (!global.__arkui_dom_context) {
+      // R128：resourceManager 真实现。app 表由 runtime/src/generated-app-resources.js
+      // 生成（byId↔type/name + values + media 路径）；媒体字节由 runtime 预热
+      // （__arkui_app_media_bytes）。颜色 number = 0xAARRGGBB（alpha FF，ArkUI 口径）。
+      const resManagerReal = () => {
+        const app = /** @type {any} */ (global).__arkui_app_res || null;
+        const bytes = /** @type {any} */ (global).__arkui_app_media_bytes || {};
+        const strByResource = (r) => {
+          if (typeof r === 'string') return r;
+          const rec = app && app.byId[r && r.id];
+          if (!rec || rec.type !== 'string') { warnRes(r); return String(r && r.name || r); }
+          return app.values.string[rec.name] !== undefined ? app.values.string[rec.name] : rec.name;
+        };
+        const warnRes = (r) => { try { logs.push({ t: 'resFallback', r: String(r) }); } catch (e) { /* 免疫 */ } };
+        const colorToNum = (hex) => {
+          const h = String(hex).replace('#', '');
+          const rgb = parseInt(h.slice(-6), 16);
+          return 0xff000000 + rgb;
+        };
+        return {
+          getStringSync(r) { return strByResource(r); },
+          getStringByNameSync(name) {
+            if (app && app.values.string[name] !== undefined) return app.values.string[name];
+            warnRes(name); return name;
+          },
+          getColorSync(r) {
+            const rec = app && app.byId[r && r.id];
+            const hex = rec && rec.type === 'color' ? app.values.color[rec.name]
+              : (typeof r === 'string' && app ? app.values.color[r] : undefined);
+            if (hex === undefined) { warnRes(r); return 0; }
+            return colorToNum(hex);
+          },
+          getColorByNameSync(name) {
+            const hex = app && app.values.color[name];
+            if (hex === undefined) { warnRes(name); return 0; }
+            return colorToNum(hex);
+          },
+          getMediaContentSync(r) {
+            const rec = app && app.byId[r && r.id];
+            const name = rec && rec.type === 'media' ? rec.name
+              : (typeof r === 'string' ? r : undefined);
+            const b = name ? bytes[name] : undefined;
+            if (!b) { warnRes(name || r); return new Uint8Array(0); }
+            return b;
+          },
+          getMediaByNameSync(name) {
+            const b = app && app.media[name] ? bytes[name] : undefined;
+            if (!b) { warnRes(name); return new Uint8Array(0); }
+            return b;
+          },
+        };
+      };
       const appContext = {
         setColorMode(mode) { logs.push({ t: 'setColorMode', mode }); },
         getApplicationContext() { return appContext; },
@@ -841,7 +895,9 @@
         cacheDir: '/vfs/cache',
         tempDir: '/vfs/temp',
         getApplicationContext: () => appContext,
-        resourceManager: { getStringSync: (k) => k, getStringByNameSync: (k) => k },
+        // R128：resourceManager 真实现（背 __arkui_app_res 生成表 + 预热媒体字节）——
+        // 表缺席时回落"名字进名字出"（旧兜底语义，标警告不静默）
+        resourceManager: resManagerReal(),
       };
     }
     return global.__arkui_dom_context;
