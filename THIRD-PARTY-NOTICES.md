@@ -218,3 +218,12 @@ grep -rl "Apache License, Version 2.0" $CLT/sdk/default/openharmony/ets/componen
 # 6. 入库内容只有自研 + 上述派生产物
 git ls-files
 ```
+
+### 3b.3 无障碍审计器 axe-core（R136 接入需求，R140 落库）
+
+| 文件 | 来源与形态 | 许可 | 用途 |
+|---|---|---|---|
+| `test/vendor/axe.min.js` | npm `axe-core@4.10.2`（Deque），`axe.min.js` **原样拷贝** | MPL-2.0（原文：`test/vendor/axe-core.LICENSE`） | **测试侧无障碍审计器**——a11ydemo 用它对运行时产出的 ARIA 映射做真实规则扫描（严重违规=0 断言）；仅在测试页加载，不进运行时产物 |
+
+- **复现**：`cd /data/tmp && npm pack axe-core@4.10.2` → 解包取 `package/axe.min.js` + `package/LICENSE` 拷入 `test/vendor/`。
+- axe-core 自身的第三方清单见 `LICENSE-3RD-PARTY.txt`（npm 包内，未随拷——审计器仅在测试侧运行）。

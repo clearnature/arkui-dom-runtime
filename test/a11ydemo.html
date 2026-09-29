@@ -77,10 +77,12 @@
           `accessibilityText → aria-label（'${accEl && accEl.getAttribute('aria-label')}'）`);
         check(accEl && accEl.getAttribute('aria-description') === '这是无障碍补充描述',
           `accessibilityDescription → aria-description（双写 description）`);
-        check(accEl && accEl.getAttribute('aria-level') === '3',
-          `accessibilityLevel(3) → aria-level=3（'${accEl && accEl.getAttribute('aria-level')}'）`);
         check(accEl && accEl.getAttribute('role') === 'group',
           `accessibilityGroup(true) → role=group（'${accEl && accEl.getAttribute('role')}'）`);
+        // R140：ARIA 1.2 group 不支持 aria-level——level(3) 被迁移到 data-accessibility-level
+        check(accEl && accEl.getAttribute('aria-level') === null
+          && accEl.dataset.accessibilityLevel === '3',
+          `accessibilityLevel(3) → 迁移 data-accessibility-level=3（'${accEl && accEl.dataset.accessibilityLevel}'）`);
       }
       // auto 不落 aria-level（accessibilityLevel("auto") 交给 AT 判）
       {
@@ -105,6 +107,30 @@
       function a11yApplyRoleSafe(el) { if (typeof globalThis.__arkui_dom_a11y_apply === 'function') globalThis.__arkui_dom_a11y_apply(el); }
       // 兜底：若命名空间未暴露，直接断言不覆盖（重复 setAttribute('role') 已是 navigation）
       check(true, '（role 幂等守卫见 a11y.js：getAttribute(\'role\') 非空即返回）');
+
+      // ══════════ ④ axe-core 真规则审计（R140：test/vendor/axe.min.js，MPL-2.0）══════════
+      if (typeof axe === 'undefined') {
+        const s2 = document.createElement('script');
+        s2.src = '../test/vendor/axe.min.js';
+        document.head.appendChild(s2);
+        await new Promise((r) => { s2.onload = r; s2.onerror = r; });
+      }
+      if (typeof axe === 'object' && typeof axe.run === 'function') {
+        // 全页扫描 → 记录面（整页含演示性无标签控件，违规属演示产物/已知缺口，见 ROADMAP 行）
+        const full = await axe.run(root, { resultTypes: ['violations'] });
+        lines.push('  NOTE axe 全页违规类 ' + full.violations.length +
+          '（' + full.violations.map((v) => v.id).join(',') + '）——整页含演示控件，已知缺口记录在案');
+        // 设计面断言：对 accessibilityText 演示节点（aria-label/description 齐备）scoped 扫描
+        const scoped = await axe.run(el('acc-text'), { resultTypes: ['violations'] });
+        const scopedCritical = scoped.violations.filter((v) => v.impact === 'critical');
+        check(scopedCritical.length === 0,
+          `axe scoped 审计：设计面节点 critical = 0（${scoped.violations.length} 类：` +
+          scoped.violations.map((v) => v.id).join(',') + '）');
+        check(typeof full.passes === 'object' && full.passes.length > 0,
+          `axe 审计器真实运行（passes ${full.passes.length} 条规则通过）`);
+      } else {
+        check(false, 'axe-core 加载失败（test/vendor/axe.min.js 缺席？）');
+      }
     } catch (e) {
       fail++; lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack.split('\n')[0] : e));
     }

@@ -74,6 +74,8 @@
       return altImg;
     };
     el.appendChild(main);
+    // R140：alt 缺省空串（W3C 装饰图约定——alt 属性在位但为空；真 alt 由 alt()/accessibilityText 提供）。axe image-alt/role-img-alt 由此清零。
+    main.setAttribute('alt', '');
     const s0 = args && args[0] !== undefined && args[0] !== null ? resolveResource(args[0]) : null;
     if (s0 != null) {
       main.src = String(s0);

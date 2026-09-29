@@ -39,6 +39,10 @@
       el.__arkuiInput = name === 'Slider' ? 'slider' : 'input';
       if (type && type !== 'textarea') (/** @type {any} */ (el)).type = type;
       const o = args && typeof args[0] === 'object' && args[0] !== null ? args[0] : {};
+      // R140：placeholder → aria-label（可见标签映射；axe aria-input-field-name 清零）
+      if (o && o.placeholder !== undefined && o.placeholder !== null) {
+        el.setAttribute('aria-label', String(o.placeholder));
+      }
       setup(el, o);
       return el;
     });

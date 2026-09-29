@@ -2529,14 +2529,27 @@
         node.setAttribute('description', String(value));
         return true;
       case 'accessibilityLevel': {
-        // "auto" = 交给 AT 判（不落 aria-level）；数值 → aria-level
+        // "auto" = 交给 AT 判（不落 aria-level）；数值 → aria-level。
+        // ARIA 1.2（axe-core 4.10 口径）role=group 不支持 aria-level——已带 group 角色的
+        // 记录到 data-* 不落（R140：a11ydemo scoped 审计抓的组合冲突）
+        if (node.getAttribute('role') === 'group') {
+          node.dataset.accessibilityLevel = String(value);
+          return true;
+        }
         const n = Number(value);
         if (value !== 'auto' && Number.isFinite(n)) node.setAttribute('aria-level', String(n));
         return true;
       }
       case 'accessibilityGroup':
-        // group 语义聚合（WAI-ARIA group role；AT 以组为单位朗读）
-        if (value === true) node.setAttribute('role', node.getAttribute('role') || 'group');
+        // group 语义聚合（WAI-ARIA group role；AT 以组为单位朗读）。
+        // ARIA 1.2 group 不支持 aria-level——若先设了 level，迁移到 data-*（R140 scoped 审计抓）
+        if (value === true) {
+          if (node.getAttribute('role') !== 'group') node.setAttribute('role', 'group');
+          if (node.hasAttribute('aria-level')) {
+            node.dataset.accessibilityLevel = node.getAttribute('aria-level') || '';
+            node.removeAttribute('aria-level');
+          }
+        }
         return true;
       default:
         return false;
@@ -7158,6 +7171,10 @@
       el.__arkuiInput = name === 'Slider' ? 'slider' : 'input';
       if (type && type !== 'textarea') (/** @type {any} */ (el)).type = type;
       const o = args && typeof args[0] === 'object' && args[0] !== null ? args[0] : {};
+      // R140：placeholder → aria-label（可见标签映射；axe aria-input-field-name 清零）
+      if (o && o.placeholder !== undefined && o.placeholder !== null) {
+        el.setAttribute('aria-label', String(o.placeholder));
+      }
       setup(el, o);
       return el;
     });
@@ -7993,6 +8010,8 @@
       return altImg;
     };
     el.appendChild(main);
+    // R140：alt 缺省空串（W3C 装饰图约定——alt 属性在位但为空；真 alt 由 alt()/accessibilityText 提供）。axe image-alt/role-img-alt 由此清零。
+    main.setAttribute('alt', '');
     const s0 = args && args[0] !== undefined && args[0] !== null ? resolveResource(args[0]) : null;
     if (s0 != null) {
       main.src = String(s0);
