@@ -569,6 +569,9 @@
       NAV_ATTRS.onTitleModeChange(node.__navState, value, extra);
       return;
     }
+    // R136（E1-6）：accessibility* 四件 → ARIA（a11y.js 的 a11yConsumeAttr；
+    // 此前经通用兜底落 data-*，屏幕阅读器读不到——坑 86 同族的"拦截要在通用兜底前"）
+    if (a11yConsumeAttr(node, prop, value)) return;
     if (typeof value === 'function') {          // 事件类（onClick/onChange…）
       const ev = prop.replace(/^on/, '').toLowerCase() || 'click';
       // 覆盖语义（R27 实测教训）：同一个属性重复注册【替换】上一个，而不是追加 ——

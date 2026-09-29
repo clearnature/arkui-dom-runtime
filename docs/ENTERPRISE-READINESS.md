@@ -116,7 +116,7 @@
 - 验收：`multiwindemo`——两窗并存、焦点切换事件序、互不串栈；双端（Electron 专属用例）。
 - 依赖：无。
 
-### E1-6 无障碍基础（ARIA 映射）[M]
+### E1-6 无障碍基础（ARIA 映射）[M] ✅（R136，role 静态表+accessibility* 四件；axe-core 接入列后续）
 - 目标：屏幕阅读器可用的底线——role/aria-label/aria-disabled 系统化。
 - 步骤：① 组件语义 → ARIA 属性静态映射表（Button→button、Checkbox→checkbox、
   Text→text + accessibilityText 已有的属性接入）；② accessibility 系属性

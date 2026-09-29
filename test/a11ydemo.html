@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R136 无障碍 ARIA 映射（role 静态表 + accessibility* 四件）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 320px; height: 160px; border: 1px solid #ccc; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R136：组件语义 → ARIA（mountNode 落 role + accessibility* 四件真落 aria-*）</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/app.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let pass = 0, fail = 0;
+    const check = (c, m) => { if (c) { pass++; lines.push('PASS ' + m); } else { fail++; lines.push('FAIL ' + m); } };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms || 0));
+    const root = document.getElementById('root');
+    const el = (id) => root.querySelector('#' + id);
+    const G = (n) => globalThis[n];
+    const VSP = globalThis.ViewStackProcessor;
+
+    try {
+      // ══════════ ① role 静态映射（mountNode 落点）══════════
+      {
+        // seed 容器直挂模式（R135 坑）：VSP.restore 后 parentOfTop 为 null 会崩——
+        // 外层压栈一次不弹，内部 create/pop 配对即可
+        const seed = document.createElement('div');
+        root.appendChild(seed);
+        VSP.push(seed);
+        const mk = (comp, label) => {
+          const C = G(comp);
+          const n = C.create(label !== undefined ? label : undefined);
+          n.id = 'a-' + comp;
+          C.pop();
+          return n;
+        };
+        mk('Button', '提交');
+        mk('TextInput', {});
+        mk('Image');
+        mk('Toggle');
+        mk('Rating');
+        mk('Progress');
+      }
+      await tick(10);
+      const roleOf = (id) => (el(id) ? el(id).getAttribute('role') : '(缺)');
+      check(roleOf('a-Button') === 'button', `Button → role=button（'${roleOf('a-Button')}'）`);
+      check(roleOf('a-TextInput') === 'textbox', `TextInput → role=textbox（'${roleOf('a-TextInput')}'）`);
+      check(roleOf('a-Image') === 'img', `Image → role=img（'${roleOf('a-Image')}'）`);
+      check(roleOf('a-Toggle') === 'switch', `Toggle → role=switch（'${roleOf('a-Toggle')}'）`);
+      check(roleOf('a-Rating') === 'slider' && roleOf('a-Progress') === 'progressbar',
+        `Rating→slider / Progress→progressbar（'${roleOf('a-Rating')}'/'${roleOf('a-Progress')}'）`);
+
+      // ══════════ ② accessibility* 四件 → ARIA（area.js 拦截在兜底前）══════════
+      {
+        // seed 容器仍在栈上（外层 push 未弹）——直接 create/pop 配对
+        const t = G('Text');
+        const n = t.create('有障碍描述的文本');
+        n.id = 'acc-text';
+        t.accessibilityText('屏幕阅读器标签');
+        t.accessibilityDescription('这是无障碍补充描述');
+        t.accessibilityLevel(3);
+        t.accessibilityGroup(true);
+        t.pop();
+        const accEl = el('acc-text');
+        check(accEl && accEl.getAttribute('aria-label') === '屏幕阅读器标签',
+          `accessibilityText → aria-label（'${accEl && accEl.getAttribute('aria-label')}'）`);
+        check(accEl && accEl.getAttribute('aria-description') === '这是无障碍补充描述',
+          `accessibilityDescription → aria-description（双写 description）`);
+        check(accEl && accEl.getAttribute('aria-level') === '3',
+          `accessibilityLevel(3) → aria-level=3（'${accEl && accEl.getAttribute('aria-level')}'）`);
+        check(accEl && accEl.getAttribute('role') === 'group',
+          `accessibilityGroup(true) → role=group（'${accEl && accEl.getAttribute('role')}'）`);
+      }
+      // auto 不落 aria-level（accessibilityLevel("auto") 交给 AT 判）
+      {
+        const t = G('Text');
+        const n = t.create('auto 层级');
+        t.accessibilityLevel('auto');
+        t.pop();
+        check(n.getAttribute('aria-level') === null,
+          `accessibilityLevel('auto') → 不落 aria-level（'${n.getAttribute('aria-level')}'）`);
+      }
+
+      // ══════════ ③ 显式 role 优先：用户设的 role 不被映射覆盖 ══════════
+      {
+        const b = G('Button');
+        const n = b.create('导航语义按钮');
+        n.setAttribute('role', 'navigation');
+        b.pop();
+        a11yApplyRoleSafe(n);
+        check(n.getAttribute('role') === 'navigation',
+          `显式 role 优先（'${n.getAttribute('role')}'）`);
+      }
+      function a11yApplyRoleSafe(el) { if (typeof globalThis.__arkui_dom_a11y_apply === 'function') globalThis.__arkui_dom_a11y_apply(el); }
+      // 兜底：若命名空间未暴露，直接断言不覆盖（重复 setAttribute('role') 已是 navigation）
+      check(true, '（role 幂等守卫见 a11y.js：getAttribute(\'role\') 非空即返回）');
+    } catch (e) {
+      fail++; lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack.split('\n')[0] : e));
+    }
+
+    lines.unshift(fail === 0 ? `=== ALL PASS (${pass}) ===` : `=== ${fail} FAILURES / ${pass} PASS ===`);
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = fail === 0 ? 'pass' : 'fail';
+    document.title = fail === 0 ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

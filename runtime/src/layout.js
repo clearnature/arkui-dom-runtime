@@ -328,6 +328,9 @@
   function mountNode(node, rec) {
     const parentEl = parentOfTop();
     if (node.__arkuiComp) node.setAttribute('data-arkui-comp', node.__arkuiComp);
+    // R136（E1-6）：组件语义 → ARIA role 一次性落点（a11y.js 映射表；显式 role 优先）。
+    // typeof 守卫：layout.js 在 a11y.js 之前拼接（@include 顺序），函数声明提升可用。
+    if (typeof a11yApplyRole === 'function') a11yApplyRole(node);
     if (rec) { rec.node = node; rec.parentNode = parentEl; }
     parentEl.appendChild(node);
     if (parentEl.__arkuiComp === 'Stack') node.style.gridArea = '1 / 1';

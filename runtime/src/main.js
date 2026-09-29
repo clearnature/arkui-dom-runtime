@@ -360,6 +360,7 @@
   // @include builtin
   // @include errorboundary
   // @include focus
+  // @include a11y
   // @include generated-app-resources
   // @include generated-sys-resources
   // @include i18n
