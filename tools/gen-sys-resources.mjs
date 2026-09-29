@@ -51,6 +51,8 @@ const SIZE_BUDGET = 800 * 1024;   // 产物 JSON 体的体积护栏（字节）
 function parse() {
   const lines = fs.readFileSync(SRC, 'utf8').split('\n');
   const table = new Map();          // id → { value: 归一化后, fromBase: boolean, name }
+  const darkTable = new Map();      // R141：dark 段 id → 归一化值（仅 dark 段内出现的条目）
+  let inDark = false;
   const stats = {
     idLines: 0,                     // 以 `id:` 开头的物理行数
     unparsed: 0,                    // id 行里不匹配标准三段式的（全文件仅 1 条 es 段跨行串）
@@ -66,6 +68,7 @@ function parse() {
     if (line.startsWith('keyconfig:')) {
       stats.sections++;
       stats.section = (lines[i + 1] || '').trim();   // 分段头的下一行 = 段名（base/dark/locale…）
+      inDark = stats.section === 'dark';
       i++;
       continue;
     }
@@ -77,6 +80,7 @@ function parse() {
     const name = m[3];
     const norm = normalize(m[2], stats);
     if (norm === null) continue;                      // 引用型：normalize 里已计数
+    if (inDark && !darkTable.has(id)) darkTable.set(id, norm);   // R141：dark 段烘制
     const isBase = stats.section === 'base';
     const prev = table.get(id);
     // base（light）优先；base 段内部同 id 重复（不应发生）取首条；非 base 只在还没有值时占位
@@ -87,7 +91,7 @@ function parse() {
     }
   }
   stats.fromFallback = table.size - stats.fromBase;   // 回退数 = 总数 - base 直取数
-  return { table, stats };
+  return { table, darkTable, stats };
 }
 
 // ── 归一化（规则见文件头注；两处必须同步改）────────────────────────────────
@@ -148,17 +152,21 @@ function emit(table, stats, cut) {
 // 统计：id 行 ${stats.idLines}（不合规 ${stats.unparsed}，全部 ${stats.sections} 个分段）；
 //       收录 ${table.size} 条（number ${kindCounts.number || 0} / color ${kindCounts.color || 0} / string ${kindCounts.string || 0} / boolean ${kindCounts.boolean || 0}${cut ? `；体积护栏裁掉非三类 ${cut} 条` : ''}）；
 //       base 直取 ${stats.fromBase} 条，回退首取 ${stats.fromFallback} 条；
+//       dark 段 ${darkTable.size} 条（R141）；
 //       跳过引用型 ${Object.values(stats.refSkipped).reduce((a, b) => a + b, 0)} 条（${refs}）。
 // 换算规则：
 ${rules}
 (function () {
   (/** @type {any} */ (globalThis)).__arkui_dom_resources = ${body};
+  // R141：dark 段（WithTheme colorMode=2 时 resolveResource 优先查此表）
+  (/** @type {any} */ (globalThis)).__arkui_dom_resources_dark = ${darkBody};
 })();
 `;
 }
 
 // ── 主流程 ────────────────────────────────────────────────────────────────
-const { table, stats } = parse();
+const { table, darkTable, stats } = parse();
+const darkBody = JSON.stringify(Object.fromEntries([...darkTable].map(([id, v]) => [String(id), v])));
 let cut = 0;
 let text = emit(table, stats, 0);
 if (Buffer.byteLength(text, 'utf8') > SIZE_BUDGET) {

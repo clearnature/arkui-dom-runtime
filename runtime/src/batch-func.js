@@ -200,6 +200,15 @@
       el.dataset.colorMode = String(m);
       // DOM 对应物：CSS color-scheme 作用域（后代原生控件的浅/深色默认皮肤随之切换）
       el.style.colorScheme = m === 2 ? 'dark' : (m === 1 ? 'light' : '');
+      // R141：sys.* 资源表联动——DARK 时 resolveResource 查 dark 表（generated-sys-resources
+      // 生成的 __arkui_dom_resources_dark）。【全局效应】而非作用域（真机 scope 换表走 C 层，
+      // DOM 侧简化为全局换表——已注释如实）；light 表引用保留供切回。
+      const gAny = /** @type {any} */ (global);
+      if (gAny.__arkui_dom_resources_dark) {
+        // light 表引用在首次 colorMode 处理时定格（此后 resources 可能已是 dark）
+        gAny.__arkui_dom_resources_light = gAny.__arkui_dom_resources_light || gAny.__arkui_dom_resources;
+        gAny.__arkui_dom_resources = m === 2 ? gAny.__arkui_dom_resources_dark : gAny.__arkui_dom_resources_light;
+      }
     }
     if (o.theme !== undefined) {
       st.hasTheme = o.theme !== null;

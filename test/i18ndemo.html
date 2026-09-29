@@ -106,6 +106,35 @@
           `Text($r(string)) 经 qualifier 后渲染（'${el('t-i18n') && el('t-i18n').textContent}'）`);
       }
 
+      // ══════════ ⑦b sys.* dark 表（R141：WithTheme colorMode=2 → dark 资源联动）══════════
+      {
+        // seed 容器直挂模式（R135 坑同族：空栈时 parentOfTop 为 null）
+        const seedB = document.createElement('div');
+        root.appendChild(seedB);
+        VSP.push(seedB);
+        const w = G('WithTheme');
+        w.create({ colorMode: 2 });
+        w.pop();
+        VSP.pop();
+        const probe = { id: 125829120, type: 10001, params: [], bundleName: '', moduleName: '' };
+        const lightVal = '#182431ff';
+        const darkVal = '#ffffffff';
+        const gAny = /** @type {any} */ (globalThis);
+        check(gAny.__arkui_dom_resources === gAny.__arkui_dom_resources_dark,
+          'colorMode=2 → sys 表切到 dark');
+        check(gAny.__arkui_dom_resources_dark[125829120] === darkVal,
+          `dark 表真值：125829120 = ${gAny.__arkui_dom_resources_dark[125829120]}（light ${lightVal}）`);
+        // 切回 LIGHT
+        VSP.push(seedB);
+        const w2 = G('WithTheme');
+        w2.create({ colorMode: 1 });
+        w2.pop();
+        VSP.pop();
+        seedB.remove();
+        check(gAny.__arkui_dom_resources === gAny.__arkui_dom_resources_light,
+          'colorMode=1 → 切回 light 表');
+      }
+
       // ══════════ ⑧ RTL 贯通：WithEnv DIRECTION → dir 属性（R120 已有）+ isRTL 联动 ══════════
       {
         const seedW = document.createElement('div');
