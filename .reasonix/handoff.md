@@ -9,7 +9,14 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R141 sys.* dark 表烘制 + WithTheme colorMode 联动 + 15000 轮扩窗 soak**
+- 上次切片：**R142 E2-1 完成：尾部 sync 批级提升（增量走查收官）**——rerenderElmt 内
+  的 4 个尾部 sync 提升到 flush() 批末：批内 N 个 dirty id 原本各跑 4 次登记扫描
+  （3300 行批量=13200 次），批级一次语义等价（sync 作用于登记集全局终态）且降为 4 次；
+  PERF 记账同步移至 flush；stress10k bulk_flush 16.4→15.4ms；stress1k/attrheavy/
+  新六页回归全 PASS；门禁 8 步（7c52f67，Mimosa 0 findings seal sha256:c064f960…）。
+  **E2-1 增量走查至此完成（R139 登记集驱动 + R142 批级提升）；优化器 v3 的
+  updateFunc 级属性 diff 属独立立项（本轮明确不覆盖）**。
+  更早：**R141 sys.* dark 表烘制 + WithTheme colorMode 联动 + 15000 轮扩窗 soak**
   （E0-4/E1-4 尾巴收口）——gen-sys-resources.mjs 增 dark 段解析→__arkui_dom_resources_dark
   （391 条；125829120 light #182431ff→dark #ffffffff 实证）；WithTheme colorMode 联动
   （DARK→sys 表切 dark【全局效应如实注释——真机 scope 换表走 C 层】；light 表引用定格修：
