@@ -65,7 +65,8 @@ console.log('  zip=' + (hasZip ? zipCandidate : '（用本地解包）'));
 step('staging（/data/tmp，不污染仓库）');
 const S = path.join(TMP, 'arkui-pkg-staging');
 fs.rmSync(S, { recursive: true, force: true });
-for (const d of ['electron', 'test', 'build', 'runtime', 'bridge/napi', 'data/kernel']) fs.mkdirSync(path.join(S, d), { recursive: true });
+for (const d of ['electron', 'test', 'build', 'runtime', 'bridge/napi', 'data/kernel', 'harmony-proj/entry/src/main/resources'])
+  fs.mkdirSync(path.join(S, d), { recursive: true });
 for (const f of ['main.js', 'preload.js']) fs.copyFileSync(path.join(ROOT, 'electron', f), path.join(S, 'electron', f));
 fs.cpSync(path.join(ROOT, 'runtime'), path.join(S, 'runtime'), { recursive: true });
 // 全部测试页 + 全部页面模块（分发包要能跑整个用例矩阵，不只冒烟页）
@@ -148,6 +149,12 @@ fs.writeFileSync(path.join(S, 'package.json'), JSON.stringify({
   description: 'ArkTS->DOM runtime desktop', main: 'electron/main.js',
   private: true, author: 'arkui-dom-runtime',
 }, null, 2));
+// R134：app 资源随包（$r/resourcemanager 打包态）——base 全目录平拷
+if (fs.existsSync(path.join(ROOT, 'harmony-proj/entry/src/main/resources/base'))) {
+  fs.cpSync(path.join(ROOT, 'harmony-proj/entry/src/main/resources/base'),
+            path.join(S, 'harmony-proj/entry/src/main/resources/base'), { recursive: true });
+  console.log('  app 资源集: harmony-proj resources/base 随包');
+}
 console.log(`  staged: ${fs.readdirSync(path.join(S, 'test')).length} pages, ${fs.readdirSync(path.join(S, 'build')).length} modules`);
 
 // ── 2) 打包 ──

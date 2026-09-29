@@ -564,6 +564,14 @@
     }
   }
 
+  // R134：资源 base 探测——生成表里的 media 路径相对【仓库根】；测试页住在 /test/ 下，
+  // fetch/解析都要加一层前缀。规则：URL 路径含 /test/ → base='../'（仓库根的相对形态，
+  // http 与 file:// 双态同构）；否则 base='./'（页已在仓库根形态，如打包冒烟直开包内页）。
+  const resBase = () => {
+    try { return /\/test\//.test(global.location.pathname) ? '../' : './'; }
+    catch (e) { return '../'; }
+  };
+
   // ────────────────────── 属性映射 ──────────────────────
   /** @param {any} v */
   const resolveResource = (v) => {
@@ -580,7 +588,7 @@
           const raw = app.values[r.type][r.name];
           return typeof raw === 'string' ? (parseFloat(raw) || 0) : raw;
         }
-        if (r.type === 'media') return app.media[r.name] !== undefined ? app.media[r.name] : v;
+        if (r.type === 'media') return app.media[r.name] !== undefined ? resBase() + app.media[r.name] : v;
         return v;
       }
       const table = (/** @type {any} */ (global)).__arkui_dom_resources || {};
@@ -1177,9 +1185,10 @@
     const bytes = /** @type {Record<string, Uint8Array>} */ ({});
     (/** @type {any} */ (global)).__arkui_app_media_bytes = bytes;
     if (!app || !app.media) return Promise.resolve();
+    const base = resBase();
     const jobs = Object.keys(app.media).map(async (name) => {
       try {
-        const resp = await fetch(app.media[name]);
+        const resp = await fetch(base + app.media[name]);
         bytes[name] = new Uint8Array(await resp.arrayBuffer());
       } catch (e) { /* 字节缺席容忍 */ }
     });

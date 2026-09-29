@@ -1763,28 +1763,28 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   fixtures 转换产物  77 个：AlphabetIndexerDemo AnimDemo AnimatorDemo AsyncIO AttrHeavyDemo BatchFuncDemo BatchLayoutDemo BatchMediaDemo BatchVerifyDemo BuiltinDemo CalendarPickerDemo Callee CanvasDemo CjkDemo DatePickerDemo Detail DrawDemo GestureDemo GestureGroupDemo GridDemo GridRowDemo Home ImageDemo Index InputDemo Layout Lazy LazyVar ListGroupDemo MeasArea MeasImage MeasNotify Measure MediaDemo NavBarDemo NavDemo NavShimDemo NavTransDemo NetFile NotesDetail NotesHome Observe PanelDemo PerfBigDemo PerfDemo PickerDemo PopDemo PromptAct Provide QrDemo RefreshDemo RelDemo ResourceDemo Rich RichVideoDemo ScrollDemo ShapeDemo ShowDemo SideBarDemo SmallDemo SplitDemo StepDemo Stress1kDemo SwiperDemo TabsGrid TextDemo TextMeasure TextPickerDemo TextTimeDemo TimePickerDemo TransitionDemo UiContextDemo V2 WaterFlowDemo Widgets WindowDemo XCompDemo
 
 == 性能基线（Electron 实测）==
-  首渲染            36.6 ms（33 节点：Column+Button+Text+ForEach×30）
-  最小 rerender     3.1 ms（@State 计数脏区单 Text，rAF 口径）
-  rerender 管道     1.3 ms / 1 tick（setTimeout 轮询口径，R70）
+  首渲染            36.9 ms（33 节点：Column+Button+Text+ForEach×30）
+  最小 rerender     6.3 ms（@State 计数脏区单 Text，rAF 口径）
+  rerender 管道     0.9 ms / 1 tick（setTimeout 轮询口径，R70）
   微任务底噪        0.00 ms
   行数              31
-  剖面 R71          loadRoute 同步 6.9 ms（require 0.4）· raf1 0.9 / raf2 28.8 ms（offscreen 首帧）
-  脚本 eval         runtime 157.3 / generated 148.4 / shims 151.8 / module 155.0 ms（计时起点之前）
+  剖面 R71          loadRoute 同步 6.8 ms（require 0.3）· raf1 23.0 / raf2 7.1 ms（offscreen 首帧）
+  脚本 eval         runtime 145.7 / generated 138.0 / shims 144.3 / module 143.4 ms（计时起点之前）
   判定              框架同步构建 3.5ms 无大头；"首渲染"=脚本 eval + offscreen 首帧（非框架成本）
-  千节点 R79        首渲染同步 30.6 ms（350 节点/~3500 属性，亚线性）· 单点 flush 2.4 ms · 批量翻转 flush 5.0 ms
+  千节点 R79        首渲染同步 30.8 ms（350 节点/~3500 属性，亚线性）· 单点 flush 2.3 ms · 批量翻转 flush 4.7 ms
   规模曲线          203→4.8 / 304→11.2 / 1055→19.0 ms（创建路径亚线性）；行复用+守卫千节点级保持
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          1357.0 KB
-  runtime(src)     1348.9 KB
+  runtime          1357.5 KB
+  runtime(src)     1349.4 KB
   test             935.5 KB
-  tools            220.8 KB
+  tools            221.2 KB
   electron(src)    74.6 KB
-  docs             848.2 KB
+  docs             849.3 KB
   fixtures         531.9 KB
 
 == 逐文件（文档"文件职责"表的来源）==
-  runtime/arkui-dom-runtime.js            1105745 B  1079.8 KB
+  runtime/arkui-dom-runtime.js            1106290 B  1080.4 KB
   runtime/generated-components.js          57617 B  56.3 KB
   runtime/ohos-shims.js                    85885 B  83.9 KB
   tools/extract.mjs                         6936 B  6.8 KB
@@ -1806,7 +1806,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   docs/ARCHITECTURE.md                    164832 B  161.0 KB
   docs/CAPABILITY.md                       63212 B  61.7 KB
   docs/DEVELOPING.md                       76689 B  74.9 KB
-  docs/ROADMAP.md                         232394 B  226.9 KB
+  docs/ROADMAP.md                         233354 B  227.9 KB
   docs/surface-measurement.md               6496 B  6.3 KB
   docs/SESSION-2026-09-20.md               12842 B  12.5 KB
   runtime/src/.mimosa                       4096 B  4.0 KB
@@ -1837,7 +1837,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   runtime/src/image.js                      7000 B  6.8 KB
   runtime/src/input.js                     11336 B  11.1 KB
   runtime/src/layout.js                    18442 B  18.0 KB
-  runtime/src/main.js                     121421 B  118.6 KB
+  runtime/src/main.js                     121966 B  119.1 KB
   runtime/src/nav.js                       57427 B  56.1 KB
   runtime/src/panel.js                      3360 B  3.3 KB
   runtime/src/popup.js                      5042 B  4.9 KB
