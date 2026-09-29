@@ -9,7 +9,16 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R137 E1-2 SQLite + E1-5 多窗口（双代理并行）**——**E1-2**（relationalstore.js
+- 上次切片：**R138 E1-7 尾巴 + E2-2 万节点压测基线（双代理并行）**——**E1-7 尾巴**：
+  docs/UPGRADE.md（第六+1 文档）：分发形态表/升级策略核心节（全量替换+userData 不动
+  【R74 口径修正：简报误记 R75】+升级四步+检查清单+回滚【无 schema 迁移机制如实声明】）/
+  资源版本对应硬契约/日志诊断汇总/已知限制（无自动更新通道）；**E2-2 万节点基线**：
+  Stress10kDemo（3300 行×3 组件≈9905 节点+单点动态）+ stress10k.html（PERF10 行；
+  批量轮询放宽 2000 tick）；**基线实测（Electron）：首渲同步 143.5ms / bulk_poll 216.5ms /
+  bulk_flush 22ms——万节点远优于千节点预算线性外推**，E2-1 增量走查对照基线就位。
+  stress10k 5 条 Electron ALL PASS；门禁 8 步（581d49d，Mimosa 0 findings
+  seal sha256:9331c193…）。**P1 功能面 7 项全清**；P2 余 E2-1 增量走查。
+  更早：**R137 E1-2 SQLite + E1-5 多窗口（双代理并行）**——**E1-2**（relationalstore.js
   第 45 分片）：sql.js@1.8.0 WASM 选型（双端同构优先于原生 ABI）；RdbStore 全家对 d.ts
   行号；持久化=export→b64→file.fs 真后端（重启重建实测）；修复 file.fs writeSync 数字
   fd 契约 bug（验证台替身建模暴露）；rdbdemo 34/12 分形态双端全绿；**E1-5 多窗口**：
