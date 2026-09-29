@@ -9,7 +9,12 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R133 E1-1 网络栈强化（P1 功能面第一项）**——net.http 垫片：retry
+- 上次切片：**R134 E1-7 打包态资源（R128 留白收口）**——packager 拷 harmony-proj
+  resources/base 随包 + runtime resBase() 探测（URL 含 /test/ → '../'，http/file 双态
+  同构；resolver media 分支与字节预热共用）；**打包 resourcedemo 冒烟 9 条 PASS**
+  （string/color/float 真值+媒体字节 460B 预热实测 file:// 下可用）；门禁 8 步
+  （a901748，Mimosa 0 findings seal sha256:2c01867d…）。升级策略文档化待补（E1-7 尾巴）。
+  更早：**R133 E1-1 网络栈强化（P1 功能面第一项）**——net.http 垫片：retry
   {maxRetry,backoffMs}（本项目扩展形状如实注释；5xx/网络层失败重试、200 零重发、耗尽报
   2300007）+ 整体超时覆盖重试窗口（AbortController 终局异常留痕+上抛——async.html 旧
   断言回归保护）+ usingProxy/usingCache/maxLimit 记录面（真机系统代理走 C 层语义不在 DOM
