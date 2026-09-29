@@ -9,7 +9,14 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R140 E1-6/E2-2 尾巴收口：axe-core 真审计 + PERF10 采集**——axe-core@4.10.2
+- 上次切片：**R141 sys.* dark 表烘制 + WithTheme colorMode 联动 + 15000 轮扩窗 soak**
+  （E0-4/E1-4 尾巴收口）——gen-sys-resources.mjs 增 dark 段解析→__arkui_dom_resources_dark
+  （391 条；125829120 light #182431ff→dark #ffffffff 实证）；WithTheme colorMode 联动
+  （DARK→sys 表切 dark【全局效应如实注释——真机 scope 换表走 C 层】；light 表引用定格修：
+  复切时误捕 dark 引用的时序 bug）；i18ndemo +3 条→21 条双端全绿；**soak Run 2：15000 轮
+  扩窗**（offscreen ~1.3ms/轮全程 <1 分钟，churn 密度高于 8h 值守）——heap 锯齿 9→25→12MB
+  无单调增长、DOM/recs 恒定=无泄漏；soak-report.md Run 2 入档。门禁 8 步（eb47f9d，
+  Mimosa 0 findings seal sha256:a7b28e23…）。更早：**R140 E1-6/E2-2 尾巴收口**——axe-core@4.10.2
   （MPL-2.0）vendor 进 test/vendor（NOTICES §3b.3 登记；仅测试侧加载）；a11ydemo 真审计：
   全页=记录面（8 类违规属演示控件/已知缺口）、**设计面 scoped critical=0**；真审计抓出
   映射修正：ARIA 1.2 group 不支持 aria-level——accessibilityGroup(true) 时已设 level
