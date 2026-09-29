@@ -9,7 +9,13 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R132 E0-4 长跑稳态（P0 可信度底线六项全清）**——tools/soak.sh（非门禁）：
+- 上次切片：**R133 E1-1 网络栈强化（P1 功能面第一项）**——net.http 垫片：retry
+  {maxRetry,backoffMs}（本项目扩展形状如实注释；5xx/网络层失败重试、200 零重发、耗尽报
+  2300007）+ 整体超时覆盖重试窗口（AbortController 终局异常留痕+上抛——async.html 旧
+  断言回归保护）+ usingProxy/usingCache/maxLimit 记录面（真机系统代理走 C 层语义不在 DOM
+  侧）；serve.py 加 /flaky?fail=N（按 query 隔离计数——页内复用同 query 串污染下一跑的
+  陷阱二跑抓）//delay?ms=N/DELETE 端点；netadvdemo 7 条双端全绿；门禁 8 步（8ae9f3c，
+  Mimosa 0 findings seal sha256:7d53085b…）。更早：**R132 E0-4 长跑稳态（P0 可信度底线六项全清）**——tools/soak.sh（非门禁）：
   Electron offscreen + ARKUI_SOAK_ROUNDS 驱动 errbounddemo 的 `__arkui_soak_step` churn
   钩子，采样 heapUsed/DOM/elmtRecords 三指标 CSV；**150 轮验收：heap r25=8MB→r150=9MB
   （GC 稳态水位）+DOM/记录账零积累=无泄漏趋势**；报告 docs/research/soak-report.md（边界：
