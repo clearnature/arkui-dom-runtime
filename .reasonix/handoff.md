@@ -9,7 +9,16 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R130 企业就绪度 P0 批次（R66 a+c 多智能体并行复刻：5 代理+主会话集成）**——
+- 上次切片：**R131 P0 批次二（E0-2/E0-6 双代理并行，都动 electron/main.js——git 基线+diff 合并）**——
+  **E0-2 崩溃上报**：appendCrashLog → userData/logs/crash-YYYYMMDD.jsonl（按日分文件+每分钟
+  每类 20 条节流）；process 兜底钩子（记录后不退出——fail-fast 语义变化已注释）+render-gone
+  扩接+arkui:report:error IPC+preload reportError 桥；渲染侧接线=errbounddemo 缓冲尾部
+  →reportError（**22/23 分端断言**——浏览器无 electronAPI 自然跳过）；**E0-6 启动可诊断**：
+  did-fail-load→data:URL 诊断页（五字段）+[boot-fail] 摘要；空壳探针仅生产形态（测试模式
+  零注入）；catch 配套诊断页截图留存（退出码 3 不变）；已知限制：404 页属加载成功不走诊断页。
+  验收：JSONL 五键行落盘实测+断链启动 [boot-fail] code=-312 摘要+诊断页截图。**P0 仅余
+  E0-4 长跑稳态**。门禁 8 步全绿（76441a6，Mimosa 0 findings seal sha256:7730ae76…）。
+  更早：**R130 企业就绪度 P0 批次（R66 a+c 多智能体并行复刻：5 代理+主会话集成）**——
   **E0-1 错误边界**（errorboundary.js：__arkui_dom_errors 环形缓冲+ErrorBoundary 最小面；
   flush 逐 elmtId try/catch+applyAttr 包裹；errbounddemo 22 双端）→ **E0-3 焦点管理**
   （focus.js：Tab 链正值组语义+requestFocus 受理序号 token 防 rAF 迟到覆盖+焦点环；
