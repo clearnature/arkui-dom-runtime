@@ -9,7 +9,14 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R134 E1-7 打包态资源（R128 留白收口）**——packager 拷 harmony-proj
+- 上次切片：**R135 E1-3 i18n 系统化**——i18n.js 分片（第 43 个）：System 面+isRTL+
+  Calendar（月 1-based 口径）+NumberFormat（Intl locale 敏感）+Util.unitConvert（线性
+  长度+温度）；**setResourceLocale**（qualifier 目录 zh_CN/en_US 拉取合并进 app.values+
+  base 值快照复原——覆盖污染须回快照）；ohos-shims i18n 旧名转发；RTL 贯通（WithEnv
+  DIRECTION→dir 复验+isRTL 同源）；i18ndemo 18 条双端全绿；测试页坑：VSP.restore 后
+  parentOfTop 为 null——seed 容器直挂模式；门禁 8 步（c5eb871，Mimosa 0 findings
+  seal sha256:e303943c…）。P1 进度 3/7（余 E1-2 SQLite/E1-5 多窗口/E1-6 无障碍）。
+  更早：**R134 E1-7 打包态资源（R128 留白收口）**——packager 拷 harmony-proj
   resources/base 随包 + runtime resBase() 探测（URL 含 /test/ → '../'，http/file 双态
   同构；resolver media 分支与字节预热共用）；**打包 resourcedemo 冒烟 9 条 PASS**
   （string/color/float 真值+媒体字节 460B 预热实测 file:// 下可用）；门禁 8 步
