@@ -9,7 +9,16 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R135 E1-3 i18n 系统化**——i18n.js 分片（第 43 个）：System 面+isRTL+
+- 上次切片：**R136 E1-6 无障碍 ARIA 映射**——a11y.js 分片（第 44 个）：A11Y_ROLES
+  静态映射表（20 组件→button/textbox/img/switch/slider/progressbar/meter/menu/combobox/
+  listitem/list/tabpanel）+ mountNode 挂载落点（一次性落 role；显式 role 优先幂等守卫）
+  + accessibility* 四件真落 ARIA（Text→aria-label/Description→aria-description 双写/
+  Level 数值落 auto 不落/Group(true)→role=group——area.js 拦截在通用兜底前，坑 86 同族；
+  此前经通用兜底落 data-* AT 读不到）；axe-core 接入列后续（vendor 400KB+）；
+  a11ydemo 12 条双端全绿；测试页坑（R135 同族）：VSP.restore 后 parentOfTop 为 null——
+  seed 容器直挂模式；门禁 8 步（b54f35c，Mimosa 0 findings seal sha256:c4581186…）。
+  **P1 进度 4/7**（余 E1-2 SQLite/E1-5 多窗口/E1-7 尾巴=升级策略文档）。
+  更早：**R135 E1-3 i18n 系统化**——i18n.js 分片（第 43 个）：System 面+isRTL+
   Calendar（月 1-based 口径）+NumberFormat（Intl locale 敏感）+Util.unitConvert（线性
   长度+温度）；**setResourceLocale**（qualifier 目录 zh_CN/en_US 拉取合并进 app.values+
   base 值快照复原——覆盖污染须回快照）；ohos-shims i18n 旧名转发；RTL 贯通（WithEnv
