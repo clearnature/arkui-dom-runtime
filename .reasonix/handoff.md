@@ -9,7 +9,18 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R129 企业就绪度差距账（规划，零代码）**——`docs/ENTERPRISE-READINESS.md`
+- 上次切片：**R130 企业就绪度 P0 批次（R66 a+c 多智能体并行复刻：5 代理+主会话集成）**——
+  **E0-1 错误边界**（errorboundary.js：__arkui_dom_errors 环形缓冲+ErrorBoundary 最小面；
+  flush 逐 elmtId try/catch+applyAttr 包裹；errbounddemo 22 双端）→ **E0-3 焦点管理**
+  （focus.js：Tab 链正值组语义+requestFocus 受理序号 token 防 rAF 迟到覆盖+焦点环；
+  focusdemo 25 双端）→ **E1-4 sys 资源表**（gen-sys-resources.mjs：resources.txt 反查
+  7477 条 base 优先/#AARRGGBB→RRGGBBAA 重排；直填 __arkui_dom_resources 零改动；
+  sysresdemo 13 双端）→ **E0-5 供应链+CSP**（check-all 第 8 步 supply；CSP 注入——
+  **新坑：script-src 缺 unsafe-inline 时 47 个内联脚本测试页整页静默死，#result 停
+  running 且无 console 报错，CSP 违规只在 DevTools 可见**）→ **E2-3 差异清单**
+  （DEVICE-DIFF.md 46 条）。三页 60 条新增双端全绿；门禁 8 步（supply 无 lock 显式跳过）。
+  ENTERPRISE-READINESS 勾账 5 项。P0 余 E0-2/E0-4/E0-6。
+  更早：**R129 企业就绪度差距账（规划，零代码）**——`docs/ENTERPRISE-READINESS.md`
   （第六文档位）：**16 工作流原子分解**，P0 可信度底线 6 项（E0-1 错误边界/E0-2 崩溃
   上报/E0-3 焦点管理/E0-4 长跑稳态/E0-5 供应链 CSP/E0-6 启动可诊断）→ P1 功能面 7 项
   （网络/SQLite/i18n/sys.* 资源/多窗口/无障碍/打包态资源）→ P2 规模化 3 项（增量走查/
