@@ -1,0 +1,16 @@
+{
+  "string": [
+    {
+      "name": "res_hello",
+      "value": "Hello, resources"
+    },
+    {
+      "name": "res_desc",
+      "value": "R128 real resource parsing"
+    },
+    {
+      "name": "res_i18n_greeting",
+      "value": "Hello, world"
+    }
+  ]
+}

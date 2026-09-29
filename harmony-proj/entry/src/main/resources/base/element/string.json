@@ -19,6 +19,10 @@
     {
       "name": "res_desc",
       "value": "R128 真实资源解析"
+    },
+    {
+      "name": "res_i18n_greeting",
+      "value": "greeting-base"
     }
   ]
 }

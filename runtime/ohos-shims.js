@@ -264,14 +264,18 @@
       try { return Intl.DateTimeFormat().resolvedOptions().locale || 'en-US'; }
       catch (e) { return 'en-US'; }
     };
+    // R135：i18n 真面移至 runtime/src/i18n.js 分片（Locale/Calendar/NumberFormat/isRTL/
+    // unitConvert/setResourceLocale）——这里保留旧名转发（已消费方不受影响）
     define('i18n', {
-      getSystemLanguage: () => locale().split('-')[0],
-      getSystemLocale: () => locale(),
-      getSystemRegion: () => {
-        const m = locale().match(/[-]([A-Za-z]{2})$/) ||
-          (typeof navigator !== 'undefined' ? (navigator.language || '').match(/[-]([A-Za-z]{2})$/) : null);
-        return m ? m[1].toUpperCase() : '';
-      },
+      getSystemLanguage: () => ((/** @type {any} */ (global)).__arkui_dom_i18n
+        ? (/** @type {any} */ (global)).__arkui_dom_i18n.System.getSystemLanguage()
+        : locale().split('-')[0]),
+      getSystemLocale: () => ((/** @type {any} */ (global)).__arkui_dom_i18n
+        ? (/** @type {any} */ (global)).__arkui_dom_i18n.System.getSystemLocale()
+        : locale()),
+      getSystemRegion: () => ((/** @type {any} */ (global)).__arkui_dom_i18n
+        ? (/** @type {any} */ (global)).__arkui_dom_i18n.System.getSystemRegion()
+        : (locale().match(/[-]([A-Za-z]{2})$/) ? locale().match(/[-]([A-Za-z]{2})$/)[1].toUpperCase() : '')),
     });
   }
 

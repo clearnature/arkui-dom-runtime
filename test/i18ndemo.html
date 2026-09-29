@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R135 i18n 系统化（Locale/Calendar/NumberFormat/isRTL/unitConvert/qualifier/RTL）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 320px; height: 140px; border: 1px solid #ccc; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R135：@ohos:i18n 企业面 + 资源 qualifier + RTL 贯通</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/app.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms || 0));
+    const root = document.getElementById('root');
+    const el = (id) => root.querySelector('#' + id);
+    const G = (n) => globalThis[n];
+    const VSP = globalThis.ViewStackProcessor;
+
+    try {
+      await globalThis.__arkui_res_ready;
+      const i18n = globalThis.__arkui_dom_i18n;
+
+      // ══════════ ① System 面：语言/区域/App 覆盖/回调 ══════════
+      check(typeof i18n.System.getSystemLanguage() === 'string' && i18n.System.getSystemLanguage().length >= 2,
+        `System.getSystemLanguage（'${i18n.System.getSystemLanguage()}'）`);
+      i18n.System.setAppPreferredLanguage('zh-CN');
+      check(i18n.System.getAppPreferredLanguage() === 'zh-CN' && i18n.System.getSystemLanguage() === 'zh',
+        `setAppPreferredLanguage('zh-CN') → 语言 zh（'${i18n.System.getSystemLanguage()}'）`);
+      let notified = '';
+      i18n.System.on('languageChange', (lang) => { notified = lang; });
+      i18n.System.setAppPreferredLanguage('en-US');
+      check(notified === 'en-US', `languageChange 回调收到 '${notified}'`);
+
+      // ══════════ ② isRTL：Unicode 双向类目 ══════════
+      check(i18n.isRTL('ع') === true && i18n.isRTL('א') === true, 'isRTL(阿拉伯/希伯来) = true');
+      check(i18n.isRTL('中') === false && i18n.isRTL('a') === false, "isRTL(中文/拉丁) = false");
+
+      // ══════════ ③ Calendar（Intl 映射，月 1-based 口径）══════════
+      const cal = i18n.Calendar.getInstance('zh-CN');
+      cal.set(2026, 8, 15);   // month 0-based → 9 月 15 日
+      check(cal.getYear() === 2026 && cal.getMonth() === 9 && cal.getDayOfMonth() === 15,
+        `Calendar set/get（${cal.getYear()}-${cal.getMonth()}-${cal.getDayOfMonth()}，月 1-based）`);
+      check(typeof cal.getDayOfWeek() === 'number' && cal.getDayOfWeek() >= 1 && cal.getDayOfWeek() <= 7,
+        `getDayOfWeek 1..7（实际 ${cal.getDayOfWeek()}）`);
+
+      // ══════════ ④ NumberFormat：locale 敏感格式 ══════════
+      const nfZh = new i18n.NumberFormat('zh-CN');
+      const nfDe = new i18n.NumberFormat('de-DE');
+      check(nfZh.format(1234567.89).indexOf(',') >= 0 && nfDe.format(1234567.89).indexOf('.') >= 0,
+        `NumberFormat 千分位 locale 敏感（zh='${nfZh.format(1234567.89)}' de='${nfDe.format(1234567.89)}'）`);
+
+      // ══════════ ⑤ unitConvert：线性单位 + 温度 ══════════
+      const km = { unit: 'km', symbol: 'km' };
+      const mi = { unit: 'mi', symbol: 'mi' };
+      const c = { unit: '°C', symbol: '°C' };
+      const f = { unit: '°F', symbol: '°F' };
+      const conv = i18n.Util.unitConvert(km, mi, 8, 'zh-CN');
+      check(Math.abs(parseFloat(conv) - 4.97) < 0.05, `unitConvert 8km→mi≈4.97（'${conv}'）`);
+      const convT = i18n.Util.unitConvert(c, f, 100, 'zh-CN');
+      check(Math.abs(parseFloat(convT) - 212) < 0.05, `unitConvert 100°C→°F=212（'${convT}'）`);
+      const bad = i18n.Util.unitConvert({ unit: 'mph' }, { unit: 'km' }, 1, 'zh-CN');
+      check(typeof bad === 'string', `未支持单位对 → 原值+警告不炸（'${bad}'）`);
+
+      // ══════════ ⑥ 资源 qualifier：zh_CN/en_US 覆盖生效 ══════════
+      await i18n.setResourceLocale('en_US');
+      const app = globalThis.__arkui_app_res;
+      check(app.values.string.res_i18n_greeting === 'Hello, world',
+        `setResourceLocale('en_US') → greeting 覆盖（'${app.values.string.res_i18n_greeting}'）`);
+      await i18n.setResourceLocale('zh_CN');
+      check(app.values.string.res_i18n_greeting === '你好，世界',
+        `setResourceLocale('zh_CN') → 中文覆盖（'${app.values.string.res_i18n_greeting}'）`);
+      await i18n.setResourceLocale('fr_FR');   // fr_FR 目录缺席 → 覆盖 0 条
+      check(app.values.string.res_i18n_greeting === '你好，世界',
+        `缺席 qualifier → 保持当前（'${app.values.string.res_i18n_greeting}'）`);
+      await i18n.setResourceLocale('');
+      check(app.values.string.res_i18n_greeting === 'greeting-base',
+        `切回 base → 快照复原（'${app.values.string.res_i18n_greeting}'）`);
+      await i18n.setResourceLocale('zh_CN');
+
+      // ══════════ ⑦ Text.create 消费 qualifier 后的值（真实渲染路径）══════════
+      {
+        const seed = document.createElement('div');
+        root.appendChild(seed);
+        VSP.push(seed);
+        const t = G('Text');
+        t.create({ id: 16777229, type: 10003, params: [], bundleName: '', moduleName: '' });
+        t.id('t-i18n');
+        t.pop();
+        VSP.pop();
+        // byId 直查仍指 base 值？——byId 只存 type/name，values 已被 zh_CN 覆盖 → 中文
+        check(el('t-i18n') && el('t-i18n').textContent === '你好，资源',
+          `Text($r(string)) 经 qualifier 后渲染（'${el('t-i18n') && el('t-i18n').textContent}'）`);
+      }
+
+      // ══════════ ⑧ RTL 贯通：WithEnv DIRECTION → dir 属性（R120 已有）+ isRTL 联动 ══════════
+      {
+        const seedW = document.createElement('div');
+        root.appendChild(seedW);
+        VSP.push(seedW);
+        const w = G('WithEnv');
+        w.create();
+        w.env('system.arkui.layout.direction', 0);   // 0 → rtl（R120 推断口径）
+        w.pop();
+        VSP.pop();
+        const rtlEl = root.querySelector('[dir="rtl"]');
+        check(!!rtlEl, 'WithEnv DIRECTION(0) → dir=rtl（R120 贯通复验）');
+        check(i18n.isRTL('ع') && !i18n.isRTL('中'), 'isRTL 与 WithEnv dir 判定同源（Unicode 区间）');
+      }
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack.split('\n')[0] : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

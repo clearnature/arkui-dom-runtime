@@ -362,6 +362,7 @@
   // @include focus
   // @include generated-app-resources
   // @include generated-sys-resources
+  // @include i18n
   // ─────────────────────────── ViewPU ───────────────────────────
   class ViewPU {
     /** @param {any} parent @param {any} localStorage @param {any} elmtId @param {any=} [extraInfo] */

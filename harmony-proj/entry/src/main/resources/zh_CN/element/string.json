@@ -1,0 +1,16 @@
+{
+  "string": [
+    {
+      "name": "res_hello",
+      "value": "你好，资源"
+    },
+    {
+      "name": "res_desc",
+      "value": "R128 真实资源解析"
+    },
+    {
+      "name": "res_i18n_greeting",
+      "value": "你好，世界"
+    }
+  ]
+}

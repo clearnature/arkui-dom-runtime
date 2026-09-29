@@ -91,7 +91,7 @@
   则记分发包约束。
 - 依赖：无。
 
-### E1-3 i18n 系统化 [M]
+### E1-3 i18n 系统化 [M] ✅（R135，i18n 垫片+qualifier+RTL 贯通；setSystemLanguage 无宿主出口标记录面）
 - 目标：`@ohos:i18n` 垫片面 + 资源 qualifier（zh/en 目录）+ RTL 收口。
 - 步骤：① i18n 垫片（系统 Locale/Calendar/NumberFormat 映射 Intl）；② 资源加载器
   支持 `resources/zh_CN/element/` qualifier 覆盖（生成器扩展 locale 参数）；

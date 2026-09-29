@@ -205,6 +205,8 @@ case "${1:-index}" in
     echo
     run_one netadvdemo "$(src_of pages/Index.ts)" build/app.js test/netadvdemo.html || rc=1
     echo
+    run_one i18ndemo "$(src_of pages/Index.ts)" build/app.js test/i18ndemo.html || rc=1
+    echo
     # R12 收口：Navigation 标题栏 / 工具栏 / 分栏
     run_one navbardemo "$(src_of pages/NavBarDemo.ts)" build/navbardemo-module.js test/navbardemo.html \
       "--cjs --register NavBarDemo" || rc=1
@@ -452,6 +454,9 @@ case "${1:-index}" in
   netadvdemo)
     # R133 E1-1：网络栈强化（重试/整体超时/取消/代理语义——纯 runtime 页）
     run_one netadvdemo "$(src_of pages/Index.ts)" build/app.js test/netadvdemo.html || rc=1 ;;
+  i18ndemo)
+    # R135 E1-3：i18n 系统化（System/Calendar/NumberFormat/isRTL/unitConvert/qualifier/RTL）
+    run_one i18ndemo "$(src_of pages/Index.ts)" build/app.js test/i18ndemo.html || rc=1 ;;
   navbardemo)
     # R12 收口：Navigation 标题栏 / 工具栏 / 分栏
     run_one navbardemo "$(src_of pages/NavBarDemo.ts)" build/navbardemo-module.js test/navbardemo.html \
