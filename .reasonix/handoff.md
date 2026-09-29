@@ -9,7 +9,18 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R138 E1-7 尾巴 + E2-2 万节点压测基线（双代理并行）**——**E1-7 尾巴**：
+- 上次切片：**R139 E2-1 增量走查（P2 最后一项——企业就绪度三档全清）**——
+  incremental.js 分片（第 46 个）：四张登记表（area/draw/align/nav）+ incSweep 惰性
+  清扫（es2020 lib 无 WeakRef——Set 强引用+isConnected 清扫，不升 lib 避免连带风险；
+  稳态收敛不无界增长）；登记点 8 处（area/draw/show/nav 分片能力挂上处）；**4 个
+  flush 尾部 sync 改登记集驱动**——只遍历登记元素不再 querySelectorAll('*') 全树；
+  显式 rootEl 局部 sync 保留旧遍历；验收（Electron 对照 R138 基线）：stress10k
+  bulk_poll **216.5→144.9ms（-33%）** bulk_flush 22→16.4ms（-25%）首渲同步
+  143.5→129.7ms；全矩阵无回退；报告 docs/research/incremental-report.md；坑：
+  @include 行尾注释破坏 build 正则（必须独占一行）。门禁 8 步全绿（141feee，
+  Mimosa 0 findings seal sha256:bcd4516f…）。**企业就绪度 P0/P1/P2 三档全清**
+  （达成记录已写入 ENTERPRISE-READINESS.md——按定义达"可签 SLA 的产品化交付"档）。
+  更早：**R138 E1-7 尾巴 + E2-2 万节点压测基线（双代理并行）**——**E1-7 尾巴**：
   docs/UPGRADE.md（第六+1 文档）：分发形态表/升级策略核心节（全量替换+userData 不动
   【R74 口径修正：简报误记 R75】+升级四步+检查清单+回滚【无 schema 迁移机制如实声明】）/
   资源版本对应硬契约/日志诊断汇总/已知限制（无自动更新通道）；**E2-2 万节点基线**：
