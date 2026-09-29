@@ -26,7 +26,7 @@
   现有全矩阵不回退。
 - 依赖：无。
 
-### E0-2 崩溃/错误上报钩子 [S]
+### E0-2 崩溃/错误上报钩子 [S] ✅（R131）
 - 目标：主进程侧收集渲染进程 uncaught + 主进程异常 → 本地 JSONL（企业接 SIEM 的挂点）。
 - 步骤：① main.js `process.on('uncaughtException'/'unhandledRejection')` +
   `webContents 'console-message'/'render-process-gone'` → `userData/logs/crash-*.jsonl`；
@@ -62,7 +62,7 @@
 - 验收：门禁 8 步全绿（含 audit）；打包响应头含 CSP；矩阵不回退。
 - 依赖：无。
 
-### E0-6 启动失败可诊断 [S]
+### E0-6 启动失败可诊断 [S] ✅（R131）
 - 目标：白屏可自证——页面加载失败/运行时异常时显示诊断面而非空白。
 - 步骤：① main.js did-fail-load → 错误页（含 URL/错误码/日志路径）；② 运行时
   boot 失败（模块加载异常）→ root 内渲染错误摘要。

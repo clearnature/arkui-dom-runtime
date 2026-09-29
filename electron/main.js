@@ -31,6 +31,135 @@ ipcMain.handle('arkui:getUserDataRoot', () => {
 const fsRootForRenderer = () =>
   app.isPackaged ? path.join(app.getPath('userData'), 'data') : null;
 
+// ────────────────── E0-2 崩溃/错误上报（主进程收集 + 本地落盘）──────────────────
+//
+// 落盘位置：userData/logs/crash-YYYYMMDD.jsonl（按日分文件，本地日期戳；目录不存在
+// 则 mkdirSync recursive）。与渲染侧 runtime/src/errorboundary.js 的 __arkui_dom_errors
+// 环形缓冲（内存、最多 50 条）配套：内存面管"最近发生了什么"，本 JSONL 管"跨进程留痕"。
+// 行格式（每行一个 JSON 对象）：
+//   {ts, kind, message, stack, extra}
+//   · ts      —— ISO 时间戳（UTC，便于跨机对账）
+//   · kind    —— 错误类别：'uncaughtException' | 'unhandledRejection' |
+//                'render-process-gone' | 'renderer'（渲染侧错误缓冲尾部，经
+//                arkui:report:error 桥进来）
+//   · message —— 一行消息
+//   · stack   —— 堆栈【首行】（与 errorboundary 的 normalizeCaughtErr 同口径：
+//                日志面不留完整栈；完整栈在触发点的 console.error 里留痕）
+//   · extra   —— 自由结构（渲染条目的 component/elmtId/where/seq、render-process-gone
+//                的 details 等）
+//
+// 纪律：上报永不炸主流程 —— 落盘全程 try/catch，写失败只 console.error 一行，绝不向上抛。
+//
+// 节流状态说明（防日志洪水）：
+//   crashLogThrottle: Map<kind, {minute, count}>
+//   · key = 错误类别；minute = 当前「分钟桶」（epoch 分钟数）；count = 该桶内已写入条数；
+//   · 同一 kind 同一分钟最多写 CRASH_LOG_MAX_PER_MINUTE(20) 条，超出直接丢弃。
+//     丢弃是设计行为、不是写失败，故不 console.error（否则节流器自己就成了洪水源）；
+//   · 跨分钟自动重置（minute 不等即换新桶）；不同 kind 互不影响；
+//   · 状态只在内存，进程重启即清零——按日分文件 + 每分钟每类 20 条的量级足够诊断用。
+const CRASH_LOG_MAX_PER_MINUTE = 20;
+/** @type {Map<string, {minute: number, count: number}>} */
+const crashLogThrottle = new Map();
+
+/**
+ * 追加一条崩溃/错误日志（E0-2 具名落盘函数）。
+ * main.js 是 Electron 入口、无法被 require 后直跑单测，故把全部落盘逻辑收拢进本具名
+ * 函数并对单测逻辑做静态确认（同构逻辑已用 node -e 实测 + 逐条静态核对）：
+ *   ① 节流：同 kind 同一分钟连写 21 次 → 前 20 次返回 true、第 21 次返回 false；
+ *   ② 跨分钟重置：桶 minute 过期后首条仍返回 true（计数从 1 重来）；
+ *   ③ kind 隔离：A 类写满 20 条后，B 类首条不受影响仍返回 true；
+ *   ④ 行格式：JSON.parse(行) 恰有 ts/kind/message/stack/extra 五键，stack 为堆栈首行；
+ *   ⑤ 失败免疫：目录不可写 / extra 循环引用等任何异常 → 返回 false，只 console.error
+ *      一行、绝不向上抛（上报通道自身不能成为新的崩溃源）。
+ * @param {string} kind 错误类别（见上方 kind 枚举）
+ * @param {string} message 一行消息
+ * @param {any=} [extra] 附加信息；其中 extra.stack（如给）取首行进 stack 字段，
+ *                       其余字段浅拷贝后进 extra（不改调用方对象）
+ * @returns {boolean} 是否真正落盘（false = 被节流丢弃或写失败）
+ */
+function appendCrashLog(kind, message, extra) {
+  try {
+    // ── 节流判定（先于一切 IO：被限流时零系统调用）──
+    const bucket = Math.floor(Date.now() / 60000);
+    const st = crashLogThrottle.get(kind);
+    if (st && st.minute === bucket && st.count >= CRASH_LOG_MAX_PER_MINUTE) return false;
+    // ── 组装行对象 ──
+    const src = (extra && typeof extra === 'object') ? extra : {};
+    const rest = Object.assign({}, src);              // 浅拷贝：不污染调用方
+    const fullStack = typeof rest.stack === 'string' ? rest.stack : '';
+    delete rest.stack;                                 // stack 单列成字段，extra 里不重复
+    const d = new Date();
+    const pad2 = (/** @type {number} */ n) => String(n).padStart(2, '0');
+    const stamp = `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}`;
+    const dir = path.join(app.getPath('userData'), 'logs');
+    const file = path.join(dir, `crash-${stamp}.jsonl`);
+    fs.mkdirSync(dir, { recursive: true });            // 目录不存在则递归建
+    const head = {
+      ts: d.toISOString(),
+      kind: String(kind || 'unknown'),
+      message: String(message === undefined || message === null ? '' : message),
+      stack: fullStack ? fullStack.split('\n', 1)[0] : '',
+    };
+    let line;
+    try {
+      line = JSON.stringify(Object.assign(head, { extra: rest }));
+    } catch (se) {
+      // extra 不可序列化（循环引用等）：extra 降级为占位串，ts/kind/message/stack 仍落盘
+      line = JSON.stringify(Object.assign(head, { extra: `（不可序列化: ${se && se.message || se}）` }));
+    }
+    fs.appendFileSync(file, line + '\n');
+    // ── 节流计数（写成功才计数：失败不计入限额，排障期不至于被失败写稀释掉真实量）──
+    if (st && st.minute === bucket) st.count += 1;
+    else crashLogThrottle.set(kind, { minute: bucket, count: 1 });
+    return true;
+  } catch (e) {
+    // 写不进日志只留一行痕：上报永不炸主流程
+    console.error('[crashlog] 落盘失败 kind=' + kind + ': ' + (e && e.message || e));
+    return false;
+  }
+}
+
+// 主进程自身崩溃兜底：uncaughtException / unhandledRejection → 追加写 JSONL。
+// 语义注记：挂上处理器后 Node 默认的「打印并中止」被接管，这里选择记录 + console.error
+// 后不主动退出——退出策略仍归业务流程（本文件的 app.exit 码）管；若异常源高频出现，
+// 节流（每 kind 每分钟 20 条）保证日志不洪水。
+process.on('uncaughtException', (err) => {
+  console.error('[main] uncaughtException: ' + ((err && err.stack) || err));
+  appendCrashLog('uncaughtException',
+    (err && err.message !== undefined) ? String(err.message) : String(err),
+    { stack: (err && typeof err.stack === 'string') ? err.stack : '' });
+});
+process.on('unhandledRejection', (reason) => {
+  const msg = (reason && reason.message !== undefined) ? String(reason.message) : String(reason);
+  console.error('[main] unhandledRejection: ' + ((reason && reason.stack) || msg));
+  appendCrashLog('unhandledRejection', msg,
+    { stack: (reason && typeof reason.stack === 'string') ? reason.stack : '' });
+});
+
+// 渲染侧错误上报桥（E0-2）：渲染进程把 __arkui_dom_errors 缓冲尾部交上来，写进同一个
+// JSONL。载荷三种形态都收：条目数组 / {entries: [...]} / 单条条目。
+// 条目形（errorboundary.js list() 快照）：{seq, time, component, elmtId, message, stack, where}
+//   → 行映射：message→message、stack→stack（缓冲里本就只存首行，这里再防御性截一次）、
+//     其余进 extra；kind 固定 'renderer'（节流按类计数）。
+// 注意节流按【行】计：单次批量超 20 条时本分钟只落前 20 条，其余丢弃（渲染侧如需全量，
+// 分批跨分钟上报）。与 arkui:getUserDataRoot 同款模块级能力桥：不依赖窗口，即注册即生效。
+ipcMain.handle('arkui:report:error', (_e, payload) => {
+  const entries = Array.isArray(payload) ? payload
+    : (payload && Array.isArray(payload.entries)) ? payload.entries
+    : (payload ? [payload] : []);
+  let written = 0;
+  for (const en of entries) {
+    if (!en || typeof en !== 'object') continue;       // 非对象条目跳过（防御渲染侧脏数据）
+    const ok = appendCrashLog('renderer', en.message, {
+      stack: (typeof en.stack === 'string') ? en.stack : '',
+      component: en.component, elmtId: en.elmtId, where: en.where,
+      seq: en.seq, pageTime: en.time,
+    });
+    if (ok) written++;
+  }
+  return { written, received: entries.length };
+});
+
 const testName = process.env.ARKUI_TEST || 'layout';
 const pageUrl = process.env.ARKUI_PAGE_URL || '';        // 由 electron/run.sh 起本地服务后传入
 const pagePath = path.resolve(__dirname, '..', 'test', `${testName}.html`);
@@ -147,6 +276,123 @@ app.whenReady().then(async () => {
   win.on('minimize', () => sendWinEvent(4));   // Linux 上 minimize 不一定派发 hide——补发 HIDDEN
   win.on('focus', () => sendWinEvent(2));
   win.on('blur', () => sendWinEvent(3));
+
+  // ── E0-6：启动失败可诊断（白屏自证）──（只加不改：上方 IPC 区段与下方判定路径一律不碰）
+  // 两条自证路径：
+  //   ① did-fail-load（任何模式，含测试驱动——"加载失败时走"）→ 用 data: URL 渲染一张
+  //      自包含诊断页（错误码/描述/失败地址/下一步：日志与截图路径），并打一行 [boot-fail] 摘要；
+  //   ② did-finish-load 空壳探针（仅生产形态启用）：页面加载"成功"但 #root/#result 双双
+  //      缺席且近空 → 注入诊断覆盖层（"加载成功却是空壳"的白屏自证）。
+  // 与测试驱动的互不干扰：判定靠 #result 文本 + 退出码；①只在加载失败后发生（此时判定
+  // 路径本就走 catch → exit(3)，见文件尾部 catch 的配套说明）；②只在生产形态启用——
+  // run.sh 驱动测试时 ARKUI_TEST/ARKUI_PAGE_URL 两值同设（isTestDrive 与既有判定一致），
+  // 且测试页必有 root/result 双 div，探针在测试页上永远走 'ok' 分支、零 DOM 注入。
+  const bootFail = { rendered: false, promise: null };
+
+  // 诊断信息里的"下一步去哪看"：日志目录（E0-2 的 crash-YYYYMMDD.jsonl 落点）与截图路径
+  const bootFailLogPaths = () => {
+    let logs = '<userData>/logs';
+    try { logs = path.join(app.getPath('userData'), 'logs'); } catch (e) { /* 拿不到就留占位符 */ }
+    const shotRel = path.relative(path.resolve(__dirname, '..'), outPng);
+    return { logs, shot: (shotRel && !shotRel.startsWith('..')) ? shotRel : outPng };
+  };
+
+  // 诊断页 HTML：data: URL 自包含（不经网络栈，天然不受 CSP 注入影响），内联样式简单排版
+  const bootFailPageHtml = (code, desc, url) => {
+    const p = bootFailLogPaths();
+    const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    return '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><title>启动失败诊断</title></head>'
+      + '<body style="margin:0;padding:20px;background:#1e1e1e;color:#eee;font:14px/1.6 system-ui,sans-serif;">'
+      + '<h2 style="margin:0 0 12px;font-size:18px;color:#ffb74d;">启动失败 · ArkUI 桌面运行时诊断</h2>'
+      + '<div style="background:#2a2a2a;border:1px solid #444;border-radius:6px;padding:12px 14px;">'
+      + `<div><b>错误码</b>：<code style="color:#ff8a80;">${esc(code)}</code></div>`
+      + `<div><b>描述</b>：${esc(desc || '（无）')}</div>`
+      + `<div><b>失败地址</b>：<code style="color:#90caf9;word-break:break-all;">${esc(url || '（无）')}</code></div>`
+      + '</div>'
+      + '<h3 style="font-size:15px;margin:16px 0 6px;">验证建议</h3>'
+      + '<ul style="margin:0;padding-left:20px;">'
+      + `<li>日志目录：${esc(p.logs)}（错误日志 crash-YYYYMMDD.jsonl 按日分文件）</li>`
+      + `<li>截图：${esc(p.shot)}（本诊断页由主进程自动留存一份）</li>`
+      + '<li>复核：本地服务是否已启动（tools/serve.py）；用浏览器打开同一地址看是否可访问</li>'
+      + '</ul>'
+      + '<div id="boot-ua" style="margin-top:14px;color:#9e9e9e;font-size:12px;">UA: …</div>'
+      + '<script>(function(){try{var b=window.electronAPI&&window.electronAPI.bootInfo?window.electronAPI.bootInfo():null;'
+      + "document.getElementById('boot-ua').textContent='UA: '+(b&&b.ua?b.ua:'（bootInfo 不可用）');}catch(e){}})();</script>"
+      + '</body></html>';
+  };
+
+  // 渲染诊断页 + 一行摘要日志（给人看：错误码 + URL + 下一步去哪看日志）。
+  // 只走一次：诊断页（data: URL）自身再触发的 load 事件一律忽略，不递归。
+  const showBootFailPage = (code, desc, url) => {
+    if (bootFail.rendered) return;
+    bootFail.rendered = true;
+    const p = bootFailLogPaths();
+    console.log(`[boot-fail] code=${code} ${desc} url=${url} 日志=${p.logs} 截图=${p.shot}`);
+    bootFail.promise = win
+      .loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(bootFailPageHtml(code, desc, url)))
+      .catch(() => {});   // 诊断页都加载不动就到此为止——原始失败原因才是重点
+  };
+
+  win.webContents.on('did-fail-load', (_e, code, desc, url, isMainFrame) => {
+    // 只处理主框架；-3(ERR_ABORTED) 是被后续导航打断，不算启动失败
+    if (!isMainFrame || code === -3 || bootFail.rendered) return;
+    showBootFailPage(code, desc || '', url || pageUrl || pagePath);
+  });
+
+  if (!isTestDrive) {
+    // 空壳探针：生产形态专属。测试驱动模式绝不注入任何 DOM（判定只认 #result 文本）。
+    const p6 = bootFailLogPaths();
+    const nextStep = '日志目录：' + p6.logs + '；截图：' + p6.shot
+      + '；用浏览器打开同一地址复核；加 --enable-logging 看控制台报错';
+    const probeJs = `(function(){
+try {
+  if (document.getElementById('__arkui_boot_overlay')) return 'already';
+  if (document.getElementById('root') || document.getElementById('result')) return 'ok';
+  var body = document.body;
+  if (!body) return 'no-body';
+  var nodes = body.querySelectorAll('*').length;
+  var text = (body.innerText || '').trim();
+  if (nodes > 3 || text.length >= 30) return 'has-content';
+  var ua = '';
+  try {
+    var bi = window.electronAPI && window.electronAPI.bootInfo ? window.electronAPI.bootInfo() : null;
+    if (bi) ua = String(bi.ua || '');
+  } catch (e) {}
+  var ov = document.createElement('div');
+  ov.id = '__arkui_boot_overlay';
+  ov.setAttribute('style', 'position:fixed;left:0;top:0;right:0;bottom:0;z-index:2147483647;'
+    + 'background:#1e1e1e;color:#eee;padding:18px;overflow:auto;font:13px/1.6 system-ui,sans-serif;');
+  var h = document.createElement('div');
+  h.setAttribute('style', 'color:#ffb74d;font-size:16px;font-weight:700;margin-bottom:10px;');
+  h.textContent = '启动诊断 · 页面加载成功但内容为空';
+  ov.appendChild(h);
+  var mk = function(label, value, color) {
+    var d = document.createElement('div');
+    d.setAttribute('style', 'margin:3px 0;word-break:break-all;');
+    var b = document.createElement('b'); b.textContent = label + '：';
+    var s = document.createElement('span'); s.textContent = value;
+    if (color) s.setAttribute('style', 'color:' + color);
+    d.appendChild(b); d.appendChild(s);
+    ov.appendChild(d);
+  };
+  mk('页面地址', String(location.href), '#90caf9');
+  mk('UA', ua || '（bootInfo 不可用）');
+  mk('原因', '#root 与 #result 双双缺席且页面近空——运行时 boot 可能失败（模块加载异常/脚本未执行）');
+  mk('下一步', ${JSON.stringify(nextStep)});
+  document.body.appendChild(ov);
+  return 'injected';
+} catch (e) { return 'error:' + e.message; }
+})()`;
+    win.webContents.on('did-finish-load', () => {
+      if (bootFail.rendered) return;   // 失败路径已由诊断页接管，探针让位
+      win.webContents.executeJavaScript(probeJs).then((r) => {
+        if (r === 'injected') {
+          console.log('[boot-fail] 空壳页面（#root/#result 缺席且近空）→ 已注入诊断覆盖层');
+        }
+      }).catch(() => {});   // 探针失败免疫：绝不影响页面自身运行
+    });
+  }
 
   // ── @ohos:file.picker 的主进程执行端（R82，桌面线）──
   // 渲染侧垫片（DocumentViewPicker/PhotoViewPicker）经 preload 的 fileDialog 调到这里。
@@ -350,6 +596,11 @@ app.whenReady().then(async () => {
   });
   win.webContents.on('render-process-gone', (_e, d) => {
     errors.push('渲染进程退出: ' + JSON.stringify(d));
+    // E0-2：同时落盘（kind=render-process-gone）。d（{reason, exitCode, description}）
+    // 无堆栈，整体进 extra；message 只留 reason/exitCode 一行，便于 grep。
+    appendCrashLog('render-process-gone',
+      '渲染进程退出 reason=' + (d && d.reason) + ' exitCode=' + (d && d.exitCode),
+      { details: d });
   });
 
   try {
@@ -424,6 +675,30 @@ app.whenReady().then(async () => {
     app.exit(ok ? 0 : 1);
   } catch (e) {
     console.error('加载失败: ' + (e && e.stack ? e.stack : e));
+    // E0-6 配套：加载失败时诊断页已由 did-fail-load 接管 → 等它渲染完补留一张截图
+    //（E0-6 验收：诊断页截图非白）。offscreen 模式直接用 paint 帧；否则 capturePage 设
+    // 超时（隐藏窗口合成器可能不产帧，同上方截图段的教训）。退出码维持 3：加载失败本就
+    // 不产出 ELECTRON_RESULT，测试判定语义不变，仅新增诊断产物。
+    if (bootFail.rendered) {
+      try { if (bootFail.promise) await bootFail.promise; } catch (e2) { /* 不影响退出码 */ }
+      await new Promise((r) => setTimeout(r, 400));   // 给诊断页一帧落定的时间
+      try {
+        let img = null;
+        if (useOffscreen && lastFrame) img = lastFrame;
+        else {
+          img = await Promise.race([
+            win.webContents.capturePage(),
+            new Promise((_, rej) => setTimeout(() => rej(new Error('capturePage 超时')), 3000)),
+          ]);
+        }
+        if (img) {
+          fs.writeFileSync(outPng, img.toPNG());
+          console.log('[boot-fail] 诊断页截图已留存: ' + outPng);
+        }
+      } catch (capErr) {
+        console.log('[boot-fail] 诊断页截图跳过: ' + (capErr && capErr.message) + '（不影响退出码）');
+      }
+    }
     app.exit(3);
   }
 });

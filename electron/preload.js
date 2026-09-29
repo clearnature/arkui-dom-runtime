@@ -144,4 +144,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
       catch (e) { return null; }
     },
   },
+  // E0-2：崩溃/错误上报桥——渲染侧把 __arkui_dom_errors 缓冲尾部（errorboundary 的
+  // list() 快照：条目数组 / {entries:[...]} / 单条 {seq,time,component,elmtId,message,
+  // stack,where}）交主进程落盘（userData/logs/crash-YYYYMMDD.jsonl，主进程按 kind
+  // 每分钟 20 条节流，成功返回 {written, received}）。
+  // 与 fileDialog 桥同款失败免疫：invoke 拒绝（无处理器/主进程异常）返回 null，绝不
+  // 向上抛——上报通道自身故障不能成为新的错误源。注意：本桥只提供通道，渲染侧把
+  // __arkui_dom_errors 自动接到这里属集成工作（E0-2 范围外，主会话接线）。
+  reportError: async (payload) => {
+    try { return await ipcRenderer.invoke('arkui:report:error', payload); }
+    catch (e) { return null; }
+  },
+  // E0-6：启动诊断信息（did-fail-load 诊断页 / 空壳覆盖层显示用）。纯只读快照、
+  // 失败免疫：任何异常回空值——诊断信息拿不到绝不能反过来影响页面自身运行。
+  // 惰性求值（函数而非对象）：调用时机在诊断层渲染时，拿到的是当刻的 href/UA。
+  bootInfo: () => {
+    try {
+      return { url: location.href, ua: navigator.userAgent.slice(0, 80) };
+    } catch (e) {
+      return { url: '', ua: '' };
+    }
+  },
 });

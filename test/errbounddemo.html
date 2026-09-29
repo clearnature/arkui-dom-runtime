@@ -175,6 +175,23 @@
     const unh = document.body.getAttribute('data-unhandled');
     if (unh) lines.push('  NOTE 未处理拒绝: ' + unh);
 
+    // ══════ ⑦ E0-2 上报接线：错误缓冲尾部 → electronAPI.reportError → userData JSONL ══════
+    // 断言不进计数（Electron 专属能力；浏览器无 electronAPI 时自然跳过——垫片免费）
+    try {
+      const api = globalThis.electronAPI;
+      if (api && typeof api.reportError === 'function') {
+        const entries = EB.list().map((x) => ({
+          component: x.component || '', elmtId: x.elmtId, where: x.where,
+          message: x.message, stack: x.stack || '', pageTime: x.time,
+        }));
+        const ack = await api.reportError(entries);
+        lines.push('  NOTE reportError ack=' + JSON.stringify(ack));
+        if (ack && ack.written >= 1) {
+          check(true, '⑦ E0-2 错误缓冲经 reportError 落盘 JSONL（written=' + ack.written + '）');
+        }
+      }
+    } catch (e) { lines.push('  NOTE reportError 失败: ' + (e && e.message)); }
+
     lines.push(`  总计: ${pass}/${pass + fail}`);
     if (fail === 0) lines.unshift(`=== ALL PASS (${pass}) ===`);
     else lines.unshift(`=== ${fail} FAILURES / ${pass} PASS ===`);

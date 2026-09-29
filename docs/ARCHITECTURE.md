@@ -1763,24 +1763,24 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   fixtures 转换产物  77 个：AlphabetIndexerDemo AnimDemo AnimatorDemo AsyncIO AttrHeavyDemo BatchFuncDemo BatchLayoutDemo BatchMediaDemo BatchVerifyDemo BuiltinDemo CalendarPickerDemo Callee CanvasDemo CjkDemo DatePickerDemo Detail DrawDemo GestureDemo GestureGroupDemo GridDemo GridRowDemo Home ImageDemo Index InputDemo Layout Lazy LazyVar ListGroupDemo MeasArea MeasImage MeasNotify Measure MediaDemo NavBarDemo NavDemo NavShimDemo NavTransDemo NetFile NotesDetail NotesHome Observe PanelDemo PerfBigDemo PerfDemo PickerDemo PopDemo PromptAct Provide QrDemo RefreshDemo RelDemo ResourceDemo Rich RichVideoDemo ScrollDemo ShapeDemo ShowDemo SideBarDemo SmallDemo SplitDemo StepDemo Stress1kDemo SwiperDemo TabsGrid TextDemo TextMeasure TextPickerDemo TextTimeDemo TimePickerDemo TransitionDemo UiContextDemo V2 WaterFlowDemo Widgets WindowDemo XCompDemo
 
 == 性能基线（Electron 实测）==
-  首渲染            36.1 ms（33 节点：Column+Button+Text+ForEach×30）
-  最小 rerender     15.8 ms（@State 计数脏区单 Text，rAF 口径）
-  rerender 管道     1.2 ms / 1 tick（setTimeout 轮询口径，R70）
+  首渲染            34.4 ms（33 节点：Column+Button+Text+ForEach×30）
+  最小 rerender     9.4 ms（@State 计数脏区单 Text，rAF 口径）
+  rerender 管道     1.0 ms / 1 tick（setTimeout 轮询口径，R70）
   微任务底噪        0.00 ms
   行数              31
-  剖面 R71          loadRoute 同步 6.9 ms（require 0.3）· raf1 0.9 / raf2 28.3 ms（offscreen 首帧）
-  脚本 eval         runtime 152.6 / generated 148.6 / shims 150.9 / module 150.3 ms（计时起点之前）
+  剖面 R71          loadRoute 同步 7.4 ms（require 0.4）· raf1 0.1 / raf2 26.9 ms（offscreen 首帧）
+  脚本 eval         runtime 143.7 / generated 140.1 / shims 139.3 / module 141.8 ms（计时起点之前）
   判定              框架同步构建 3.5ms 无大头；"首渲染"=脚本 eval + offscreen 首帧（非框架成本）
-  千节点 R79        首渲染同步 32.2 ms（350 节点/~3500 属性，亚线性）· 单点 flush 2.0 ms · 批量翻转 flush 4.5 ms
+  千节点 R79        首渲染同步 33.0 ms（350 节点/~3500 属性，亚线性）· 单点 flush 2.2 ms · 批量翻转 flush 4.7 ms
   规模曲线          203→4.8 / 304→11.2 / 1055→19.0 ms（创建路径亚线性）；行复用+守卫千节点级保持
 
 == 体积（源码，不含产物/Electron 运行时）==
   runtime          1354.9 KB
   runtime(src)     1348.9 KB
-  test             928.4 KB
+  test             929.3 KB
   tools            218.1 KB
-  electron(src)    54.0 KB
-  docs             841.9 KB
+  electron(src)    71.8 KB
+  docs             843.8 KB
   fixtures         531.9 KB
 
 == 逐文件（文档"文件职责"表的来源）==
@@ -1797,16 +1797,16 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   tools/build-runtime.mjs                   5138 B  5.0 KB
   run.sh                                   35618 B  34.8 KB
   electron/run.sh                          22419 B  21.9 KB
-  electron/main.js                         23619 B  23.1 KB
-  electron/preload.js                       8338 B  8.1 KB
+  electron/main.js                         40568 B  39.6 KB
+  electron/preload.js                       9687 B  9.5 KB
   package.json                              1366 B  1.3 KB
   .gitignore                                 909 B  0.9 KB
   README.md                               157311 B  153.6 KB
   THIRD-PARTY-NOTICES.md                   10718 B  10.5 KB
-  docs/ARCHITECTURE.md                    164752 B  160.9 KB
+  docs/ARCHITECTURE.md                    164751 B  160.9 KB
   docs/CAPABILITY.md                       63212 B  61.7 KB
   docs/DEVELOPING.md                       76689 B  74.9 KB
-  docs/ROADMAP.md                         227855 B  222.5 KB
+  docs/ROADMAP.md                         229733 B  224.3 KB
   docs/surface-measurement.md               6496 B  6.3 KB
   docs/SESSION-2026-09-20.md               12842 B  12.5 KB
   runtime/src/.mimosa                       4096 B  4.0 KB
@@ -1955,7 +1955,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   test/components.html                      6789 B  6.6 KB
   test/datepickerdemo.html                  8228 B  8.0 KB
   test/drawdemo.html                       12765 B  12.5 KB
-  test/errbounddemo.html                   10443 B  10.2 KB
+  test/errbounddemo.html                   11377 B  11.1 KB
   test/focusdemo.html                      12562 B  12.3 KB
   test/funcbehavior.html                    5423 B  5.3 KB
   test/gesturedemo.html                     9875 B  9.6 KB
