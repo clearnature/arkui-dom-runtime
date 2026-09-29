@@ -14,7 +14,7 @@
   URL 派生路径穿越）无法收敛为 0 findings，**按纪律改道：更新通道=部署侧 shell 四步**
   （清单 curl→版本比对→下载+sha256sum -c 对账→原子 mv→UPGRADE 升级四步解包），
   UPGRADE.md 全流程可复制命令；运行时包内零更新网络入口（静态审计面为零，深扫回归
-  0 findings）；ROADMAP 行修复：R142 行被此前 seal 脚本引号错误粘尾（重建整行）、
+  0 findings，最终树 seal sha256:bded64db…）；ROADMAP 行修复：R142 行被此前 seal 脚本引号错误粘尾（重建整行）、
   R135 行 hash 字面量修正；E0-4 挂钟窗口说明一并入档（R141 15000 轮 churn 密度高于
   8h 值守）。
   更早：**R142 E2-1 完成：尾部 sync 批级提升（增量走查收官）**——rerenderElmt 内
