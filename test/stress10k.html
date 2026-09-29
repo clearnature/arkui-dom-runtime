@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>E2-2：万节点压测（~9905 节点 / ~33000 条属性语句）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 360px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; font-size: 12px; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>E2-2：万节点压测——3300 行 × 3 组件（嵌套 Row+双 Text）+ 单点动态</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/stress10k-module.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let pass = 0, fail = 0;
+    const check = (c, m) => { if (c) { pass++; lines.push('PASS ' + m); } else { fail++; lines.push('FAIL ' + m); } };
+    const raf = () => new Promise((r) => requestAnimationFrame(r));
+    const tick = () => new Promise((r) => setTimeout(r, 0));
+    const root = document.getElementById('root');
+    const resetPerf = () => { const P = globalThis.__arkui_dom_perf; P.flushMs = 0; P.updateMs = 0; P.alignMs = 0; P.drawMs = 0; P.areasMs = 0; P.navMs = 0; P.n = 0; return P; };
+
+    // 首渲染（同步段 + 双 raf 后的全量段）
+    const t0 = performance.now();
+    __arkui_dom_requireModule('Stress10kDemo');
+    __arkui_dom_loadRoute('pages/Stress10kDemo', root);
+    const syncMs = performance.now() - t0;
+    await raf(); await raf();
+    const firstMs = performance.now() - t0;
+    const btnFlip = root.querySelector('#btn-flip');
+    const btnHot = root.querySelector('#btn-hot');
+    const hotEl = root.querySelector('#hot-count');
+    const rowEls = root.querySelectorAll('[data-arkui-comp="Row"]').length;
+    // 行复用探针：埋在中段行（第 500 行），翻转后验证 DOM 节点同一（键 'a' + idx 稳定）
+    root.querySelectorAll('[data-arkui-comp="Row"]')[500].__reuseProbe = 'e22';
+
+    // ① 单点动态（依赖追踪最小更新，单 Text 改写）
+    let P = resetPerf();
+    btnHot.click();
+    let r0 = performance.now();
+    for (let i = 0; i < 800; i++) { await tick(); if (hotEl.textContent === 'hot=1') break; }
+    const singlePollMs = performance.now() - r0;
+    const single = { flushMs: P.flushMs, updateMs: P.updateMs, n: P.n };
+
+    // ② 批量翻转 3300 行（行复用 + 守卫）；万节点级轮询上限放宽到 2000 tick，
+    //    容纳 textContent 全树序列化的测量污染（9900 行文本，单次序列化本身就几十 ms）
+    P = resetPerf();
+    btnFlip.click();
+    r0 = performance.now();
+    for (let i = 0; i < 2000; i++) { await tick(); if (root.textContent.indexOf('ITEM 3299') >= 0) break; }
+    const bulkPollMs = performance.now() - r0;
+    const bulk = { flushMs: P.flushMs, updateMs: P.updateMs, n: P.n };
+
+    // ③ 行复用同一性（R76 语义在万节点级保持）
+    const rowEls2 = root.querySelectorAll('[data-arkui-comp="Row"]');
+    const okReuse = !!(rowEls2[500] && rowEls2[500].__reuseProbe === 'e22');
+
+    lines.push('PERF10 first_sync_ms=' + syncMs.toFixed(1) + ' first_ms=' + firstMs.toFixed(1) +
+      ' single_poll_ms=' + singlePollMs.toFixed(1) + ' single_flush_ms=' + single.flushMs.toFixed(1) +
+      ' bulk_poll_ms=' + bulkPollMs.toFixed(1) + ' bulk_flush_ms=' + bulk.flushMs.toFixed(1) +
+      ' bulk_update_ms=' + bulk.updateMs.toFixed(1) + ' rows=' + rowEls);
+
+    // 预算先宽后紧（E2-2 首跑基线）：千节点 400/500ms → 万节点 2500/3000ms，
+    // 首跑实测后如需收紧/放宽，以本行实测值为准调整。
+    check(syncMs < 2500, 'perf 首渲染同步段 ~9905 节点 < 2500ms（实测 ' + syncMs.toFixed(1) + 'ms）');
+    check(bulkPollMs < 3000, 'perf 万节点批量翻转 < 3000ms（实测 ' + bulkPollMs.toFixed(1) + 'ms）');
+    check(hotEl.textContent === 'hot=1' && root.textContent.indexOf('ITEM 3299') >= 0 && rowEls === 3300,
+      'perf 正确性 hot=1 / ITEM 3299 就位 / Row 行数 ' + rowEls + ' = 3300');
+    check(single.flushMs < bulk.flushMs, 'perf 单点动态 flush ' + single.flushMs.toFixed(1) +
+      'ms < 批量 ' + bulk.flushMs.toFixed(1) + 'ms（依赖追踪最小更新）');
+    check(okReuse, 'perf R76 行复用：万节点级翻转前后 DOM 节点同一');
+
+    if (fail === 0) lines.unshift(`=== ALL PASS (${pass}) ===`);
+    else lines.unshift(`=== ${fail} FAILURES / ${pass} PASS ===`);
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = fail === 0 ? 'pass' : 'fail';
+    document.title = fail === 0 ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

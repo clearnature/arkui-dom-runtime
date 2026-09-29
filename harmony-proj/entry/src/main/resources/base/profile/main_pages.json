@@ -45,6 +45,7 @@
     "pages/PerfBigDemo",
     "pages/AttrHeavyDemo",
     "pages/Stress1kDemo",
+    "pages/Stress10kDemo",
     "pages/NotesHome",
     "pages/NotesDetail",
     "pages/WindowDemo",
