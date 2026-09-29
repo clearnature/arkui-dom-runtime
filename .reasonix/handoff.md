@@ -9,7 +9,17 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R136 E1-6 无障碍 ARIA 映射**——a11y.js 分片（第 44 个）：A11Y_ROLES
+- 上次切片：**R137 E1-2 SQLite + E1-5 多窗口（双代理并行）**——**E1-2**（relationalstore.js
+  第 45 分片）：sql.js@1.8.0 WASM 选型（双端同构优先于原生 ABI）；RdbStore 全家对 d.ts
+  行号；持久化=export→b64→file.fs 真后端（重启重建实测）；修复 file.fs writeSync 数字
+  fd 契约 bug（验证台替身建模暴露）；rdbdemo 34/12 分形态双端全绿；**E1-5 多窗口**：
+  win2 IPC 族+window.multi 垫片（无桥 code=801）；multiwindemo 15 条 Electron 专属
+  （焦点断言依赖 X11 真焦点环）；**新坑：仓库根 type:module 使 vendor 的 UMD 文件被当
+  ESM——module.exports 导出块静默失效（keys=0 无报错）**，vendor/sqljs 放局部
+  package.json commonjs 修复；WASM 取自 npm registry 1.8.0 原件。门禁 8 步全绿
+  （bb5273c，Mimosa 0 findings seal sha256:4a7fb214…）。**P1 进度 5/7**（余 E1-3 尾巴
+  =无、E1-6 已完、余 E1-2 已完——实际余：E1-6 完成、升级策略文档（E1-7 尾巴））。
+  更早：**R136 E1-6 无障碍 ARIA 映射**——a11y.js 分片（第 44 个）：A11Y_ROLES
   静态映射表（20 组件→button/textbox/img/switch/slider/progressbar/meter/menu/combobox/
   listitem/list/tabpanel）+ mountNode 挂载落点（一次性落 role；显式 role 优先幂等守卫）
   + accessibility* 四件真落 ARIA（Text→aria-label/Description→aria-description 双写/
