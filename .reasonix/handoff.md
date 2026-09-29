@@ -9,7 +9,15 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R131 P0 批次二（E0-2/E0-6 双代理并行，都动 electron/main.js——git 基线+diff 合并）**——
+- 上次切片：**R132 E0-4 长跑稳态（P0 可信度底线六项全清）**——tools/soak.sh（非门禁）：
+  Electron offscreen + ARKUI_SOAK_ROUNDS 驱动 errbounddemo 的 `__arkui_soak_step` churn
+  钩子，采样 heapUsed/DOM/elmtRecords 三指标 CSV；**150 轮验收：heap r25=8MB→r150=9MB
+  （GC 稳态水位）+DOM/记录账零积累=无泄漏趋势**；报告 docs/research/soak-report.md（边界：
+  重组件长跑/8h 窗口未覆盖，扩窗只改轮数一处）；**过程坑三个全修**：① sampler 注册在
+  第一个 whenReady 闭包外 win 不可达（ReferenceError 被 catch 吞 CSV 只剩表头）；② 判定后
+  app.exit 抢在采样前（soak 模式退出权让渡给 sampler）；③ 页面钩子闭包引用页内局部 G。
+  门禁 8 步全绿（462d3b3，Mimosa 0 findings seal sha256:47c27665…）。
+  更早：**R131 P0 批次二（E0-2/E0-6 双代理并行，都动 electron/main.js——git 基线+diff 合并）**——
   **E0-2 崩溃上报**：appendCrashLog → userData/logs/crash-YYYYMMDD.jsonl（按日分文件+每分钟
   每类 20 条节流）；process 兜底钩子（记录后不退出——fail-fast 语义变化已注释）+render-gone
   扩接+arkui:report:error IPC+preload reportError 桥；渲染侧接线=errbounddemo 缓冲尾部
