@@ -1763,17 +1763,17 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   fixtures 转换产物  78 个：AlphabetIndexerDemo AnimDemo AnimatorDemo AsyncIO AttrHeavyDemo BatchFuncDemo BatchLayoutDemo BatchMediaDemo BatchVerifyDemo BuiltinDemo CalendarPickerDemo Callee CanvasDemo CjkDemo DatePickerDemo Detail DrawDemo GestureDemo GestureGroupDemo GridDemo GridRowDemo Home ImageDemo Index InputDemo Layout Lazy LazyVar ListGroupDemo MeasArea MeasImage MeasNotify Measure MediaDemo NavBarDemo NavDemo NavShimDemo NavTransDemo NetFile NotesDetail NotesHome Observe PanelDemo PerfBigDemo PerfDemo PickerDemo PopDemo PromptAct Provide QrDemo RefreshDemo RelDemo ResourceDemo Rich RichVideoDemo ScrollDemo ShapeDemo ShowDemo SideBarDemo SmallDemo SplitDemo StepDemo Stress10kDemo Stress1kDemo SwiperDemo TabsGrid TextDemo TextMeasure TextPickerDemo TextTimeDemo TimePickerDemo TransitionDemo UiContextDemo V2 WaterFlowDemo Widgets WindowDemo XCompDemo
 
 == 性能基线（Electron 实测）==
-  首渲染            34.2 ms（33 节点：Column+Button+Text+ForEach×30）
-  最小 rerender     5.4 ms（@State 计数脏区单 Text，rAF 口径）
+  首渲染            34.4 ms（33 节点：Column+Button+Text+ForEach×30）
+  最小 rerender     5.3 ms（@State 计数脏区单 Text，rAF 口径）
   rerender 管道     1.0 ms / 1 tick（setTimeout 轮询口径，R70）
   微任务底噪        0.00 ms
   行数              31
-  剖面 R71          loadRoute 同步 6.8 ms（require 0.2）· raf1 0.1 / raf2 27.3 ms（offscreen 首帧）
-  脚本 eval         runtime 152.8 / generated 147.2 / shims 151.2 / module 150.5 ms（计时起点之前）
+  剖面 R71          loadRoute 同步 6.8 ms（require 0.2）· raf1 0.2 / raf2 27.4 ms（offscreen 首帧）
+  脚本 eval         runtime 145.8 / generated 137.9 / shims 144.5 / module 143.7 ms（计时起点之前）
   判定              框架同步构建 3.5ms 无大头；"首渲染"=脚本 eval + offscreen 首帧（非框架成本）
-  千节点 R79        首渲染同步 30.0 ms（350 节点/~3500 属性，亚线性）· 单点 flush 0.1 ms · 批量翻转 flush 2.9 ms
+  千节点 R79        首渲染同步 30.1 ms（350 节点/~3500 属性，亚线性）· 单点 flush 0.3 ms · 批量翻转 flush 2.9 ms
   规模曲线          203→4.8 / 304→11.2 / 1055→19.0 ms（创建路径亚线性）；行复用+守卫千节点级保持
-  万节点 R138       首渲染同步 137.4 ms（3300 节点/~33000 属性）· 批量翻转 poll 145.4 ms / flush 16.3 ms · 单点 flush 0.2 ms（R139 增量走查后）
+  万节点 R138       首渲染同步 133.1 ms（3300 节点/~33000 属性）· 批量翻转 poll 133.7 ms / flush 14.0 ms · 单点 flush 0.1 ms（R139 增量走查后）
 
 == 体积（源码，不含产物/Electron 运行时）==
   runtime          9357.3 KB
