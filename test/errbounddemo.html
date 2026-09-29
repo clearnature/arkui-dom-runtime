@@ -199,6 +199,21 @@
     out.textContent = lines.join('\n');
     out.className = fail === 0 ? 'pass' : 'fail';
     document.title = fail === 0 ? 'PASS' : 'FAIL';
+
+    // E0-4 soak 钩子：每步 churn 一组组件（压栈建 20 个按钮再整体拆掉），soak.sh 采样
+    globalThis.__arkui_soak_step = async () => {
+      // G 是测试页局部 const——step 由主进程注入调用，须在此作用域自行解析
+      const gs = globalThis.Button;
+      const seedSoak = document.createElement('div');
+      root.appendChild(seedSoak);
+      VSP.push(seedSoak);
+      const made = [];
+      for (let i = 0; i < 20; i++) { made.push(gs.create('soak-' + i)); gs.pop(); }
+      for (const m of made) m.remove();
+      VSP.pop();
+      seedSoak.remove();
+      await tick(0);
+    };
   })();
   </script>
 </body>

@@ -394,6 +394,43 @@ try {
     });
   }
 
+  // ── E0-4：soak 采样器（ARKUI_SOAK_ROUNDS 设置时启用；非侵入，测试驱动同用）──
+  // 每轮向渲染进程注入一段"组件 churn"脚本（建 20 个按钮再拆——页面挂 __arkui_soak_step
+  // 钩子，soak.sh 采样 heapUsed/DOM 节点/elmtRecords 到 ARKUI_SOAK_OUT CSV）。
+  // 断言不做（稳态是趋势判断，人工/报告判）；主进程崩溃上报通道独立（E0-2）。
+  // 位置约束：【必须】在第一个 whenReady 闭包内（win 是该闭包的 const——挪到闭包外
+  // executeJavaScript 会 ReferenceError 被 per-round catch 吞掉，CSV 只剩表头——R132 实测）。
+  if (process.env.ARKUI_SOAK_ROUNDS && process.env.ARKUI_SOAK_OUT) {
+    (async () => {
+      const rounds = Math.max(1, Number(process.env.ARKUI_SOAK_ROUNDS) || 200);
+      const soakOut = path.resolve(process.env.ARKUI_SOAK_OUT);
+      const soakRoot = path.resolve(__dirname, '..');   // 输出限定在仓库根内（Mimosa 路径穿越守卫）
+      if (!soakOut.startsWith(soakRoot)) {
+        console.error('[soak] 输出路径越出仓库根，拒绝：' + soakOut);
+      } else {
+        await new Promise((r) => setTimeout(r, 5000));   // 等测试页跑完自身断言并落定
+        try { fs.mkdirSync(path.dirname(soakOut), { recursive: true }); } catch (e) { /* 免疫 */ }
+        fs.writeFileSync(soakOut, 'round,heapUsedMB,domNodes,elmtRecords\n');
+        for (let i = 1; i <= rounds; i++) {
+          try {
+            const row = await win.webContents.executeJavaScript(
+              '(async () => { globalThis.__arkui_soak_step && await globalThis.__arkui_soak_step();' +
+              ' return [Math.round(performance.memory ? performance.memory.usedJSHeapSize / 1048576 : 0),' +
+              ' document.querySelectorAll("*").length,' +
+              ' (globalThis.__arkui_dom_elmtRecords ? globalThis.__arkui_dom_elmtRecords.size : 0)]; })()'
+            );
+            fs.appendFileSync(soakOut, `${i},${row[0]},${row[1]},${row[2]}\n`);
+            if (i % 25 === 0) console.log('[soak] round=' + i + ' heap=' + row[0] + 'MB nodes=' + row[1] + ' recs=' + row[2]);
+          } catch (e) {
+            console.error('[soak] round=' + i + ' 采样失败: ' + (e && e.message));
+          }
+        }
+        console.log('[soak] 完成：' + soakOut);
+        app.exit(0);   // soak 模式下退出权在 sampler（见判定处的让渡注释）
+      }
+    })();
+  }
+
   // ── @ohos:file.picker 的主进程执行端（R82，桌面线）──
   // 渲染侧垫片（DocumentViewPicker/PhotoViewPicker）经 preload 的 fileDialog 调到这里。
   // 测试驱动下（ARKUI_TEST/ARKUI_PAGE_URL）对话框会阻塞无人点击 → 自动注入确定性结果：
@@ -672,6 +709,10 @@ try {
 
     const ok = /ALL PASS/.test(result);
     console.log(ok ? 'ELECTRON_RESULT: PASS' : 'ELECTRON_RESULT: FAIL');
+    // E0-4：soak 模式退出权让渡——sampler（异步 IIFE）在测试判定后还要跑 N 轮采样，
+    // 这里 app.exit 会抢在它前面把进程杀掉（CSV 只剩表头——R132 实测）。soak 完成
+    // 后 sampler 自己 app.exit(0)。
+    if (process.env.ARKUI_SOAK_ROUNDS && process.env.ARKUI_SOAK_OUT) return;
     app.exit(ok ? 0 : 1);
   } catch (e) {
     console.error('加载失败: ' + (e && e.stack ? e.stack : e));

@@ -44,7 +44,7 @@
   requestFocus 编程聚焦、focusable(false) 剔除；双端 ALL PASS。
 - 依赖：无（可与 E0-1 并行）。
 
-### E0-4 长跑稳定性（内存/稳态）[M]
+### E0-4 长跑稳定性（内存/稳态）[M] ✅（R132，tools/soak.sh + docs/research/soak-report.md；8h 窗口扩展=改轮数一处）
 - 目标：8 小时级稳态不泄漏、不死锁——企业值守应用底线。
 - 步骤：① 扩展现有 leak 页：路由循环 ×N、定时器/监听器登记账（`__arkui_dom_leaks`
   自省：timer/handle/MutationObserver 计数随路由循环不增长）；② 8h 稳态脚本
