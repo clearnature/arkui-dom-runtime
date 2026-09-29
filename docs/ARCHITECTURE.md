@@ -1754,39 +1754,39 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   装饰器表合计      11 个（含 v1 的 Observed）
 
 == 平台模块（@ohos:*）==
-  21 个：app.ability.AbilityConstant app.ability.ConfigurationConstant app.ability.UIAbility app.ability.Want arkui.node cjk data.preferences deviceInfo file.fs file.picker hilog measure multimedia.image multimedia.media net.http notificationManager pasteboard promptAction resourceManager router window
+  23 个：app.ability.AbilityConstant app.ability.ConfigurationConstant app.ability.UIAbility app.ability.Want arkui.node cjk data.preferences deviceInfo file.fs file.picker hilog measure multimedia.image multimedia.media net.http notificationManager pasteboard promptAction resourceManager router window window window.multi
 
 == 用例矩阵 ==
-  浏览器 run.sh     83 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify measure lazy provide v2 observe async ability promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo builtindemo resourcedemo errbounddemo focusdemo sysresdemo netadvdemo i18ndemo a11ydemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo mediademo smalldemo stepdemo imagedemo scrolldemo animatordemo listitemgroup refreshdemo datepickerdemo timepickerdemo waterflowdemo calendarpickerdemo textpickerdemo griddemo texttimedemo alphabetindexerdemo sidebardemo splitdemo paneldemo gridrowdemo richvideodemo batchverify perfdemo windowdemo pickerdemo batchfunc funcbehavior abilitydesktop sysapi batchbehavior cjk cjkdemo notesdemo router netfile persist
-  Electron          85 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo builtindemo resourcedemo errbounddemo focusdemo sysresdemo netadvdemo i18ndemo a11ydemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo mediademo smalldemo stepdemo imagedemo scrolldemo animatordemo listitemgroup refreshdemo datepickerdemo timepickerdemo waterflowdemo calendarpickerdemo textpickerdemo griddemo texttimedemo alphabetindexerdemo sidebardemo splitdemo paneldemo gridrowdemo richvideodemo batchverify perfdemo perfbig attrheavy stress1k windowdemo pickerdemo abilitydesktop sysapi batchbehavior batchfunc funcbehavior cjk cjkdemo notesdemo measure lazy provide async v2 observe
-  测试页            93 个
+  浏览器 run.sh     84 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify measure lazy provide v2 observe async ability promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo builtindemo resourcedemo errbounddemo focusdemo sysresdemo netadvdemo i18ndemo a11ydemo rdbdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo mediademo smalldemo stepdemo imagedemo scrolldemo animatordemo listitemgroup refreshdemo datepickerdemo timepickerdemo waterflowdemo calendarpickerdemo textpickerdemo griddemo texttimedemo alphabetindexerdemo sidebardemo splitdemo paneldemo gridrowdemo richvideodemo batchverify perfdemo windowdemo pickerdemo batchfunc funcbehavior abilitydesktop sysapi batchbehavior cjk cjkdemo notesdemo router netfile persist
+  Electron          87 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo builtindemo resourcedemo errbounddemo focusdemo sysresdemo netadvdemo i18ndemo a11ydemo rdbdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo mediademo smalldemo stepdemo imagedemo scrolldemo animatordemo listitemgroup refreshdemo datepickerdemo timepickerdemo waterflowdemo calendarpickerdemo textpickerdemo griddemo texttimedemo alphabetindexerdemo sidebardemo splitdemo paneldemo gridrowdemo richvideodemo batchverify perfdemo perfbig attrheavy stress1k windowdemo pickerdemo abilitydesktop sysapi batchbehavior batchfunc funcbehavior cjk cjkdemo notesdemo measure lazy provide async v2 observe multiwindemo
+  测试页            95 个
   fixtures 转换产物  77 个：AlphabetIndexerDemo AnimDemo AnimatorDemo AsyncIO AttrHeavyDemo BatchFuncDemo BatchLayoutDemo BatchMediaDemo BatchVerifyDemo BuiltinDemo CalendarPickerDemo Callee CanvasDemo CjkDemo DatePickerDemo Detail DrawDemo GestureDemo GestureGroupDemo GridDemo GridRowDemo Home ImageDemo Index InputDemo Layout Lazy LazyVar ListGroupDemo MeasArea MeasImage MeasNotify Measure MediaDemo NavBarDemo NavDemo NavShimDemo NavTransDemo NetFile NotesDetail NotesHome Observe PanelDemo PerfBigDemo PerfDemo PickerDemo PopDemo PromptAct Provide QrDemo RefreshDemo RelDemo ResourceDemo Rich RichVideoDemo ScrollDemo ShapeDemo ShowDemo SideBarDemo SmallDemo SplitDemo StepDemo Stress1kDemo SwiperDemo TabsGrid TextDemo TextMeasure TextPickerDemo TextTimeDemo TimePickerDemo TransitionDemo UiContextDemo V2 WaterFlowDemo Widgets WindowDemo XCompDemo
 
 == 性能基线（Electron 实测）==
-  首渲染            35.4 ms（33 节点：Column+Button+Text+ForEach×30）
-  最小 rerender     15.0 ms（@State 计数脏区单 Text，rAF 口径）
-  rerender 管道     1.0 ms / 1 tick（setTimeout 轮询口径，R70）
+  首渲染            33.6 ms（33 节点：Column+Button+Text+ForEach×30）
+  最小 rerender     10.2 ms（@State 计数脏区单 Text，rAF 口径）
+  rerender 管道     1.1 ms / 1 tick（setTimeout 轮询口径，R70）
   微任务底噪        0.00 ms
   行数              31
-  剖面 R71          loadRoute 同步 6.7 ms（require 0.3）· raf1 0.6 / raf2 28.1 ms（offscreen 首帧）
-  脚本 eval         runtime 169.5 / generated 159.2 / shims 167.4 / module 166.7 ms（计时起点之前）
+  剖面 R71          loadRoute 同步 7.1 ms（require 0.3）· raf1 0.1 / raf2 26.4 ms（offscreen 首帧）
+  脚本 eval         runtime 155.7 / generated 147.4 / shims 153.8 / module 153.3 ms（计时起点之前）
   判定              框架同步构建 3.5ms 无大头；"首渲染"=脚本 eval + offscreen 首帧（非框架成本）
-  千节点 R79        首渲染同步 32.1 ms（350 节点/~3500 属性，亚线性）· 单点 flush 2.1 ms · 批量翻转 flush 4.7 ms
+  千节点 R79        首渲染同步 31.0 ms（350 节点/~3500 属性，亚线性）· 单点 flush 2.4 ms · 批量翻转 flush 4.8 ms
   规模曲线          203→4.8 / 304→11.2 / 1055→19.0 ms（创建路径亚线性）；行复用+守卫千节点级保持
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          1373.1 KB
-  runtime(src)     1364.5 KB
-  test             948.2 KB
-  tools            221.2 KB
-  electron(src)    74.6 KB
-  docs             851.5 KB
+  runtime          9339.9 KB
+  runtime(src)     1393.1 KB
+  test             970.6 KB
+  tools            224.4 KB
+  electron(src)    83.4 KB
+  docs             852.8 KB
   fixtures         531.9 KB
 
 == 逐文件（文档"文件职责"表的来源）==
-  runtime/arkui-dom-runtime.js            1121701 B  1095.4 KB
+  runtime/arkui-dom-runtime.js            1150951 B  1124.0 KB
   runtime/generated-components.js          57617 B  56.3 KB
-  runtime/ohos-shims.js                    86385 B  84.4 KB
+  runtime/ohos-shims.js                    94100 B  91.9 KB
   tools/extract.mjs                         6936 B  6.8 KB
   tools/gen-components.mjs                  7775 B  7.6 KB
   tools/serve.py                            5159 B  5.0 KB
@@ -1795,18 +1795,18 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   tools/preflight.mjs                       5422 B  5.3 KB
   tools/check-all.sh                        5650 B  5.5 KB
   tools/build-runtime.mjs                   5138 B  5.0 KB
-  run.sh                                   36532 B  35.7 KB
-  electron/run.sh                          22506 B  22.0 KB
-  electron/main.js                         43361 B  42.3 KB
-  electron/preload.js                       9687 B  9.5 KB
+  run.sh                                   36829 B  36.0 KB
+  electron/run.sh                          22556 B  22.0 KB
+  electron/main.js                         50500 B  49.3 KB
+  electron/preload.js                      11432 B  11.2 KB
   package.json                              1366 B  1.3 KB
   .gitignore                                 909 B  0.9 KB
   README.md                               157311 B  153.6 KB
-  THIRD-PARTY-NOTICES.md                   10718 B  10.5 KB
-  docs/ARCHITECTURE.md                    165105 B  161.2 KB
+  THIRD-PARTY-NOTICES.md                   12076 B  11.8 KB
+  docs/ARCHITECTURE.md                    165335 B  161.5 KB
   docs/CAPABILITY.md                       63212 B  61.7 KB
   docs/DEVELOPING.md                       76689 B  74.9 KB
-  docs/ROADMAP.md                         235109 B  229.6 KB
+  docs/ROADMAP.md                         236180 B  230.6 KB
   docs/surface-measurement.md               6496 B  6.3 KB
   docs/SESSION-2026-09-20.md               12842 B  12.5 KB
   runtime/src/.mimosa                       4096 B  4.0 KB
@@ -1839,11 +1839,12 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   runtime/src/image.js                      7000 B  6.8 KB
   runtime/src/input.js                     11336 B  11.1 KB
   runtime/src/layout.js                    18731 B  18.3 KB
-  runtime/src/main.js                     122004 B  119.1 KB
+  runtime/src/main.js                     122035 B  119.2 KB
   runtime/src/nav.js                       57427 B  56.1 KB
   runtime/src/panel.js                      3360 B  3.3 KB
   runtime/src/popup.js                      5042 B  4.9 KB
   runtime/src/refresh.js                    8193 B  8.0 KB
+  runtime/src/relationalstore.js           29249 B  28.6 KB
   runtime/src/richeditor.js                 1942 B  1.9 KB
   runtime/src/runtime.d.ts                  7073 B  6.9 KB
   runtime/src/scroll.js                     6600 B  6.4 KB
@@ -1980,6 +1981,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   test/measure.html                         6072 B  5.9 KB
   test/mediademo.html                       3877 B  3.8 KB
   test/motiondemo.html                      8904 B  8.7 KB
+  test/multiwindemo.html                   11783 B  11.5 KB
   test/navbardemo.html                     12670 B  12.4 KB
   test/navdemo.html                        14837 B  14.5 KB
   test/navshimdemo.html                     7168 B  7.0 KB
@@ -1998,6 +2000,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   test/promptaction.html                   12719 B  12.4 KB
   test/provide.html                         4238 B  4.1 KB
   test/qrdemo.html                          8373 B  8.2 KB
+  test/rdbdemo.html                        11215 B  11.0 KB
   test/realfs.html                         10788 B  10.5 KB
   test/refreshdemo.html                     9163 B  8.9 KB
   test/reldemo.html                         7328 B  7.2 KB

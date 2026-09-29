@@ -2048,6 +2048,8 @@
 
   // @include ability
 
+  // @include relationalstore
+
   // ────────────────────── 枚举 / 订阅 / 路由 ──────────────────────
   // 取值刻意直接对齐 CSS 关键字，这样 applyAttr 里的"枚举类属性"可以原样透传
   const FontWeight = { Lighter: 100, Normal: 400, Regular: 400, Medium: 500, Bold: 700, Bolder: 900 };

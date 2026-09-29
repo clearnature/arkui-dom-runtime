@@ -1718,4 +1718,132 @@
       return Number(await cjkEapi.cjk.ping());
     },
   });
+
+  // ── @ohos:window.multi —— 多窗口命名空间（E1-5，桌面线）──
+  //
+  // 'window.multi' 是本项目约定的扩展模块名（真机 SDK 无此模块；真机等价面是
+  // window.createWindow + Window.destroyWindow + Window.on('windowEvent')，桌面线以
+  // Electron 多 BrowserWindow 并存落地，链路：本垫片 → preload electronAPI.win2 →
+  // main ipcMain.handle('arkui:win2:*')）。
+  // 与上方 define('window', …)（R80/R91 单窗段——【未改动】）的分工：v1 管"主窗自身"
+  // （getLastWindow/setBackgroundColor/resize/windowSizeChange…），本命名空间管
+  // "多窗并存"（建/销/聚焦/枚举 + 焦点事件流）。
+  // 降级取向（不静默失败）：Promise 面（createWindow/destroyWindow/focusWindow/getWindows）
+  // 在无桥宿主【拒绝】并给可操作错误（BusinessError 形：code=801，d.ts 原文
+  // "801 - Capability not supported."）——浏览器装不出第二个真窗口，假装成功只会让上层
+  // 把假窗当真窗用；订阅面 onWindowFocusChange 沿 v1 on() 先例（可订阅、事件不来 + 一次
+  // 可操作 warning）。
+  // 桥探测取【调用时】而非装载时快照：contextBridge 注入先于页面脚本，两者等价；调用时
+  // 探测额外允许宿主晚接桥、并让测试页能真验证降级分支（摘桥 → 801 → 还桥）。
+  const winMultiWarn = (m) => { try { console.warn('[arkui-dom] window.multi.' + m + '：当前宿主不支持（无 electronAPI.win2 桥，需 Electron 桌面形态）'); } catch (e) {} };
+  /** @returns {any} electronAPI.win2 桥（无则 null）——每次调用现取，不缓存 */
+  const probeWinMulti = () => {
+    const api = (/** @type {any} */ (global)).electronAPI;
+    return (api && api.win2) ? api.win2 : null;
+  };
+  /** 可操作错误（BusinessError 形）：code=801 对齐 d.ts "Capability not supported." */
+  const winMultiUnavailable = (apiName) => Object.assign(
+    new Error(`[arkui-dom] window.multi.${apiName}：当前宿主无 Electron 多窗桥（globalThis.electronAPI.win2 缺席）。` +
+      '多窗是桌面专属能力，需在 Electron 形态运行；浏览器请按 err.code===801 分流降级。'),
+    { code: 801 });
+  // WindowEventType 数值（@ohos.window.d.ts:2954-2989，JSDoc 原文）：SHOWN=1
+  // "The window is running in the foreground." / ACTIVE=2 "The window gains focus." /
+  // INACTIVE=3 "The window loses focus." / HIDDEN=4 "The window is running in the
+  // background." / DESTROYED=7 "The window is destroyed."
+  const WIN_MULTI_EVENT_TYPE = {
+    WINDOW_SHOWN: 1, WINDOW_ACTIVE: 2, WINDOW_INACTIVE: 3, WINDOW_HIDDEN: 4, WINDOW_DESTROYED: 7,
+  };
+  // 焦点事件流订阅表 + 主进程推送接线（惰性：首个订阅者出现且桥在位时接一次）。
+  // 事件是【全局广播】（任一窗 focus/blur 都到达，载荷 {id, type}），是否与己相关由
+  // 订阅方按 ev.id 自判——与 main 侧广播注释同口径。
+  const winMultiFocusListeners = new Set();
+  let winMultiEventWired = false;
+  const winMultiWireEvents = () => {
+    if (winMultiEventWired) return;
+    const api = probeWinMulti();
+    if (api && typeof api.onEvent === 'function') {
+      api.onEvent((ev) => {
+        // 只投递 focus 域（ACTIVE=2 / INACTIVE=3）；SHOWN/HIDDEN/DESTROYED 不在本订阅面
+        if (!ev || (ev.type !== WIN_MULTI_EVENT_TYPE.WINDOW_ACTIVE &&
+                    ev.type !== WIN_MULTI_EVENT_TYPE.WINDOW_INACTIVE)) return;
+        for (const cb of [...winMultiFocusListeners]) { try { cb(ev); } catch (e) {} }
+      });
+      winMultiEventWired = true;
+    }
+  };
+  define('window.multi', {
+    /** WindowEventType 数值（d.ts:2954-2989），供页面/测试对齐断言 */
+    WindowEventType: WIN_MULTI_EVENT_TYPE,
+    /**
+     * createWindow(config): Promise<number windowId>
+     * SDK 对照 @ohos.window.d.ts:1905 `function createWindow(config: Configuration):
+     * Promise<Window>`（JSDoc 原文 "Creates a child window or system window."，@since 9）。
+     * 投影差异：DOM 运行时持不住原生 Window 句柄 → 返回 number windowId 供后续
+     * destroyWindow/focusWindow 以 id 寻址；config 收 {name, url, width, height} 子集。
+     */
+    async createWindow(config) {
+      if (!probeWinMulti()) throw winMultiUnavailable('createWindow');
+      const c = (config && typeof config === 'object') ? config : {};
+      const id = await probeWinMulti().create({
+        name: c.name !== undefined ? String(c.name) : `window-${Date.now()}`,
+        url: c.url ? String(c.url) : 'about:blank',
+        width: Number(c.width) || 360,
+        height: Number(c.height) || 280,
+      });
+      if (!(typeof id === 'number' && id > 0)) {
+        // 1300002 对齐 d.ts createWindow 的 "This window state is abnormal." 域（建窗未成功）
+        throw Object.assign(new Error(`[arkui-dom] window.multi.createWindow：主进程建窗失败（windowId=${id}）`),
+          { code: 1300002 });
+      }
+      return id;
+    },
+    /**
+     * destroyWindow(id): Promise<boolean>
+     * SDK 对照 @ohos.window.d.ts:3478 `destroyWindow(): Promise<void>`（实例方法，JSDoc 原文
+     * "Destroys this window."；旧名 destroy() @deprecated since 9 → @useinstead destroyWindow，
+     * d.ts:3438/3448）。投影差异：以 id 寻址；主窗在测试驱动下被 main 拒绝 → 返回 false
+     * （不抛：electronAPI 桥的失败免疫约定，调用方按 false 处理）。
+     */
+    async destroyWindow(id) {
+      if (!probeWinMulti()) throw winMultiUnavailable('destroyWindow');
+      return !!(await probeWinMulti().destroy(Number(id)));
+    },
+    /**
+     * focusWindow(id): Promise<boolean>
+     * 本 SDK d.ts 无同名 API（近邻：模块级 shiftAppWindowFocus(sourceWindowId, targetWindowId)，
+     * d.ts:2135，JSDoc 原文 "Shifts the window focus from the source window to the target
+     * window in the same application."）；桌面语义以 Electron win.focus() 落地（隐藏窗
+     * 先 show 再聚焦，主进程侧完成）。
+     */
+    async focusWindow(id) {
+      if (!probeWinMulti()) throw winMultiUnavailable('focusWindow');
+      return !!(await probeWinMulti().focus(Number(id)));
+    },
+    /**
+     * getWindows(): Promise<Array<{id, name, focused, visible}>>
+     * 本 SDK d.ts 无模块级 getWindows（近邻：getWindowsByCoordinate d.ts:2251 /
+     * getAllMainWindowInfo d.ts:2395）；桌面线枚举本应用全部存活窗口，条目为四字段投影
+     * （focused/visible 是主进程此刻真值）。
+     */
+    async getWindows() {
+      if (!probeWinMulti()) throw winMultiUnavailable('getWindows');
+      const arr = await probeWinMulti().list();
+      return Array.isArray(arr) ? arr : [];
+    },
+    /**
+     * onWindowFocusChange(cb): () => void —— 订阅焦点事件流（载荷 {id, type}），返回退订函数。
+     * SDK 对照 Window.on('windowEvent', Callback<WindowEventType>)（d.ts:5962，JSDoc 原文
+     * "Subscribes to the window lifecycle change event."）的 focus 子集便利封装：type 只会是
+     * WINDOW_ACTIVE(2, "The window gains focus.") / WINDOW_INACTIVE(3, "The window loses
+     * focus.")。浏览器无桥：订阅照收（不炸、事件不来）+ 一次 warning（v1 on() 先例）。
+     * @param {(ev: {id: number, type: number}) => void} cb
+     */
+    onWindowFocusChange(cb) {
+      if (typeof cb !== 'function') return () => {};
+      if (!probeWinMulti()) winMultiWarn('onWindowFocusChange');
+      winMultiFocusListeners.add(cb);
+      winMultiWireEvents();
+      return () => { winMultiFocusListeners.delete(cb); };
+    },
+  });
 })(typeof globalThis !== 'undefined' ? globalThis : self);

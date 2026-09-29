@@ -82,7 +82,7 @@
   双端分端声明。
 - 依赖：无。
 
-### E1-2 结构化存储选型 + 落地（SQLite）[L]
+### E1-2 结构化存储选型 + 落地（SQLite）[L] ✅（R137，sql.js@1.8.0 WASM 选型；rdbdemo 34+12 分形态）
 - 目标：企业数据面——真 SQL + 事务，替代 preferences 自定 JSON 的"真机不通用"限制。
 - 步骤：① 选型 spike（better-sqlite3 原生 / sql.js WASM——Electron 打包 ABI 与浏览器
   双端矩阵是裁决项）；② `@ohos.data.relationalStore` 垫片面（d.ts 对齐：getRdbStore/
@@ -109,7 +109,7 @@
   记差异）；新增 sys 表抽查断言（≤10 条）。
 - 依赖：无（方法学 R123 已验证）。
 
-### E1-5 多窗口完善 [M]
+### E1-5 多窗口完善 [M] ✅（R137，win2 IPC 族+multiwindemo 15 条；windowId 数值与真机不互通已标注）
 - 目标：桌面多窗（多 BrowserWindow 并存 + 焦点事件 + 跨窗路由栈隔离）从"雏形"到"可用"。
 - 步骤：① window v2 扩展：多窗创建 API（WindowStage 分裂）；② 焦点事件
   onWindowFocusChange 双向（主进程 → 渲染）；③ ability 栈按窗隔离复核。

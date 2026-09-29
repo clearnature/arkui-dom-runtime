@@ -743,3 +743,120 @@ try {
     app.exit(3);
   }
 });
+
+// ────────────────── E1-5：多窗口管理（arkui:win2:* 通道，只增不改既有 handler）──────────────────
+//
+// 与既有两条窗口通道互补（本节全部用新 channel 名，不碰 R80 'arkui:window:op' 与
+// R88 'arkui:ability:*'）：
+//   · R80 单窗操作面：操作 whenReady 闭包里的主窗（getLastWindow 那一侧）；
+//   · R88 ability 让位式双窗：startForResult 专用（caller/callee 两方强耦合）；
+//   · 本节：任意多 BrowserWindow 并存的通用管理面（建/销/聚焦/枚举 + 每窗焦点事件广播）。
+//
+// 位置约束：整节放【模块层】（whenReady 闭包之外、文件尾追加）——热点文件最小插入纪律。
+// 可行性：窗表靠 app 的 'browser-window-created' 事件全量登记，本节注册先于 whenReady
+// 回调执行，所以主窗（whenReady 里 new 的那个）也会被登记到，无需改动闭包内任何一行。
+//
+// 语义出处（@ohos.window.d.ts，SDK 26.0.0.821）：
+//   · 事件值用 WindowEventType 数值（d.ts:2954-2989）：WINDOW_ACTIVE=2（JSDoc 原文
+//     "The window gains focus."）/ WINDOW_INACTIVE=3（"The window loses focus."）/
+//     WINDOW_DESTROYED=7（"The window is destroyed."）。
+//   · windowId 沿用 Electron BrowserWindow.id（自 1 单调递增）——真机 windowId 语义
+//     （d.ts 各 API 的 number windowId 入参）由"单调唯一 id"对齐，数值不跨端互通。
+const win2Meta = new Map();            // windowId → { name: string|null, seq: number }
+let win2Seq = 0;
+// Win2 事件类型常量（WindowEventType 的 focus/destroy 子集，数值照 d.ts:2963/2972/2989）
+const WIN2_EVENT_TYPE = { WINDOW_ACTIVE: 2, WINDOW_INACTIVE: 3, WINDOW_DESTROYED: 7 };
+// 测试驱动判定（与 whenReady 里的 isTestDrive 同表达式、同含义）：测试 harness 靠主窗
+// 退出收结果，主窗被误销毁会让用例假死（R80 destroy 守卫同一理由，这里只拦主窗——
+// win2 自建的子窗本就是测试对象，销毁它们正是用例内容）。
+const win2IsTestDrive = !!(process.env.ARKUI_TEST || process.env.ARKUI_PAGE_URL);
+
+app.on('browser-window-created', (_e, bw) => {
+  if (!bw || bw.isDestroyed()) return;
+  const id = bw.id;
+  win2Meta.set(id, { name: null, seq: ++win2Seq });   // name 由 win2:create 显式补
+  // 任一窗 focus/blur/closed → WindowEventType 数值广播给【全部】存活窗（各窗收到的
+  // 事件流相同，是否与己相关由订阅方按 ev.id 自判——多窗语义，与真机 on('windowEvent')
+  // 的窗口级订阅不同源，这里选全局流 + 客户端过滤是 Electron 侧最简可靠形态）。
+  const win2Broadcast = (type) => {
+    for (const w of BrowserWindow.getAllWindows()) {
+      try {
+        if (!w.webContents.isDestroyed()) w.webContents.send('arkui:win2:event', { id, type });
+      } catch (e) { /* 目标窗恰好死亡：跳过它，不阻断其余窗的投递 */ }
+    }
+  };
+  bw.on('focus', () => win2Broadcast(WIN2_EVENT_TYPE.WINDOW_ACTIVE));
+  bw.on('blur', () => win2Broadcast(WIN2_EVENT_TYPE.WINDOW_INACTIVE));
+  // 'closed'（destroy() 亦保证派发）→ 广播 DESTROYED 并摘表；监听器随窗口对象一起回收
+  bw.on('closed', () => { win2Broadcast(WIN2_EVENT_TYPE.WINDOW_DESTROYED); win2Meta.delete(id); });
+});
+
+// 窗名解析：win2:create 的显式名优先；未命名的首个窗口是 harness 主窗 → 'main'；
+// 其余未命名窗口（如 R88 的 ability 让位窗）给稳定默认名，保证 list 永不出无名项。
+const win2NameOf = (id) => {
+  const m = win2Meta.get(id);
+  if (!m) return '';
+  return m.name || (m.seq === 1 ? 'main' : `window-${m.seq}`);
+};
+
+// 建窗（name/url/width/height）→ 返回 windowId。SDK 对照 @ohos.window.d.ts:1905
+// `function createWindow(config: Configuration): Promise<Window>`（JSDoc 原文
+// "Creates a child window or system window."，@since 9）——DOM 运行时持不住原生
+// Window 句柄，投影为返回 number windowId 供 destroy/focus 以 id 寻址。
+ipcMain.handle('arkui:win2:create', (_e, cfg) => {
+  const c = (cfg && typeof cfg === 'object') ? cfg : {};
+  const fsRoot = fsRootForRenderer();
+  const bw = new BrowserWindow({
+    width: Math.max(80, Number(c.width) || 360),
+    height: Math.max(60, Number(c.height) || 280),
+    show: false,                        // 先建后 show：webPreferences 全配齐再可见
+    webPreferences: {                   // 形状照抄 R88 abilityWin：带桥、带落盘根
+      backgroundThrottling: false,
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      sandbox: false,
+      additionalArguments: fsRoot ? [`--arkui-fs-root=${fsRoot}`] : [],
+    },
+  });
+  // 'browser-window-created' 已把窗表行建好（含 seq），这里只补显式名
+  const m = win2Meta.get(bw.id);
+  if (m) m.name = String(c.name || `window-${m.seq}`);
+  // 焦点语义需要可见窗口（隐藏窗不参与系统焦点环）→ 建窗即 show；url 异步装载
+  // 不阻塞建窗返回（装载失败只影响子窗内容，窗口本体与事件面照常可用，不静默回滚）
+  bw.show();
+  bw.loadURL(c.url ? String(c.url) : 'about:blank').catch((e) => {
+    console.error('[win2] 子窗装载失败 id=' + bw.id + ' url=' + c.url + ': ' + (e && e.message));
+  });
+  return bw.id;
+});
+
+// 销窗（id）→ boolean。SDK 对照 d.ts:3478 `destroyWindow(): Promise<void>`（JSDoc 原文
+// "Destroys this window."；旧名 destroy() @deprecated since 9 → @useinstead destroyWindow，
+// d.ts:3438/3448）。主窗在测试驱动下一律拒绝（win2IsTestDrive 守卫，理由见上）。
+ipcMain.handle('arkui:win2:destroy', (_e, id) => {
+  const wid = Number(id);
+  const bw = BrowserWindow.fromId(wid);
+  if (!bw || bw.isDestroyed()) return false;
+  const m = win2Meta.get(wid);
+  if (m && m.seq === 1 && win2IsTestDrive) return false;   // 主窗不销毁：harness 靠它收结果
+  bw.destroy();
+  return true;
+});
+
+// 聚焦（id）→ boolean。本 SDK d.ts 无同名 focusWindow（近邻 shiftAppWindowFocus，
+// d.ts:2135，JSDoc 原文 "Shifts the window focus from the source window to the target
+// window in the same application."）；桌面语义以 Electron win.focus() 落地。
+ipcMain.handle('arkui:win2:focus', (_e, id) => {
+  const bw = BrowserWindow.fromId(Number(id));
+  if (!bw || bw.isDestroyed()) return false;
+  if (!bw.isVisible()) bw.show();       // 隐藏窗不参与焦点环：先可见再聚焦
+  bw.focus();
+  return true;
+});
+
+// 枚举 → [{id, name, focused, visible}]。本 SDK d.ts 无模块级 getWindows（近邻：
+// getWindowsByCoordinate d.ts:2251 / getAllMainWindowInfo d.ts:2395）；此处枚举本应用
+// 全部存活 BrowserWindow，四字段投影。focused/visible 是主进程此刻真值，不是缓存。
+ipcMain.handle('arkui:win2:list', () => BrowserWindow.getAllWindows()
+  .filter((w) => !w.isDestroyed())
+  .map((w) => ({ id: w.id, name: win2NameOf(w.id), focused: w.isFocused(), visible: w.isVisible() })));

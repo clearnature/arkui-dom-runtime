@@ -130,6 +130,19 @@ cp "$B/jsqr@1.4.0@@@1/LICENSE" test/vendor/jsqr-1.4.0.LICENSE
 # 编码器（R41 起）：见 runtime/vendor/arkui-qrcodegen/build.sh（emscripten 编译真机 C++ 源码）
 ```
 
+### 3b.3 SQLite WASM 引擎 sql.js（E1-2 起，`@ohos.data.relationalStore` 的执行后端）
+
+| 入库文件 | 出处 | 许可 | 用途 |
+|---|---|---|---|
+| `runtime/vendor/sqljs/sql-wasm.js` + `runtime/vendor/sqljs/sql-wasm.wasm` | npm `sql.js@1.8.0`（sql.js，lojjic/enuit（sql-js 组织），SQLite 3.x 经 emscripten 编译为 WASM），`dist/` 两文件**原样拷贝**；发行包原件留在 `runtime/vendor/sqljs/sql.js-1.8.0.tgz` | **MIT**（原文：`runtime/vendor/sqljs/LICENSE`，"Copyright (c) 2017 sql.js authors"） | `data.relationalStore` 垫片（`runtime/src/relationalstore.js`）的**真 SQL 执行引擎**：建表/insert/querySql/事务/PRAGMA 全走真 SQLite，无伪实现 |
+
+- **加载面**：页面先自行 `<script>` 引入（全局 `initSqlJs`）或由垫片动态注入
+  `runtime/vendor/sqljs/sql-wasm.js`；缺席时垫片显式抛 14800000（带安装步骤），**不静默降级**。
+- **自检/复现**：`node tools/check-sqljs.mjs`（在位校验 + 魔数 + Node 冒烟 `SELECT 1+1`）；
+  或 `tar -xzf runtime/vendor/sqljs/sql.js-1.8.0.tgz -C runtime/vendor/sqljs --strip-components=1 package/dist/*`。
+- **落盘约定**：库字节 `db.export()` → base64 → JSON（`arkui-rdb-v1`）→ `/vfs/files/rdb_<name>.json`，
+  走 file.fs 既有后端（Electron=nodeFs 真盘 / 浏览器=localStorage）。
+
 ---
 
 ## 4. 仅作参考阅读的上游（**开源**，可放心引用其接口形状）

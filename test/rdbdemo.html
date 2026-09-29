@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>⑦ data.relationalStore（真 SQL + 事务，sql.js WASM）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>data.relationalStore（sql.js WASM；缺席时必须显式报错，不静默假装）</h3>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    let passCount = 0;
+    const check = (c, m) => { if (!c) allPass = false; else passCount++; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const rdb = __arkui_dom_require('@ohos:data.relationalStore');
+
+    // ── 两形态共有的静态面断言 ──
+    check(!!rdb, '模块 @ohos:data.relationalStore 已注册');
+    check(rdb.SecurityLevel && rdb.SecurityLevel.S1 === 1 && rdb.SecurityLevel.S2 === 2 &&
+          rdb.SecurityLevel.S3 === 3 && rdb.SecurityLevel.S4 === 4,
+      'SecurityLevel 枚举 S1..S4 = 1..4（d.ts:1066-1103）');
+    check(rdb.ConflictResolution && rdb.ConflictResolution.ON_CONFLICT_NONE === 0 &&
+          rdb.ConflictResolution.ON_CONFLICT_REPLACE === 5,
+      'ConflictResolution 枚举 0..5（d.ts:1473-1525）');
+    check(typeof rdb.getRdbStore === 'function' && typeof rdb.deleteRdbStore === 'function',
+      'getRdbStore / deleteRdbStore 在面');
+    try { await rdb.getRdbStore(null, {}); check(false, '缺 name 应拒绝'); }
+    catch (e) { check(String(e.code) === '401', `缺 StoreConfig.name → 401（实际 code=${e.code}）`); }
+
+    const DB = 'rdbdemo.db';
+    const FILE = '/vfs/files/rdb_' + DB + '.json';
+
+    /**
+     * 真跑面（sql.js 在位）：建表 / insert / querySql / 事务 commit+rollback / 持久化 / close。
+     * 每条都断言真 SQL 执行结果，不是接口形状。
+     */
+    async function runReal(store) {
+      check(__arkui_dom_fs.existsSync(FILE), `首建即落盘：${FILE}（后端 ${__arkui_dom_fs.backend}）`);
+      await __arkui_dom_fs.pending();
+
+      // 建表（executeSql DDL）
+      await store.executeSql(
+        'CREATE TABLE IF NOT EXISTS emp (id INTEGER PRIMARY KEY, name TEXT NOT NULL, salary REAL, avatar BLOB)');
+      const ddlLog = __arkui_dom_logs.filter((l) => l.t === 'rdb.executeSql').pop();
+      check(!!ddlLog, 'executeSql DDL 留痕（rdb.executeSql）');
+
+      // insert()（ValuesBucket）→ rowId
+      const rowId1 = await store.insert('emp', { id: 1, name: '张三', salary: 100.5 });
+      check(rowId1 === 1, `insert 返回 rowId=1（实际 ${rowId1}，d.ts:3922）`);
+
+      // executeSql DML（绑定参数）→ 附加属性 rowsAffected/insertId
+      const blob = new Uint8Array([1, 2, 3, 250]);
+      const dml = store.executeSql('INSERT INTO emp (id, name, salary, avatar) VALUES (?, ?, ?, ?)',
+        [2, 'lishi', 200.25, blob]);
+      await dml;
+      check(dml.rowsAffected === 1, `executeSql INSERT rowsAffected=1（实际 ${dml.rowsAffected}）`);
+      check(dml.insertId === 2, `executeSql insertId=2（实际 ${dml.insertId}）`);
+
+      // querySql 全量读回 + 游标语义（rowIndex 初始 -1，d.ts:2515）
+      const rs = await store.querySql('SELECT id, name, salary, avatar FROM emp ORDER BY id');
+      check(rs.rowCount === 2, `querySql rowCount=2（实际 ${rs.rowCount}，d.ts:2511）`);
+      check(rs.rowIndex === -1 && !rs.isStarted, `游标初始 rowIndex=-1（实际 ${rs.rowIndex}）`);
+      check(rs.columnNames.join(',') === 'id,name,salary,avatar', `columnNames 一致（${rs.columnNames}）`);
+      check(rs.getColumnIndex('salary') === 2 && rs.getColumnName(2) === 'salary',
+        'getColumnIndex/getColumnName 互逆（d.ts:2616/2648）');
+      check(rs.goToNextRow() === true && rs.rowIndex === 0 && rs.getLong(0) === 1 && rs.getString(1) === '张三',
+        `第 1 行：getLong=1 getString='张三'`);
+      check(Math.abs(rs.getDouble(2) - 100.5) < 1e-9, `getDouble=100.5（实际 ${rs.getDouble(2)}）`);
+      check(rs.isColumnNull(3), '第 1 行 avatar 为 NULL → isColumnNull（d.ts:3325）');
+      rs.goToNextRow();                                      // 第 2 行（lishi）带 blob
+      const got = rs.getBlob(3);
+      check(got instanceof Uint8Array && got.length === 4 && got[3] === 250,
+        `getBlob 读回 4 字节且末字节 250（实际 len=${got.length}）`);
+      check(rs.isAtLastRow && rs.getString(1) === 'lishi',
+        `第 2 行：isAtLastRow 且 name='lishi'`);
+      check(rs.goToNextRow() === false && rs.isEnded, '越过后 goToNextRow=false 且 isEnded（d.ts:2867/2546）');
+      rs.close();
+      check(rs.isClosed, 'rs.close() 生效（d.ts:3335）');
+      try { rs.getString(0); check(false, '关闭后读应拒绝'); }
+      catch (e) { check(String(e.code) === '14800014', `关闭后读 → 14800014（实际 code=${e.code}）`); }
+
+      // 带绑定参数的 querySql
+      const rs2 = await store.querySql('SELECT name FROM emp WHERE id = ?', [2]);
+      check(rs2.rowCount === 1 && rs2.goToNextRow() && rs2.getString(0) === 'lishi',
+        'querySql 绑定参数过滤命中');
+
+      // 非查询语句走 querySql → 14800019（d.ts:2574）
+      try { await store.querySql('DELETE FROM emp WHERE id = 999'); check(false, 'querySql(非 SELECT) 应拒绝'); }
+      catch (e) { check(String(e.code) === '14800019', `querySql 非 SELECT → 14800019（实际 code=${e.code}）`); }
+
+      // 事务 commit：真回读验证
+      store.beginTransaction();
+      check(store.inTransaction(), 'beginTransaction 后 inTransaction=true（d.ts:5351）');
+      await store.insert('emp', { id: 3, name: 'wangwu', salary: 1 });
+      store.commit();
+      const rs3 = await store.querySql('SELECT COUNT(*) AS n FROM emp');
+      rs3.goToNextRow();
+      check(rs3.getLong(0) === 3, `commit 后 COUNT=3（实际 ${rs3.getLong(0)}，d.ts:5409）`);
+      rs3.close();
+
+      // 事务 rollback：插入被真回滚
+      store.beginTransaction();
+      await store.insert('emp', { id: 4, name: 'zhaoliu', salary: 1 });
+      store.rollBack();
+      const rs4 = await store.querySql('SELECT COUNT(*) AS n FROM emp');
+      rs4.goToNextRow();
+      check(rs4.getLong(0) === 3, `rollback 后 COUNT 仍=3（实际 ${rs4.getLong(0)}，d.ts:5467）`);
+      rs4.close();
+      try { store.commit(); check(false, '无事务 commit 应拒绝'); }
+      catch (e) { check(String(e.code) === '14800021', `空 commit → 14800021（实际 code=${e.code}）`); }
+
+      // 冲突 REPLACE：同主键再插不抛且行数不变（d.ts:1525 ON_CONFLICT_REPLACE=5）
+      await store.insert('emp', { id: 1, name: '张三v2', salary: 999 }, rdb.ConflictResolution.ON_CONFLICT_REPLACE);
+      const rs5 = await store.querySql('SELECT name FROM emp WHERE id = 1');
+      rs5.goToNextRow();
+      check(rs5.rowCount === 1 && rs5.getString(0) === '张三v2', 'ON_CONFLICT_REPLACE 覆盖生效');
+      rs5.close();
+
+      // version 读写（PRAGMA user_version，d.ts:3813）
+      store.version = 7;
+      check(store.version === 7, `version 写读回 7（实际 ${store.version}）`);
+
+      // close → 14800014；重开 → 数据从落盘字节真恢复（export/import 往返）
+      await store.close();
+      try { await store.executeSql('SELECT 1'); check(false, 'close 后操作应拒绝'); }
+      catch (e) { check(String(e.code) === '14800014', `close 后 executeSql → 14800014（实际 code=${e.code}）`); }
+      const reopened = await rdb.getRdbStore(null, { name: DB, securityLevel: rdb.SecurityLevel.S2 });
+      const rs6 = await reopened.querySql('SELECT COUNT(*) AS n FROM emp');
+      rs6.goToNextRow();
+      check(rs6.getLong(0) === 3, `close→重开（落盘字节重建）COUNT 仍=3（实际 ${rs6.getLong(0)}）`);
+      rs6.close();
+      check(reopened.version === 7, `重开后 version 仍=7（实际 ${reopened.version}，user_version 持久）`);
+      await reopened.close();
+
+      // deleteRdbStore 清场（d.ts:7631）
+      await rdb.deleteRdbStore(null, { name: DB });
+      check(!__arkui_dom_fs.existsSync(FILE), 'deleteRdbStore 后库文件已删');
+    }
+
+    /**
+     * 缺席面（WASM 未安装）：必须显式 14800000 + 可操作文案；绝不允许拿到假 store。
+     */
+    async function runAbsent() {
+      let err = null;
+      let store = undefined;
+      try { store = await rdb.getRdbStore(null, { name: DB, securityLevel: rdb.SecurityLevel.S2 }); }
+      catch (e) { err = e; }
+      check(err !== null && store === undefined, 'getRdbStore 显式拒绝，且【没有】产出假 store（不静默假装）');
+      const errDesc = err instanceof Error ? `${err.name}:${err.message}` : String(err);
+      lines.push('ERR ' + errDesc.slice(0, 300));
+      check(!!err && String(err.code) === '14800000', `错误码 14800000（实际 code=${err && err.code}）`);
+      const msg = (err && err.message) || '';
+      check(msg.includes('sql.js'), '文案点名 sql.js');
+      check(msg.includes('runtime/vendor/sqljs'), '文案给出安装位 runtime/vendor/sqljs/');
+      check(msg.includes('npm i sql.js') && msg.includes('check-sqljs.mjs'),
+        '文案给出可操作步骤（npm i + check-sqljs.mjs 自检）');
+      // 确定性：第二次调用同样失败（不出现"偶发成功"的假绿）
+      let err2 = null;
+      try { await rdb.getRdbStore(null, { name: DB + '2', securityLevel: rdb.SecurityLevel.S1 }); }
+      catch (e) { err2 = e; }
+      check(!!err2 && String(err2.code) === '14800000', '第二次调用同样显式失败（确定性）');
+      check(!__arkui_dom_fs.existsSync(FILE) && !__arkui_dom_fs.existsSync('/vfs/files/rdb_' + DB + '2.json'),
+        '失败路径不产生任何库文件');
+    }
+
+    try {
+      // 预清场：上一次运行遗留的库文件会让 COUNT 类断言漂移（确定性优先）
+      await rdb.deleteRdbStore(null, { name: DB }).catch(() => {});
+      let opened = null;
+      try { opened = await rdb.getRdbStore(null, { name: DB, securityLevel: rdb.SecurityLevel.S2 }); }
+      catch (e) { /* WASM 缺席的预期路径 */ }
+      if (opened) {
+        lines.push('MODE real（sql.js 在位，全真断言）');
+        await runReal(opened);
+      } else {
+        lines.push('MODE absent（sql.js 未安装，断言显式报错面）');
+        await runAbsent();
+      }
+      const kinds = [...new Set(__arkui_dom_logs.map((l) => l.t))].filter((t) => t.startsWith('rdb.')).sort();
+      lines.push('LOGS ' + kinds.join('/'));
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.push(`CHECKS pass=${passCount}`);
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const el = document.getElementById('result');
+    el.textContent = lines.join('\n');
+    el.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

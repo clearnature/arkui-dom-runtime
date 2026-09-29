@@ -165,4 +165,32 @@ contextBridge.exposeInMainWorld('electronAPI', {
       return { url: '', ua: '' };
     }
   },
+  // E1-5：多窗口管理桥（main 'arkui:win2:*' 的渲染侧）——electronAPI.win2。
+  // 与 fs/window 桥同约定：可结构化克隆入参/返回，失败免疫（invoke 拒绝时返回哨兵值，
+  // 绝不向上抛）：create → -1（windowId 恒为正整数，-1 即"建窗未成功"）；
+  // destroy/focus → false；list → []（空表但不阻塞调用方）。事件走主进程 push：
+  // main 把任一窗 focus/blur/closed 以 {id, type} 广播给【全部】窗口（arkui:win2:event），
+  // 这里原样转发，是否与己相关由页面按 ev.id 自判（多窗语义：全局流 + 订阅方过滤）。
+  win2: {
+    /** @param {{name?: string, url?: string, width?: number, height?: number}} opts @returns {Promise<number>} windowId（失败 -1） */
+    create: async (opts) => {
+      try { return await ipcRenderer.invoke('arkui:win2:create', opts); } catch (e) { return -1; }
+    },
+    /** @param {number} id @returns {Promise<boolean>} */
+    destroy: async (id) => {
+      try { return await ipcRenderer.invoke('arkui:win2:destroy', Number(id)); } catch (e) { return false; }
+    },
+    /** @param {number} id @returns {Promise<boolean>} */
+    focus: async (id) => {
+      try { return await ipcRenderer.invoke('arkui:win2:focus', Number(id)); } catch (e) { return false; }
+    },
+    /** @returns {Promise<Array<{id: number, name: string, focused: boolean, visible: boolean}>>} */
+    list: async () => {
+      try { return await ipcRenderer.invoke('arkui:win2:list'); } catch (e) { return []; }
+    },
+    /** @param {(ev: {id: number, type: number}) => void} cb */
+    onEvent: (cb) => {
+      ipcRenderer.on('arkui:win2:event', (_e, ev) => { try { cb(ev); } catch (err) {} });
+    },
+  },
 });

@@ -1,0 +1,185 @@
+<!-- RUNNER=electron-only -->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>E1-5：多窗口并存（window.multi / arkui:win2:*，Electron 专属）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 420px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; font-size: 12px; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>E1-5：多窗口并存——create/destroy/focus/list + 每窗焦点事件广播（window.multi）</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script>
+  // 本页验证 E1-5 多窗能力面（runtime 级：不消费编译产物，直接调 @ohos:window.multi 垫片）：
+  //   · Electron：真建两个子 BrowserWindow → 枚举/聚焦/销毁/焦点事件全走主进程（arkui:win2:*）；
+  //   · 浏览器：无 electronAPI.win2 → 垫片拒绝并给可操作错误（code=801），断言降级路径本身。
+  // 断言数两端都 ≥8（分流各自凑足）；销毁子窗是测试内容，主窗销毁在测试驱动下被 main 拒绝
+  // （harness 靠主窗收结果——同 R80 destroy 守卫）。
+  (async function () {
+    const lines = [];
+    let pass = 0, fail = 0;
+    const check = (c, m) => { if (c) { pass++; lines.push('PASS ' + m); } else { fail++; lines.push('FAIL ' + m); } };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms || 0));
+    // 轮询等待（上限 ms）：窗口焦点/事件都是异步到达，等真值而不是睡固定时长。
+    // 条件允许是 async（取 list 等 IPC 往返）——必须 await 后再判真，否则 Promise
+    // 恒真值会让等待在首轮就短路（等价于不等，焦点标记会读到旧值造成假红）。
+    const wait = async (cond, ms) => {
+      for (let i = 0, n = Math.ceil((ms || 3000) / 25); i < n; i++) {
+        if (await cond()) return true;
+        await tick(25);
+      }
+      return !!(await cond());
+    };
+
+    // ── 取垫片命名空间（ohos 模块注册表；window.multi 是 E1-5 新增，@ohos:window v1 段未改动）──
+    let W = null;
+    try { W = globalThis.__arkui_dom_require('@ohos:window.multi'); } catch (e) { W = null; }
+    const ET = W && W.WindowEventType;
+    const eapi = (/** @type {any} */ (globalThis)).electronAPI || {};
+    const hasWin2 = !!(eapi.win2 && typeof eapi.win2.create === 'function');
+    const isElectron = hasWin2;
+
+    // ══════════ 共同组：命名空间与 WindowEventType 数值（d.ts:2954-2989 对齐，两端同验）══════════
+    check(!!W && typeof W.createWindow === 'function' && typeof W.destroyWindow === 'function'
+      && typeof W.focusWindow === 'function' && typeof W.getWindows === 'function'
+      && typeof W.onWindowFocusChange === 'function',
+      'window.multi 命名空间五件套齐备（createWindow/destroyWindow/focusWindow/getWindows/onWindowFocusChange）');
+    check(!!ET && ET.WINDOW_ACTIVE === 2 && ET.WINDOW_INACTIVE === 3 && ET.WINDOW_DESTROYED === 7
+      && ET.WINDOW_SHOWN === 1 && ET.WINDOW_HIDDEN === 4,
+      'window.multi WindowEventType 数值对齐 @ohos.window.d.ts:2954-2989（1/2/3/4/7）');
+
+    if (!isElectron) {
+      // ══════════ 浏览器分支：无 electronAPI.win2 → 可操作错误（code=801 分流面）══════════
+      check(!hasWin2, '环境确认：浏览器无 electronAPI.win2 桥（降级路径生效前提）');
+      const rejectsWith = async (p, code) => {
+        let err = null;
+        try { await p; } catch (e) { err = e; }
+        return { err, ok: !!err && err.code === code };
+      };
+      const rCreate = await rejectsWith(W.createWindow({ name: 'browser-win' }), 801);
+      check(rCreate.ok, '浏览器 createWindow 拒绝且 code=801（Capability not supported 对齐）');
+      check(!!rCreate.err && /electronAPI\.win2/.test(String(rCreate.err.message)) && /Electron/.test(String(rCreate.err.message)),
+        '浏览器 createWindow 错误 message 可操作（点名缺失桥 electronAPI.win2 与所需宿主 Electron）');
+      check((await rejectsWith(W.destroyWindow(1), 801)).ok, '浏览器 destroyWindow 拒绝且 code=801');
+      check((await rejectsWith(W.focusWindow(1), 801)).ok, '浏览器 focusWindow 拒绝且 code=801');
+      check((await rejectsWith(W.getWindows(), 801)).ok, '浏览器 getWindows 拒绝且 code=801');
+      let unsub = null, subOk = true;
+      try { unsub = W.onWindowFocusChange(() => {}); } catch (e) { subOk = false; }
+      check(subOk && typeof unsub === 'function', '浏览器 onWindowFocusChange 可订阅且返回退订函数（v1 on() 先例：订阅不炸、事件不来）');
+      if (typeof unsub === 'function') unsub();
+    } else {
+      // ══════════ Electron 分支：多 BrowserWindow 真建/真销/真聚焦 ══════════
+      // ① 桥在位（main 'arkui:win2:*' → preload electronAPI.win2 全链路前置）
+      check(typeof eapi.win2.destroy === 'function' && typeof eapi.win2.focus === 'function'
+        && typeof eapi.win2.list === 'function' && typeof eapi.win2.onEvent === 'function',
+        'electronAPI.win2 桥五件套齐备（create/destroy/focus/list/onEvent）');
+
+      // ② 先订阅焦点事件流（创建/聚焦前挂上，避免漏事件；载荷 {id, type}）
+      const focusEvents = [];
+      const unsubFocus = W.onWindowFocusChange((ev) => { focusEvents.push(ev); });
+      check(typeof unsubFocus === 'function', 'onWindowFocusChange 订阅成功且返回退订函数');
+
+      // ③ 建两窗：windowId 为正整数且递增（Electron BrowserWindow.id 自 1 单调递增）
+      const idA = await W.createWindow({ name: 'multi-a', width: 320, height: 240 });
+      const idB = await W.createWindow({ name: 'multi-b', url: 'about:blank', width: 320, height: 240 });
+      check(typeof idA === 'number' && idA > 0 && typeof idB === 'number' && idB > 0 && idA < idB,
+        `create 两窗返回正整数 windowId 且递增（multi-a=${idA} < multi-b=${idB}）`);
+
+      // ④ 枚举：主窗 + 两子窗 = 3 窗，且含主窗 'main'（首个未命名窗口即 harness 主窗）
+      let list3 = null;
+      await wait(async () => {
+        list3 = await W.getWindows();
+        return Array.isArray(list3) && list3.length === 3;
+      }, 4000);
+      check(Array.isArray(list3) && list3.length === 3 && list3.some((w) => w.name === 'main'),
+        'list 含 3 窗且含主窗 main（实得 ' + (list3 || []).map((w) => w.name).join(',') + '）');
+
+      // ⑤ 名字表正确：create 返回的 id 与 list 中名字一一对应
+      const byId = {};
+      (list3 || []).forEach((w) => { byId[w.id] = w.name; });
+      check(byId[idA] === 'multi-a' && byId[idB] === 'multi-b',
+        `名字表正确（id ${idA}→${byId[idA]}，id ${idB}→${byId[idB]}）`);
+
+      // ⑥ 条目形状：{id, name, focused, visible} 四字段齐备（三窗全验，类型也验）
+      const shapeOk = Array.isArray(list3) && list3.every((w) =>
+        typeof w.id === 'number' && typeof w.name === 'string'
+        && typeof w.focused === 'boolean' && typeof w.visible === 'boolean');
+      check(shapeOk, 'list 条目四字段形状齐备且类型正确（id:number name:string focused:boolean visible:boolean）');
+
+      // ⑦ 聚焦第一窗 → focused 标记互斥正确（清空事件缓冲，只认本次 focus 的推送）
+      focusEvents.length = 0;
+      const focusedOk = await wait(async () => {
+        await W.focusWindow(idA);
+        const l = await W.getWindows();
+        const a = l.find((w) => w.id === idA), b = l.find((w) => w.id === idB), m = l.find((w) => w.name === 'main');
+        return !!(a && b && m && a.focused === true && b.focused === false && m.focused === false);
+      }, 4000);
+      check(focusedOk, 'focusWindow(multi-a) → focused 标记正确（multi-a=true，multi-b/main=false）');
+
+      // ⑧ 事件流：本次 focus 产生 {id: idA, type: WINDOW_ACTIVE(2)} 广播（到达任一窗均算）
+      const evtOk = await wait(() => focusEvents.some((ev) => ev && ev.id === idA && ev.type === ET.WINDOW_ACTIVE), 4000);
+      check(evtOk, '焦点事件流到达：{id: multi-a, type: WINDOW_ACTIVE(2)}（广播流 ' + focusEvents.length + ' 条）');
+      if (typeof unsubFocus === 'function') unsubFocus();
+
+      // ⑨ 销第二窗 → list 收缩（3 → 2）且不含 idB
+      const destroyed = await W.destroyWindow(idB);
+      let list2 = null;
+      await wait(async () => {
+        list2 = await W.getWindows();
+        return Array.isArray(list2) && list2.length === 2 && !list2.some((w) => w.id === idB);
+      }, 4000);
+      check(destroyed === true && Array.isArray(list2) && list2.length === 2 && !list2.some((w) => w.id === idB),
+        'destroyWindow(multi-b)=true → list 收缩为 2 窗且不含已销窗');
+
+      // ⑩ 主窗销毁被拒（测试驱动守卫：harness 靠主窗收结果，同 R80 destroy 守卫）
+      const mainEntry = (list2 || []).find((w) => w.name === 'main');
+      const refused = mainEntry ? !(await W.destroyWindow(mainEntry.id)) : false;
+      const listAfter = await W.getWindows();
+      check(refused && mainEntry && listAfter.some((w) => w.id === mainEntry.id),
+        'destroyWindow(主窗)=false（测试驱动守卫生效，主窗仍在 list）');
+
+      // ⑪ 聚焦已销毁的窗 → false（不存在的 windowId 拒绝，不静默成功）
+      check((await W.focusWindow(idB)) === false, 'focusWindow(已销毁 multi-b)=false（失效 id 明确拒绝）');
+
+      // ⑫ 降级路径（Electron 端 best-effort 真测）：摘桥 → 801 → 还桥。
+      //    contextBridge 暴露对象的可变性不作保证：能整块替换 globalThis.electronAPI 则真测
+      //    垫片降级分支；不能（defineProperty 抛错）则 SKIP，由浏览器分支覆盖同一路径。
+      //    摘的是 globalThis 上的引用（垫片是调用时探测，不持有快照），还原可保证：
+      //    自己定义的 configurable 属性总能再 defineProperty 回去。
+      const savedEapi = (/** @type {any} */ (globalThis)).electronAPI;
+      let swapped = false;
+      try {
+        Object.defineProperty(globalThis, 'electronAPI', { value: {}, configurable: true });
+        swapped = !((/** @type {any} */ (globalThis)).electronAPI || {}).win2;
+      } catch (e) { swapped = false; }
+      if (swapped) {
+        let err = null;
+        try { await W.createWindow({ name: 'degraded' }); } catch (e) { err = e; }
+        check(!!err && err.code === 801, '降级：摘桥后 createWindow 拒绝且 code=801（垫片降级分支实测）');
+      } else {
+        check(true, '（contextBridge 属性不可改写，摘桥降级分支由浏览器分支覆盖——SKIP）');
+      }
+      try { Object.defineProperty(globalThis, 'electronAPI', { value: savedEapi, configurable: true }); } catch (e) { /* 不可能：自己的 configurable 属性 */ }
+      check(!!((/** @type {any} */ (globalThis)).electronAPI || {}).win2, '降级：还桥后 electronAPI.win2 恢复在位（不影响后续用例）');
+    }
+
+    if (fail === 0) lines.unshift('=== ALL PASS === (' + pass + ' 条断言)');
+    else lines.unshift('=== ' + fail + ' FAILURES === (' + pass + ' PASS)');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = fail === 0 ? 'pass' : 'fail';
+    document.title = fail === 0 ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

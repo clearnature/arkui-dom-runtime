@@ -209,6 +209,8 @@ case "${1:-index}" in
     echo
     run_one a11ydemo "$(src_of pages/Index.ts)" build/app.js test/a11ydemo.html || rc=1
     echo
+    run_one rdbdemo "$(src_of pages/Index.ts)" build/app.js test/rdbdemo.html || rc=1
+    echo
     # R12 收口：Navigation 标题栏 / 工具栏 / 分栏
     run_one navbardemo "$(src_of pages/NavBarDemo.ts)" build/navbardemo-module.js test/navbardemo.html \
       "--cjs --register NavBarDemo" || rc=1
@@ -462,6 +464,9 @@ case "${1:-index}" in
   a11ydemo)
     # R136 E1-6：无障碍 ARIA 映射（role 静态表 + accessibility* 四件——纯 runtime 页）
     run_one a11ydemo "$(src_of pages/Index.ts)" build/app.js test/a11ydemo.html || rc=1 ;;
+  rdbdemo)
+    # R137 E1-2：结构化存储（relationalStore 垫片——sql.js 真执行；纯 runtime 页）
+    run_one rdbdemo "$(src_of pages/Index.ts)" build/app.js test/rdbdemo.html || rc=1 ;;
   navbardemo)
     # R12 收口：Navigation 标题栏 / 工具栏 / 分栏
     run_one navbardemo "$(src_of pages/NavBarDemo.ts)" build/navbardemo-module.js test/navbardemo.html \
