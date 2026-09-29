@@ -9,7 +9,14 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R139 E2-1 增量走查（P2 最后一项——企业就绪度三档全清）**——
+- 上次切片：**R140 E1-6/E2-2 尾巴收口：axe-core 真审计 + PERF10 采集**——axe-core@4.10.2
+  （MPL-2.0）vendor 进 test/vendor（NOTICES §3b.3 登记；仅测试侧加载）；a11ydemo 真审计：
+  全页=记录面（8 类违规属演示控件/已知缺口）、**设计面 scoped critical=0**；真审计抓出
+  映射修正：ARIA 1.2 group 不支持 aria-level——accessibilityGroup(true) 时已设 level
+  迁移 data-*；Image 主图 alt 缺省空串；TextInput placeholder→aria-label；stats.mjs
+  PERF10 采集行（万节点进 §6）。a11ydemo 12→**14 条**双端全绿；门禁 8 步（46ae630，
+  Mimosa 0 findings seal sha256:32608072…）。**企业就绪度 P0/P1/P2 三档全清（R129-R139），
+  R140 为尾巴收口**。更早：**R139 E2-1 增量走查**——
   incremental.js 分片（第 46 个）：四张登记表（area/draw/align/nav）+ incSweep 惰性
   清扫（es2020 lib 无 WeakRef——Set 强引用+isConnected 清扫，不升 lib 避免连带风险；
   稳态收敛不无界增长）；登记点 8 处（area/draw/show/nav 分片能力挂上处）；**4 个
