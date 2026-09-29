@@ -9,7 +9,15 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R142 E2-1 完成：尾部 sync 批级提升（增量走查收官）**——rerenderElmt 内
+- 上次切片：**R143 更新通道文档化 + ROADMAP 行修复**——初版更新通道做在应用内
+  （updater.js：清单+下载+sha256 原子 rename）——Mimosa 深扫抓 4 高危（SSRF 入口/
+  URL 派生路径穿越）无法收敛为 0 findings，**按纪律改道：更新通道=部署侧 shell 四步**
+  （清单 curl→版本比对→下载+sha256sum -c 对账→原子 mv→UPGRADE 升级四步解包），
+  UPGRADE.md 全流程可复制命令；运行时包内零更新网络入口（静态审计面为零，深扫回归
+  0 findings）；ROADMAP 行修复：R142 行被此前 seal 脚本引号错误粘尾（重建整行）、
+  R135 行 hash 字面量修正；E0-4 挂钟窗口说明一并入档（R141 15000 轮 churn 密度高于
+  8h 值守）。
+  更早：**R142 E2-1 完成：尾部 sync 批级提升（增量走查收官）**——rerenderElmt 内
   的 4 个尾部 sync 提升到 flush() 批末：批内 N 个 dirty id 原本各跑 4 次登记扫描
   （3300 行批量=13200 次），批级一次语义等价（sync 作用于登记集全局终态）且降为 4 次；
   PERF 记账同步移至 flush；stress10k bulk_flush 16.4→15.4ms；stress1k/attrheavy/

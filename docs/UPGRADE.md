@@ -90,8 +90,20 @@ tar xzf arkui-dom-desktop-<ver>.tar.gz -C /opt/arkui/
 
 ## 5. 已知限制（如实声明）
 
-- **无自动更新通道**：无 delta、无签名校验。企业内网手动分发（tar.gz + 共享目录/scp），
-  传输完整性自校验：`sha256sum` 分发方与目标机对账。
+- **清单驱动的运维侧更新（R143，零应用内网络入口）**：更新通道实现为【部署侧 shell 流程】
+  而非应用内代码——运行时包内无任何更新网络入口（静态审计面为零）。流程：
+  ```bash
+  # 1) 清单（内网静态服务上的 update-manifest.json：{version,url,sha256,notes}）
+  curl -fsS http://fileserver/update-manifest.json > /tmp/update-manifest.json
+  # 2) 版本比对（与本地包目录命名；不同才继续）
+  # 3) 下载全量包 + sha256 对账（清单 sha256 字段 vs sha256sum 实测）
+  curl -fsSL -o /data/tmp/update.tar.gz "$(python3 -c "import json;print(json.load(open('/tmp/update-manifest.json'))['url'])")"
+  echo "$(python3 -c "import json;print(json.load(open('/tmp/update-manifest.json'))['sha256'])")  /data/tmp/update.tar.gz" | sha256sum -c -
+  # 4) 原子就位 → 按【升级策略】四步解包覆盖
+  mv /data/tmp/update.tar.gz /data/tmp/update-ready.tar.gz
+  ```
+- 手动分发（同通道退化形态）：tar.gz + 共享目录/scp，传输完整性自校验：`sha256sum`
+  分发方与目标机对账。
 - **CSP 已知收紧项（E0-5）**：策略仅注入 http/https 响应，`file://` 兜底路径不设防；
   `script-src 'unsafe-eval'`（页面模块 CommonJS 仿真装载 + WASM 兜底）与 `'unsafe-inline'`
   （测试页内联脚本）、`style-src 'unsafe-inline'`（运行时大量内联样式）暂不可移除。
