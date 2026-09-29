@@ -166,11 +166,23 @@
   // —— 所以反复扫到不动点为止（链长 N 需要 N 趟）。
   /** @param {any=} [rootEl] */
   function syncAlignRules(rootEl) {
-    const r = rootEl || rootNode;
-    if (!r || !r.querySelectorAll) return;
-    const all = [...r.querySelectorAll('*')];
-    for (const c of all) if (c.__guideLines) applyGuideLines(c);
-    const targets = /** @type {any[]} */ (all.filter((/** @type {any} */ el) => el.__alignRules));
+    // R139：登记集驱动（alignReg = __alignRules/__guideLines 挂上时登记的元素）。
+    // 显式传 rootEl（非全量路径）时保留旧遍历，语义不变。
+    if (rootEl && rootEl !== rootNode) {
+      const r0 = rootEl;
+      if (!r0 || !r0.querySelectorAll) return;
+      for (const c of r0.querySelectorAll('*')) if (c.__guideLines) applyGuideLines(c);
+      const tg0 = /** @type {any[]} */ ([...r0.querySelectorAll('*')].filter((/** @type {any} */ el) => el.__alignRules));
+      alignPass(tg0);
+      return;
+    }
+    const live = incSweep(alignReg);
+    for (const c of live) if (c.__guideLines) applyGuideLines(c);
+    const targets = live.filter((el) => el.__alignRules);
+    alignPass(targets);
+  }
+  /** @param {any[]} targets */
+  function alignPass(targets) {
     if (!targets.length) return;
     const snap = () => targets.map((el) => el.offsetLeft + ',' + el.offsetTop).join('|');
     const maxPass = Math.min(targets.length + 2, 12);

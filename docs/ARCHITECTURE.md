@@ -1763,28 +1763,28 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   fixtures 转换产物  78 个：AlphabetIndexerDemo AnimDemo AnimatorDemo AsyncIO AttrHeavyDemo BatchFuncDemo BatchLayoutDemo BatchMediaDemo BatchVerifyDemo BuiltinDemo CalendarPickerDemo Callee CanvasDemo CjkDemo DatePickerDemo Detail DrawDemo GestureDemo GestureGroupDemo GridDemo GridRowDemo Home ImageDemo Index InputDemo Layout Lazy LazyVar ListGroupDemo MeasArea MeasImage MeasNotify Measure MediaDemo NavBarDemo NavDemo NavShimDemo NavTransDemo NetFile NotesDetail NotesHome Observe PanelDemo PerfBigDemo PerfDemo PickerDemo PopDemo PromptAct Provide QrDemo RefreshDemo RelDemo ResourceDemo Rich RichVideoDemo ScrollDemo ShapeDemo ShowDemo SideBarDemo SmallDemo SplitDemo StepDemo Stress10kDemo Stress1kDemo SwiperDemo TabsGrid TextDemo TextMeasure TextPickerDemo TextTimeDemo TimePickerDemo TransitionDemo UiContextDemo V2 WaterFlowDemo Widgets WindowDemo XCompDemo
 
 == 性能基线（Electron 实测）==
-  首渲染            36.3 ms（33 节点：Column+Button+Text+ForEach×30）
-  最小 rerender     15.9 ms（@State 计数脏区单 Text，rAF 口径）
-  rerender 管道     1.1 ms / 1 tick（setTimeout 轮询口径，R70）
+  首渲染            34.8 ms（33 节点：Column+Button+Text+ForEach×30）
+  最小 rerender     13.3 ms（@State 计数脏区单 Text，rAF 口径）
+  rerender 管道     1.2 ms / 1 tick（setTimeout 轮询口径，R70）
   微任务底噪        0.00 ms
   行数              31
-  剖面 R71          loadRoute 同步 7.0 ms（require 0.3）· raf1 0.9 / raf2 28.4 ms（offscreen 首帧）
-  脚本 eval         runtime 135.5 / generated 128.2 / shims 133.8 / module 133.1 ms（计时起点之前）
+  剖面 R71          loadRoute 同步 7.1 ms（require 0.4）· raf1 0.5 / raf2 27.2 ms（offscreen 首帧）
+  脚本 eval         runtime 156.9 / generated 151.0 / shims 155.1 / module 154.3 ms（计时起点之前）
   判定              框架同步构建 3.5ms 无大头；"首渲染"=脚本 eval + offscreen 首帧（非框架成本）
-  千节点 R79        首渲染同步 30.0 ms（350 节点/~3500 属性，亚线性）· 单点 flush 1.8 ms · 批量翻转 flush 4.3 ms
+  千节点 R79        首渲染同步 29.8 ms（350 节点/~3500 属性，亚线性）· 单点 flush 0.3 ms · 批量翻转 flush 3.0 ms
   规模曲线          203→4.8 / 304→11.2 / 1055→19.0 ms（创建路径亚线性）；行复用+守卫千节点级保持
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          9339.9 KB
-  runtime(src)     1393.1 KB
+  runtime          9345.1 KB
+  runtime(src)     1398.4 KB
   test             975.3 KB
   tools            224.4 KB
   electron(src)    83.6 KB
-  docs             861.2 KB
+  docs             863.9 KB
   fixtures         537.2 KB
 
 == 逐文件（文档"文件职责"表的来源）==
-  runtime/arkui-dom-runtime.js            1150951 B  1124.0 KB
+  runtime/arkui-dom-runtime.js            1156358 B  1129.3 KB
   runtime/generated-components.js          57617 B  56.3 KB
   runtime/ohos-shims.js                    94100 B  91.9 KB
   tools/extract.mjs                         6936 B  6.8 KB
@@ -1803,10 +1803,10 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   .gitignore                                 909 B  0.9 KB
   README.md                               157311 B  153.6 KB
   THIRD-PARTY-NOTICES.md                   12076 B  11.8 KB
-  docs/ARCHITECTURE.md                    165487 B  161.6 KB
+  docs/ARCHITECTURE.md                    165546 B  161.7 KB
   docs/CAPABILITY.md                       63212 B  61.7 KB
   docs/DEVELOPING.md                       76689 B  74.9 KB
-  docs/ROADMAP.md                         237541 B  232.0 KB
+  docs/ROADMAP.md                         238645 B  233.1 KB
   docs/surface-measurement.md               6496 B  6.3 KB
   docs/SESSION-2026-09-20.md               12842 B  12.5 KB
   runtime/src/.mimosa                       4096 B  4.0 KB
@@ -1815,7 +1815,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   runtime/src/alphabetindexer.js            5155 B  5.0 KB
   runtime/src/animation.js                 29910 B  29.2 KB
   runtime/src/animator.js                   6308 B  6.2 KB
-  runtime/src/area.js                      33597 B  32.8 KB
+  runtime/src/area.js                      34110 B  33.3 KB
   runtime/src/batch-func.js                39494 B  38.6 KB
   runtime/src/batch-input.js               37979 B  37.1 KB
   runtime/src/batch-layout.js              29614 B  28.9 KB
@@ -1827,7 +1827,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   runtime/src/calendarpicker.js            17806 B  17.4 KB
   runtime/src/canvas.js                    10679 B  10.4 KB
   runtime/src/datepicker.js                 8770 B  8.6 KB
-  runtime/src/draw.js                      19240 B  18.8 KB
+  runtime/src/draw.js                      19863 B  19.4 KB
   runtime/src/errorboundary.js             13309 B  13.0 KB
   runtime/src/focus.js                     16670 B  16.3 KB
   runtime/src/generated-app-resources.js    1607 B  1.6 KB
@@ -1837,10 +1837,11 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   runtime/src/gridrow.js                    3128 B  3.1 KB
   runtime/src/i18n.js                      10170 B  9.9 KB
   runtime/src/image.js                      7000 B  6.8 KB
+  runtime/src/incremental.js                3155 B  3.1 KB
   runtime/src/input.js                     11336 B  11.1 KB
-  runtime/src/layout.js                    18731 B  18.3 KB
-  runtime/src/main.js                     122035 B  119.2 KB
-  runtime/src/nav.js                       57427 B  56.1 KB
+  runtime/src/layout.js                    19244 B  18.8 KB
+  runtime/src/main.js                     122186 B  119.3 KB
+  runtime/src/nav.js                       57837 B  56.5 KB
   runtime/src/panel.js                      3360 B  3.3 KB
   runtime/src/popup.js                      5042 B  4.9 KB
   runtime/src/refresh.js                    8193 B  8.0 KB
@@ -1849,7 +1850,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   runtime/src/runtime.d.ts                  7073 B  6.9 KB
   runtime/src/scroll.js                     6600 B  6.4 KB
   runtime/src/shape.js                      7525 B  7.3 KB
-  runtime/src/show.js                      19787 B  19.3 KB
+  runtime/src/show.js                      19855 B  19.4 KB
   runtime/src/sidebar.js                    5147 B  5.0 KB
   runtime/src/small.js                     12216 B  11.9 KB
   runtime/src/split.js                      1475 B  1.4 KB

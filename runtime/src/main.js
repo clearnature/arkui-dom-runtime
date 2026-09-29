@@ -361,6 +361,8 @@
   // @include errorboundary
   // @include focus
   // @include a11y
+  // R139 E2-1：增量走查登记表（须在 area/draw/show/nav 之前——登记函数声明提升，但注释置顶）
+  // @include incremental
   // @include generated-app-resources
   // @include generated-sys-resources
   // @include i18n

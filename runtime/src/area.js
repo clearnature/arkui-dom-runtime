@@ -31,24 +31,34 @@
   // 渲染后按【真实几何】派发 onAreaChange：只在面积真的变了（或首次）时触发
   /** @param {any} rootEl */
   function syncAreas(rootEl) {
-    const r = rootEl || rootNode;
-    if (!r || !r.querySelectorAll) return;
-    for (const el of r.querySelectorAll('*')) {
-      if (!el.__areaCbs || !el.__areaCbs.length) continue;
-      const now = areaOf(el);
-      const prev = areaMeta.get(el);
-      const changed = !prev
-        || Math.abs(prev.width - now.width) > 0.01 || Math.abs(prev.height - now.height) > 0.01
-        || Math.abs((prev.position.x || 0) - now.position.x) > 0.01
-        || Math.abs((prev.position.y || 0) - now.position.y) > 0.01;
-      if (!changed) continue;
-      // 首次布局也派发一次（oldValue 全 0）—— 这是实践中依赖的行为（拿初值），
-      // 但真机 JSDoc 只说"面积变化时触发"，此点未在真机核对
-      const old0 = prev || { width: 0, height: 0, position: { x: 0, y: 0 }, globalPosition: { x: 0, y: 0 } };
-      areaMeta.set(el, now);
-      for (const cb of el.__areaCbs) {
-        try { cb(old0, now); } catch (e) { layoutWarnings.push(`onAreaChange 回调抛错：${e && e.message}`); }
+    // R139：登记集驱动（原全树 querySelectorAll → 只遍历 onAreaChange 登记元素）。
+    // 显式传 rootEl（非全量路径）时保留旧遍历，语义不变。
+    if (rootEl && rootEl !== rootNode) {
+      const r0 = rootEl;
+      if (!r0 || !r0.querySelectorAll) return;
+      for (const el of r0.querySelectorAll('*')) {
+        if (!el.__areaCbs || !el.__areaCbs.length) continue;
+        syncOneArea(el);
       }
+      return;
+    }
+    for (const el of incSweep(areaReg)) syncOneArea(el);
+  }
+  /** @param {HTMLElement} el */
+  function syncOneArea(el) {
+    const now = areaOf(el);
+    const prev = areaMeta.get(el);
+    const changed = !prev
+      || Math.abs(prev.width - now.width) > 0.01 || Math.abs(prev.height - now.height) > 0.01
+      || Math.abs((prev.position.x || 0) - now.position.x) > 0.01
+      || Math.abs((prev.position.y || 0) - now.position.y) > 0.01;
+    if (!changed) return;
+    // 首次布局也派发一次（oldValue 全 0）—— 这是实践中依赖的行为（拿初值），
+    // 但真机 JSDoc 只说"面积变化时触发"，此点未在真机核对
+    const old0 = prev || { width: 0, height: 0, position: { x: 0, y: 0 }, globalPosition: { x: 0, y: 0 } };
+    areaMeta.set(el, now);
+    for (const cb of el.__areaCbs) {
+      try { cb(old0, now); } catch (e) { layoutWarnings.push(`onAreaChange 回调抛错：${e && e.message}`); }
     }
   }
 
@@ -158,6 +168,7 @@
     // onAreaChange 由运行时在渲染后按真实几何派发（不是 DOM 事件，见不变量 14）
     if (prop === 'onAreaChange') {
       (node.__areaCbs = node.__areaCbs || []).push(value);
+      incRegArea(node);   // R139：增量走查登记
       return;
     }
     const drawAttrs = node.__drawKind && DRAW_ATTRS[node.__drawKind];
@@ -618,7 +629,7 @@
     // 逆序声明的锚链必然如此。立刻解析既会出错（单趟读到旧位置），又会留下假警告
     // "找不到锚点 'x'"。真正的解析在每轮 syncAlignRules（首渲染后 + 每次重渲染后），
     // 它迭代到不动点，那时锚点才齐。
-    if (prop === 'alignRules') { node.__alignRules = value; return; }
+    if (prop === 'alignRules') { node.__alignRules = value; incRegAlign(node); return; }
     // guideLine 是【容器级】属性（挂在 RelativeContainer 上），位置要等容器有尺寸才能算 ——
     // 这里只登记，真正的计算在每轮 syncAlignRules 里（容器尺寸那时才可信）。
     if (prop === 'guideLine') {
@@ -627,6 +638,7 @@
         return;
       }
       node.__guideLines = value;
+      incRegAlign(node);   // R139：guideline 锚点也进增量登记
       applyGuideLines(node);
       return;
     }

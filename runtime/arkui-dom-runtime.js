@@ -2542,6 +2542,62 @@
         return false;
     }
   }
+  // R139 E2-1：增量走查登记表（须在 area/draw/show/nav 之前——登记函数声明提升，但注释置顶）
+  // ────────────────── 增量走查（R139，E2-1）──────────────────
+  //
+  // 现状瓶颈（R79 遗留账）：rerenderElmt 每次尾部跑 4 个全树 querySelectorAll('*')
+  //（syncAlignRules/syncDrawings/syncAreas/syncNavChrome）——单组件更新也 O(全树)。
+  // 万节点页（stress10k 实测 bulk_flush 22ms）里这 4 次遍历就是主要成本。
+  //
+  // 方案：**登记表驱动**。能力挂上时登记元素（WeakRef 保活弱引用，摘除后靠惰性清扫
+  // 剔除）；flush 尾部的 4 个 sync 改为【只遍历各自登记集】，不再 querySelectorAll。
+  // 语义等价性论证：
+  //   · syncAreas 关心 __areaCbs 元素 → 登记点=onAreaChange 挂回调处（area.js:160）
+  //   · syncDrawings 关心 __drawKind/__arkuiQrPending → 登记点=draw.js 四处赋值 +
+  //     show.js QRCode pending 处
+  //   · syncAlignRules 关心 __alignRules/__guideLines → 登记点=alignRules 属性应用处 +
+  //     guideline 创建处（guideLines 挂在锚点判断时才需要——保守起见 guideline 声明也登记）
+  //   · syncNavChrome 关心 __navState/__navDest/[data-arkui-comp=Navigation|NavDestination]
+  //     → 登记点=Navigation/NavDestination 挂载处（mountNode 的 data-arkui-comp 已有——
+  //     由 a11yApplyRole 同款思路在 mountNode 检查 comp 名登记）
+  // 风险与护栏：查询发现 vs 登记发现的差异面 = "能力标记被运行时之外手工赋值"——测试
+  // 全矩阵是硬护栏；errbound demo 等直接赋 __areaCbs 的路径在登记点内（同文件）。
+
+  // tsconfig lib=es2020 无 WeakRef（ES2021 引入）——不升 lib（连带风险），改用
+  // Set<HTMLElement> 强引用 + 惰性清扫（isConnected=false 即剔除）：稳态下集合收敛于
+  // 「仍挂树的登记元素」，不无界增长；节点重复挂载（路由回切）由 Set 天然去重。
+  /** @type {Set<HTMLElement>} */
+  const areaReg = new Set();
+  /** @type {Set<HTMLElement>} */
+  const drawReg = new Set();
+  /** @type {Set<HTMLElement>} */
+  const alignReg = new Set();
+  /** @type {Set<HTMLElement>} */
+  const navReg = new Set();
+
+  /**
+   * 清扫已断开元素；返回仍挂树的元素数组。
+   * @param {Set<HTMLElement>} reg
+   * @returns {HTMLElement[]}
+   */
+  function incSweep(reg) {
+    const live = [];
+    for (const el of reg) {
+      if (!el.isConnected) { reg.delete(el); continue; }
+      live.push(el);
+    }
+    return live;
+  }
+
+  // ── 登记点 API（各分片在能力挂上时调用；函数声明提升，include 顺序无关）──
+  /** @param {HTMLElement} el onAreaChange 挂上时 */
+  function incRegArea(el) { if (el) areaReg.add(el); }
+  /** @param {HTMLElement} el __drawKind/__arkuiQrPending 挂上时 */
+  function incRegDraw(el) { if (el) drawReg.add(el); }
+  /** @param {HTMLElement} el __alignRules 挂上时 */
+  function incRegAlign(el) { if (el) alignReg.add(el); }
+  /** @param {HTMLElement} el Navigation/NavDestination 挂上时 */
+  function incRegNav(el) { if (el) navReg.add(el); }
 // 自动生成：node tools/gen-app-resources.mjs（勿手改）——R128 app.* 资源表
 // 源 = harmony-proj 资源 + 编译器 ids_map；fixture 里的 Resource 字面量按 id 查此表
 (function () {
@@ -3263,11 +3319,23 @@
   // —— 所以反复扫到不动点为止（链长 N 需要 N 趟）。
   /** @param {any=} [rootEl] */
   function syncAlignRules(rootEl) {
-    const r = rootEl || rootNode;
-    if (!r || !r.querySelectorAll) return;
-    const all = [...r.querySelectorAll('*')];
-    for (const c of all) if (c.__guideLines) applyGuideLines(c);
-    const targets = /** @type {any[]} */ (all.filter((/** @type {any} */ el) => el.__alignRules));
+    // R139：登记集驱动（alignReg = __alignRules/__guideLines 挂上时登记的元素）。
+    // 显式传 rootEl（非全量路径）时保留旧遍历，语义不变。
+    if (rootEl && rootEl !== rootNode) {
+      const r0 = rootEl;
+      if (!r0 || !r0.querySelectorAll) return;
+      for (const c of r0.querySelectorAll('*')) if (c.__guideLines) applyGuideLines(c);
+      const tg0 = /** @type {any[]} */ ([...r0.querySelectorAll('*')].filter((/** @type {any} */ el) => el.__alignRules));
+      alignPass(tg0);
+      return;
+    }
+    const live = incSweep(alignReg);
+    for (const c of live) if (c.__guideLines) applyGuideLines(c);
+    const targets = live.filter((el) => el.__alignRules);
+    alignPass(targets);
+  }
+  /** @param {any[]} targets */
+  function alignPass(targets) {
     if (!targets.length) return;
     const snap = () => targets.map((el) => el.offsetLeft + ',' + el.offsetTop).join('|');
     const maxPass = Math.min(targets.length + 2, 12);
@@ -4393,6 +4461,7 @@
       tmcState: 'full',       // 已通知的模式端点：'full' | 'mini'
     });
     node.__navState = st;
+    incRegNav(node);   // R139 增量登记
     node.style.position = 'relative';
     node.style.overflow = 'hidden';
     // 导航栏（含标题栏）必须是【第一个子节点】：根内容是直接子节点、在其后挂载，
@@ -4605,12 +4674,20 @@
 
   /** @param {any=} [rootEl] */
   function syncNavChrome(rootEl) {
-    const scope = rootEl || document;
-    if (scope.__navState) syncOneNav(scope);
-    if (scope.__navDest) syncOneDest(scope);
-    if (scope.querySelectorAll) {
-      scope.querySelectorAll('[data-arkui-comp="Navigation"]').forEach(syncOneNav);
-      scope.querySelectorAll('[data-arkui-comp="NavDestination"]').forEach(syncOneDest);
+    // R139：全量路径（rootEl 缺省 = rootNode）走登记集；显式 rootEl（局部 sync）保留旧遍历。
+    if (rootEl && rootEl !== rootNode) {
+      const scope0 = rootEl;
+      if (scope0.__navState) syncOneNav(scope0);
+      if (scope0.__navDest) syncOneDest(scope0);
+      if (scope0.querySelectorAll) {
+        scope0.querySelectorAll('[data-arkui-comp="Navigation"]').forEach(syncOneNav);
+        scope0.querySelectorAll('[data-arkui-comp="NavDestination"]').forEach(syncOneDest);
+      }
+      return;
+    }
+    for (const el of incSweep(navReg)) {
+      if (el.__navState) syncOneNav(el);
+      if (el.__navDest) syncOneDest(el);
     }
   }
 
@@ -4945,6 +5022,7 @@
       // title_default_height=56vp（125831115）/ single_line_titlebar_height=56（125835822）
       // 双键印证 —— 取紧凑高度从推断变为系统资源确证。
       // @type 档位：barEl/toolbarEl null↔HTMLElement 摆动 → 整袋 any
+      incRegNav(node);   // R139 增量登记
       node.__navDest = /** @type {any} */ ({
         titleSpec: null, menus: null, toolbar: null,
         hideBackButton: false, hideTitleBar: false, hideToolBar: false,
@@ -5142,6 +5220,7 @@
     const node = document.createElement('div');
     node.__arkuiComp = 'Progress';
     node.__drawKind = 'Progress';
+    incRegDraw(node);   // R139 增量登记
     node.__drawOpts = o;
     node.setAttribute('data-arkui-progress', style);
     node.setAttribute('role', 'progressbar');
@@ -5215,6 +5294,7 @@
     const node = document.createElement('div');
     node.__arkuiComp = 'Gauge';
     node.__drawKind = 'Gauge';
+    incRegDraw(node);   // R139 增量登记
     node.__drawOpts = o;
     node.__min = o.min === undefined ? 0 : Number(o.min);
     node.__max = o.max === undefined ? 100 : Number(o.max);
@@ -5295,6 +5375,7 @@
     const node = document.createElement('div');
     node.__arkuiComp = 'DataPanel';
     node.__drawKind = 'DataPanel';
+    incRegDraw(node);   // R139 增量登记
     node.__drawOpts = o;
     node.__values = Array.isArray(o.values) ? o.values.map(Number) : [];
     node.__panelMax = Number(o.max) || 100;
@@ -5368,6 +5449,7 @@
     const node = document.createElement('div');
     node.__arkuiComp = 'Rating';
     node.__drawKind = 'Rating';
+    incRegDraw(node);   // R139 增量登记
     node.__rating = Number(o.rating) || 0;
     node.__interactive = o.indicator !== true;
     node.__starCount = 5;                                     // ArkUI 默认 5
@@ -5448,12 +5530,22 @@
   // 与 syncAlignRules 同一时机（首渲染后 + 每次重渲染后）。
   /** @param {any=} [rootEl] */
   function syncDrawings(rootEl) {
-    const r = rootEl || rootNode;
-    if (!r || !r.querySelectorAll) return;
-    for (const el of r.querySelectorAll('*')) {
+    // R139：登记集驱动（原全树 querySelectorAll → 只遍历 draw 登记元素）。
+    // 显式传 rootEl（非全量路径）时保留旧遍历，语义不变。
+    if (rootEl && rootEl !== rootNode) {
+      const r0 = rootEl;
+      if (!r0 || !r0.querySelectorAll) return;
+      for (const el of r0.querySelectorAll('*')) {
+        if (el.__drawKind === 'Gauge') redrawGauge(el);
+        else if (el.__drawKind === 'Progress' && el.__svg) drawProgressRing(el, el.__ratio || 0);
+        else if (el.__arkuiQrPending) redrawQr(el);
+      }
+      return;
+    }
+    for (const el of incSweep(drawReg)) {
       if (el.__drawKind === 'Gauge') redrawGauge(el);
       else if (el.__drawKind === 'Progress' && el.__svg) drawProgressRing(el, el.__ratio || 0);
-      else if (el.__arkuiQrPending) redrawQr(el);          // QRCode 同思想：等真实尺寸画
+      else if (el.__arkuiQrPending) redrawQr(el);
     }
   }
 
@@ -5539,24 +5631,34 @@
   // 渲染后按【真实几何】派发 onAreaChange：只在面积真的变了（或首次）时触发
   /** @param {any} rootEl */
   function syncAreas(rootEl) {
-    const r = rootEl || rootNode;
-    if (!r || !r.querySelectorAll) return;
-    for (const el of r.querySelectorAll('*')) {
-      if (!el.__areaCbs || !el.__areaCbs.length) continue;
-      const now = areaOf(el);
-      const prev = areaMeta.get(el);
-      const changed = !prev
-        || Math.abs(prev.width - now.width) > 0.01 || Math.abs(prev.height - now.height) > 0.01
-        || Math.abs((prev.position.x || 0) - now.position.x) > 0.01
-        || Math.abs((prev.position.y || 0) - now.position.y) > 0.01;
-      if (!changed) continue;
-      // 首次布局也派发一次（oldValue 全 0）—— 这是实践中依赖的行为（拿初值），
-      // 但真机 JSDoc 只说"面积变化时触发"，此点未在真机核对
-      const old0 = prev || { width: 0, height: 0, position: { x: 0, y: 0 }, globalPosition: { x: 0, y: 0 } };
-      areaMeta.set(el, now);
-      for (const cb of el.__areaCbs) {
-        try { cb(old0, now); } catch (e) { layoutWarnings.push(`onAreaChange 回调抛错：${e && e.message}`); }
+    // R139：登记集驱动（原全树 querySelectorAll → 只遍历 onAreaChange 登记元素）。
+    // 显式传 rootEl（非全量路径）时保留旧遍历，语义不变。
+    if (rootEl && rootEl !== rootNode) {
+      const r0 = rootEl;
+      if (!r0 || !r0.querySelectorAll) return;
+      for (const el of r0.querySelectorAll('*')) {
+        if (!el.__areaCbs || !el.__areaCbs.length) continue;
+        syncOneArea(el);
       }
+      return;
+    }
+    for (const el of incSweep(areaReg)) syncOneArea(el);
+  }
+  /** @param {HTMLElement} el */
+  function syncOneArea(el) {
+    const now = areaOf(el);
+    const prev = areaMeta.get(el);
+    const changed = !prev
+      || Math.abs(prev.width - now.width) > 0.01 || Math.abs(prev.height - now.height) > 0.01
+      || Math.abs((prev.position.x || 0) - now.position.x) > 0.01
+      || Math.abs((prev.position.y || 0) - now.position.y) > 0.01;
+    if (!changed) return;
+    // 首次布局也派发一次（oldValue 全 0）—— 这是实践中依赖的行为（拿初值），
+    // 但真机 JSDoc 只说"面积变化时触发"，此点未在真机核对
+    const old0 = prev || { width: 0, height: 0, position: { x: 0, y: 0 }, globalPosition: { x: 0, y: 0 } };
+    areaMeta.set(el, now);
+    for (const cb of el.__areaCbs) {
+      try { cb(old0, now); } catch (e) { layoutWarnings.push(`onAreaChange 回调抛错：${e && e.message}`); }
     }
   }
 
@@ -5666,6 +5768,7 @@
     // onAreaChange 由运行时在渲染后按真实几何派发（不是 DOM 事件，见不变量 14）
     if (prop === 'onAreaChange') {
       (node.__areaCbs = node.__areaCbs || []).push(value);
+      incRegArea(node);   // R139：增量走查登记
       return;
     }
     const drawAttrs = node.__drawKind && DRAW_ATTRS[node.__drawKind];
@@ -6126,7 +6229,7 @@
     // 逆序声明的锚链必然如此。立刻解析既会出错（单趟读到旧位置），又会留下假警告
     // "找不到锚点 'x'"。真正的解析在每轮 syncAlignRules（首渲染后 + 每次重渲染后），
     // 它迭代到不动点，那时锚点才齐。
-    if (prop === 'alignRules') { node.__alignRules = value; return; }
+    if (prop === 'alignRules') { node.__alignRules = value; incRegAlign(node); return; }
     // guideLine 是【容器级】属性（挂在 RelativeContainer 上），位置要等容器有尺寸才能算 ——
     // 这里只登记，真正的计算在每轮 syncAlignRules 里（容器尺寸那时才可信）。
     if (prop === 'guideLine') {
@@ -6135,6 +6238,7 @@
         return;
       }
       node.__guideLines = value;
+      incRegAlign(node);   // R139：guideline 锚点也进增量登记
       applyGuideLines(node);
       return;
     }
@@ -7522,6 +7626,7 @@
     el.__arkuiQrBg = '#ffffffff';              // JSDoc 默认（API 11+）
     el.__arkuiQrOpacity = 1;
     el.__arkuiQrPending = true;                // 等渲染后同步阶段画（不变量 18）
+    incRegDraw(el);                            // R139 增量登记
     return el;
   });
   /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */

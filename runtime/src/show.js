@@ -332,6 +332,7 @@
     el.__arkuiQrBg = '#ffffffff';              // JSDoc 默认（API 11+）
     el.__arkuiQrOpacity = 1;
     el.__arkuiQrPending = true;                // 等渲染后同步阶段画（不变量 18）
+    incRegDraw(el);                            // R139 增量登记
     return el;
   });
   /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */

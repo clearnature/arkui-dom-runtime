@@ -66,6 +66,7 @@
     const node = document.createElement('div');
     node.__arkuiComp = 'Progress';
     node.__drawKind = 'Progress';
+    incRegDraw(node);   // R139 增量登记
     node.__drawOpts = o;
     node.setAttribute('data-arkui-progress', style);
     node.setAttribute('role', 'progressbar');
@@ -139,6 +140,7 @@
     const node = document.createElement('div');
     node.__arkuiComp = 'Gauge';
     node.__drawKind = 'Gauge';
+    incRegDraw(node);   // R139 增量登记
     node.__drawOpts = o;
     node.__min = o.min === undefined ? 0 : Number(o.min);
     node.__max = o.max === undefined ? 100 : Number(o.max);
@@ -219,6 +221,7 @@
     const node = document.createElement('div');
     node.__arkuiComp = 'DataPanel';
     node.__drawKind = 'DataPanel';
+    incRegDraw(node);   // R139 增量登记
     node.__drawOpts = o;
     node.__values = Array.isArray(o.values) ? o.values.map(Number) : [];
     node.__panelMax = Number(o.max) || 100;
@@ -292,6 +295,7 @@
     const node = document.createElement('div');
     node.__arkuiComp = 'Rating';
     node.__drawKind = 'Rating';
+    incRegDraw(node);   // R139 增量登记
     node.__rating = Number(o.rating) || 0;
     node.__interactive = o.indicator !== true;
     node.__starCount = 5;                                     // ArkUI 默认 5
@@ -372,12 +376,22 @@
   // 与 syncAlignRules 同一时机（首渲染后 + 每次重渲染后）。
   /** @param {any=} [rootEl] */
   function syncDrawings(rootEl) {
-    const r = rootEl || rootNode;
-    if (!r || !r.querySelectorAll) return;
-    for (const el of r.querySelectorAll('*')) {
+    // R139：登记集驱动（原全树 querySelectorAll → 只遍历 draw 登记元素）。
+    // 显式传 rootEl（非全量路径）时保留旧遍历，语义不变。
+    if (rootEl && rootEl !== rootNode) {
+      const r0 = rootEl;
+      if (!r0 || !r0.querySelectorAll) return;
+      for (const el of r0.querySelectorAll('*')) {
+        if (el.__drawKind === 'Gauge') redrawGauge(el);
+        else if (el.__drawKind === 'Progress' && el.__svg) drawProgressRing(el, el.__ratio || 0);
+        else if (el.__arkuiQrPending) redrawQr(el);
+      }
+      return;
+    }
+    for (const el of incSweep(drawReg)) {
       if (el.__drawKind === 'Gauge') redrawGauge(el);
       else if (el.__drawKind === 'Progress' && el.__svg) drawProgressRing(el, el.__ratio || 0);
-      else if (el.__arkuiQrPending) redrawQr(el);          // QRCode 同思想：等真实尺寸画
+      else if (el.__arkuiQrPending) redrawQr(el);
     }
   }
 

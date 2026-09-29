@@ -477,6 +477,7 @@
       tmcState: 'full',       // 已通知的模式端点：'full' | 'mini'
     });
     node.__navState = st;
+    incRegNav(node);   // R139 增量登记
     node.style.position = 'relative';
     node.style.overflow = 'hidden';
     // 导航栏（含标题栏）必须是【第一个子节点】：根内容是直接子节点、在其后挂载，
@@ -689,12 +690,20 @@
 
   /** @param {any=} [rootEl] */
   function syncNavChrome(rootEl) {
-    const scope = rootEl || document;
-    if (scope.__navState) syncOneNav(scope);
-    if (scope.__navDest) syncOneDest(scope);
-    if (scope.querySelectorAll) {
-      scope.querySelectorAll('[data-arkui-comp="Navigation"]').forEach(syncOneNav);
-      scope.querySelectorAll('[data-arkui-comp="NavDestination"]').forEach(syncOneDest);
+    // R139：全量路径（rootEl 缺省 = rootNode）走登记集；显式 rootEl（局部 sync）保留旧遍历。
+    if (rootEl && rootEl !== rootNode) {
+      const scope0 = rootEl;
+      if (scope0.__navState) syncOneNav(scope0);
+      if (scope0.__navDest) syncOneDest(scope0);
+      if (scope0.querySelectorAll) {
+        scope0.querySelectorAll('[data-arkui-comp="Navigation"]').forEach(syncOneNav);
+        scope0.querySelectorAll('[data-arkui-comp="NavDestination"]').forEach(syncOneDest);
+      }
+      return;
+    }
+    for (const el of incSweep(navReg)) {
+      if (el.__navState) syncOneNav(el);
+      if (el.__navDest) syncOneDest(el);
     }
   }
 
@@ -1029,6 +1038,7 @@
       // title_default_height=56vp（125831115）/ single_line_titlebar_height=56（125835822）
       // 双键印证 —— 取紧凑高度从推断变为系统资源确证。
       // @type 档位：barEl/toolbarEl null↔HTMLElement 摆动 → 整袋 any
+      incRegNav(node);   // R139 增量登记
       node.__navDest = /** @type {any} */ ({
         titleSpec: null, menus: null, toolbar: null,
         hideBackButton: false, hideTitleBar: false, hideToolBar: false,
