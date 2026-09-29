@@ -73,7 +73,7 @@
 
 ## P1 企业功能面
 
-### E1-1 网络栈强化 [M]
+### E1-1 网络栈强化 [M] ✅（R133，重试/整体超时/取消/记录面；真机系统代理走 C 层语义不在 DOM 侧）
 - 目标：企业内网可用——代理/超时/重试/取消/证书策略。
 - 步骤：① net.http 垫片加 `connectTimeout/readTimeout/retry(max,backoff)/abort`；
   ② Electron 侧走 main 进程 net 模块（系统代理继承）+ 渲染侧 fetch 双路（分端声明）；

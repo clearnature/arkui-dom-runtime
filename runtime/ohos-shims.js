@@ -989,25 +989,58 @@
           const method = opt.method || RequestMethod.GET;
           if (destroyed) throw fsErr(2300035, 'Http request is destroyed');
 
-          // 超时：官方用 connectTimeout/readTimeout(ms)，这里用 AbortController 实现
+          // R133：retry（E1-1 企业面）——{maxRetry, backoffMs}（本项目扩展形状，SDK 无此字段；
+          // 语义：5xx/网络层失败时重试，退避=backoffMs*已重试次数，最多 maxRetry 次）
+          const maxRetry = (opt.retry && Number(opt.retry.maxRetry)) || 0;
+          const backoffMs = (opt.retry && Number(opt.retry.backoffMs)) || 200;
+
+          // 超时：官方用 connectTimeout/readTimeout(ms)，这里用 AbortController 实现。
+          // R133：整体超时覆盖【含重试退避】的完整窗口（企业语义：给调用方的总时限承诺）
           const ms = Number(opt.readTimeout || opt.connectTimeout || 0);
           const ctrl = ms > 0 && global.AbortController ? new global.AbortController() : null;
           let timer = null;
           if (ctrl) timer = setTimeout(() => ctrl.abort(), ms);
 
-          let res;
+          /** 单次尝试：网络层异常/5xx → null（可重试）；其余返回 Response */
+          const attempt = async () => {
+            try {
+              const res = await fetch(target, {
+                method,
+                headers: opt.header || opt.headers || {},
+                body: opt.extraData !== undefined ? opt.extraData : undefined,
+                signal: ctrl ? ctrl.signal : undefined,
+              });
+              return res.status >= 500 ? null : res;
+            } catch (e) {
+              const isAbort = e && (e.name === 'AbortError' || /abort/i.test(e.message || ''));
+              if (isAbort) throw fsErr(2300028, `Timeout: ${ms}ms`);
+              return null;                        // 网络层失败 → 可重试
+            }
+          };
+
+          let res = null;
+          let retriedCount = 0;
           try {
-            res = await fetch(target, {
-              method,
-              headers: opt.header || opt.headers || {},
-              body: opt.extraData !== undefined ? opt.extraData : undefined,
-              signal: ctrl ? ctrl.signal : undefined,
-            });
-          } catch (e) {
-            const isAbort = e && (e.name === 'AbortError' || /abort/i.test(e.message || ''));
-            logs.push({ t: 'http.requestFailed', url: target, method, message: e.message, timedOut: isAbort });
-            throw fsErr(isAbort ? 2300028 : 2300007,
-              isAbort ? `Timeout: ${ms}ms` : `Could not connect to server: ${e.message}`);
+            for (let tried = 0; tried <= maxRetry; tried++) {
+              if (tried > 0 && backoffMs > 0) {
+                await new Promise((r) => setTimeout(r, backoffMs * tried));
+              }
+              try {
+                res = await attempt();
+              } catch (e) {
+                // 超时等终局异常：留痕后原样上抛（R128 前旧版行为，async.html 断言依赖）
+                logs.push({ t: 'http.requestFailed', url: target, method, message: e.message, timedOut: /Timeout/.test(e.message || '') });
+                throw e;
+              }
+              if (res !== null) break;
+              retriedCount = tried + 1;
+              logs.push({ t: 'http.retry', url: target, attempt: tried + 1, of: maxRetry + 1 });
+            }
+            if (res === null) {
+              // 重试耗尽仍失败：统一按连接失败报（重试日志已留痕）
+              logs.push({ t: 'http.requestFailed', url: target, method, message: 'retries exhausted', timedOut: false });
+              throw fsErr(2300007, `Could not connect to server (retried ${maxRetry + 1} times): ${target}`);
+            }
           } finally {
             if (timer) clearTimeout(timer);
           }
@@ -1021,6 +1054,11 @@
             bytes: wantBuf ? buf.byteLength : text.length,
             hasBody: opt.extraData !== undefined,
             headerKeys: Object.keys(opt.header || opt.headers || {}),
+            // R133：企业面属性如实记录（真语义/记录面的分界见各属性注释）
+            usingProxy: opt.usingProxy !== undefined ? (typeof opt.usingProxy === 'boolean' ? opt.usingProxy : 'HttpProxy') : undefined,
+            usingCache: opt.usingCache,
+            maxLimit: opt.maxLimit,
+            retried: retriedCount,
           });
           return { responseCode: res.status, result: wantBuf ? buf : text, header: {} };
         },

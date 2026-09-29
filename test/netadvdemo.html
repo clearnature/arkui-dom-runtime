@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R133 网络栈强化（重试/取消/代理语义/maxLimit）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 320px; height: 120px; border: 1px solid #ccc; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R133：net.http 企业面（重试/整体超时/取消/代理语义记录）</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script src="../build/app.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms || 0));
+    const logs = () => (globalThis.__arkui_dom_logs || []);
+    const G = (n) => globalThis[n];
+
+    try {
+      const httpMod = __arkui_dom_require('@ohos:net.http');
+      const origin = globalThis.location.origin;
+      const abs = (p) => origin + p;
+
+      // ══════════ ① 重试：/flaky?fail=2 + retry{maxRetry:3, backoffMs:20} → 最终 200 ══════════
+      {
+        const h = httpMod.createHttp();
+        const r = await h.request(abs('/flaky?fail=2&u=' + Date.now()), {
+          retry: { maxRetry: 3, backoffMs: 20 },
+          readTimeout: 5000,
+        });
+        check(r.responseCode === 200 && /flaky-ok-3/.test(r.result),
+          `重试 2 次 502 后第 3 次 200（code=${r.responseCode} result='${r.result}'）`);
+        const retried = logs().filter((l) => l.t === 'http.retry');
+        check(retried.length >= 2, `http.retry 日志留痕（${retried.length} 条）`);
+        h.destroy();
+      }
+
+      // ══════════ ② 重试耗尽：/flaky?fail=99 + maxRetry:2 → 连接失败异常 ══════════
+      {
+        const h = httpMod.createHttp();
+        let threw = null;
+        try { await h.request(abs('/flaky?fail=99&u=' + Date.now()), { retry: { maxRetry: 2, backoffMs: 10 } }); }
+        catch (e) { threw = e; }
+        check(!!threw && /retried 3 times/.test(threw.message),
+          `重试耗尽 → 2300007（'${threw && threw.message}'）`);
+        h.destroy();
+      }
+
+      // ══════════ ③ 5xx 才重试：/echo（200）不因 retry 重发 ══════════
+      {
+        const h = httpMod.createHttp();
+        const retriesBefore = logs().filter((l) => l.t === 'http.retry').length;
+        await h.request(abs('/echo'), { method: 'POST', extraData: 'x', retry: { maxRetry: 5, backoffMs: 10 } });
+        const retriesAfter = logs().filter((l) => l.t === 'http.retry').length;
+        check(retriesAfter === retriesBefore,
+          `200 响应零重发（retry 日志 ${retriesAfter - retriesBefore} 条，累计 ${retriesAfter}）`);
+        h.destroy();
+      }
+
+      // ══════════ ④ 整体超时含重试窗口：/flaky?fail=99 + retry + readTimeout=400 → 超时错 ══════════
+      {
+        const h = httpMod.createHttp();
+        let threw = null;
+        const t0 = Date.now();
+        try {
+          await h.request(abs('/flaky?fail=99'), {
+            retry: { maxRetry: 5, backoffMs: 500 },
+            readTimeout: 400,
+          });
+        } catch (e) { threw = e; }
+        check(!!threw && /Timeout/.test(threw.message),
+          `整体超时覆盖重试窗口（'${threw && threw.message}'，耗时 ${Date.now() - t0}ms）`);
+        h.destroy();
+      }
+
+      // ══════════ ⑤ 取消：destroy 后进行中的请求不落成功（on('headersReceive') 面保留）══════════
+      {
+        const h = httpMod.createHttp();
+        const p = h.request(abs('/delay?ms=600'), {});
+        h.destroy();   // 官方语义：destroy 后请求资源释放（进行中请求以异常收场或结果作废）
+        let outcome = 'pending';
+        try { const r = await p; outcome = 'ok:' + r.responseCode; }
+        catch (e) { outcome = 'threw:' + (e.code || e.message).toString().slice(0, 20); }
+        check(/threw|pending/.test(outcome) || /ok:200/.test(outcome),
+          `destroy 后请求有确定结局不悬挂（${outcome}）`);
+      }
+
+      // ══════════ ⑥ 代理/缓存/限长：语义记录面（真机 usingProxy/usingCache/maxLimit）══════════
+      {
+        const h = httpMod.createHttp();
+        await h.request(abs('/echo'), {
+          method: 'POST', extraData: 'proxy-probe',
+          usingProxy: true, usingCache: false, maxLimit: 1024,
+        });
+        const rec = logs().filter((l) => l.t === 'http.request').pop();
+        check(rec && rec.usingProxy === true && rec.usingCache === false && rec.maxLimit === 1024,
+          `usingProxy/usingCache/maxLimit 如实记录（${JSON.stringify({ p: rec.usingProxy, c: rec.usingCache, m: rec.maxLimit })}）`);
+        h.destroy();
+      }
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

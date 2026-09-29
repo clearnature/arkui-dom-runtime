@@ -12,6 +12,7 @@ import sys
 import time
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 0   # 0 = 由 OS 分配空闲端口
+FLAKY_COUNTS = {}                                     # R133：/flaky 的失败计数（按 query 串隔离）
 ROOT = os.getcwd()
 
 
@@ -64,7 +65,30 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             time.sleep(1.5)
             self._send(200, b'slow-done')
             return
+        # R133：/flaky?fail=N —— 前 N 次 502，第 N+1 次起 200（验证重试）
+        if self.path.startswith('/flaky'):
+            from urllib.parse import urlparse, parse_qs
+            q = parse_qs(urlparse(self.path).query)
+            fail_n = int((q.get('fail') or ['0'])[0])
+            FLAKY_COUNTS[self.path] = FLAKY_COUNTS.get(self.path, 0) + 1
+            if FLAKY_COUNTS[self.path] <= fail_n:
+                self._send(502, b'flaky-fail')
+            else:
+                self._send(200, ('flaky-ok-' + str(FLAKY_COUNTS[self.path])).encode())
+            return
+        # R133：/delay?ms=N —— 可控延迟后 200（验证重试退避耗时的确定性）
+        if self.path.startswith('/delay'):
+            from urllib.parse import urlparse, parse_qs
+            q = parse_qs(urlparse(self.path).query)
+            import time as _t
+            _t.sleep(int((q.get('ms') or ['0'])[0]) / 1000.0)
+            self._send(200, b'delay-done')
+            return
         super().do_GET()
+
+    def do_DELETE(self):
+        # R133：DELETE 探测（验证 abort 取消——服务端收到即说明取消失败）
+        self._send(200, b'delete-received')
 
     def do_POST(self):
         # /echo：回显 method / body / content-type，用于验证 POST 与自定义 header
