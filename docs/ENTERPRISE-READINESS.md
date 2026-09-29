@@ -136,7 +136,7 @@
 
 ## P2 规模化承诺
 
-### E2-1 增量走查（优化器 v3 前置）[L] ✅（R139，登记集驱动 sync；stress10k bulk_poll -33%/bulk_flush -25%）
+### E2-1 增量走查（优化器 v3 前置）[L] ✅（R139 登记集驱动 + R142 批级提升；stress10k bulk_poll -33%/bulk_flush -25%）
 - 目标：重渲染只走 dirty 子树（现全树 O(N)/次）。
 - 步骤：① 依赖标记已有（markDependentsDirty）→ 走查队列化：从 dirty elmtId 上溯
   最近重渲染边界；② 正确性护栏：现有全矩阵 + 行级复用断言不回退是硬门槛；③

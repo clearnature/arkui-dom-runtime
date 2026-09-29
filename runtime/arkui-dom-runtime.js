@@ -307,8 +307,24 @@
         __arkuiReportRenderError('rerender', id, e, rec && rec.node);
       }
     }
+    // R142：批末尾部 sync（原在 rerenderElmt 内逐 id 执行）——登记集驱动下批级一次
+    const pf1 = performance.now();
+    syncAlignRules(rootNode);          // 重渲染后几何可能变，重新同步
+    const pf2 = performance.now();
+    syncDrawings(rootNode);            // 弧形要用真实尺寸重画
+    const pf3 = performance.now();
+    syncAreas(rootNode);               // onAreaChange 要按真实几何派发
+    const pf4 = performance.now();
+    syncNavChrome(rootNode);           // 标题栏高度/分栏宽度/Auto 模式判定都要真实尺寸
+    const pf5 = performance.now();
     const P = (/** @type {any} */ (global)).__arkui_dom_perf;
-    if (P) { P.flushMs += performance.now() - pf0; P.n++; }
+    if (P) {
+      P.drawMs += pf2 - pf1;
+      P.areasMs += pf3 - pf2;
+      P.navMs += pf4 - pf3;
+      P.flushMs += performance.now() - pf0;
+      P.n++;
+    }
   }
 
   /** @param {number} elmtId */
@@ -327,21 +343,11 @@
     // R22：若有动画窗口开着，记下【这次真的被重渲染】的节点 —— 动画只挂这些节点，
     // 而不是"整个子树"或"碰巧同名的所有元素"（谁变了就动谁）
     if (animWindow && rec.node) animWindow.els.push(rec.node);
-    syncAlignRules(rootNode);          // 重渲染后几何可能变，重新同步
-    const pf1 = performance.now();
-    syncDrawings(rootNode);            // 弧形要用真实尺寸重画
-    const pf2 = performance.now();
-    syncAreas(rootNode);               // onAreaChange 要按真实几何派发
-    const pf3 = performance.now();
-    syncNavChrome(rootNode);           // 标题栏高度/分栏宽度/Auto 模式判定都要真实尺寸
-    const pf4 = performance.now();
+    // R142：4 个尾部 sync（alignRules/draw/areas/navChrome）提升到 flush() 批末执行——
+    // 批内 N 个 dirty id 原本各跑 4 次（13200 次登记扫描@3300 行），批级一次语义等价
+    //（sync 作用于登记集全局终态）且数量降为 4。PERF 记账同步移至 flush。
     const P = (/** @type {any} */ (global)).__arkui_dom_perf;
-    if (P) {
-      P.updateMs += pf1 - pf0;
-      P.drawMs += pf2 - pf1;
-      P.areasMs += pf3 - pf2;
-      P.navMs += pf4 - pf3;
-    }
+    if (P) P.updateMs += performance.now() - pf0;
   }
 
   // 分支切换/列表重建后，把已脱离 DOM 树的记录清掉，避免 elmtId 泄漏与重复节点
