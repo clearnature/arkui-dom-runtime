@@ -128,6 +128,7 @@ print(html.unescape(m.group(1)) if m else '（未取到 result 节点）')
   return 1
 }
 
+rc=0
 case "${1:-index}" in
   all)
     rc=0
@@ -194,6 +195,13 @@ case "${1:-index}" in
     # R128 收口：真实资源解析
     run_one resourcedemo "$(src_of pages/ResourceDemo.ts)" build/resourcedemo-module.js test/resourcedemo.html \
       "--cjs --register ResourceDemo" || rc=1
+    echo
+    # R130 并行批：错误边界 / 焦点管理 / sys 资源表（纯 runtime 页）
+    run_one errbounddemo "$(src_of pages/Index.ts)" build/app.js test/errbounddemo.html || rc=1
+    echo
+    run_one focusdemo "$(src_of pages/Index.ts)" build/app.js test/focusdemo.html || rc=1
+    echo
+    run_one sysresdemo "$(src_of pages/Index.ts)" build/app.js test/sysresdemo.html || rc=1
     echo
     # R12 收口：Navigation 标题栏 / 工具栏 / 分栏
     run_one navbardemo "$(src_of pages/NavBarDemo.ts)" build/navbardemo-module.js test/navbardemo.html \
@@ -430,6 +438,15 @@ case "${1:-index}" in
     # R128 收口：真实资源解析（$r 四类型 + resourceManager 同步 API）
     run_one resourcedemo "$(src_of pages/ResourceDemo.ts)" build/resourcedemo-module.js test/resourcedemo.html \
       "--cjs --register ResourceDemo" ;;
+  errbounddemo)
+    # R130 E0-1：渲染错误边界（纯 runtime 页，不经编译——extract 输入复用 Index 产物占位）
+    run_one errbounddemo "$(src_of pages/Index.ts)" build/app.js test/errbounddemo.html || rc=1 ;;
+  focusdemo)
+    # R130 E0-3：焦点管理 + 键盘可达性（纯 runtime 页）
+    run_one focusdemo "$(src_of pages/Index.ts)" build/app.js test/focusdemo.html || rc=1 ;;
+  sysresdemo)
+    # R130 E1-4：sys.* 系统资源表（纯 runtime 页）
+    run_one sysresdemo "$(src_of pages/Index.ts)" build/app.js test/sysresdemo.html || rc=1 ;;
   navbardemo)
     # R12 收口：Navigation 标题栏 / 工具栏 / 分栏
     run_one navbardemo "$(src_of pages/NavBarDemo.ts)" build/navbardemo-module.js test/navbardemo.html \
@@ -626,3 +643,4 @@ case "${1:-index}" in
       "--cjs --register NetFile" "?phase=2" "$PERSIST_PROFILE" "$PERSIST_PORT" ;;
   *) echo "用法: bash run.sh [index|rich|leak|layout|widgets|tabgrid|swiper|navdemo|reldemo|drawdemo|textmeasure|lazyvh|measarea|measimage|measnotify|promptaction|realfs|animdemo|gesturedemo|transitiondemo|gesturegroupdemo|navbardemo|navtransdemo|shapedemo|inputdemo|showdemo|popdemo|uictxdemo|canvasedemo|xcompdemo|qrdemo|textdemo|mediademo|smalldemo|stepdemo|imagedemo|scrolldemo|animatordemo|listitemgroup|refreshdemo|datepickerdemo|timepickerdemo|waterflowdemo|calendarpickerdemo|textpickerdemo|griddemo|texttimedemo|alphabetindexerdemo|sidebardemo|splitdemo|paneldemo|gridrowdemo|richvideodemo|measure|lazy|provide|async|ability|router|cjk|netfile|all]"; exit 2 ;;
 esac
+exit $rc

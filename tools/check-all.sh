@@ -25,6 +25,7 @@ QUICK=0
 
 STEPS=()
 FAILED=()
+SKIPPED=()   # 显式跳过的步骤（必须当场声明原因，汇总时单列，绝不冒充"通过"）
 
 step() {
   local name="$1"; shift
@@ -74,6 +75,7 @@ step "browser (run.sh all)" bash run.sh all
 # ── 6. Electron 用例 + 磁盘落盘验证 ──
 if [ "$QUICK" = "1" ]; then
   printf '════ electron ════\n  ⏭  跳过（--quick）\n'
+  SKIPPED+=("electron (--quick)")
 else
   step "electron (electron/run.sh all)" bash electron/run.sh all
 fi
@@ -82,11 +84,34 @@ fi
 printf '════ 统计（留档，不影响退出码）════\n'
 node tools/stats.mjs | tee "$LOGDIR/stats.txt" | sed 's/^/  /'
 
+# ── 8. 供应链安全：生产依赖已知高危漏洞审计（E0-5）──
+# npm audit 必须有 package-lock.json 才有确定的依赖树可审（实测：无 lock 时以 ENOLOCK 退出 1）。
+# 本仓库根目录没有 lock 文件，package.json 的 "//" 字段声明"本项目没有 npm 依赖"，
+# Electron 也是解包 electron/runtime/ 使用、不经 npm 安装 —— 此时【显式跳过并声明原因】，
+# 绝不静默跳过、更不伪造 ✅。一旦将来引入 lock 文件，本步自动变成真审计：
+#   --omit=dev         只审生产依赖（devDependencies 的漏洞不算红）
+#   --audit-level=high 发现 high/critical 漏洞即退出非 0 → 按 step() 记败，门禁变红
+if [ -f "$ROOT/package-lock.json" ]; then
+  step "supply (npm audit)" npm audit --omit=dev --audit-level=high
+else
+  printf '════ supply (npm audit) ════\n'
+  printf '  ⏭  跳过（原因：无 package-lock.json，npm audit 没有依赖树可审；\n'
+  printf '      本仓库 package.json 声明零 npm 依赖，无可审计面。引入 lock 后本步自动转真审计）\n'
+  SKIPPED+=("supply (npm audit)")
+fi
+
 # ── 汇总 ──
 printf '\n════ 汇总 ════\n'
 printf '  通过 %d 步：%s\n' "${#STEPS[@]}" "${STEPS[*]:-（无）}"
+if [ "${#SKIPPED[@]}" -gt 0 ]; then
+  printf '  ⏭  跳过 %d 步（不计入通过数）：%s\n' "${#SKIPPED[@]}" "${SKIPPED[*]:-}"
+fi
 if [ "${#FAILED[@]}" -eq 0 ]; then
-  printf '  ✅ 全部通过\n'
+  if [ "${#SKIPPED[@]}" -eq 0 ]; then
+    printf '  ✅ 全部通过\n'
+  else
+    printf '  ✅ 已执行步骤全部通过（另有 %d 步显式跳过，原因见上）\n' "${#SKIPPED[@]}"
+  fi
   exit 0
 fi
 printf '  ❌ 失败 %d 步：%s\n' "${#FAILED[@]}" "${FAILED[*]}"

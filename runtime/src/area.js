@@ -144,6 +144,13 @@
 
   /** @param {any} node @param {any} prop @param {any} value @param {any} extra */
   function applyAttr(node, prop, value, extra) {
+    // E0-1：属性应用抛错 → 环形缓冲 + 边界派发，不再打断渲染批次（elmtId 未知传 -1，
+    // 统一入口会从 node 反查）；原实现整体改名 applyAttrInner，行为零变化
+    try { applyAttrInner(node, prop, value, extra); }
+    catch (e) { __arkuiReportRenderError('applyAttr:' + prop, -1, e, node); }
+  }
+  /** @param {any} node @param {any} prop @param {any} value @param {any} extra */
+  function applyAttrInner(node, prop, value, extra) {
     if (!node) return;
     // R22 收口：`.transition(options|effect[, onFinish])` 也是**属性**（产物走 builder 栈），
     // 第二个参数（onFinish 回调）由生成的属性方法透传进来 —— 只取第一个参数会静默丢掉回调

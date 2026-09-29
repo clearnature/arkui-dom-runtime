@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>E1-4：sys.* 系统资源表（generated-sys-resources → __arkui_dom_resources）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 360px; border: 1px solid #ccc; padding: 8px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; font-size: 12px; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>E1-4：sys.* 系统资源表——手搭 Resource 对象喂 fontSize/fontColor + 表直查抽查</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <!-- E1-4 sys 表：同步 IIFE 直接填充 __arkui_dom_resources（main.js resolveResource 消费的同名表），
+       本脚本标签执行完表即就绪，无需任何等待。 -->
+  <script src="../runtime/src/generated-sys-resources.js"></script>
+  <script>
+  // 关于 __arkui_res_ready：本页【不等】它。该信号是 R128 app 资源的媒体字节异步 fetch 预热
+  //（generated-app-resources @include 进 bundle 后启动即跑）；本页只消费 sys 表的
+  // number/color/string/boolean 标量，一个媒体字节都不碰，且 sys 表由上面的 script 标签
+  // 同步填充——内联测试脚本开跑时表已就绪，等待纯属浪费。
+  (async function () {
+    const lines = [];
+    let pass = 0, fail = 0;
+    const check = (c, m) => { if (c) { pass++; lines.push('PASS ' + m); } else { fail++; lines.push('FAIL ' + m); } };
+    const root = document.getElementById('root');
+    const el = (id) => root.querySelector('#' + id);
+    // 手搭 Resource 对象（编译器把 $r('sys.float.xxx') 展开成的字面量形态）：
+    // float 类（vp/fp 尺寸）type=10002，color 类 type=10003；表按 id 查，type 只在
+    // 表未命中时决定 DEFAULT_RESOURCES 兜底（10002→16、10003→''）
+    const res = (id, type) => ({ id: id, type: type, params: [], bundleName: '', moduleName: '' });
+    // runtime 级直驱 DSL：压入挂载点后 create/属性/pop，等价于编译产物的 initialRender 片段。
+    // 挂载点必须先压组件栈——不 loadRoute 时运行时的 rootNode 是 null，parentOfTop() 全靠栈顶。
+    ViewStackProcessor.push(root);
+    const dslText = (id, label, apply) => {
+      Text.create(label);
+      Text.id(id);
+      apply();
+      Text.pop();
+    };
+
+    try {
+      check(typeof globalThis.__arkui_dom_resources === 'object'
+        && Object.keys(globalThis.__arkui_dom_resources).length > 7000,
+        'sys 表已装载且规模合理（实际 ' + Object.keys(globalThis.__arkui_dom_resources || {}).length + ' 条，生成器口径 7477）');
+
+      // ══════════ ① DSL 组：Resource 对象 → 属性解析 → CSS 落地 ══════════
+      // ohos_id_corner_radius_card：base(light) 段 '24.0vp' → 24（glasses 段的 8.0vp 不收）
+      dslText('t-vp', 'A', () => Text.fontSize(res(125829709, 10002)));
+      check(el('t-vp') && el('t-vp').style.fontSize === '24px',
+        'fontSize($r(sys.float 24.0vp)) → 24px（vp=px 1:1 口径；实际 ' + (el('t-vp') && el('t-vp').style.fontSize) + '）');
+
+      // ohos_id_text_size_sub_title1：base 段 '18.0fp' → 18（fp 同 1:1 口径）
+      dslText('t-fp', 'B', () => Text.fontSize(res(125829678, 10002)));
+      check(el('t-fp') && el('t-fp').style.fontSize === '18px',
+        'fontSize($r(sys.float 18.0fp)) → 18px（fp=px 1:1；实际 ' + (el('t-fp') && el('t-fp').style.fontSize) + '）');
+
+      // ohos_id_color_foreground：base 段 '#ff182431'（ArkUI #AARRGGBB）→ '#182431ff'（CSS #RRGGBBAA）
+      dslText('t-color', 'C', () => Text.fontColor(res(125829120, 10003)));
+      check(el('t-color') && el('t-color').style.color === 'rgb(24, 36, 49)',
+        'fontColor($r(sys.color #ff182431)) → rgb(24, 36, 49)（#182431ff 通道重排正确；实际 '
+        + (el('t-color') && el('t-color').style.color) + '）');
+
+      // 兜底对照：表未命中（此 id 不存在）→ DEFAULT_RESOURCES[10002]=16——证明上面的 24px
+      // 真的是查了 sys 表，而不是任何 id 都碰巧落到同一个值
+      dslText('t-fallback', 'D', () => Text.fontSize(res(1999999999, 10002)));
+      check(el('t-fallback') && el('t-fallback').style.fontSize === '16px',
+        'fontSize(表外 id) → DEFAULT_RESOURCES 兜底 16px（实际 ' + (el('t-fallback') && el('t-fallback').style.fontSize) + '）');
+
+      // ══════════ ② 表直查组：抽查 id 的期望值 = resources.txt 原文按头注规则换算 ══════════
+      const t = globalThis.__arkui_dom_resources;
+      check(t[125829709] === 24, '表[125829709] ohos_id_corner_radius_card = 24（base 段原文 \'24.0vp\'；glasses 段 8.0vp 不收）实际 ' + t[125829709]);
+      check(t[125829678] === 18, '表[125829678] ohos_id_text_size_sub_title1 = 18（base 段原文 \'18.0fp\'）实际 ' + t[125829678]);
+      check(t[125830807] === 60, '表[125830807] ohos_id_shadow_default_md_shadow = 60（base 段原文 \'60.0\'；glasses 段 46.0 不收——base 优先的证据）实际 ' + t[125830807]);
+      check(t[125829120] === '#182431ff', '表[125829120] ohos_id_color_foreground = \'#182431ff\'（base 段原文 \'#ff182431\'，#AARRGGBB→#RRGGBBAA 重排）实际 ' + t[125829120]);
+      check(t[125829171] === '#182431', '表[125829171] ohos_id_color_focused_content_primary = \'#182431\'（6 位 #RRGGBB 原样保留）实际 ' + t[125829171]);
+      check(t[125832753] === true, '表[125832753] ohos_id_calendar_picker_dialog_button_transparent = true（base 段原文 \'true\' → 布尔）实际 ' + t[125832753]);
+      check(t[125830312] === 'auto', '表[125830312] ohos_id_sheet_type = \'auto\'（字符串原样）实际 ' + t[125830312]);
+      // base 段该 id 的值是引用型 '$color:125831008'（静态不可解，生成器跳过）→ 回退全文件
+      // 首次出现（glasses 段 '#00000000'）：引用型回退口径的实证
+      check(t[125831090] === '#00000000', '表[125831090] titlebar_icon_background_color = \'#00000000\'（base 段为 $color 引用 → 回退 glasses 段首现）实际 ' + t[125831090]);
+    } catch (e) {
+      fail++;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? String(e.stack).split('\n')[0] : e));
+    }
+
+    lines.unshift('SYSRES 条数=' + Object.keys(globalThis.__arkui_dom_resources || {}).length);
+    if (fail === 0) lines.unshift('=== ALL PASS (' + pass + ') ===');
+    else lines.unshift('=== ' + fail + ' FAILURES / ' + pass + ' PASS ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = fail === 0 ? 'pass' : 'fail';
+    document.title = fail === 0 ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

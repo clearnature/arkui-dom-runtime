@@ -15,7 +15,7 @@
 ### E0-0 本账建立 ✅（R129）
 本文件。验收：ROADMAP 登记 + 每任务有验收标准。
 
-### E0-1 渲染错误边界（ErrorBoundary）[M]
+### E0-1 渲染错误边界（ErrorBoundary）[M] ✅（R130）
 - 目标：任一组件 render/属性应用抛错不炸整页——错误被边界捕获、降级渲染、可恢复。
 - 步骤：① 新分片 `errorboundary.js`：在 rerender/applyAttr 管线挂 try/catch 钩子，
   错误信息进 `__arkui_dom_errors` 环形缓冲（最近 N 条，含组件名/elmtId/stack 首行）；
@@ -35,7 +35,7 @@
   门禁不回退。
 - 依赖：E0-1（载荷格式）。
 
-### E0-3 焦点管理 + 键盘可达性 [L]
+### E0-3 焦点管理 + 键盘可达性 [L] ✅（R130）
 - 目标：Tab 序可达、`.focusable()`/`.defaultFocus()`/focusControl 语义、onKeyDown 系统化。
 - 步骤：① 新分片 `focus.js`：tab 序 = DOM 原生序 + `focusable(false)`/`tabIndex` 映射；
   ② `focusControl`/`requestFocus` API 面（focus_control.d.ts）；③ `onKey*/onKeyEvent`
@@ -53,7 +53,7 @@
 - 验收：路由循环 500 轮后 timer/observer 计数与基线差 ≤ 常数；soak 报告无增长趋势。
 - 依赖：E0-1（错误不静默积累）。
 
-### E0-5 供应链与 CSP [S]
+### E0-5 供应链与 CSP [S] ✅（R130，audit 步待 package-lock 后转真）
 - 目标：依赖 CVE 扫描入门禁；渲染侧加 CSP。
 - 步骤：① check-all.sh 加 `npm audit --omit=dev --audit-level=high` 步（第 8 步）；
   ② electron main `session.defaultSession.webRequest.onHeadersReceived` 注入
@@ -99,7 +99,7 @@
 - 验收：`i18ndemo` 页——切 locale 后 string 资源/日期/数字格式断言；RTL 布局方向断言。
 - 依赖：E1-4（资源表 qualified 变体）——③ 可先行。
 
-### E1-4 sys.* 资源表烘制 [S]
+### E1-4 sys.* 资源表烘制 [S] ✅（R130，7477 条）
 - 目标：`$r('sys.float.ohos_id_text_size_body1')` 类系统资源真值（现走手写默认表）。
 - 步骤：① `tools/gen-sys-resources.mjs`：SDK `previewer/common/resources/entry/resources.txt`
   → `generated-sys-resources.js` 分片（R123 反查法，light 块为值、dark 存档）；
@@ -150,7 +150,7 @@
 - 验收：预算内 + 截图判定非白；数字入 ARCHITECTURE §6。
 - 依赖：E2-1 收口后数字才有意义（可先测得基线）。
 
-### E2-3 真机差异清单产品化 [S]
+### E2-3 真机差异清单产品化 [S] ✅（R130，docs/DEVICE-DIFF.md）
 - 目标：采购视角的"与鸿蒙真机行为差异"一页账。
 - 步骤：汇总 ARKVM-RESEARCH + 散落各文档的实现差异（三层一致性模型"实现❌刻意不同"
   的全部条目 + 嵌入泵模式等宿主差异）→ `docs/DEVICE-DIFF.md`（单表：差异/影响/依据）。

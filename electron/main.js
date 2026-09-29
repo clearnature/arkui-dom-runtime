@@ -46,6 +46,40 @@ app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 app.disableHardwareAcceleration();
 
 app.whenReady().then(async () => {
+  // ── E0-5：CSP 注入（供应链安全，只新增不改既有逻辑）──
+  // 对 http/https 响应统一追加 Content-Security-Policy。必须赶在首次 loadURL/loadFile
+  // 之前注册，主文档响应才带得上策略头，所以放在 whenReady 回调的最前面。
+  // 策略说明（照 E0-5 规定原文）：
+  //   · script-src 保留 'unsafe-eval' 是【已知的收紧项】：本项目的页面模块是 CommonJS
+  //     仿真（runtime 用 eval/new Function 装载 ets-loader 转换产物），去掉它整站脚本
+  //     无法执行；'unsafe-eval' 同时是 WebAssembly 编译的兜底（runtime/vendor 里的
+  //     arkui-qrcodegen 内嵌 WASM 依赖它）。后续把模块装载改成非 eval 形态后再收紧。
+  //   · script-src 'unsafe-inline' 同为已知项（R130 实测抓的）：47 个测试页的驱动脚本
+  //     全部是内联 <script>，没有它页面整页脚本被静默拦掉（症状：#result 停在
+  //     'running…'、console-message 无报错——CSP 违规只在 DevTools 可见）。正式分发
+  //     走外链化改造后移除。
+  //   · style-src 'unsafe-inline'：运行时大量内联 style 属性/样式标签，暂不设防。
+  // 覆盖面：主路径是 electron/run.sh 起本地服务（tools/serve.py）后经 ARKUI_PAGE_URL
+  // 走 http://127.0.0.1:…，钩子全量覆盖；file://（不设 ARKUI_PAGE_URL 时的 loadFile
+  // 兜底）响应不经过网络栈，onHeadersReceived 拿不到头、无法注入 —— 该路径暂不设防，
+  // 如后续要覆盖，需改走 webContents 的 executeJavaScript 注入 <meta> 或自定义协议。
+  const CSP_POLICY =
+    "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; " +
+    "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:;";
+  const { session } = require('electron');
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    if (/^https?:\/\//.test(details.url)) {
+      // 追加而非覆盖：目标服务已带 CSP 时叠加（多份 CSP 取交集，只会更严不会更松）
+      const headers = Object.assign({}, details.responseHeaders);
+      headers['Content-Security-Policy'] =
+        (headers['Content-Security-Policy'] || []).concat([CSP_POLICY]);
+      callback({ responseHeaders: headers });
+      return;
+    }
+    callback({});   // 非 http/https（如 file://，本就到不了这里）原样放行
+  });
+  console.error('[csp] 注入完成');
+
   if (!pageUrl && !fs.existsSync(pagePath)) {
     console.error(`页面不存在: ${pagePath}`);
     app.exit(2);

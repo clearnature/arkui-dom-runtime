@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>E0-3：焦点管理 + 键盘可达性（runtime 级，无编译 fixture）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 480px; }
+  #root > div { border: 1px solid #eee; margin: 4px 0; padding: 4px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; font-size: 12px; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>E0-3：焦点管理 + 键盘可达性（Tab 链 / focusable / tabIndex / requestFocus / 焦点环）</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script>
+  // 抢位桩：让产物里的 focus 分片【不】安装（分片防重护栏看到真值即整段跳过，也就不会
+  // 挂它的 document keydown 监听）。本页固定测 runtime/src/focus.js 最新源码——分片在
+  // 密集迭代期，产物重拼有滞后（实测：产物里冻着上一版 requestFocus，迟到的 rAF 回调
+  // 会覆盖更新一次的受理结果）。"产物 = 源"的一致性由 build-runtime --check 门禁背书，
+  // 测试页不重复背书。
+  globalThis.__arkui_dom_focus = { __preempt: true };
+  </script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let pass = 0, fail = 0;
+    const check = (c, m) => { if (c) { pass++; lines.push('PASS ' + m); } else { fail++; lines.push('FAIL ' + m); } };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const G = (name) => {
+      const v = globalThis[name];
+      return (v && typeof v.create === 'function') ? v : null;
+    };
+    const VSP = globalThis.ViewStackProcessor;
+    const F = () => (/** @type {any} */ (globalThis)).__arkui_dom_focus;
+
+    // ══════════ 0) 分片装载 ══════════
+    // 抢位桩（见上方独立 <script>）挡住了产物内的 focus 分片；这里删桩后按 src 最新源码
+    // 装载（分片自包含，可独立于产物闭包运行）。
+    delete (/** @type {any} */ (globalThis)).__arkui_dom_focus;
+    await new Promise((resolve) => {
+      const s = document.createElement('script');
+      s.src = '../runtime/src/focus.js';
+      s.onload = resolve;
+      s.onerror = resolve;
+      document.head.appendChild(s);
+    });
+    check(!!F() && typeof F().requestFocus === 'function'
+      && typeof F().tabChain === 'function' && typeof F().active === 'function',
+      '环境 __arkui_dom_focus 命名空间三件套齐备（requestFocus/tabChain/active）');
+
+    // ══════════ 1) 搭建（runtime 级：create → 属性 → pop，不经编译 fixture）══════════
+    // 无路由页面的挂载上下文：把 seed 压栈当 parentOfTop() 的兜底（main.js:64-69），
+    // 之后所有 create() 都真实挂进 DOM（有渲染盒才谈得上可达性）。
+    const seed = document.createElement('div');
+    document.getElementById('root').appendChild(seed);
+    if (VSP) VSP.push(seed);
+
+    // A 组（无正值 tabIndex——0 值组按 DOM 序进链）
+    // 注意 create/pop 配对：产物是 create → 属性 → pop 一组（不 pop 的话下一个兄弟
+    // 会以栈顶为父挂进上一个组件内部——首跑实测：D/E 全挂进了 A 按钮里，无盒出链）
+    const mk = {};
+    {
+      const snap = VSP ? VSP.snapshot() : null;
+      const secA = G('Column').create();
+      const btn = G('Button');
+      mk.a = btn.create('A 按钮');                       // 原生 <button>（默认可聚焦）
+      btn.pop();
+      const txt = G('Text');
+      mk.b = txt.create('B 文本');                       // div 基座（默认不可聚焦）
+      txt.focusable(true);                               // → data-focusable="true"
+      txt.pop();
+      const inp = G('TextInput');
+      mk.c = inp.create({ placeholder: 'C 输入框' });    // 原生 <input>
+      inp.pop();
+      mk.d = btn.create('D focusable(false)');
+      btn.focusable(false);                              // → data-focusable="false"
+      btn.pop();
+      mk.e = btn.create('E 按钮');
+      btn.pop();
+      mk.dis = btn.create('disabled 按钮');              // 原生 disabled 属性
+      mk.dis.disabled = true;
+      btn.pop();
+      mk.en = btn.create('enabled(false) 按钮');
+      btn.enabled(false);                                // → data-enabled="false"（通用兜底）
+      btn.pop();
+      G('Column').pop();
+      if (VSP) VSP.restore(snap);
+    }
+
+    // ══════════ 2) 断言：装载语义 / 链成员剔除 ══════════
+    // ⑧ 安装即监听，但不抢焦点：activeElement 仍是 body
+    check(F().active() === document.body && document.activeElement === document.body,
+      '⑧ 非焦点态：运行时装载后不自动聚焦（activeElement 仍是 body）');
+
+    const chain1 = F().tabChain();
+    // ⑤ 焦点环样式一次性注入（对齐 batch-platform.js Skeleton2d 的 <style> 注入写法）
+    const styleEl = document.getElementById('arkui-focus-style');
+    check(!!styleEl && styleEl.tagName === 'STYLE'
+      && styleEl.textContent.indexOf(':focus-visible') >= 0,
+      '⑤ 焦点环样式已注入（<style id="arkui-focus-style"> 含 :focus-visible 规则）');
+
+    // ③ focusable(false) 出链；兜底落点证明（applyAttr 无该分支 → dataset 兜底）
+    check(chain1.indexOf(mk.d) === -1 && mk.d.getAttribute('data-focusable') === 'false'
+      && chain1.indexOf(mk.a) >= 0,
+      '③ focusable(false) 组件出链（data-focusable="false" 经通用兜底落 dataset）');
+    // ⑥ disabled 两形态剔除
+    check(chain1.indexOf(mk.dis) === -1 && mk.dis.disabled === true,
+      '⑥ 原生 disabled 属性出链');
+    check(chain1.indexOf(mk.en) === -1 && mk.en.getAttribute('data-enabled') === 'false',
+      '⑥ enabled(false) 出链（data-enabled="false"；common.d.ts:20439-20453 JSDoc）');
+    // focusable(true) 的 div 基座进链 + tabIndex 镜像（.focus() 的前提）
+    check(chain1.indexOf(mk.b) >= 0 && mk.b.getAttribute('data-focusable') === 'true'
+      && mk.b.tabIndex === 0,
+      '语义 focusable(true) 的 Text 基座进链（data-tab-index 缺省镜像 tabIndex=0）');
+    // 链序 = DOM 序（A→B→C→E；D/dis/en 被剔除）
+    const seq1 = chain1.map((el) => [mk.a, mk.b, mk.c, mk.e].indexOf(el)).join(',');
+    check(seq1 === '0,1,2,3',
+      '语义 链序 = DOM 序（[' + seq1 + ']，期望 A→B(focusable Text)→C(TextInput)→E）');
+
+    // ══════════ 3) 断言：Tab / Shift+Tab 沿链移动（合成 KeyboardEvent）══════════
+    const pressTab = (shift) => {
+      document.dispatchEvent(new KeyboardEvent('keydown',
+        { key: 'Tab', shiftKey: !!shift, bubbles: true, cancelable: true }));
+      return F().active();
+    };
+    // ① 从 body 起 Tab 四步 = 链序（A→B→C→E）
+    const t1 = pressTab(); const t2 = pressTab(); const t3 = pressTab(); const t4 = pressTab();
+    check(t1 === mk.a && t2 === mk.b && t3 === mk.c && t4 === mk.e,
+      '① 合成 Tab 沿链前进 = DOM 序（body→A→B→C→E）');
+    // ⑦ 链尾回绕：当前在 E（链尾），再 Tab → 链头 A
+    check(pressTab() === mk.a, '⑦ 链尾回绕（E→A）');
+    // ② Shift+Tab 反向：A→E→C→B→A（首步即头回绕）
+    const s1 = pressTab(true); const s2 = pressTab(true);
+    const s3 = pressTab(true); const s4 = pressTab(true);
+    check(s1 === mk.e && s2 === mk.c && s3 === mk.b && s4 === mk.a,
+      '② Shift+Tab 反向沿链（A→E→C→B→A，头回绕）');
+    // ⑧ Tab 被 preventDefault（自驱 focus，绕开原生 Tab 序）
+    const ev = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true });
+    document.dispatchEvent(ev);
+    check(ev.defaultPrevented === true,
+      '⑧ Tab 已 preventDefault（运行时自己驱动 focus()，接管遍历）');
+    // ⑧ 非 Tab 键不动焦点
+    const before = F().active();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true, cancelable: true }));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }));
+    check(F().active() === before, '⑧ 非 Tab 键（字符键/方向键）不移动焦点');
+
+    // ══════════ 4) 断言：requestFocus 编程聚焦（focusControl.requestFocus 语义）══════════
+    {
+      const snap = VSP ? VSP.snapshot() : null;
+      const rf = G('Button');
+      mk.rf = rf.create('RF 目标');
+      rf.id('rf-target');        // applyAttr prop==='id' → node.id
+      rf.key('rf-by-key');       // 通用兜底 → data-key（JSON.stringify 带引号形态）
+      rf.pop();
+      if (VSP) VSP.restore(snap);
+    }
+    // ④ id 串：受理即 true，真正的 focus() 按 JSDoc "during the next frame rendering"
+    // 排到下一帧（rAF），所以这里 tick 一拍再断言
+    const okId = F().requestFocus('rf-target');
+    await tick(40);
+    check(okId === true && F().active() === mk.rf,
+      '④ requestFocus(id) 编程聚焦（受理 true，下一帧落到 RF）');
+    const okKey = F().requestFocus('rf-by-key');
+    await tick(40);
+    check(okKey === true && F().active() === mk.rf,
+      '④补 requestFocus(key 串) 也能聚焦（data-key 兜底落点解包后比对）');
+    const okEl = F().requestFocus(mk.b);
+    await tick(40);
+    check(okEl === true && F().active() === mk.b,
+      '④补 requestFocus(元素) 形态（直接传 HTMLElement）');
+    // ⑧ 失败受理不动焦点
+    check(F().requestFocus('no-such-id') === false && F().active() === mk.b,
+      '⑧ requestFocus 不存在的 id → false 且焦点不动');
+    check(F().requestFocus(mk.d) === false && F().active() === mk.b,
+      '⑧ requestFocus focusable(false) 目标 → false（common.d.ts:6264-6266 JSDoc）');
+    check(F().requestFocus(mk.dis) === false && F().active() === mk.b,
+      '⑧ requestFocus disabled 目标 → false');
+
+    // ══════════ 5) 断言：tabIndex 语义（正值组页级可达 + 负值组可编程聚焦）══════════
+    {
+      const snap = VSP ? VSP.snapshot() : null;
+      const secB = G('Column').create();
+      const btn = G('Button');
+      mk.t2 = btn.create('T2 tabIndex(2)'); btn.tabIndex(2); btn.pop();
+      mk.t1 = btn.create('T1 tabIndex(1)'); btn.tabIndex(1); btn.pop();
+      mk.t0 = btn.create('T0 无 tabIndex'); btn.pop();
+      mk.tn = btn.create('TN tabIndex(-1)'); btn.tabIndex(-1); btn.pop();
+      G('Column').pop();
+      if (VSP) VSP.restore(snap);
+    }
+    const chain2 = F().tabChain();
+    // ⑨ 正值组升序在前；存在正值组时 0 值组整组退出链（common.d.ts:18799-18800 原文
+    // "only these components are reachable ... cyclically in ascending order"）
+    check(chain2[0] === mk.t1 && chain2[1] === mk.t2 && chain2.length === 2,
+      '⑨ 正值 tabIndex 组升序进链（T1(1)→T2(2)），0 值组整组出链（页级语义）');
+    check(chain2.indexOf(mk.tn) === -1,
+      '⑨补 tabIndex(-1) 不进链（common.d.ts:18806-18808 "focusable, but cannot be reached"）');
+    const okNeg = F().requestFocus(mk.tn);
+    await tick(40);
+    check(okNeg === true && F().active() === mk.tn,
+      '⑨补 tabIndex(-1) 仍可 requestFocus 编程聚焦');
+    F().requestFocus(mk.t1);
+    await tick(40);
+    check(pressTab() === mk.t2, '⑨补 正值组内 Tab 前进（T1→T2）');
+    check(pressTab() === mk.t1, '⑨补 正值组链尾回绕（T2→T1）');
+    check(F().tabChain().length === 2,
+      '⑨尾 整页链 = 正值组两条（0 值组/负值组均不在链）');
+
+    // ══════════ 结果 ══════════
+    const result = document.getElementById('result');
+    // 判定行 = '=== ALL PASS (N) ==='（run_one 按 #result 文本 grep 'ALL PASS' 判过——
+    // 与其他测试页同一约定；首版"25 通过 / 0 失败"不含该字面量，判行失败是实测抓的）
+    lines.unshift(fail === 0 ? '=== ALL PASS (' + pass + ') ===' : '=== ' + fail + ' FAILURES / ' + pass + ' PASS ===');
+    result.textContent = lines.join('\n');
+    result.className = fail === 0 ? 'pass' : 'fail';
+  })();
+  </script>
+</body>
+</html>

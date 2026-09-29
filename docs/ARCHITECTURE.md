@@ -1757,34 +1757,34 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   21 个：app.ability.AbilityConstant app.ability.ConfigurationConstant app.ability.UIAbility app.ability.Want arkui.node cjk data.preferences deviceInfo file.fs file.picker hilog measure multimedia.image multimedia.media net.http notificationManager pasteboard promptAction resourceManager router window
 
 == 用例矩阵 ==
-  浏览器 run.sh     77 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify measure lazy provide v2 observe async ability promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo builtindemo resourcedemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo mediademo smalldemo stepdemo imagedemo scrolldemo animatordemo listitemgroup refreshdemo datepickerdemo timepickerdemo waterflowdemo calendarpickerdemo textpickerdemo griddemo texttimedemo alphabetindexerdemo sidebardemo splitdemo paneldemo gridrowdemo richvideodemo batchverify perfdemo windowdemo pickerdemo batchfunc funcbehavior abilitydesktop sysapi batchbehavior cjk cjkdemo notesdemo router netfile persist
-  Electron          79 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo builtindemo resourcedemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo mediademo smalldemo stepdemo imagedemo scrolldemo animatordemo listitemgroup refreshdemo datepickerdemo timepickerdemo waterflowdemo calendarpickerdemo textpickerdemo griddemo texttimedemo alphabetindexerdemo sidebardemo splitdemo paneldemo gridrowdemo richvideodemo batchverify perfdemo perfbig attrheavy stress1k windowdemo pickerdemo abilitydesktop sysapi batchbehavior batchfunc funcbehavior cjk cjkdemo notesdemo measure lazy provide async v2 observe
-  测试页            87 个
+  浏览器 run.sh     80 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify measure lazy provide v2 observe async ability promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo builtindemo resourcedemo errbounddemo focusdemo sysresdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo mediademo smalldemo stepdemo imagedemo scrolldemo animatordemo listitemgroup refreshdemo datepickerdemo timepickerdemo waterflowdemo calendarpickerdemo textpickerdemo griddemo texttimedemo alphabetindexerdemo sidebardemo splitdemo paneldemo gridrowdemo richvideodemo batchverify perfdemo windowdemo pickerdemo batchfunc funcbehavior abilitydesktop sysapi batchbehavior cjk cjkdemo notesdemo router netfile persist
+  Electron          82 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo builtindemo resourcedemo errbounddemo focusdemo sysresdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo mediademo smalldemo stepdemo imagedemo scrolldemo animatordemo listitemgroup refreshdemo datepickerdemo timepickerdemo waterflowdemo calendarpickerdemo textpickerdemo griddemo texttimedemo alphabetindexerdemo sidebardemo splitdemo paneldemo gridrowdemo richvideodemo batchverify perfdemo perfbig attrheavy stress1k windowdemo pickerdemo abilitydesktop sysapi batchbehavior batchfunc funcbehavior cjk cjkdemo notesdemo measure lazy provide async v2 observe
+  测试页            90 个
   fixtures 转换产物  77 个：AlphabetIndexerDemo AnimDemo AnimatorDemo AsyncIO AttrHeavyDemo BatchFuncDemo BatchLayoutDemo BatchMediaDemo BatchVerifyDemo BuiltinDemo CalendarPickerDemo Callee CanvasDemo CjkDemo DatePickerDemo Detail DrawDemo GestureDemo GestureGroupDemo GridDemo GridRowDemo Home ImageDemo Index InputDemo Layout Lazy LazyVar ListGroupDemo MeasArea MeasImage MeasNotify Measure MediaDemo NavBarDemo NavDemo NavShimDemo NavTransDemo NetFile NotesDetail NotesHome Observe PanelDemo PerfBigDemo PerfDemo PickerDemo PopDemo PromptAct Provide QrDemo RefreshDemo RelDemo ResourceDemo Rich RichVideoDemo ScrollDemo ShapeDemo ShowDemo SideBarDemo SmallDemo SplitDemo StepDemo Stress1kDemo SwiperDemo TabsGrid TextDemo TextMeasure TextPickerDemo TextTimeDemo TimePickerDemo TransitionDemo UiContextDemo V2 WaterFlowDemo Widgets WindowDemo XCompDemo
 
 == 性能基线（Electron 实测）==
-  首渲染            125.4 ms（33 节点：Column+Button+Text+ForEach×30）
-  最小 rerender     7.3 ms（@State 计数脏区单 Text，rAF 口径）
-  rerender 管道     1.0 ms / 1 tick（setTimeout 轮询口径，R70）
+  首渲染            36.1 ms（33 节点：Column+Button+Text+ForEach×30）
+  最小 rerender     15.8 ms（@State 计数脏区单 Text，rAF 口径）
+  rerender 管道     1.2 ms / 1 tick（setTimeout 轮询口径，R70）
   微任务底噪        0.00 ms
   行数              31
-  剖面 R71          loadRoute 同步 3.7 ms（require 0.3）· raf1 0.2 / raf2 121.5 ms（offscreen 首帧）
-  脚本 eval         runtime 21.6 / generated 19.4 / shims 20.2 / module 19.4 ms（计时起点之前）
+  剖面 R71          loadRoute 同步 6.9 ms（require 0.3）· raf1 0.9 / raf2 28.3 ms（offscreen 首帧）
+  脚本 eval         runtime 152.6 / generated 148.6 / shims 150.9 / module 150.3 ms（计时起点之前）
   判定              框架同步构建 3.5ms 无大头；"首渲染"=脚本 eval + offscreen 首帧（非框架成本）
-  千节点 R79        首渲染同步 19.2 ms（350 节点/~3500 属性，亚线性）· 单点 flush 2.6 ms · 批量翻转 flush 6.0 ms
+  千节点 R79        首渲染同步 32.2 ms（350 节点/~3500 属性，亚线性）· 单点 flush 2.0 ms · 批量翻转 flush 4.5 ms
   规模曲线          203→4.8 / 304→11.2 / 1055→19.0 ms（创建路径亚线性）；行复用+守卫千节点级保持
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          1038.5 KB
-  runtime(src)     1032.4 KB
-  test             899.0 KB
-  tools            204.9 KB
-  electron(src)    51.1 KB
-  docs             809.0 KB
+  runtime          1354.9 KB
+  runtime(src)     1348.9 KB
+  test             928.4 KB
+  tools            218.1 KB
+  electron(src)    54.0 KB
+  docs             841.9 KB
   fixtures         531.9 KB
 
 == 逐文件（文档"文件职责"表的来源）==
-  runtime/arkui-dom-runtime.js            781810 B  763.5 KB
+  runtime/arkui-dom-runtime.js            1105745 B  1079.8 KB
   runtime/generated-components.js          57617 B  56.3 KB
   runtime/ohos-shims.js                    83677 B  81.7 KB
   tools/extract.mjs                         6936 B  6.8 KB
@@ -1793,20 +1793,20 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   tools/stats.mjs                          22222 B  21.7 KB
   tools/assert-counts.mjs                   7476 B  7.3 KB
   tools/preflight.mjs                       5422 B  5.3 KB
-  tools/check-all.sh                        4053 B  4.0 KB
+  tools/check-all.sh                        5650 B  5.5 KB
   tools/build-runtime.mjs                   5138 B  5.0 KB
-  run.sh                                   34632 B  33.8 KB
-  electron/run.sh                          22004 B  21.5 KB
-  electron/main.js                         21126 B  20.6 KB
+  run.sh                                   35618 B  34.8 KB
+  electron/run.sh                          22419 B  21.9 KB
+  electron/main.js                         23619 B  23.1 KB
   electron/preload.js                       8338 B  8.1 KB
   package.json                              1366 B  1.3 KB
   .gitignore                                 909 B  0.9 KB
   README.md                               157311 B  153.6 KB
   THIRD-PARTY-NOTICES.md                   10718 B  10.5 KB
-  docs/ARCHITECTURE.md                    164319 B  160.5 KB
+  docs/ARCHITECTURE.md                    164752 B  160.9 KB
   docs/CAPABILITY.md                       63212 B  61.7 KB
   docs/DEVELOPING.md                       76689 B  74.9 KB
-  docs/ROADMAP.md                         225367 B  220.1 KB
+  docs/ROADMAP.md                         227855 B  222.5 KB
   docs/surface-measurement.md               6496 B  6.3 KB
   docs/SESSION-2026-09-20.md               12842 B  12.5 KB
   runtime/src/.mimosa                       4096 B  4.0 KB
@@ -1814,7 +1814,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   runtime/src/alphabetindexer.js            5155 B  5.0 KB
   runtime/src/animation.js                 29910 B  29.2 KB
   runtime/src/animator.js                   6308 B  6.2 KB
-  runtime/src/area.js                      32849 B  32.1 KB
+  runtime/src/area.js                      33337 B  32.6 KB
   runtime/src/batch-func.js                39494 B  38.6 KB
   runtime/src/batch-input.js               37979 B  37.1 KB
   runtime/src/batch-layout.js              29614 B  28.9 KB
@@ -1827,14 +1827,17 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   runtime/src/canvas.js                    10679 B  10.4 KB
   runtime/src/datepicker.js                 8770 B  8.6 KB
   runtime/src/draw.js                      19240 B  18.8 KB
+  runtime/src/errorboundary.js             13309 B  13.0 KB
+  runtime/src/focus.js                     16670 B  16.3 KB
   runtime/src/generated-app-resources.js    1571 B  1.5 KB
+  runtime/src/generated-sys-resources.js  293090 B  286.2 KB
   runtime/src/gesture.js                   31744 B  31.0 KB
   runtime/src/grid.js                       7187 B  7.0 KB
   runtime/src/gridrow.js                    3128 B  3.1 KB
   runtime/src/image.js                      7000 B  6.8 KB
   runtime/src/input.js                     11336 B  11.1 KB
   runtime/src/layout.js                    18442 B  18.0 KB
-  runtime/src/main.js                     120957 B  118.1 KB
+  runtime/src/main.js                     121421 B  118.6 KB
   runtime/src/nav.js                       57427 B  56.1 KB
   runtime/src/panel.js                      3360 B  3.3 KB
   runtime/src/popup.js                      5042 B  4.9 KB
@@ -1952,6 +1955,8 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   test/components.html                      6789 B  6.6 KB
   test/datepickerdemo.html                  8228 B  8.0 KB
   test/drawdemo.html                       12765 B  12.5 KB
+  test/errbounddemo.html                   10443 B  10.2 KB
+  test/focusdemo.html                      12562 B  12.3 KB
   test/funcbehavior.html                    5423 B  5.3 KB
   test/gesturedemo.html                     9875 B  9.6 KB
   test/gesturegroupdemo.html               14791 B  14.4 KB
@@ -2005,6 +2010,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   test/stress1k.html                        4238 B  4.1 KB
   test/swiper.html                          9177 B  9.0 KB
   test/sysapi.html                          3814 B  3.7 KB
+  test/sysresdemo.html                      7035 B  6.9 KB
   test/tabgrid.html                        10096 B  9.9 KB
   test/textdemo.html                        5921 B  5.8 KB
   test/textmeasure.html                     9021 B  8.8 KB

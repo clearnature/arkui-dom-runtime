@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>E0-1：渲染错误边界（环形缓冲 + ErrorBoundary 最小面）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 360px; }
+  #root > div { border: 1px solid #eee; margin: 4px 0; padding: 4px; min-height: 20px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; font-size: 12px; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>E0-1：渲染错误边界（onClick 抛错 / render 抛错 / applyAttr 抛错 / 环形缓冲 50）</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script>
+  // 未处理拒绝登记：不覆盖 #result（会破坏 runner 的 PASS 解析），落到 body 属性，
+  // 页面末尾折成 NOTE 行供排查。
+  window.addEventListener('unhandledrejection', (e) => {
+    document.body.setAttribute('data-unhandled',
+      (document.body.getAttribute('data-unhandled') || '') + '|'
+      + ((e.reason && e.reason.message) || String(e.reason)));
+  });
+  (async function () {
+    const lines = [];
+    let pass = 0, fail = 0;
+    const check = (c, m) => { if (c) { pass++; lines.push('PASS ' + m); } else { fail++; lines.push('FAIL ' + m); } };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms || 0));
+    const root = document.getElementById('root');
+    const VSP = globalThis.ViewStackProcessor;
+    const EB = globalThis.__arkui_dom_errors;
+
+    // 前置：分片必须已在产物里（打上 @include errorboundary 集成补丁并 build:runtime 之后才有）
+    if (!EB || typeof EB.push !== 'function' || !globalThis.ErrorBoundary) {
+      lines.unshift('=== 1 FAILURES / 0 PASS ===');
+      lines.push('FAIL 运行时未含 errorboundary 分片：先打集成补丁（@include errorboundary + flush/applyAttr try-catch）'
+        + '，再 node tools/build-runtime.mjs');
+      const out = document.getElementById('result');
+      out.textContent = lines.join('\n');
+      out.className = 'fail';
+      document.title = 'FAIL';
+      return;
+    }
+
+    /** 按谓词找缓冲条目（同谓词多条时取最新一条） */
+    const findEntry = (pred) => EB.list().filter(pred).pop() || null;
+
+    // 挂载宿主：压栈后整页保持不弹——之后所有 observeComponentCreation2 / 裸 create 的
+    // 挂载点都是它（rootNode 只有 loadRoute 会设；本页是纯 runtime 页，没有编译 fixture）
+    const host = document.createElement('div');
+    root.appendChild(host);
+    VSP.push(host);
+
+    // ══════ ① 全局面存在性 ══════
+    check(typeof EB.push === 'function' && typeof EB.list === 'function' && typeof EB.clear === 'function',
+      '① __arkui_dom_errors.push/list/clear 齐备');
+    check(typeof globalThis.ErrorBoundary.create === 'function' && typeof globalThis.ErrorBoundary.pop === 'function',
+      '① ErrorBoundary.create/pop 齐备');
+
+    // ══════ ② onClick 回调抛错 → 进缓冲，其余组件照常（window 钩子路径） ══════
+    // 回调由 applyAttr 原样注册成 DOM 监听器，抛错发生在派发层——浏览器隔离它（同元素
+    // 其余监听器与整页照常），分片的 window 'error' 钩子把它补记进缓冲。
+    let boomRan = false;
+    const tOk = (() => { const el = globalThis.Text.create('陪衬兄弟'); globalThis.Text.pop(); return el; })();
+    {
+      const snap = VSP.snapshot();
+      const btn = globalThis.Button.create('会炸的按钮');
+      globalThis.Button.onClick(() => { boomRan = true; throw new Error('click-boom'); });
+      globalThis.Button.pop();
+      VSP.restore(snap);
+      btn.click();   // 同步派发 → 监听器抛错 → window error 钩子记录
+      const ent = findEntry((x) => x.where === 'window' && x.message === 'click-boom');
+      check(!!ent, '② onClick 抛错进环形缓冲（where=window，message=click-boom）');
+      check(boomRan, '② onClick 回调确实被派发（记录≠吞掉）');
+      check(!!btn && btn.isConnected && !!tOk && tOk.isConnected,
+        '② 抛错后按钮与兄弟组件仍在 DOM（监听器异常不波及整页）');
+    }
+
+    // ══════ ③ 同批重渲染：一个 elmtId 抛错，其余照常（flush 循环补丁路径）════════
+    // 需要 main.js flush() 的逐 id try/catch 补丁；未打补丁时 B 的异常会杀死整批（本段 FAIL）。
+    // 场景：A/B/C 三个 elmtId 都依赖同一个 @State 实例，B 的 updateFunc 在 flag≥1 时必抛。
+    const flag = new ObservedPropertySimplePU(0, null, 'flag');
+    const view = new ViewPU(undefined, undefined, -1, '');
+    /** @type {Record<string, any>} */
+    const nodes = {};
+    const updateOf = (label) => (elmtId, isFirst) => {
+      if (label === 'boom' && flag.get() >= 1) throw new Error('render-boom(' + label + ')');
+      const el = globalThis.Text.create(label + ':' + flag.get());
+      globalThis.Text.pop();
+      nodes[label] = el;
+      return el;
+    };
+    const idA = view.observeComponentCreation2(updateOf('A'), 'Text');
+    let gotEntry = null;
+    const eb = globalThis.ErrorBoundary.create({
+      onError: (entry) => { gotEntry = entry; },   // ④：onError 载荷探针
+      fallback: '边界兜底内容',
+    });
+    const idB = view.observeComponentCreation2(updateOf('boom'), { name: 'Boom' });  // 挂进边界内
+    globalThis.ErrorBoundary.pop();
+    const idC = view.observeComponentCreation2(updateOf('C'), 'Text');
+
+    check(!!eb && !!eb.querySelector('[data-arkui-comp="Text"]'),
+      '③ 边界容器内 B 的 Text 首渲染在场（before: boom:0）');
+
+    flag.set(1);          // A/B/C 一起进脏集 → 同一次 flush：B 抛错，A/C 必须照常
+    await tick(30);       // markDirty 经 Promise.resolve().then 调度 flush
+    const entB = findEntry((x) => x.where === 'rerender' && x.elmtId === idB);
+    check(!!entB && entB.message.indexOf('render-boom') >= 0,
+      '③ B 的 updateFunc 抛错进缓冲（where=rerender，elmtId=idB）');
+    check(!!nodes['A'] && nodes['A'].textContent === 'A:1',
+      '③ 同批其余 elmtId 照常：A 文本已更新为 A:1');
+    check(!!nodes['C'] && nodes['C'].textContent === 'C:1',
+      '③ 同批其余 elmtId 照常：C 文本已更新为 C:1');
+    check(!!nodes['A'] && nodes['A'].isConnected && !!nodes['C'] && nodes['C'].isConnected,
+      '③ A/C 节点仍在 DOM（批次存活）');
+
+    // ══════ ④ onError 载荷 + fallback 内容 ══════
+    check(!!gotEntry && gotEntry.elmtId === idB && gotEntry.message.indexOf('render-boom') >= 0,
+      '④ onError 收到载荷（elmtId=idB，message 命中）');
+    check(!!gotEntry && typeof gotEntry.seq === 'number' && typeof gotEntry.time === 'number'
+      && typeof gotEntry.stack === 'string' && gotEntry.stack.indexOf('\n') < 0,
+      '④ 载荷含 seq/time/stack（stack 为首行、无换行）');
+    check(eb.textContent === '边界兜底内容' && eb.dataset.arkuiErrorBoundary === '1',
+      '④ fallback 内容落位 + data-arkui-error-boundary 标记');
+
+    // ══════ ⑤ applyAttr 入口抛错 → 进缓冲、不外抛（applyAttr 补丁路径） ══════
+    // 需 area.js applyAttr 入口 try/catch 补丁；未打补丁时 Text.id(evil) 会把异常抛进本页。
+    {
+      const evil = { toString() { throw new Error('attr-boom'); } };
+      const snap = VSP.snapshot();
+      globalThis.Text.create('attr-victim');
+      let threw = false;
+      try { globalThis.Text.id(evil); } catch (e) { threw = true; }   // String(evil) → toString 抛
+      globalThis.Text.pop();
+      VSP.restore(snap);
+      check(threw === false, '⑤ applyAttr 抛错不外抛（入口 try/catch 接住）');
+      const ent = findEntry((x) => x.where === 'applyAttr:id' && x.message === 'attr-boom');
+      check(!!ent && ent.component === 'Text', '⑤ applyAttr:id 错误进缓冲（component=Text）');
+    }
+
+    // ══════ ⑥ 环形缓冲 API 语义（截断 / 快照 / Error 归一化 / clear）════════
+    // 本段刻意放最后并先 clear：合成数据不污染前面的管线断言。
+    EB.clear();
+    check(EB.list().length === 0, '⑥ clear() 清空缓冲');
+    for (let i = 0; i < 55; i++) {
+      EB.push({ component: 'c' + i, elmtId: i, message: 'm' + i, where: 'synthetic' });
+    }
+    const lst = EB.list();
+    check(lst.length === 50, '⑥ 超限截断：push 55 条 → 缓冲保持 50');
+    check(lst[0].component === 'c5' && lst[49].component === 'c54',
+      '⑥ 截断挤掉最旧 5 条（保留最新 50：c5..c54）');
+    check(lst.every((x, i) => i === 0 || x.seq > lst[i - 1].seq),
+      '⑥ seq 严格递增（缓冲旧→新有序）');
+    const beforeClearSeq = lst[49].seq;
+    EB.clear();
+    const errObj = new Error('normalized-err');   // V8 的 stack 天然多行（首行 + at 帧行）
+    const one = EB.push(errObj);
+    check(one.seq > beforeClearSeq && EB.list().length === 1,
+      '⑥ clear 后 seq 仍单调（跨 clear 不回退，便于去重对账）');
+    check(errObj.stack.indexOf('\n') > 0 && one.message === 'normalized-err'
+      && one.stack.indexOf('\n') < 0 && one.stack.length > 0,
+      '⑥ push(Error) 归一化：message 取原文、stack 只留首行（原 stack 多行 → 条目单行）');
+    const snapList = EB.list();
+    snapList[0].message = 'TAMPERED';
+    check(EB.list()[0].message === 'normalized-err', '⑥ list() 返回快照（改副本不动缓冲）');
+
+    // 诊断行（不进断言计数）：页面是否有运行期未处理拒绝（未打 flush 补丁时会出现）
+    const unh = document.body.getAttribute('data-unhandled');
+    if (unh) lines.push('  NOTE 未处理拒绝: ' + unh);
+
+    lines.push(`  总计: ${pass}/${pass + fail}`);
+    if (fail === 0) lines.unshift(`=== ALL PASS (${pass}) ===`);
+    else lines.unshift(`=== ${fail} FAILURES / ${pass} PASS ===`);
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = fail === 0 ? 'pass' : 'fail';
+    document.title = fail === 0 ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

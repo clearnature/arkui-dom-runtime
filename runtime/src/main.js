@@ -298,7 +298,15 @@
     const pf0 = performance.now();
     const ids = [...dirty].sort((a, b) => a - b);
     dirty.clear();
-    for (const id of ids) rerenderElmt(id);
+    // E0-1：逐 elmtId 独立 try/catch——单组件 updateFunc 抛错进环形缓冲 + 边界派发，
+    // 批次里其余 elmtId 照常渲染（errorboundary 分片的统一入口，函数声明提升可用）
+    for (const id of ids) {
+      try { rerenderElmt(id); }
+      catch (e) {
+        const rec = elmtRecords.get(id);
+        __arkuiReportRenderError('rerender', id, e, rec && rec.node);
+      }
+    }
     const P = (/** @type {any} */ (global)).__arkui_dom_perf;
     if (P) { P.flushMs += performance.now() - pf0; P.n++; }
   }
@@ -350,7 +358,10 @@
   // @include animation
   // @include gesture
   // @include builtin
+  // @include errorboundary
+  // @include focus
   // @include generated-app-resources
+  // @include generated-sys-resources
   // ─────────────────────────── ViewPU ───────────────────────────
   class ViewPU {
     /** @param {any} parent @param {any} localStorage @param {any} elmtId @param {any=} [extraInfo] */
