@@ -16,7 +16,10 @@
   是对的）；④裸 global 改 globalThis。**navshimdemo 才是真 runtime bug**：
   playPageTransition 用 rAF 驱动逐帧回调（坑⑧家族 headless 不派发，PT 只落 0）
   → 改短定时器 16ms 步进（WAAPI 视觉层不动），全仓唯一消费方。验收
-  batchlayout 24 条 / navshimdemo 13 条三端 ALL PASS。
+  batchlayout 24 条 / navshimdemo 13 条三端 ALL PASS；门禁 9 步全绿（7302fba，
+  Mimosa 0 findings seal sha256:5098e247…）。**守门新陷阱：ROADMAP 表格行一行
+  两个不同用例名各带「N 条断言」→ 无法归类红**（navshimdemo 声明挪 CAPABILITY
+  导航垫片行）。
   更早：**R145 驱动完备性清账**——① electron all 补 5 例（a11ydemo/i18ndemo/
   rdbdemo/netadvdemo/leak，单跑实测计数与浏览器端逐一相同，双端声明固化为门禁
   全覆盖，84→89 例+netfile 两连）；② 孤儿页判定：batchmediademo 复活入矩阵
