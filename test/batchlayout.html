@@ -59,6 +59,7 @@
         `悬停态：upperItems 子项移到上半屏（top '${upper && upper.style.top}' height '${upper && upper.style.height}'）`);
       check(!!lower && lower.hasAttribute('data-folder-lower') && lower.style.top === '50%',
         `悬停态：其余子项留在下半屏（top '${lower && lower.style.top}'）`);
+      await tick(40);   // @State → DOM 重渲染是异步的：日志元素要等一拍再读（R146 修正，页面盲写期从未运行过）
       check(txt('fs-hover-log').indexOf('H1') >= 0,
         `onHoverStatusChange 派发（log '${txt('fs-hover-log')}'）`);
       let gotParam = null;
@@ -72,6 +73,7 @@
 
       // ══════════ ③ FolderStack 折态事件（1 条） ══════════
       fsW.setFoldStatus(3);
+      await tick(40);   // 同上：foldLog 走 @State 异步重渲染
       check(fs.dataset.foldStatus === '3' && txt('fs-fold-log').indexOf('F3') >= 0,
         `setFoldStatus(3) → dataset + onFolderStateChange（log '${txt('fs-fold-log')}'）`);
 
@@ -88,9 +90,9 @@
         `margin:12 → 两侧 padding（实际 '${getComputedStyle(gc).paddingLeft}'/'${getComputedStyle(gc).paddingRight}'）`);
 
       // ══════════ ⑤ XComponentNode 类面 + 声明面（4 条） ══════════
-      // 页面 aboutToAppear：合法值 TEXTURE=1 → true；非法值 9 → false
-      check(txt('xcn-log').indexOf('rt=1,bad=1') >= 0,
-        `changeRenderType 合法/非法返回值（log '${txt('xcn-log')}'）`);
+      // 页面 aboutToAppear：合法值 TEXTURE=1 → true；非法值 9 → false（bad=0 = 被拒）
+      check(txt('xcn-log').indexOf('rt=1,bad=0') >= 0,
+        `changeRenderType 合法接受/非法被拒返回 false（log '${txt('xcn-log')}'）`);
       const n2 = new XComponentNode(null, {}, 'tcn', 2, 'demo-lib');
       const n2W = /** @type {any} */ (n2).__xcn;
       check(!!n2W && n2W.id === 'tcn' && n2W.libraryName === 'demo-lib' && n2W.type === 2,
@@ -116,8 +118,8 @@
       check(sheet.dataset.sheet === '' && section.parentElement === sheet
         && sheet.style.flexDirection === 'column',
         `Sheet 面板容器 + Section 内容段父子结构`);
-      check(section.dataset.section === '' && section.style.flex === '1',
-        `Section flex:1 占满面板剩余空间`);
+      check(section.dataset.section === '' && String(section.style.flex).split(' ')[0] === '1',
+        `Section flex:1 占满面板剩余空间（flex '${section.style.flex}'）`);
 
       // ══════════ ⑦ UnionEffectContainer pointLight（2 条） ══════════
       const uec = UnionEffectContainer.create();
@@ -125,7 +127,7 @@
       UnionEffectContainer.pop();
       check(uec.dataset.unionEffectContainer === '' && uec.dataset.pointLight === '{"intensity":0.5}',
         `pointLight 参数落 data-*（实际 '${uec.dataset.pointLight}'）`);
-      const warns = /** @type {any} */ (global).__arkui_dom_layout_warnings || [];
+      const warns = (/** @type {any} */ (globalThis)).__arkui_dom_layout_warnings || [];
       check(warns.some((w) => String(w).indexOf('UnionEffectContainer.pointLight') >= 0),
         `光效无 DOM 对应物 → layoutWarnings 记录（不静默）`);
     } catch (e) {

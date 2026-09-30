@@ -9,7 +9,15 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R145 驱动完备性清账**——① electron all 补 5 例（a11ydemo/i18ndemo/
+- 上次切片：**R146 孤儿页腐化修复**——batchlayout/navshimdemo 修完入三端矩阵
+  （78/92/78）。诊断颠覆 R145 判定：live DOM 转储证明不是 runtime 腐化，是
+  **R66 页面盲写从未运行**——①@State→DOM 异步重渲染断言却同步读（补 await tick）；
+  ②style.flex 序列化是 '1 1 0%'；③bad=1 期望与冻结模块相反（runtime 恒拒非法值
+  是对的）；④裸 global 改 globalThis。**navshimdemo 才是真 runtime bug**：
+  playPageTransition 用 rAF 驱动逐帧回调（坑⑧家族 headless 不派发，PT 只落 0）
+  → 改短定时器 16ms 步进（WAAPI 视觉层不动），全仓唯一消费方。验收
+  batchlayout 24 条 / navshimdemo 13 条三端 ALL PASS。
+  更早：**R145 驱动完备性清账**——① electron all 补 5 例（a11ydemo/i18ndemo/
   rdbdemo/netadvdemo/leak，单跑实测计数与浏览器端逐一相同，双端声明固化为门禁
   全覆盖，84→89 例+netfile 两连）；② 孤儿页判定：batchmediademo 复活入矩阵
   （16 条双端 ALL PASS+守门声明），batchlayout（4 FAIL+global is not defined）/

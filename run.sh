@@ -375,11 +375,16 @@ case "${1:-index}" in
     "$NODE" tools/extract.mjs "$(src_of pages/Detail.ts)" build/detail-module.js --cjs --register Detail >/dev/null || rc=1
     run_one router "$(src_of pages/Home.ts)" build/home-module.js test/router.html "--cjs --register Home" || rc=1
     echo
-    # R145：孤儿页复活——batchmediademo（16 条 ALL PASS）；batchlayout/navshimdemo
-    # 复活尝试发现断言已腐化（4/1 FAIL，R66/R67 语义漂移）→ 判定待修，不盲入矩阵
-    # （无文档声明的页失败会被守门静默跳过——先修后进）。单跑走 dispatch。
+    # R145/R146：孤儿页复活——batchmediademo（16 条）、batchlayout（24 条，R146 修
+    # 4 处盲写断言+global）、navshimdemo（13 条，R146 修 PageTransition rAF 驱动）
     run_one batchmediademo "$(src_of pages/BatchMediaDemo.ts)" build/batchmediademo-module.js test/batchmediademo.html \
       "--cjs --register BatchMediaDemo" || rc=1
+    echo
+    run_one batchlayout "$(src_of pages/BatchLayoutDemo.ts)" build/batchlayout-module.js test/batchlayout.html \
+      "--cjs --register BatchLayoutDemo" || rc=1
+    echo
+    run_one navshimdemo "$(src_of pages/NavShimDemo.ts)" build/navshimdemo-module.js test/navshimdemo.html \
+      "--cjs --register NavShimDemo" || rc=1
     echo
     PERSIST_PROFILE="$HERE/build/chrome-profile-persist"
     rm -rf "$PERSIST_PROFILE"; mkdir -p "$PERSIST_PROFILE"   # 从干净状态开始，否则"持久化"可能是上次残留

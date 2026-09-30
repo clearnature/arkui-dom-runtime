@@ -267,14 +267,16 @@
       : [{ transform: 'none', opacity: 1 }, { transform: tf(1, 1), opacity: op }];
     const anim = root.animate(frames, { duration: dur, delay, easing, fill: 'none' });
     // 逐帧回调：progress 0→1（含 delay；总时长为 0 时直接派发 1）
+    // 驱动用短定时器而非 rAF（坑⑧同族，R146：headless/离屏下 rAF 不派发，实测逐帧回调
+    // 只落 PT0 一帧）——视觉层仍是 root.animate 的 WAAPI 不受影响；回调层 16ms 步进。
     const total = delay + dur;
     const t0 = performance.now();
-    const tick = (/** @type {number} */ now) => {
-      const p = total <= 0 ? 1 : Math.min(1, (now - t0) / total);
+    const step = () => {
+      const p = total <= 0 ? 1 : Math.min(1, (performance.now() - t0) / total);
       pageTransFrame(spec.cbs.frame, rt, p);
-      if (p < 1) requestAnimationFrame(tick);
+      if (p < 1) setTimeout(step, 16);
     };
-    requestAnimationFrame(tick);
+    step();
     return anim;
   };
   /** @type {Record<string, (n: any, v: any, opts?: any) => void>} */
