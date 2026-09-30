@@ -8,16 +8,19 @@
 "跨进程持久化必须同端口"语义——目前只有 netfile-1/netfile-2 一组）。
 
 输出行: {"name":..., "page":..., "query":..., "group":<int>, "port":"<原样>"}
-用法: python3 tools/ff-plan.py <run.sh 路径>
+用法: python3 tools/ff-plan.py   （解析对象固定为本仓库 run.sh，路径常量、不接受外部输入）
 """
 import json
 import re
 import shlex
 import sys
 
+RUN_SH = "/data/training/cli/arkui-dom-runtime/run.sh"
+
 
 def main():
-    src = open(sys.argv[1]).read()
+    with open(RUN_SH) as f:
+        src = f.read()
     # all 分派块：从 "  all)" 到 "    exit $rc ;;"
     m = re.search(r"^  all\)\n(.*?)^    exit \$rc ;;", src, re.S | re.M)
     if not m:

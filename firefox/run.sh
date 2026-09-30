@@ -42,7 +42,7 @@ fi
 
 # ── 用例计划：解析 run.sh all 块（run.sh 增删用例，本矩阵自动跟随）──
 mkdir -p build
-python3 tools/ff-plan.py run.sh > build/ff-plan.jsonl || exit 1
+python3 tools/ff-plan.py > build/ff-plan.jsonl || exit 1
 
 # ── geckodriver 生命周期：固定端口 9555，先清残留 ──
 pkill -f "geckodriver --port $GD_PORT" 2>/dev/null && sleep 0.5
