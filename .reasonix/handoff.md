@@ -15,7 +15,8 @@
   只管窗口内测量位移，结构性管不到区间级估高差；桌面估高=真值故四端测不出）。
   修复=layout.js scrollToIndex 估高分支 flush 后目标已入窗则按真实 offsetTop
   二次对齐（桌面 delta≈0）；hiDpi 放宽断言恢复严格 ±2。Android 3 连过 22 条+
-  桌面/Gecko/WebKit 全绿。
+  桌面/Gecko/WebKit 全绿；门禁 11 步全绿（9d5db67，Mimosa 0 findings seal
+  sha256:a29827bd…）。
   更早：**R149 Android 第五端入阵**（System WebView 移动 Blink）——zcode
   android-emulator 插件协同（MCP 本会话未投影→CLI 直驱；SDK 用户态装 /data/android-sdk，
   许可用户本人接受）。**链路三坑**：adb reverse（NAT 不可靠）/playwright connectOverCDP
