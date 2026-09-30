@@ -103,8 +103,8 @@ tools/stats.mjs                覆盖范围统计（文档里的数字都来自�
 test/*.html                    断言页（96 页；进全矩阵的用例由 runner 守门，见 docs/DEVELOPING.md 坑 77）
 fixtures/                      冻结的 ets-loader 转换产物（30 个，测试的输入）
 harmony-proj/                  HarmonyOS 工程（页面 .ets 源码，转换产物的来源；构建输出不入库）
-run.sh                         浏览器 78 用例驱动
-electron/run.sh                Electron 91 用例 + 真实磁盘验证
+run.sh                         浏览器 80 用例驱动
+electron/run.sh                Electron 93 用例 + 真实磁盘验证
 firefox/run.sh                 Firefox(Gecko) 同用例表跨引擎复跑（R144，缺席显式跳过；
                                geckodriver 定位顺序与计数覆盖见文件头注释）
 tools/ff-plan.py               解析 run.sh all 块 → Firefox 矩阵用例计划（单一事实来源）

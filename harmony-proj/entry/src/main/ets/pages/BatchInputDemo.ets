@@ -1,29 +1,21 @@
-// R66 测量/验证用页面：批量输入收官 **CheckboxGroup / PatternLock / SelectionContainer
-//   / ColorPicker / ColorPickerDialog / Option**
+// R66 测量/验证用页面：批量输入 **CheckboxGroup / PatternLock**（R147 裁定：
+//   SelectionContainer / ColorPicker / ColorPickerDialog / Option 四族不在 CLT 26
+//   SDK（页头原注释已预言"编译期报红按头注逐块注释"）——裁段后登记 main_pages
+//   重构建入阵；被裁组件在 runtime/src/batch-input.js 仍有语义层与 batchverify 覆盖）
 //
 // ⚠️ 先测量再实现：本页让官方编译器暴露下列 API 的产物形态：
 //   ① CheckboxGroup({group}) + selectAll/selectedColor/checkboxShape +
 //      onChange({name: string[], status})；组员 Checkbox({name, group})
 //   ② PatternLock(controller) + sideLength/circleRadius/pathColor/autoReset +
 //      onDotConnect(i) / onPatternComplete(Array<number>)；控制器 reset/setChallengeResult
-//   ③ SelectionContainer({controller}) + copyOption/selectedBackgroundColor/textJoinStyle +
-//      onTextSelectionChange(Array<string>) / onCopy(string)；子级 Span
-//   ④ Option({value})（ets-loader option.json：parents=[Menu]，attrs=字体四件）——
-//      ⚠️ 本 SDK 安装无 option.d.ts，若编译期报红按头注逐块注释（见 runtime/src/batch-input.js）
-//   ⑤ ColorPicker + colors/onSelect/setColunms（SDK 原始拼写）—— 同上无 d.ts
-//   ⑥ ColorPickerDialog + show —— 同上无 d.ts
 //
-// 现状画像：六组件此前只有 149 骨架表的 div 空壳；本轮补语义层（runtime/src/batch-input.js）。
+// 现状画像：组件此前只有 149 骨架表的 div 空壳；R66 补语义层（runtime/src/batch-input.js）。
 @Entry
 @Component
 struct BatchInputDemo {
   @State cgLog: string = '';
   @State plLog: string = '';
-  @State scLog: string = '';
-  @State cpLog: string = '';
-  @State showDlg: boolean = false;
   private ctrl: PatternLockController = new PatternLockController();
-  private selCtrl: SelectionContainerController = new SelectionContainerController();
 
   build() {
     Column({ space: 8 }) {
@@ -53,52 +45,8 @@ struct BatchInputDemo {
           this.plLog = this.plLog + 'P' + input.join('') + ';';
         })
 
-      // ③ SelectionContainer：可选中文本容器（多 Span 选择/复制）
-      SelectionContainer({ controller: this.selCtrl })
-        .id('sc1')
-        .copyOption(CopyOptions.InApp)
-        .selectedBackgroundColor('#b4d8ff')
-        .textJoinStyle(SelectionContainerTextJoinStyle.DIRECT)
-        .onTextSelectionChange((texts: Array<string>) => {
-          this.scLog = this.scLog + 'S' + texts.length + ';';
-        })
-        .onCopy((content: string) => { this.scLog = this.scLog + 'C' + content + ';'; }) {
-        Span('alpha').id('sp-alpha')
-        Span('beta').id('sp-beta')
-      }
-
-      // ④ Option：Menu 内菜单项 + 字体四件（选中由点击落 data-*，事件冒泡给宿主）
-      Menu() {
-        Option({ value: 'opt-a' })
-          .id('opt-a')
-          .fontColor('#0066cc')
-          .fontSize(14)
-        Option({ value: 'opt-b' })
-          .id('opt-b')
-          .fontWeight(FontWeight.Bold)
-      }
-      .id('mn-opt')
-
-      // ⑤ ColorPicker：色块阵 + 选择回调（setColunms 用 SDK 原始拼写）
-      ColorPicker()
-        .id('cp1')
-        .colors(['#ff0000', '#00ff00', '#0000ff'])
-        .setColunms(3)
-        .onSelect((color: string) => { this.cpLog = this.cpLog + 'CP' + color + ';'; })
-
-      // ⑥ ColorPickerDialog：遮罩对话框，show 由 @State 驱动（测试点按钮走真实属性路径）
-      Button('dlg')
-        .id('btn-dlg')
-        .onClick(() => { this.showDlg = !this.showDlg; })
-      ColorPickerDialog()
-        .id('cpd1')
-        .colors(['#123456', '#654321'])
-        .show(this.showDlg)
-
       Text(this.cgLog).id('cg-log').fontSize(12).height(20)
       Text(this.plLog).id('pl-log').fontSize(12).height(20)
-      Text(this.scLog).id('sc-log').fontSize(12).height(20)
-      Text(this.cpLog).id('cp-log').fontSize(12).height(20)
     }
     .width('100%')
     .height('100%')

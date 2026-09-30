@@ -9,7 +9,15 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R146 孤儿页腐化修复**——batchlayout/navshimdemo 修完入三端矩阵
+- 上次切片：**R147 batchinput/Motion 重构建入阵**——R145 清单最后一个开发性尾巴。
+  两页 R66 产出但 main_pages 未登记→从未编译（batchinput 编译失败根因：四族组件
+  不在 CLT 26 SDK，页头注释早预言但没人编译过）。登记→裁四族段→BUILD OK→fixture
+  冻结（钩子拦 cp，Read/Write 合规）→测试页裁 12 条+格式归一（原页 `✅ ALL PASS`
+  前缀 firefox 驱动不认）。**又抓真 runtime 缺口**：input.js Checkbox.create 丢弃
+  group（batch-input.js 注释自曝"补一行即生效"没做）→ 组员带不动组状态 → 补落
+  data-arkui-checkbox-group。验收 batchinputdemo 14 条 / motiondemo 23 条（一次过，
+  非盲写页）三端 ALL PASS；三端矩阵 80/94/80。
+  更早：**R146 孤儿页腐化修复**——batchlayout/navshimdemo 修完入三端矩阵
   （78/92/78）。诊断颠覆 R145 判定：live DOM 转储证明不是 runtime 腐化，是
   **R66 页面盲写从未运行**——①@State→DOM 异步重渲染断言却同步读（补 await tick）；
   ②style.flex 序列化是 '1 1 0%'；③bad=1 期望与冻结模块相反（runtime 恒拒非法值

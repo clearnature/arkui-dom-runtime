@@ -7191,6 +7191,11 @@
 
   const Checkbox = inputComponent('Checkbox', 'checkbox', (el, o) => {
     if (o.name !== undefined && o.name !== null) el.name = String(o.name);
+    // R147：组标记落 dataset——batch-input.js 的 CheckboxGroup 组员发现路径按
+    // data-arkui-checkbox-group 精确命中（此前丢弃 group，组员自态变化带不动组状态）
+    if (o.group !== undefined && o.group !== null) {
+      (/** @type {any} */ (el)).dataset.arkuiCheckboxGroup = String(o.group);
+    }
   });
   // Radio 的组登记：互斥时被取消成员的 onChange(false) 要【补发】—— Chrome 只给新选中者发
   // change（radio.d.ts JSDoc："false means that the radio button changes from selected to

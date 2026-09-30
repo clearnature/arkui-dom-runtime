@@ -386,6 +386,14 @@ case "${1:-index}" in
     run_one navshimdemo "$(src_of pages/NavShimDemo.ts)" build/navshimdemo-module.js test/navshimdemo.html \
       "--cjs --register NavShimDemo" || rc=1
     echo
+    # R147：batchinput/Motion 重构建入阵（页在 R66 产出但 main_pages 未登记从未编译；
+    # batchinput 裁掉 CLT 26 SDK 没有的四族组件后编译通过）
+    run_one batchinputdemo "$(src_of pages/BatchInputDemo.ts)" build/batchinputdemo-module.js test/batchinputdemo.html \
+      "--cjs --register BatchInputDemo" || rc=1
+    echo
+    run_one motiondemo "$(src_of pages/MotionDemo.ts)" build/motiondemo-module.js test/motiondemo.html \
+      "--cjs --register MotionDemo" || rc=1
+    echo
     PERSIST_PROFILE="$HERE/build/chrome-profile-persist"
     rm -rf "$PERSIST_PROFILE"; mkdir -p "$PERSIST_PROFILE"   # 从干净状态开始，否则"持久化"可能是上次残留
     PERSIST_PORT="$(pick_free_port)" || { echo "  ❌ 找不到空闲端口"; rc=1; }
@@ -645,6 +653,14 @@ case "${1:-index}" in
     # R66：导航垫片批次（NavRouter / Navigator / PageTransition / ToolBarItem 等）——R145 复活
     run_one navshimdemo "$(src_of pages/NavShimDemo.ts)" build/navshimdemo-module.js test/navshimdemo.html \
       "--cjs --register NavShimDemo" ;;
+  batchinputdemo)
+    # R66/R147：批量输入（CheckboxGroup / PatternLock；四族不在 SDK 已裁）——重构建入阵
+    run_one batchinputdemo "$(src_of pages/BatchInputDemo.ts)" build/batchinputdemo-module.js test/batchinputdemo.html \
+      "--cjs --register BatchInputDemo" ;;
+  motiondemo)
+    # R66/R147：ScrollBar 滚动条 + 动效族原子件（Animator / FrictionMotion 等）——重构建入阵
+    run_one motiondemo "$(src_of pages/MotionDemo.ts)" build/motiondemo-module.js test/motiondemo.html \
+      "--cjs --register MotionDemo" ;;
   funcbehavior)
     # R94：行为断言三批（func/motion/layout）
     run_one funcbehavior "$(src_of entryability/EntryAbility.ts)" build/funcbehavior-module.js test/funcbehavior.html \
