@@ -9,7 +9,19 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R151 v2 语义三件 + Tabs 长尾第一片**（多智能体 A/B/C + 主会话集成）——
+- 上次切片：**R152 Media 时钟贯通 + Tabs 长尾第二片**（多智能体 A/B/C）——A 翻案
+  R35 陈旧账（「Electron 时钟未打通」=只验过放宽断言；垫片墙钟端无关），实修 seek
+  移墙钟基点/completed 定格/垃圾冻结点/WAV RIFF 时长四缺口 + video.js onPrepared/
+  onUpdate 事件桥；mediademo 8→19 条合并分端双端同绿。B=Tabs 动画族（onGestureSwipe
+  拖拽逐帧/onAnimationStart·End/animationDuration 缺省 300 非 0——C 简报纠偏 API11+
+  口径；事件序 sel→unsel→animStart→change）+ tabanim 26 条。C=Repeat 产物形态蓝图
+  （构造式+指令式/RepeatItem 不解构/键 `${index}__`+WeakMap）+ Tabs 动画真机行为。
+  **集成三修**：typecheck 尾巴、batchfunc 跨月 data-today 转负向（R94 同族）、
+  mediademo 五端容差族（WebKitGTK GStreamer 探测延迟 playing 进入 0.16s/Android
+  WebView 近空 WAV 瞬间播完 S:completed 先行+续播停冻结点——引擎能力差异两态合法）。
+  门禁 11 步全绿（6f88f22，Mimosa 0 findings seal sha256:bb179f4f…）；五端
+  83/96/83/83/83。
+  更早：**R151 v2 语义三件 + Tabs 长尾第一片**（多智能体 A/B/C + 主会话集成）——
   A=v2.js（279→707 行）：@Reusable 复用池（ctor 键/LIFO/容量 100-200/出池 reset 链在
   finalizeConstruction 收尾）、@Computed 依赖收集+脏失效缓存（写命中立即重算+递归传播，
   ARCHITECTURE「不缓存」设计决定节重写）、@Monitor 点分路径（绑定期逐段注册+写路径
