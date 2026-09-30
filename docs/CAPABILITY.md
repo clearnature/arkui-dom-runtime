@@ -213,10 +213,22 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
   内容不避让、backdrop-filter 近似模糊并记警告）、回调 `onTabBarClick`/`onSelected`/`onUnselected`
   （事件序 click → sel(新) → unsel(旧) → change(落定)，同索引去重）——语义依据 tabs.d.ts + 真机
   tabs_layout_algorithm.cpp:729-782/tab_bar_layout_algorithm.cpp:217-334/swiper_pattern.cpp:4389。
-  **仍记 `layoutWarnings`**：`barGridAlign`、全部动画项（`animationDuration`/`animationMode`/
-  `animationCurve`/`customContentTransition`/`pageFlipMode`）、`edgeEffect`/`cachedMaxCount`、
-  `onAnimationStart`/`onAnimationEnd`/`onGestureSwipe`/`onContentWillChange`、barMode 第二参
-  ScrollableBarModeOptions。
+  **R152 落地第二片长尾**：`onGestureSwipe(i, extra)`（拖拽逐帧，velocity 恒 0=真机拖拽期形状）、
+  `onAnimationStart(三参)`/`onAnimationEnd(两参)`（点击与拖拽过半两路径；打断先补发 End(isForceStop)
+  再开新动画）、`animationDuration`（**缺省 300 非 0**——API11+ 口径，BottomTabBarStyle 才 0；
+  0=无动画无回调；点击路径曲线 cubic-bezier(0.2,0,0.1,1)）。
+  **R153 落地第三片长尾**：`barGridAlign`（BarGridColumnOptions{sm,md,lg,margin,gutter 缺省 24}——
+  档位按 bar 内容宽 SM≤4/MD≤8/LG≤12、columnValue 非负偶数否则整宽、限宽+左右留白居中，逐式对齐
+  tab_bar_layout_algorithm.cpp:1090-1127；仅水平生效）、`animationCurve`（双默认：点击
+  cubic-bezier(0.2,0,0.1,1) / 拖拽释放 spring 内禀 270ms 不受 duration 控制；入参面数字枚举/spring
+  族名/cubic-bezier 直通，ICurve 对象警告+保持现值）、`pageFlipMode`（滚轮 CONTINUOUS 连翻/SINGLE
+  一次一页+动画中闸、Ctrl+滚轮与边界不翻）、`cachedMaxCount(count, mode)`（BOTH_SIDE 窗 [i−n,i+n] /
+  LATEST_SWITCHED={当前}∪LRU(n+1)；DOM 无安全销毁面→`data-arkui-tab-evicted` 标记+display 淘汰
+  表达不保活，回访解除——偏差注释记档）。
+  **仍记 `layoutWarnings`**：`animationMode`、`customContentTransition`、`edgeEffect`（钩子在
+  builtin.js 拖拽内部，留待后续片）、`onContentWillChange`、barMode 第二参
+  ScrollableBarModeOptions；拖拽释放翻页过渡曲线暂为 ease-out（真机 interpolatingSpring——
+  builtinFinishPagedDrag 曲线槽位留痕待接）。
   `TabContent.tabBar` **只支持字符串标签**：`SubTabBarStyle`/`BottomTabBarStyle`/自定义 builder 会记警告并留空标签。
   新片断言：`bash run.sh tablong`（26 条断言，五端通过）。
 - **`Swiper` 轮播已实现**（切换/指示点/loop/autoPlay + **R125 内置拖拽翻页**），剩余限制：

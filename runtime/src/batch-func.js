@@ -37,6 +37,22 @@
   //   用 scheduled 标记去重、lastSig 快照去重（数组没变就不重建）。
 
   // ════════════════════ Repeat ════════════════════
+  // R153-A：键 diff 三分支复用语义（对齐真机 pu_repeat_impl.ts:122-185 + repeat_node.cpp:103-111）：
+  //   · 键生成：有 .key(fn) → fn(item, i)；缺省 = `${index}__` + 键串（对象/function/symbol 走
+  //     WeakMap 稳定自增 id——JSON.stringify 对对象不稳定且循环引用会抛，其余 JSON.stringify）。
+  //   · 数据源变更 = 暂存区 + 按新序 append 回填（真机 std::swap(children_, tempChildren_) 的
+  //     DOM 对应物是 DocumentFragment）：①预扫删除集合（旧有新无）；②旧子树整体摘进暂存区；
+  //     ③按新数组序逐键三分支——键保留 → 仅 updateIndex（item 不动：键相等即同一逻辑项）；
+  //     键消失但删除集/持久池非空 → 复用（先 updateItem 再 updateIndex，真机 :166-167 顺序）；
+  //     否则新建。逐项 appendChild 到尾部，循环结束顺序天然正确（不需要 LCS/insertBefore）。
+  //   · RepeatItem 是状态对象（repeat.d.ts:279-286 "Do not destructure RepeatItem"）：同一键
+  //     跨数据变更保持同一 ri 实例、item/index 原地改写。本项目无嵌套 Proxy，"响应性"的等价
+  //     实现 = 需要更新的项重放 each builder，但 DOM 节点按 key 复用：scratch 重放 + 浅层 DOM
+  //     补丁（属性/文本/子树逐位对齐），同 key 的项根节点对象引用不变——与 ForEach 整体重建
+  //     基线的可观测差异就是这个节点身份保持。
+  //   · 回收池：本渲染删除集先尽（LIFO 尾取，同真机 tempChildren 尾 pop），再落持久池（单池、
+  //     上限 16、同模板优先——真机非虚拟路径无持久池、虚拟路径按 ttype 分桶，此处是仓库纪律
+  //     下的超集）；池满真销毁。重复键 → 告警（含真机修复指引文案）+ 整体回退缺省键全量重渲染。
   /** @param {any[]} prev @param {any[]} next @param {number} n */
   const repeatSigSame = (prev, next, n) => prev.length === n && next.length >= n
     && prev.every((/** @type {any} */ v, /** @type {number} */ k) => Object.is(v, next[k]));
@@ -49,6 +65,268 @@
       st.scheduled = false;
       repeatRender(st);
     });
+  }
+
+  // 缺省键的对象/function/symbol 稳定 id 表（WeakMap：对象被 GC 后条目随之回收）
+  const repeatKeyIds = new WeakMap();
+  let repeatKeySeq = 0;
+
+  /** @param {any} v @returns {string} */
+  function repeatKeyStringOf(v) {
+    if (v === null) return 'null';
+    const t = typeof v;
+    if (t === 'object' || t === 'function' || t === 'symbol') {
+      let id = repeatKeyIds.get(v);
+      if (id === undefined) { id = ++repeatKeySeq; repeatKeyIds.set(v, id); }
+      return '@' + id;
+    }
+    if (t === 'string') return JSON.stringify(v);
+    try {
+      const s = JSON.stringify(v);
+      return s === undefined ? String(v) : s;
+    } catch (e) { return String(v); }
+  }
+
+  /** @param {any} item @param {number} i @returns {string} 缺省键 = `${index}__` + 键串 */
+  function repeatDefaultKey(item, i) { return i + '__' + repeatKeyStringOf(item); }
+
+  /** @param {any} item @param {number} i @returns {any} RepeatItem 状态对象（可变字段，跨 diff 原地改写） */
+  function repeatMakeItem(item, i) { return { item, index: i }; }
+
+  /**
+   * 浅层 DOM 补丁：把 fresh 子树的属性/文本/子树逐位对齐进 old，尽量保住节点身份。
+   * 返回 true = old 已原位复用；false = 结构不兼容（调用方整体换新——身份让位于内容正确）。
+   * @param {Element} oldEl @param {Element} newEl @returns {boolean}
+   */
+  function repeatPatchInto(oldEl, newEl) {
+    if (oldEl.nodeType !== 1 || newEl.nodeType !== 1) return false;
+    if (oldEl.nodeName !== newEl.nodeName) return false;
+    for (const at of Array.from(newEl.attributes)) {
+      if (oldEl.getAttribute(at.name) !== at.value) oldEl.setAttribute(at.name, at.value);
+    }
+    for (const at of Array.from(oldEl.attributes)) {
+      if (!newEl.hasAttribute(at.name)) oldEl.removeAttribute(at.name);
+    }
+    const oc = Array.from(oldEl.childNodes);
+    const nc = Array.from(newEl.childNodes);
+    const len = Math.max(oc.length, nc.length);
+    for (let k = 0; k < len; k++) {
+      const o = oc[k]; const w = nc[k];
+      if (o && w) {
+        if (o.nodeType === 3 && w.nodeType === 3) {
+          if ((/** @type {Text} */ (o)).data !== (/** @type {Text} */ (w)).data) {
+            (/** @type {Text} */ (o)).data = (/** @type {Text} */ (w)).data;
+          }
+        } else if (o.nodeType === 1 && w.nodeType === 1
+          && repeatPatchInto(/** @type {Element} */ (o), /** @type {Element} */ (w))) {
+          // 原位复用
+        } else {
+          oldEl.replaceChild(w, o);          // 结构不兼容 → 该子树换新
+        }
+      } else if (w) {
+        oldEl.appendChild(w);                // 新增：直接采纳 scratch 节点
+      } else if (o) {
+        oldEl.removeChild(o);                // 缩减：销毁多余旧子节点
+      }
+    }
+    return true;
+  }
+
+  /**
+   * RepeatItem 的 item/index 已原地改写后重放 builder：scratch 里重跑一遍，再按位补丁回
+   * 已保留的旧节点（节点身份保持——本项目"响应性"的等价实现）。
+   * @param {any} st @param {any} rec @param {any} b
+   */
+  function repeatReplayPatch(st, rec, b) {
+    const scratch = document.createElement('div');
+    runBuilderInto(scratch, () => b(rec.ri), 'Repeat.diff');
+    const fresh = Array.from(scratch.childNodes);
+    const old = Array.from(rec.nodes || []);
+    const kept = [];
+    const len = Math.max(old.length, fresh.length);
+    for (let k = 0; k < len; k++) {
+      const o = old[k]; const w = fresh[k];
+      if (o && w) {
+        if (o.nodeType === 1 && w.nodeType === 1
+          && repeatPatchInto(/** @type {Element} */ (o), /** @type {Element} */ (w))) {
+          kept.push(o);
+        } else if (o.parentNode) {
+          o.parentNode.replaceChild(w, o);
+          kept.push(w);
+        } else {
+          kept.push(w);
+        }
+      } else if (w) {
+        kept.push(w);
+      } else if (o && o.parentNode) {
+        o.parentNode.removeChild(o);
+      }
+    }
+    rec.nodes = kept;
+  }
+
+  /**
+   * 解析 (item, i) 的构建器与模板桶标识（templateId 未命中任何 template 时回落 each，
+   * repeat.d.ts）。返回 null = 缺 .each（已告警，跳过该项——真机是运行时错误，这里降级）。
+   * @param {any} st @param {any} item @param {number} i @returns {{b:any, tplKey:string}|null}
+   */
+  function repeatResolveBuilder(st, item, i) {
+    let b = st.eachB;
+    let tplKey = 'each';
+    if (st.templateIdFn) {
+      let t = null;
+      try { t = st.templateIdFn(item, i); } catch (e) {
+        warnOnce('Repeat.templateId 抛错：' + (e && e.message));
+      }
+      if (t !== undefined && t !== null && st.templates[String(t)]) {
+        b = st.templates[String(t)];
+        tplKey = 'tpl:' + String(t);
+      }
+    }
+    if (typeof b !== 'function') {
+      if (!st.warnedEach) {
+        st.warnedEach = true;
+        // repeat.d.ts："The each property is mandatory. If it is omitted, runtime errors
+        // will occur." —— 真机直接报错；这里降级为警告 + 跳过该项，其余项照常渲染。
+        layoutWarnings.push('Repeat 缺少 .each 构建器（必填），未命中模板的项不会渲染');
+      }
+      return null;
+    }
+    return { b, tplKey };
+  }
+
+  /**
+   * 键列表：有 .key(fn) 用 fn(item, i)（抛错/返回 undefined/null 该项回落缺省键）；缺省键 =
+   * `${index}__` + 键串。重复键在 Map 阶段检测（Map.set 静默覆盖 → size < n 判定，
+   * pu_repeat_impl.ts:62-71）。
+   * @param {any} st @param {number} n @returns {{keys:any[], dup:boolean}}
+   */
+  function repeatComputeKeys(st, n) {
+    const keys = new Array(n);
+    for (let i = 0; i < n; i++) {
+      const item = st.arr[i];
+      let k;
+      if (st.keyFn) {
+        try { k = st.keyFn(item, i); } catch (e) {
+          warnOnce('Repeat.key 抛错：' + (e && e.message));
+        }
+      }
+      if (k === undefined || k === null) k = repeatDefaultKey(item, i);
+      keys[i] = k;
+    }
+    const seen = new Map();
+    for (let i = 0; i < n; i++) seen.set(keys[i], i);
+    return { keys, dup: seen.size < n };
+  }
+
+  /**
+   * 全量重建（首渲染 / 重复键回退 / 构建器面更换）。keys 为 null 时用缺省键
+   * （重复键回退 = 真机"换 index 前缀键重建"语义）。返回新 items 表。
+   * @param {any} st @param {number} n @param {any[]|null} keys @returns {Map<any, any>}
+   */
+  function repeatBuildAll(st, n, keys) {
+    st.el.textContent = '';
+    purgeDetachedRecords();
+    st.pool = [];                          // 全量重建弃池（被弃节点已随 textContent='' 脱离文档）
+    const items = new Map();
+    let rendered = 0;
+    for (let i = 0; i < n; i++) {
+      const item = st.arr[i];
+      const res = repeatResolveBuilder(st, item, i);
+      if (!res) continue;
+      const ri = repeatMakeItem(item, i);
+      const before = st.el.childNodes.length;
+      // repeat.d.ts：itemGenerator 收到 RepeatItem {item, index}，且【不要解构】（保持可观测）
+      runBuilderInto(st.el, () => res.b(ri), 'Repeat.item' + i);
+      const key = keys ? keys[i] : repeatDefaultKey(item, i);
+      items.set(key, { key, ri, tplKey: res.tplKey, nodes: Array.from(st.el.childNodes).slice(before) });
+      rendered++;
+    }
+    st.el.dataset.repeatCount = String(rendered);
+    return items;
+  }
+
+  /** @param {any[]} arr @param {string} tplKey @returns {number} 从尾部向前找同模板回收项（LIFO） */
+  function repeatRecycleIdx(arr, tplKey) {
+    for (let k = arr.length - 1; k >= 0; k--) {
+      if (arr[k].tplKey === tplKey) return k;
+    }
+    return -1;
+  }
+
+  /**
+   * 键 diff 渲染：暂存区 + 按新序 append 回填（区块注释的 ①②③）。
+   * @param {any} st @param {number} n @param {any[]} keys
+   */
+  function repeatDiffRender(st, n, keys) {
+    // ① 预扫删除集合（旧有新无；LIFO 尾取对应真机 tempChildren 尾 pop）
+    const newKeySet = new Set(keys);
+    const oldItems = st.items;
+    const dead = [];
+    for (const [k, rec] of oldItems) {
+      if (!newKeySet.has(k)) dead.push(rec);
+    }
+    // ② 暂存区：旧子树整体摘进 DocumentFragment（std::swap(children_, tempChildren_) 的 DOM 对应物）
+    const frag = document.createDocumentFragment();
+    while (st.el.firstChild) frag.appendChild(st.el.firstChild);
+    // ③ 按新数组序逐键三分支；每项 appendChild 到尾部 → 循环结束顺序天然正确
+    const items = new Map();
+    let rendered = 0;
+    for (let i = 0; i < n; i++) {
+      const item = st.arr[i];
+      const res = repeatResolveBuilder(st, item, i);
+      if (!res) continue;
+      const key = keys[i];
+      const keptRec = oldItems.get(key);
+      if (keptRec) {
+        // case#1 键保留：仅 updateIndex（item 不动——键相等即同一逻辑项，pu_repeat_impl.ts）。
+        // index 没变就不重放（真机 pu_repeat.ts:64-71 "无人依赖 index 跳过 set" 的对应物）。
+        oldItems.delete(key);
+        if (keptRec.ri.index !== i) {
+          keptRec.ri.index = i;                    // RepeatItem 原地改写（不换对象）
+          repeatReplayPatch(st, keptRec, res.b);   // 重放 + 补丁：内容更新、节点身份保持
+        }
+        for (const nd of keptRec.nodes) st.el.appendChild(nd);   // 从暂存区取回
+        items.set(key, keptRec);
+      } else {
+        // case#2 池选择：本渲染删除集优先，其次持久池；同模板优先，从尾部找（LIFO）；
+        // 同模板没有时退而取尾（跨模板复用——补丁对不兼容子树自动换新，内容仍正确）
+        let di = repeatRecycleIdx(dead, res.tplKey);
+        let src = dead;
+        if (di < 0) { di = repeatRecycleIdx(st.pool, res.tplKey); src = st.pool; }
+        if (di < 0 && (dead.length || st.pool.length)) {
+          src = dead.length ? dead : st.pool;
+          di = src.length - 1;
+        }
+        if (di >= 0) {
+          const rec = src.splice(di, 1)[0];
+          // case#2 复用：先 updateItem 再 updateIndex（真机 pu_repeat_impl.ts:166-167 顺序）
+          rec.ri.item = item;
+          rec.ri.index = i;
+          rec.key = key;
+          rec.tplKey = res.tplKey;
+          repeatReplayPatch(st, rec, res.b);
+          for (const nd of rec.nodes) st.el.appendChild(nd);
+          items.set(key, rec);
+        } else {
+          // case#3 新建
+          const ri = repeatMakeItem(item, i);
+          const before = st.el.childNodes.length;
+          runBuilderInto(st.el, () => res.b(ri), 'Repeat.item' + i);
+          items.set(key, { key, ri, tplKey: res.tplKey, nodes: Array.from(st.el.childNodes).slice(before) });
+        }
+      }
+      rendered++;
+    }
+    // 收尾：本渲染消失项入持久池（单池、上限 16——真机非虚拟路径无持久池，此处是超集；
+    // 池满真销毁：节点已随暂存区脱离文档，弃引用即可，再防御性清一次 elmtRecords）。
+    for (const rec of dead) {
+      st.pool.push(rec);
+      while (st.pool.length > 16) st.pool.shift();
+    }
+    if (dead.length) purgeDetachedRecords();
+    st.items = items;
+    st.el.dataset.repeatCount = String(rendered);
   }
 
   /** @param {any} st */
@@ -79,34 +357,26 @@
     if (st.lastSig && repeatSigSame(st.lastSig, st.arr, n)) return;
     st.lastSig = st.arr.slice(0, n);
 
-    st.el.textContent = '';
-    purgeDetachedRecords();
-    let rendered = 0;
-    for (let i = 0; i < n; i++) {
-      const item = st.arr[i];
-      let b = st.eachB;
-      if (st.templateIdFn) {
-        let t = null;
-        try { t = st.templateIdFn(item, i); } catch (e) {
-          warnOnce('Repeat.templateId 抛错：' + (e && e.message));
-        }
-        if (t !== undefined && t !== null && st.templates[String(t)]) b = st.templates[String(t)];
-      }
-      if (typeof b !== 'function') {
-        if (!st.warnedEach) {
-          st.warnedEach = true;
-          // repeat.d.ts："The each property is mandatory. If it is omitted, runtime errors
-          // will occur." —— 真机直接报错；这里降级为警告 + 跳过该项，其余项照常渲染。
-          layoutWarnings.push('Repeat 缺少 .each 构建器（必填），未命中模板的项不会渲染');
-        }
-        continue;
-      }
-      // repeat.d.ts：itemGenerator 收到 RepeatItem {item, index}，且【不要解构】（保持可观测）
-      const ri = { item, index: i };
-      runBuilderInto(st.el, () => b(ri), 'Repeat.item' + i);
-      rendered++;
+    // 构建器面（each/templateId/template）被整体更换 → 键无关的结构性变化，走全量重建
+    const builderFp = [st.eachB, st.templateIdFn]
+      .concat(Object.keys(st.templates).sort().map((/** @type {string} */ k) => st.templates[k]));
+    const buildersChanged = !!st.lastBuilders && (st.lastBuilders.length !== builderFp.length
+      || st.lastBuilders.some((/** @type {any} */ v, /** @type {number} */ k) => v !== builderFp[k]));
+    st.lastBuilders = builderFp;
+
+    const kc = repeatComputeKeys(st, n);
+    if (kc.dup && !st.warnedDupKeys) {
+      st.warnedDupKeys = true;
+      // 真机告警含修复指引（pu_repeat_impl.ts："Correct the key gen function"）；
+      // 处置同真机：整体回退缺省键（index 前缀）全量重渲染。
+      layoutWarnings.push('Repeat.key 生成了重复键，已整体回退缺省键全量重渲染，'
+        + '请修正 key 生成函数（Correct the key gen function）');
     }
-    st.el.dataset.repeatCount = String(rendered);
+    if (kc.dup || buildersChanged || !st.items) {
+      st.items = repeatBuildAll(st, n, kc.dup ? null : kc.keys);
+      return;
+    }
+    repeatDiffRender(st, n, kc.keys);
   }
 
   // repeat.json 属性面：each/key/onMove/template/templateId/virtualScroll。
@@ -125,7 +395,8 @@
       const st = (/** @type {any} */ (n)).__repeat;
       if (!st) return;
       st.keyFn = typeof v === 'function' ? v : null;
-      // 键生成器只服务 diff 复用；本实现是"数组变了整体重建"（同 ForEach 基线），键不参与
+      // R153-A：键生成器参与 diff（键保留→原地复用 / 键消失→池复用 / 新键→新建）；
+      // 缺省键 = `${index}__` + 键串；重复键 → 告警 + 回退缺省键全量重渲染
       n.dataset.key = typeof v === 'function' ? 'custom' : 'default';
     },
     template: (n, v, opts) => {
@@ -174,7 +445,10 @@
       /** @type {Record<string, any>} */ templates: {},
       vs: null, onMove: null,
       scheduled: false, lastSig: null,
-      warnedEach: false, warnedVs: false, warnedMove: false,
+      items: null,           // Map<key, rec>：当前存活项；rec = {key, ri, tplKey, nodes}
+      pool: [],              // 持久回收池（单池、上限 16、LIFO）
+      lastBuilders: null,    // 构建器面指纹（each/templateId/template 更换 → 全量重建）
+      warnedEach: false, warnedVs: false, warnedMove: false, warnedDupKeys: false,
     });
     return st.el;
   }, (/** @type {any} */ node, /** @type {any} */ args) => {
@@ -184,6 +458,15 @@
     st.arr = args && Array.isArray(args[0]) ? args[0] : [];
     repeatSchedule(st);
   });
+
+  // 运行时级数据源变更驱动（同 __arkui_dom_swiperState 先例，供测试/诊断页直调）：
+  // 走与 Repeat.create 重放完全相同的更新路径（arr 换源 + 调度微任务键 diff 渲染）。
+  (/** @type {any} */ (global)).__arkui_dom_repeatUpdate = (/** @type {any} */ node, /** @type {any[]} */ arr) => {
+    const st = (/** @type {any} */ (node)).__repeat;
+    if (!st) return;
+    st.arr = Array.isArray(arr) ? arr : [];
+    repeatSchedule(st);
+  };
 
   // ════════════════════ WithTheme ════════════════════
   /** @param {HTMLElement} el @param {any} o @returns {any} */

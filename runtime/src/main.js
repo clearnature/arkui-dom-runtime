@@ -760,17 +760,32 @@
   // 永不触发的死监听，且它排在 TABS_UNSUPPORTED 诊断之前，连警告都发不出）。
   // R152-B：动画/拖拽族四件（animationDuration/onAnimationStart/onAnimationEnd/
   // onGestureSwipe）也移出本表走自有方法拦截（同 R151 原因 ①，且由内置拖拽生命周期派发）。
-  // barGridAlign 实参是 BarGridColumnOptions{sm?,md?,lg?}（tabs.d.ts:1481-1493），不是 Alignment
-  // 枚举（C 简报纠偏）——真语义：仅水平模式生效，bar 内容限定在栅格列宽内水平居中；按内容宽
-  // 定 SM≤4/MD≤8/LG≤12 列，columnNum 须非负偶数（奇/负→0 即整宽），左右留白=
-  // (contentWidth−gridWidth)/2（tab_bar_layout_algorithm.cpp:1090-1127）。栅格断点测量归后续片，
-  // 本片继续记警告。
+  // barGridAlign 实参是 BarGridColumnOptions{sm?,md?,lg?,margin?,gutter?}（tabs.d.ts:762-830），
+  // 不是 Alignment 枚举（C 简报纠偏）——R153-B 已按真语义实现（见 normalizeBarGridAlign /
+  // applyTabsBarGrid 注释里的 cpp 对照），移出本表走自有方法拦截。
+  // R153-B：animationCurve（tabs.d.ts:1537-1551，Curve|ICurve 双缺省）/pageFlipMode
+  //（tabs.d.ts:1885-1911，鼠标滚轮翻页）/cachedMaxCount（tabs.d.ts:1913-1958，TabsCacheMode）
+  // 同批移出本表。仍不覆盖的：
+  //   edgeEffect——拖拽越界的摩擦（pointermove 的 outward 分支）与回弹舞台（builtinSpringRebound）
+  //   都长在 builtin.js attachPagedDrag 内部，main.js 侧 api 面没有"关掉越界位移/回弹"的钩子；
+  //   需要动 builtin.js 才能真做（R153-B 所有权不含该文件，已列入报告"需要主会话配合的点"）。
   const TABS_UNSUPPORTED = new Set([
-    'barGridAlign',
-    'animationMode', 'animationCurve',
-    'customContentTransition', 'pageFlipMode', 'edgeEffect', 'cachedMaxCount',
-    'onContentWillChange',
+    'animationMode', 'customContentTransition', 'edgeEffect', 'onContentWillChange',
   ]);
+
+  // R153-B：interpolatingSpring(-1,1,228,30) 的内禀时长近似（ms）。ω=√(k/m)≈15.1 rad/s、
+  // ζ=c/(2√(km))≈0.993（近临界阻尼、无可见过冲），2% 稳态时间 ≈ 4/(ζω) ≈ 265ms → 取 270。
+  // 两处使用者：① 拖拽释放翻页的 CSS 过渡时长（d.ts animationDuration JSDoc：animationDuration
+  // 【不控制】拖拽释放，时长由该 spring 内禀参数决定）；② spring 族 animationCurve 的点击路径
+  //（spring 族不受 animationDuration 影响，d.ts animationDuration JSDoc "For details about curves
+  // unaffected by animationDuration" 原文）。
+  const TABS_SPRING_SWITCH_MS = 270;
+  // 点击 tab / changeIndex 路径的缺省曲线（tabs.d.ts:1537-1551 JSDoc：双缺省之点击侧
+  // cubicBezierCurve(0.2,0.0,0.1,1.0)；拖拽侧缺省 interpolatingSpring(-1,1,228,30) 见上）。
+  const TABS_CLICK_CURVE = 'cubic-bezier(0.2, 0, 0.1, 1)';
+  // spring 族进 CSS transition 的近似曲线：ζ≈0.993 无可见过冲 → 无过冲快出缓入贝塞尔
+  //（真机是逐帧解算的弹簧，CSS 只能曲线近似，差异已在此记录）。
+  const TABS_SPRING_CSS = 'cubic-bezier(0.2, 0.7, 0.3, 1)';
 
   let tabsSeq = 0;
   class TabsController {
@@ -810,6 +825,17 @@
       gestureSwipe: null,             // onGestureSwipe 单槽覆盖（真机 SetGestureSwipeEvent swap，
                                       //   swiper_event_hub.h:79-84/164——与 R125 Swiper 的数组实现不同，此处照真机）
       tabAnim: null,                  // 进行中的切页动画舞台（animateTabSwitch 建立，settle 时清）
+      // R153-B 长尾第三片状态（d.ts 缺省值）：
+      barGridAlign: null,             // BarGridColumnOptions 归一化产物（normalizeBarGridAlign）；null=未设=整宽
+      animCurveKind: 'css',           // 'css'=缺省点击曲线（TABS_CLICK_CURVE）；'spring'=spring 族
+                                      //   （interpolatingSpring/springMotion 等，内禀时长、不受 duration 控制）
+      animCurveCss: TABS_CLICK_CURVE, // 点击/changeIndex 路径实际进 CSS transition 的曲线串
+      pageFlipMode: 0,                // PageFlipMode{CONTINUOUS=0, SINGLE=1}（tabs.d.ts:1885-1911 默认 CONTINUOUS）
+      cachedMaxCount: -1,             // -1=未设=全部缓存（swiper_pattern.cpp:868-869：<0 或 ≥ 页数 → 不设限）
+      cacheMode: 0,                   // TabsCacheMode{CACHE_BOTH_SIDE=0, CACHE_LATEST_SWITCHED=1}
+                                      //   （swiper_pattern.cpp:816：缺省 CACHE_BOTH_SIDE）
+      cachedLru: [],                  // CACHE_LATEST_SWITCHED 的最近切换索引（容量 cachedMaxCount+1，
+                                      //   swiper_pattern.cpp:838-842）
     });
     node.__tabsState = st;
     node.style.display = 'flex';
@@ -822,6 +848,14 @@
     st.barEl.style.display = 'flex';
     st.barEl.style.flexDirection = 'row';
     st.barEl.style.flex = 'none';
+    // R153-B：bar 内层栅格 wrapper——tab_bar_layout_algorithm.cpp:186/1090-1127 的 DOM 对应物
+    //（barGridAlign 把 bar 内容限定在 gridWidth 内水平居中）。结构恒存在：未设栅格时 max-width
+    // 不设=整宽，避免"有无栅格"两套条目结构（条目全部挂进它，见 finalizeTabs）。
+    st.barGridEl = document.createElement('div');
+    st.barGridEl.setAttribute('data-arkui-tabs-bar-grid', '');
+    st.barGridEl.style.display = 'flex';
+    st.barGridEl.style.width = '100%';
+    st.barEl.appendChild(st.barGridEl);
 
     st.contentEl = document.createElement('div');
     st.contentEl.setAttribute('data-arkui-tabs-content', '');
@@ -853,8 +887,10 @@
       /** @returns {number} */
       size: () => st.contentEl.clientWidth,
       /** @returns {number} */
-      duration: () => st.animationDuration,   // 翻页收口过渡时长（真机拖拽路径是 interpolatingSpring
-                                              //   内禀时长，DOM 用本值作 CSS 过渡；0=即时翻页）
+      duration: () => TABS_SPRING_SWITCH_MS,  // 拖拽释放翻页时长=spring 内禀近似（R153-B 纠偏：
+                                              //   d.ts animationDuration JSDoc 明说 animationDuration
+                                              //   只控制点击/changeIndex，拖拽释放由 interpolatingSpring
+                                              //   内禀参数决定——R152 曾把 animationDuration 接到这里）
       /** @param {number} i */
       pageAt: (i) => (st.contents[i] ? st.contents[i].el : null),
       /** @param {number} i */
@@ -870,10 +906,31 @@
         });
       },
       /** @param {number} idx @param {number} target */
-      animStart: (idx, target) => { if (st.animationDuration > 0) fireTabsAnimStart(st, idx, target); },
+      animStart: (idx, target) => { fireTabsAnimStart(st, idx, target); },
       /** @param {number} i */
-      animEnd: (i) => { if (st.animationDuration > 0) fireTabsAnimEnd(st, i); },
+      animEnd: (i) => { fireTabsAnimEnd(st, i); },
+      // R153-B：拖拽路径的动画事件不再受 animationDuration 门控（R152 的 >0 门控随 duration
+      // 纠偏一并移除——spring 内禀动画与 animationDuration 无关；点击路径的 duration=0 门控
+      // 仍在 setActiveTab 的 animate 判定里，语义分家）
     });
+    // R153-B pageFlipMode（tabs.d.ts:1885-1911；swiper_pattern.cpp:3027-3049 的 DOM 等价）：
+    // 鼠标滚轮在内容区翻页。每轴事件翻一页，主轴位移取 |deltaX|/|deltaY| 的主者；方向取 DOM
+    // 惯例"下滚=下一页"（真机 AXIS mainDelta>0→ShowPrevious 是 ACE 轴坐标"内容前进为正"的
+    // 约定，换算后同为下滚前进，swiper_pattern.cpp:3039-3044）。SINGLE：翻页动画进行中忽略
+    // 后续滚轮（swiper_pattern.cpp:3041——"一次一页"）；CONTINUOUS：不设闸连滚连翻（动画重定靶
+    // =打断补发 End 再开新场，settleTabsAnim 既有语义）。边界不翻页（真机无 loop），preventDefault
+    // 阻止页面随滚；Ctrl+滚轮是缩放手势，不参与翻页。
+    st.contentEl.addEventListener('wheel', (/** @type {WheelEvent} */ ev) => {
+      const n = st.contents.length;
+      if (n < 2 || ev.ctrlKey) return;
+      const d = Math.abs(ev.deltaX) >= Math.abs(ev.deltaY) ? ev.deltaX : ev.deltaY;
+      if (!d) return;
+      ev.preventDefault();
+      if (st.pageFlipMode === 1 && st.tabAnim) return;   // SINGLE：上一页动画没收口
+      const target = st.index + (d > 0 ? 1 : -1);
+      if (target < 0 || target >= n) return;
+      setActiveTab(st, target, true);
+    }, { passive: false });
     return st;
   }
 
@@ -963,10 +1020,11 @@
       // ── R152-B：动画/拖拽族四件（此前在 TABS_UNSUPPORTED，现真语义）──
       case 'animationDuration': {
         // d.ts tabs.d.ts:1221-1246：ms，[0,+∞)；只控制点击 tab / changeIndex 触发的切换动画
-        // （拖拽释放真机由 interpolatingSpring(-1,1,228,30) 内禀参数决定，DOM 里拖拽收口由
-        // builtin.js 承担、本值作 CSS 过渡时长——与 R65/R125 animateTo→CSS transition 同一惯例）。
+        //（拖拽释放由 interpolatingSpring(-1,1,228,30) 内禀参数决定，【不受本值控制】——
+        // R153-B 纠偏：拖拽收口时长改取 TABS_SPRING_SWITCH_MS，见 createTabsState 的拖拽 api）。
         // 负值/非法【不生效】（tabs_model_ng.cpp:474-490 只在 ≥0 时写，保持现值=缺省 300，
-        // 真机静默忽略故不记警告，避免重渲染刷屏）；0=无动画且不触发动画回调。
+        // 真机静默忽略故不记警告，避免重渲染刷屏）；0=点击路径无动画且不触发动画回调
+        //（spring 族曲线除外，见 setActiveTab 的 springSwitch 判定）。
         const n = Number(resolveResource(value));
         if (Number.isFinite(n) && n >= 0) st.animationDuration = n;
         return;
@@ -990,7 +1048,148 @@
           layoutWarnings.push(`Tabs.${key} 需要函数，收到 ${typeof value}，已忽略`);
         }
         return;
+      // ── R153-B：长尾第三片四件（此前在 TABS_UNSUPPORTED，现真语义）──
+      case 'barGridAlign':
+        // 入参面见 normalizeBarGridAlign；几何单一出口 applyTabsBarGrid（applyTabsBarLayout 末尾
+        // 统一调，finalizeTabs 后有真实宽度才量得出档位——这里只落参数）
+        st.barGridAlign = normalizeBarGridAlign(value);
+        applyTabsBarLayout(st);
+        return;
+      case 'animationCurve': {
+        // d.ts tabs.d.ts:1537-1551（since 20）：Curve | ICurve。双缺省（未设时）：点击 tab /
+        // changeIndex = cubicBezierCurve(0.2,0,0.1,1)；拖拽释放 = interpolatingSpring(-1,1,228,30)
+        //（内禀时长，不受 animationDuration 控制——JSDoc 原文）。设置自定义曲线后作用于所有切换
+        // 动画（SetAnimationCurve 同时写 bar 与 swiper，tabs_model_ng.cpp:1192-1204；bar 侧指示条
+        // 动画本实现无对应物、无 DOM 可观测面，不实现）。spring 族近似曲线见 TABS_SPRING_CSS。
+        const parsed = parseTabsAnimCurve(value);
+        if (!parsed) {
+          layoutWarnings.push(`Tabs.animationCurve(${JSON.stringify(value)}) `
+            + '不是 Curve 枚举/spring 族名/CSS 曲线串（ICurve 对象本运行时读不出参数），保持现值');
+          return;
+        }
+        st.animCurveKind = parsed.kind;
+        st.animCurveCss = parsed.css;
+        return;
+      }
+      case 'pageFlipMode': {
+        // d.ts tabs.d.ts:1885-1911：鼠标滚轮翻页模式，默认 CONTINUOUS；非法值回退 CONTINUOUS
+        //（swiper_pattern.cpp:8196-8202 静默回退，真机同——不记警告）。PageFlipMode 枚举序：
+        // CONTINUOUS=0 / SINGLE=1。
+        const m = resolveResource(value);
+        st.pageFlipMode = (m === 1 || m === '1' || m === 'single' || m === 'SINGLE') ? 1 : 0;
+        return;
+      }
+      case 'cachedMaxCount': {
+        // d.ts tabs.d.ts:1913-1958：cachedMaxCount(count, mode)——mode 是【第二参】（走 applyTabsAttr
+        // 的 extra，同 barMode 的 ScrollableBarModeOptions 通道），缺省 CACHE_BOTH_SIDE
+        //（swiper_pattern.cpp:816）。count<0 或 ≥ 页数 → 全部缓存（swiper_pattern.cpp:868-869
+        // 静默不设限，真机同）；非数显式记警告（程序错误，与真机静默不同，见报告）。
+        const n = Number(resolveResource(value));
+        if (!Number.isFinite(n)) {
+          layoutWarnings.push(`Tabs.cachedMaxCount(${JSON.stringify(value)}) 不是数字，已忽略`);
+          return;
+        }
+        st.cachedMaxCount = Math.trunc(n);
+        const mode = resolveResource(extra);
+        if (mode === undefined || mode === null || mode === 0 || mode === '0' ||
+            mode === 'cache_both_side' || mode === 'CACHE_BOTH_SIDE') st.cacheMode = 0;
+        else if (mode === 1 || mode === '1' || mode === 'cache_latest_switched' ||
+                 mode === 'CACHE_LATEST_SWITCHED') st.cacheMode = 1;
+        else {
+          st.cacheMode = 0;
+          layoutWarnings.push(`Tabs.cachedMaxCount 第二参 mode=${JSON.stringify(extra)} `
+            + '不是 TabsCacheMode（CACHE_BOTH_SIDE=0 / CACHE_LATEST_SWITCHED=1），按缺省 CACHE_BOTH_SIDE 处理');
+        }
+        applyTabsCache(st);
+        return;
+      }
     }
+  }
+
+  // ── R153-B：barGridAlign / animationCurve 入参归一化 ──
+
+  // BarGridColumnOptions{sm?,md?,lg?,margin?,gutter?}（tabs.d.ts:762-830）归一化：sm/md/lg 是
+  // 栅格列数（缺省 -1=该档整宽，d.ts JSDoc "The default value is -1"）；margin/gutter 是栅格
+  // 边距/列距（d.ts 缺省 24vp——"Default value: 24.0"，tabs_model.h BarGridColumnOptions 同值）。
+  // 非对象返回 null（未设）；列数非有限数按缺省 -1（=整宽，与 cpp columnNum<0 分支同义）；
+  // margin/gutter 百分比串 d.ts 明令禁止（"cannot be set in percentage"）→ 按缺省 24 处理。
+  /** @param {any} v @returns {any} */
+  function normalizeBarGridAlign(v) {
+    const o = resolveResource(v);
+    if (!o || typeof o !== 'object') return null;
+    /** @param {any} x @returns {number} */
+    const col = (x) => {
+      const n = Number(x);
+      return Number.isFinite(n) ? Math.trunc(n) : -1;
+    };
+    /** @param {any} x @param {number} def @returns {number} Dimension 数值（vp≈px 1:1） */
+    const dim = (x, def) => {
+      if (typeof x === 'number' && Number.isFinite(x)) return Math.max(0, x);
+      if (typeof x === 'string') {
+        const n = parseFloat(x);
+        if (Number.isFinite(n) && !/%\s*$/.test(x)) return Math.max(0, n);
+      }
+      return def;
+    };
+    return { sm: col(o.sm), md: col(o.md), lg: col(o.lg), margin: dim(o.margin, 24), gutter: dim(o.gutter, 24) };
+  }
+
+  // animationCurve 入参面：Curve 枚举值（数字）/ spring 族名 / CSS 曲线串 → {kind, css}。
+  //   · Curve 枚举（d.ts curve.d.ts）：0=Linear 1=Ease 2=EaseIn 3=EaseOut 4=EaseInOut 与 CSS
+  //     同名关键字一一对应（真机即同名 bezier）；5=Friction 6=Smooth 无官方 CSS 等价，取近似
+  //     （仅近似，不在断言面）。
+  //   · spring 族名（curves.interpolatingSpring/springMotion/responsiveSpringMotion/springCurve
+  //     对应的字符串形态）→ kind='spring'：内禀时长（TABS_SPRING_SWITCH_MS）、CSS 近似曲线。
+  //   · ICurve 对象（含 .interpolate）本运行时无 @ohos.curves 垫片、读不出曲线参数 → 返回 null
+  //     由调用方记警告（不静默吞）。
+  /** @param {any} v @returns {any} */
+  function parseTabsAnimCurve(v) {
+    const r = resolveResource(v);
+    if (typeof r === 'number') {
+      const byNum = ['linear', 'ease', 'ease-in', 'ease-out', 'ease-in-out',
+        'cubic-bezier(0.2, 0.0, 0.0, 1.0)', 'cubic-bezier(0.4, 0.0, 0.2, 1.0)'];
+      return { kind: 'css', css: byNum[r] || 'ease' };
+    }
+    if (typeof r === 'string') {
+      const s = r.trim().toLowerCase();
+      if (s === 'interpolatingspring' || s === 'spring' || s === 'springcurve' ||
+          s === 'springmotion' || s === 'responsivespringmotion') {
+        return { kind: 'spring', css: TABS_SPRING_CSS };
+      }
+      if (/^cubic-bezier\(/.test(s) ||
+          ['linear', 'ease', 'ease-in', 'ease-out', 'ease-in-out'].indexOf(s) >= 0) {
+        return { kind: 'css', css: s };
+      }
+      return null;
+    }
+    return null;
+  }
+
+  // ── R153-B：cachedMaxCount 缓存窗口（swiper_pattern.cpp:850-897 HandleTabsCachedMaxCount 的
+  // DOM 等价）。真机把窗外页 TabContentPattern::CleanChildren()（销毁子树、回访重建=不保活）；
+  // DOM 里 deep-render 内容归框架所有、无法安全销毁重建，以 data-arkui-tab-evicted 标记 +
+  // display:none 表达"窗外不保活"（标记语义=该页不在缓存窗口，回访视为重建），偏差已记录。
+  // 窗口：CACHE_BOTH_SIDE=[i−n, i+n]（2n+1）；CACHE_LATEST_SWITCHED={当前}∪cachedLru（≤n+1）；
+  // cachedMaxCount<0（未设）或 ≥ 页数 → 全部缓存（swiper_pattern.cpp:868-869）。
+  /** @param {any} st */
+  function applyTabsCache(st) {
+    const n = st.contents.length;
+    const cap = st.cachedMaxCount;
+    const limited = n > 0 && cap >= 0 && cap < n;   // cpp 的设限前置（<0 或 ≥ 总数不限）
+    const keep = /** @type {Set<number>} */ (new Set());
+    if (limited) {
+      if (st.cacheMode === 1) {
+        keep.add(st.index);
+        for (const idx of st.cachedLru) keep.add(idx);
+      } else {
+        for (let k = st.index - cap; k <= st.index + cap; k++) {
+          if (k >= 0 && k < n) keep.add(k);
+        }
+      }
+    }
+    st.contents.forEach((/** @type {any} */ c, /** @type {number} */ k) => {
+      c.el.setAttribute('data-arkui-tab-evicted', limited && !keep.has(k) ? 'true' : 'false');
+    });
   }
 
   // bar 的几何单一出口：容器方向矩阵、bar 内条目走向、条目 flex/换行、bar 尺寸/悬浮。
@@ -1007,13 +1206,16 @@
     node.style.flexDirection = st.vertical
       ? (st.barPosition === 'end' ? 'row-reverse' : 'row')
       : (st.barPosition === 'end' ? 'column-reverse' : 'column');
-    // 竖排 Tabs 的 tab 栏是纵向列表（真机 tab_bar 沿主轴排布条目）
+    // 竖排 Tabs 的 tab 栏是纵向列表（真机 tab_bar 沿主轴排布条目）。R153-B：条目实际住在
+    // 内层栅格 wrapper 里，走向由 wrapper 承担（barEl 的方向只约束 wrapper 自身）
     bar.style.flexDirection = st.vertical ? 'column' : 'row';
+    const grid = st.barGridEl;
+    if (grid) grid.style.flexDirection = st.vertical ? 'column' : 'row';
     // W4.2 barMode（d.ts tabs.d.ts:1068-1095；真机 tab_bar_layout_algorithm.cpp:217-231 均分 /
     // :281-334 按内容自然宽 + bar 可滚动）：Fixed=条目均分 bar 主轴（flex:1）；
     // Scrollable=按内容实际宽/高（flex:0 0 auto + 不换行），超出 bar 沿主轴滚动
     const scrollable = st.barMode === 'scrollable';
-    const items = bar.children;
+    const items = grid ? grid.children : bar.children;
     for (let k = 0; k < items.length; k++) {
       items[k].style.flex = scrollable ? '0 0 auto' : '1';
       items[k].style.whiteSpace = scrollable ? 'nowrap' : '';
@@ -1052,6 +1254,48 @@
       bar.style.width = w || (st.vertical ? '56px' : '');
       bar.style.height = h || (st.vertical ? '' : '56px');
     }
+    // R153-B：barGridAlign 几何（依赖 bar 实际宽度，finalizeTabs 重建条目后调用本函数时才量得准；
+    // 属性 setter 路径先量一次，finalize 后还会再走这里——幂等）
+    applyTabsBarGrid(st);
+  }
+
+  // barGridAlign 几何（tab_bar_layout_algorithm.cpp:1090-1127 ApplyBarGridAlign +
+  // grid_container_info.cpp BuildColumnWidth + grid_column_info.cpp GetWidth 的 DOM 等价）：
+  //   ① 档位按【bar 内容宽】判（tabs.d.ts:762-830 字段 JSDoc：≥320 且 <600 为 SM / <840 为 MD /
+  //      <1024 为 LG；<320(XS) 与 ≥1024(XL) 落 cpp 的 else 分支=不生效，ApplyBarGridAlign 只认
+  //      SM/MD/LG 三档）；
+  //   ② columnValue 取该档字段：> 档位上限（SM4/MD8/LG12，tab_bar_layout_algorithm.cpp:38-40）
+  //      → 不生效；<0（含缺省 -1）或奇数 → 不生效（=整宽，cpp "columnNum < 0 || columnNum % 2"）；
+  //   ③ columnWidth=(W−2×margin−(cols−1)×gutter)/cols（BuildColumnWidth）；gridWidth=
+  //      columnValue×columnWidth+(columnValue−1)×gutter（GetWidth）；左右留白=(W−gridWidth)/2
+  //      （cpp 返回值即此 margin）→ wrapper 设 max-width + margin auto 居中。
+  // 仅水平模式生效（d.ts barGridAlign JSDoc 原文）：vertical 直接还原整宽（真机静默忽略，不记警告）。
+  /** @param {any} st */
+  function applyTabsBarGrid(st) {
+    const bar = st.barEl, grid = st.barGridEl;
+    if (!bar || !grid) return;
+    const opt = (!st.vertical && st.barGridAlign) ? st.barGridAlign : null;
+    let gridWidth = 0;
+    if (opt) {
+      const w = bar.clientWidth;
+      let cols = 0, cap = 0, colNum = -1;
+      if (w >= 320 && w < 600) { cols = 4; cap = 4; colNum = opt.sm; }
+      else if (w >= 600 && w < 840) { cols = 8; cap = 8; colNum = opt.md; }
+      else if (w >= 840 && w < 1024) { cols = 12; cap = 12; colNum = opt.lg; }
+      if (cols > 0 && colNum >= 0 && colNum % 2 === 0 && colNum <= cap) {
+        const columnWidth = (w - 2 * opt.margin - (cols - 1) * opt.gutter) / cols;
+        gridWidth = colNum * columnWidth + (colNum - 1) * opt.gutter;
+      }
+    }
+    if (gridWidth > 0) {
+      grid.style.maxWidth = `${gridWidth}px`;
+      grid.style.marginLeft = 'auto';     // (W−gridWidth)/2 的居中留白交给 margin:auto，
+      grid.style.marginRight = 'auto';    // 宽度变化自愈（与 cpp 每次布局重算同语义）
+    } else {
+      grid.style.maxWidth = '';
+      grid.style.marginLeft = '';
+      grid.style.marginRight = '';
+    }
   }
 
   /**
@@ -1074,7 +1318,11 @@
     // 动画路径只认"点击 tab / changeIndex 的真实切换"（fire && old!==i）；拖拽 commit、
     // finalizeTabs 初始定位一律即时落可见性。真机 animateToPage 的内容动画是横向的
     // （Tabs 内容区恒横向滑动，与本实现 R125 拖拽同轴），vertical 时亦然。
-    const animate = !!(fire && old !== i && !fromDrag && st.animationDuration > 0 && n > 1);
+    // R153-B：spring 族 animationCurve 不受 animationDuration 控制（d.ts animationDuration
+    // JSDoc "curves unaffected by animationDuration"）——duration=0 时 spring 路径仍出动画。
+    const springSwitch = st.animCurveKind === 'spring';
+    const animate = !!(fire && old !== i && !fromDrag && n > 1 &&
+      (springSwitch || st.animationDuration > 0));
     if (animate) animateTabSwitch(st, old, i);
     else {
       // 非动画路径也要收掉可能在飞的上一场（如动画中又点了拖拽翻页）——否则旧舞台
@@ -1082,9 +1330,10 @@
       settleTabsAnim(st);
       onlyOneVisible(st.contents, i);
     }
-    [...st.barEl.children].forEach((b, k) => {
+    [...(st.barGridEl || st.barEl).children].forEach((b, k) => {
       b.setAttribute('data-arkui-tabbar-active', k === i ? 'true' : 'false');
     });
+    applyTabsCache(st);   // R153-B：缓存窗口随活动页/页数重算（BOTH_SIDE 或 LATEST_SWITCHED）
     if (fire && old !== i) {
       // 同索引切换不发切换事件：真机 OnIndexChange 有 oldIndex != targetIndex 前置
       // （swiper_pattern.cpp:339），selected/unselected 还有 selectedIndex_/unselectedIndex_
@@ -1104,6 +1353,14 @@
       safe('onSelected', st.onSelected, i);
       safe('onUnselected', st.onUnselected, old);
       if (animate) fireTabsAnimStart(st, old, i);
+      if (st.cacheMode === 1 && st.cachedMaxCount >= 0) {
+        // CACHE_LATEST_SWITCHED：最近切换 LRU，容量 cachedMaxCount+1（swiper_pattern.cpp:838-842
+        // push_back + 超容 pop_front；同索引去重先 remove 再 push）
+        const pos = st.cachedLru.indexOf(i);
+        if (pos >= 0) st.cachedLru.splice(pos, 1);
+        st.cachedLru.push(i);
+        while (st.cachedLru.length > st.cachedMaxCount + 1) st.cachedLru.shift();
+      }
       for (const cb of st.onChange) {
         try { cb(i); } catch (e) { layoutWarnings.push(`Tabs.onChange 抛错：${e && e.message}`); }
       }
@@ -1138,13 +1395,15 @@
     }
   }
 
-  // 点击 tab / changeIndex 的内容切换动画（animationDuration>0 时）：可见性【立即】落到
+  // 点击 tab / changeIndex 的内容切换动画（动画路径判定见 setActiveTab）：可见性【立即】落到
   // 新页（display 语义不动——既有断言在 tick(50) 内断"恰好一页可见"，中途不能出现两页同显），
   // 动画表达为【入场页纯 transform 滑入】（sign·size → 0），旧页即时离场。真机是两页对滑
   // （swiper AnimateTo 双向 translate），单向滑入是同族近似，偏差已记录。
-  // 曲线照 d.ts 双默认（tabs.d.ts:1212-1232）：点击/changeIndex 路径 = cubicBezier(0.2,0,0.1,1)；
-  // 拖拽释放路径真机为 interpolatingSpring(-1,1,228,30)——DOM 拖拽收口在 builtin.js（不归本片
-  // 所有权），暂沿用其 ease-out，已列入报告待办。
+  // 曲线/时长（R153-B，tabs.d.ts:1537-1551 双缺省 + SetAnimationCurve 全路径生效）：
+  //   · css 曲线（含缺省）：时长=animationDuration（点击/changeIndex 路径的语义）；
+  //   · spring 族：时长=TABS_SPRING_SWITCH_MS（内禀近似，**不受 animationDuration 控制**——
+  //     duration=0 也出动画），曲线=TABS_SPRING_CSS（CSS 近似，差异已在常量处记录）。
+  // 拖拽释放路径不经过本函数（builtin.js 收口，duration 由拖拽 api 提供）。
   // 收口"transitionend 见证 + 定时器兜底"（坑 ⑧：headless 动画事件不可靠）。
   /** @param {any} st @param {number} old @param {number} i */
   function animateTabSwitch(st, old, i) {
@@ -1160,6 +1419,7 @@
     }
     onlyOneVisible(st.contents, i);             // 可见性立即落新页（display 语义不变）
     const sign = i > old ? 1 : -1;
+    const dur = st.animCurveKind === 'spring' ? TABS_SPRING_SWITCH_MS : Math.max(0, st.animationDuration);
     const anim = {
       old, i, settled: false, timer: 0, nextEl,
       snap: { transform: nextEl.style.transform, transition: nextEl.style.transition },
@@ -1178,16 +1438,17 @@
       a.nextEl.style.transition = 'none';       // 还原入场舞台，交回静止语义
       a.nextEl.style.transform = a.snap.transform;
       a.nextEl.style.transition = a.snap.transition;
+      st.tabAnim = null;                        // R153-B：舞台清场（pageFlipMode SINGLE 的"动画进行中"判据）
       fireTabsAnimEnd(st, a.i);                 // 打断/完成都发（isForceStop 同样发 End）
     };
     requestAnimationFrame(() => {
       const a = st.tabAnim;
       if (!a || a.settled || a !== anim) return;
-      a.nextEl.style.transition = `transform ${Math.max(0, st.animationDuration)}ms cubic-bezier(0.2, 0, 0.1, 1)`;
+      a.nextEl.style.transition = `transform ${dur}ms ${st.animCurveCss}`;
       a.nextEl.style.transform = 'translateX(0px)';
     });
     nextEl.addEventListener('transitionend', anim.settle, { once: true });
-    anim.timer = setTimeout(anim.settle, st.animationDuration + 80);   // 坑 ⑧ 兜底
+    anim.timer = setTimeout(anim.settle, dur + 80);   // 坑 ⑧ 兜底
   }
   /** @param {any} st 强制收口进行中的切页动画（无动画则空操作） */
   function settleTabsAnim(st) {
@@ -1205,7 +1466,9 @@
     // bar 恒为第一个子元素：视觉位置（上/下/左/右）由 applyTabsBarLayout 的 direction
     // 矩阵表达，不搬 DOM（旧实现 End 时 appendChild 搬到末尾——与 row-reverse 方案冲突）
     if (n.firstElementChild !== st.barEl) n.insertBefore(st.barEl, n.firstChild);
-    st.barEl.textContent = '';                       // 重建（重渲染时不会残留旧项）
+    // 重建（重渲染时不会残留旧项）。R153-B：条目挂进内层栅格 wrapper（恒存在，见 createTabsState）
+    const gridWrap = st.barGridEl || st.barEl;
+    gridWrap.textContent = '';
     st.contents.forEach((/** @type {any} */ c, /** @type {number} */ i) => {
       const item = document.createElement('div');
       item.setAttribute('data-arkui-tabbar-item', String(i));
@@ -1226,7 +1489,7 @@
         }
         setActiveTab(st, i, true);
       });
-      st.barEl.appendChild(item);
+      gridWrap.appendChild(item);
     });
     // 条目刚重建 → flex/whiteSpace/尺寸全部按当前 vertical×barMode×barWidth×barOverlap 重落
     applyTabsBarLayout(st);
@@ -1657,16 +1920,18 @@
         const st = top && top.__tabsState;
         if (st) finalizeTabs(st);
       };
-      // W4.1-W4.4 + R152-B：语义属性/回调以【组件自有方法】拦截（Proxy get 命中 target 自有
+      // W4.1-W4.4 + R152-B + R153-B：语义属性/回调以【组件自有方法】拦截（Proxy get 命中 target 自有
       // 属性后直接返回，不再进 applyAttr）。必须在这里拦的两个原因：
       // ① area.js applyAttrInner 的通用函数分支（≈:586）会把 onXxx(fn) 落成
       //    addEventListener('小写事件名')——永不触发的死监听，且它排在 TABS_UNSUPPORTED
       //    诊断（≈:616）之前，连"未实现"警告都发不出（静默失效，坑 86 同族）；
       // ② .vertical(true) 等布尔/枚举值走通用兜底只会落 data-*，版式静默错。
-      // 实参全部转发 applyTabsAttr（第二参留给 barMode 的 ScrollableBarModeOptions）。
+      // 实参全部转发 applyTabsAttr（第二参留给 barMode 的 ScrollableBarModeOptions 与
+      // cachedMaxCount 的 TabsCacheMode）。
       for (const k of ['vertical', 'barMode', 'barWidth', 'barHeight', 'barOverlap',
         'onTabBarClick', 'onSelected', 'onUnselected',
-        'animationDuration', 'onAnimationStart', 'onAnimationEnd', 'onGestureSwipe']) {
+        'animationDuration', 'onAnimationStart', 'onAnimationEnd', 'onGestureSwipe',
+        'barGridAlign', 'animationCurve', 'pageFlipMode', 'cachedMaxCount']) {
         (/** @type {any} */ (C))[k] = function (/** @type {...any} */ ...args) {
           applyTabsAttr(ViewStackProcessor.top(), k, args[0], args[1]);
         };

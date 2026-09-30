@@ -646,7 +646,9 @@ case "${1:-index}" in
       "--cjs --register PickerDemo" ;;
   batchfunc)
     # R66：批量功能组件（Calendar/Repeat/Indicator 等）
-    run_one batchfunc "$(src_of pages/BatchFuncDemo.ts)" build/batchfunc-module.js test/batchfuncdemo.html \
+    # R153：页面指针勘误——原指 test/batchfuncdemo.html（git 全历史从未存在，浏览器端
+    # 一直 0 条假绿；Electron 端 page_of 同名规则跑的才是真页 test/batchfunc.html）
+    run_one batchfunc "$(src_of pages/BatchFuncDemo.ts)" build/batchfunc-module.js test/batchfunc.html \
       "--cjs --register BatchFuncDemo" ;;
   batchlayout)
     # R67：批次 E 布局/叠放族（FolderStack / GridContainer / Sheet / Section 等）——R145 复活

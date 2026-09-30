@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<title>R152-B：Tabs animationDuration / onAnimationStart·End / onGestureSwipe</title>
+<title>R152-B/R153-B：Tabs animationDuration / onAnimationStart·End / onGestureSwipe / barGridAlign / animationCurve / pageFlipMode / cachedMaxCount</title>
 <style>
   body { font-family: system-ui, sans-serif; margin: 16px; }
   /* 宽 360 固定：拖拽断言依赖确定内容区宽（半页阈值=180） */
@@ -12,7 +12,7 @@
 </style>
 </head>
 <body>
-  <h3>R152-B Tabs 长尾第二片：animationDuration（内容过渡时长）/ onAnimationStart·onAnimationEnd（翻页动画起止）/ onGestureSwipe（拖拽逐帧）</h3>
+  <h3>R152-B 第二片（animationDuration / onAnimationStart·End / onGestureSwipe）+ R153-B 第三片（barGridAlign 栅格 / animationCurve 曲线 / pageFlipMode 滚轮翻页 / cachedMaxCount 缓存窗口）</h3>
   <div id="root"></div>
   <div id="result">running…</div>
 
@@ -263,18 +263,190 @@
       });
 
       // ══════════ G8 剩余未实现项：仍记警告不静默 ══════════
+      // R153-B 改写说明（原断言的"过渡标记"性质到期）：本片把 barGridAlign 实现为真语义并
+      // 移出 TABS_UNSUPPORTED，其"未实现"警告不复存在——原 G8 里的 barGridAlign 半边被
+      // 【必做实现项】作废，改用仍在表内的 animationMode 承担同一"剩余项警告纪律"断言；
+      // edgeEffect 半边不变（越界摩擦/回弹长在 builtin.js attachPagedDrag 内部，本片未做）。
+      // 断言条数不变（仍是本组 1 条、全页 26 条）。
       await group('G8 剩余项警告纪律', async () => {
         const before = warns().length;
         const t8 = buildTabs({}, () => {
-          Tabs.barGridAlign(/** @type {any} */ ({}));
+          Tabs.animationMode(/** @type {any} */ (0));
           Tabs.edgeEffect(/** @type {any} */ ('None'));
         }, ['I0', 'I1']);
         await tick(40);
         void t8;
         const fresh = warns().slice(before);
-        check(fresh.some((w) => w.includes('Tabs.barGridAlign 未实现'))
+        check(fresh.some((w) => w.includes('Tabs.animationMode 未实现'))
           && fresh.some((w) => w.includes('Tabs.edgeEffect 未实现')),
-          `barGridAlign/edgeEffect 未实现仍记警告（${fresh.filter((w) => w.includes('未实现')).join('；')}）`);
+          `animationMode/edgeEffect 未实现仍记警告（${fresh.filter((w) => w.includes('未实现')).join('；')}）`);
+      });
+
+      // ══════════ R153-B 新增 ══════════
+      // 几何读数帮手：bar 内层栅格 wrapper 的实测宽/相对 bar 左缘的留白
+      const barOf = (tabs) => tabs.querySelector('[data-arkui-tabs-bar]');
+      const gridOf = (tabs) => tabs.querySelector('[data-arkui-tabs-bar-grid]');
+      const geo = (tabs) => {
+        const bar = barOf(tabs).getBoundingClientRect();
+        const g = gridOf(tabs).getBoundingClientRect();
+        return { w: Math.round(g.width), left: Math.round(g.left - bar.left), barW: Math.round(bar.width) };
+      };
+      const stateOf = (tabs) => globalThis.__arkui_dom_tabsState(tabs);
+      const wheel = (el, dx, dy) => el.dispatchEvent(new WheelEvent('wheel', {
+        deltaX: dx || 0, deltaY: dy || 0, bubbles: true, cancelable: true,
+      }));
+      const evictedOf = (tabs) => contentsOf(tabs).map((/** @type {HTMLElement} */ c) => c.getAttribute('data-arkui-tab-evicted'));
+
+      // ══════════ G9 barGridAlign：栅格档位/偶数校验/居中留白（tabs.d.ts:762-830 +
+      // tab_bar_layout_algorithm.cpp:1090-1127；margin/gutter 缺省 24vp）══════════
+      // 内容区宽 360 → SM 档（≥320 且 <600，cols=4）：columnWidth=(360−48−72)/4=60
+      await group('G9 barGridAlign 栅格', async () => {
+        // sm:4（=SM 档上限）：gridWidth=4×60+3×24=312，左右留白各 (360−312)/2=24（限宽+居中）
+        const t9a = buildTabs({}, () => { Tabs.barGridAlign({ sm: 4 }); }, ['J0', 'J1', 'J2']);
+        await tick(40);
+        const g9a = geo(t9a);
+        check(g9a.w === 312, `sm:4 → bar 内容限宽 312（实测 ${g9a.w}，期望 4×60+3×24）`);
+        check(g9a.left === 24, `sm:4 → 左留白 24 居中（实测 ${g9a.left}）`);
+        // 奇数列回退整宽（cpp "columnNum % 2" 分支）
+        const t9b = buildTabs({}, () => { Tabs.barGridAlign({ sm: 3 }); }, ['K0', 'K1', 'K2']);
+        await tick(40);
+        const g9b = geo(t9b);
+        check(g9b.w === 360 && g9b.left === 0, `sm:3（奇数）→ 回退整宽 360/留白 0（实测 ${g9b.w}/${g9b.left}）`);
+        // sm:2：gridWidth=2×60+24=144，留白 108
+        const t9c = buildTabs({}, () => { Tabs.barGridAlign({ sm: 2 }); }, ['L0', 'L1', 'L2']);
+        await tick(40);
+        const g9c = geo(t9c);
+        check(g9c.w === 144 && g9c.left === 108, `sm:2 → 限宽 144/留白 108（实测 ${g9c.w}/${g9c.left}）`);
+        // 负数列回退整宽（<0 分支，含 d.ts 缺省 -1 同义）
+        const t9d = buildTabs({}, () => { Tabs.barGridAlign({ sm: -2 }); }, ['M0', 'M1', 'M2']);
+        await tick(40);
+        const g9d = geo(t9d);
+        check(g9d.w === 360 && g9d.left === 0, `sm:-2（负数）→ 回退整宽（实测 ${g9d.w}/${g9d.left}）`);
+        // 仅水平模式生效（d.ts JSDoc 原文）：vertical 下 bar 宽 56、栅格不参与（真机静默忽略）
+        const t9e = buildTabs({}, () => {
+          Tabs.vertical(true);
+          Tabs.barGridAlign({ sm: 4 });
+        }, ['N0', 'N1', 'N2']);
+        await tick(40);
+        const g9e = geo(t9e);
+        check(g9e.w === 56 && g9e.left === 0 && g9e.barW === 56,
+          `vertical(true) + sm:4 → 栅格不参与（wrapper ${g9e.w}/bar ${g9e.barW}/留白 ${g9e.left}）`);
+      });
+
+      // ══════════ G10 animationCurve：点击路径曲线生效 + spring 族忽略 duration
+      //（tabs.d.ts:1537-1551 双缺省；SetAnimationCurve 全路径生效）══════════
+      // 观察面说明：虚拟时钟 headless（--dump-dom）不产帧，rAF 回调不被调度——这正是运行时
+      // 收口要走"定时器兜底"的坑⑧根因面。animateTabSwitch 的入场 transition 落在 rAF 里，
+      // 本组要断言它，就把 rAF 重定向到 0ms 定时器（页面局部、先于建树生效），让"舞台落笔"
+      // 变成确定性的定时器序；收口通道（transitionend + dur+80 定时器兜底）不受影响。
+      window.requestAnimationFrame = (/** @type {Function} */ cb) => setTimeout(() => cb(performance.now()), 0);
+      await group('G10 animationCurve', async () => {
+        // ① CSS 曲线串直通点击路径（transition-timing-function 断言）
+        const L10 = makeLog();
+        const t10 = buildTabs({}, () => {
+          Tabs.animationDuration(200);
+          Tabs.animationCurve('cubic-bezier(0.6, 0, 0.4, 1)');
+          L10.attrs();
+        }, ['O0', 'O1', 'O2']);
+        await tick(40);
+        itemsOf(t10)[1].click();
+        await tick(40);
+        check(cs(contentsOf(t10)[1]).transitionTimingFunction === 'cubic-bezier(0.6, 0, 0.4, 1)',
+          `点击路径曲线生效（实测 '${cs(contentsOf(t10)[1]).transitionTimingFunction}'）`);
+        await tick(500);
+        check(L10.log.includes('animEnd:1'), `自定义曲线下动画对仍成对收口（${L10.log.join(' → ')}）`);
+        // ② spring 族 + animationDuration(0)：spring 不受 duration 控制——动画照出、事件照发
+        //（d.ts animationDuration JSDoc "curves unaffected by animationDuration"；
+        // 内禀时长近似 270ms，见 TABS_SPRING_SWITCH_MS 注释）
+        const L10b = makeLog();
+        const t10b = buildTabs({}, () => {
+          Tabs.animationDuration(0);
+          Tabs.animationCurve('interpolatingSpring');
+          L10b.attrs();
+        }, ['P0', 'P1']);
+        await tick(40);
+        itemsOf(t10b)[1].click();
+        await tick(40);
+        const el10b = contentsOf(t10b)[1];
+        check(L10b.log.includes('animStart:0→1'),
+          `duration=0 + spring 曲线 → onAnimationStart 仍发（${L10b.log.join(' → ')}）`);
+        check(cs(el10b).transitionTimingFunction === 'cubic-bezier(0.2, 0.7, 0.3, 1)' &&
+          /transform 270ms/.test(el10b.style.transition),
+          `spring 忽略 duration：270ms 内禀时长 + spring 近似曲线`
+          + `（实测 '${el10b.style.transition}'）`);
+        await tick(500);
+        check(L10b.log.includes('animEnd:1'), `spring 路径收口 animEnd:1（${L10b.log.join(' → ')}）`);
+      });
+
+      // ══════════ G11 pageFlipMode：滚轮翻页（tabs.d.ts:1885-1911；CONTINUOUS 连翻 /
+      // SINGLE 一次一页=动画进行中忽略滚轮，swiper_pattern.cpp:3041；非法回退 CONTINUOUS）══════════
+      await group('G11 pageFlipMode 滚轮翻页', async () => {
+        const L11 = makeLog();
+        const t11 = buildTabs({}, () => {
+          Tabs.animationDuration(120);
+          Tabs.pageFlipMode(1);            // PageFlipMode.SINGLE
+          L11.attrs();
+        }, ['Q0', 'Q1', 'Q2', 'Q3']);
+        await tick(40);
+        const ce11 = contentElOf(t11);
+        wheel(ce11, 0, 100);
+        wheel(ce11, 0, 100);
+        wheel(ce11, 0, 100);
+        check(stateOf(t11).index === 1 && L11.log.filter((s) => s.startsWith('change:')).length === 1,
+          `SINGLE：滚轮三连只翻一页（index=${stateOf(t11).index}，${L11.log.join(' → ')}）`);
+        await tick(400);                   // 动画收口 → 解锁
+        wheel(ce11, 0, 100);
+        check(stateOf(t11).index === 2, `SINGLE：动画收口后滚轮再翻一页（index=${stateOf(t11).index}）`);
+        // 缺省 CONTINUOUS：不设闸，三连滚三页
+        const t11b = buildTabs({}, () => { Tabs.animationDuration(120); }, ['R0', 'R1', 'R2', 'R3']);
+        await tick(40);
+        const ce11b = contentElOf(t11b);
+        wheel(ce11b, 0, 100);
+        wheel(ce11b, 0, 100);
+        wheel(ce11b, 0, 100);
+        check(stateOf(t11b).index === 3, `CONTINUOUS（缺省）：滚轮三连翻三页（index=${stateOf(t11b).index}）`);
+        // 非法值回退 CONTINUOUS（swiper_pattern.cpp:8196-8202 静默）
+        const t11c = buildTabs({}, () => { Tabs.animationDuration(120); Tabs.pageFlipMode(/** @type {any} */ (99)); },
+          ['S0', 'S1', 'S2', 'S3']);
+        await tick(40);
+        const ce11c = contentElOf(t11c);
+        wheel(ce11c, 0, 100);
+        wheel(ce11c, 0, 100);
+        check(stateOf(t11c).index === 2, `pageFlipMode(99) 非法 → 回退 CONTINUOUS（index=${stateOf(t11c).index}）`);
+      });
+
+      // ══════════ G12 cachedMaxCount：缓存窗口淘汰（tabs.d.ts:1913-1958；CACHE_BOTH_SIDE 缓
+      // 2n+1 / CACHE_LATEST_SWITCHED 缓 n+1；窗外页不保活 → data-arkui-tab-evicted）══════════
+      await group('G12 cachedMaxCount 缓存窗口', async () => {
+        // BOTH_SIDE(1) 四页：窗口=[i−1,i+1]，第 4 页（距离 2）不保活
+        const ctrl12 = new TabsController();
+        const t12 = buildTabs({ controller: ctrl12 }, () => { Tabs.cachedMaxCount(1); },
+          ['T0', 'T1', 'T2', 'T3']);
+        await tick(40);
+        check(JSON.stringify(evictedOf(t12)) === JSON.stringify(['false', 'false', 'true', 'true']),
+          `BOTH_SIDE(1)@页0：缓存窗 {0,1}，页2/3 淘汰（实测 ${evictedOf(t12).join(',')}）`);
+        ctrl12.changeIndex(1);
+        check(JSON.stringify(evictedOf(t12)) === JSON.stringify(['false', 'false', 'false', 'true']),
+          `切页1：窗口滑动为 {0,1,2}，仅页3 淘汰（实测 ${evictedOf(t12).join(',')}）`);
+        ctrl12.changeIndex(3);
+        check(JSON.stringify(evictedOf(t12)) === JSON.stringify(['true', 'true', 'false', 'false']),
+          `切页3：窗口 {2,3}，页0/1 淘汰、页2 回访解除（实测 ${evictedOf(t12).join(',')}）`);
+        // LATEST_SWITCHED(1)：缓 n+1=当前+最近切过——页2 是"最近切过"仍保活，页0 淘汰
+        const ctrl12b = new TabsController();
+        const t12b = buildTabs({ controller: ctrl12b }, () => { Tabs.cachedMaxCount(1, 1); },
+          ['U0', 'U1', 'U2', 'U3']);
+        await tick(40);
+        ctrl12b.changeIndex(2);
+        ctrl12b.changeIndex(1);
+        check(JSON.stringify(evictedOf(t12b)) === JSON.stringify(['true', 'false', 'false', 'true']),
+          `LATEST_SWITCHED(1)：@页1 缓 {1,2}（2=最近切过）页0/3 淘汰（实测 ${evictedOf(t12b).join(',')}）`);
+        // 未设 cachedMaxCount（缺省 -1）：全部缓存、永不淘汰
+        const ctrl12c = new TabsController();
+        const t12c = buildTabs({ controller: ctrl12c }, () => {}, ['V0', 'V1', 'V2', 'V3']);
+        await tick(40);
+        ctrl12c.changeIndex(3);
+        check(evictedOf(t12c).every((v) => v === 'false'),
+          `未设 cachedMaxCount → 全部缓存（实测 ${evictedOf(t12c).join(',')}）`);
       });
     } catch (e) {
       allPass = false;
