@@ -16,7 +16,9 @@
   引擎差异两族：高 DPI 舍入（6 页容差化+scrollbar-width 移动分支无此属性）+ **真缺口**
   grid/waterflow 到底判定精确 >= 浮点 shortfall 漏发 onReachEnd→ceil 对齐 scroll.js。
   已知移动缺口记档：lazyvh scrollToIndex 高 DPI 估高漂移 266px（锚定待修，桌面判据不动）。
-  验收 80/80+守门全对；门禁 10→11 步（6d android 条件步）；五端 80/94/80/80/80。
+  验收 80/80+守门全对；门禁 10→11 步（6d android 条件步）；五端 80/94/80/80/80
+  （a27f8dc，Mimosa 0 findings seal sha256:1b6b5a3e…）。realfs 在 Android 走 OPFS
+  探测成功分支（System WebView 原生支持，20 条）——覆盖表两态皆合法。
   更早：**R148 WebKit 第四端入阵**（R145 清单收官）——判定翻案：系统已有
   libwebkit2gtk-4.1/libgtk-3，缺的只有 3 个小库（用户 sudo 装）。`webkit/run.sh`
   （wk-venv python 定位、缺席显式跳过）+ `tools/wk-matrix.py`（playwright，
