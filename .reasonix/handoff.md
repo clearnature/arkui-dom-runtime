@@ -9,7 +9,19 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R152 Media 时钟贯通 + Tabs 长尾第二片**（多智能体 A/B/C）——A 翻案
+- 上次切片：**R153 Repeat 键 diff 深化 + Tabs 长尾第三片**（多智能体 A/B/C）——
+  A=Repeat 三分支（暂存区摘入→按新序 append 回填，不做 LCS；键保留只 updateIndex
+  未变跳重放/复用先 updateItem 再 updateIndex/否则新建；持久池 16；scratch 重放+
+  逐位补丁=节点身份保持，与 ForEach 整体重建的可观测差异）+11 条断言；B=Tabs
+  barGridAlign 栅格（档位/偶数/居中逐式对齐 ace_engine）/animationCurve 双默认
+  （点击 cubic/拖拽 spring 内禀 270 不受 duration 控制）/pageFlipMode/cachedMaxCount
+  （evicted 标记+display 淘汰）+20 条；C=pu_repeat_impl diff 伪代码级精读即时注入 A。
+  **集成实锤存量假绿**：run.sh batchfunc 浏览器 dispatch 指向从未存在的
+  test/batchfuncdemo.html（浏览器一直 0 条假绿、Electron 同名规则跑真页）——勘误
+  指回 test/batchfunc.html；tabanim 声明 26→46 声明文法教训（"26 条；扩至 46 条"
+  缺"条断言"文法守门解析不到）。门禁 11 步全绿（69844ca，Mimosa 0 findings seal
+  sha256:0861771e…）。
+  更早：**R152 Media 时钟贯通 + Tabs 长尾第二片**（多智能体 A/B/C）——A 翻案
   R35 陈旧账（「Electron 时钟未打通」=只验过放宽断言；垫片墙钟端无关），实修 seek
   移墙钟基点/completed 定格/垃圾冻结点/WAV RIFF 时长四缺口 + video.js onPrepared/
   onUpdate 事件桥；mediademo 8→19 条合并分端双端同绿。B=Tabs 动画族（onGestureSwipe
