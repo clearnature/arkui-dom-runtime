@@ -16,7 +16,8 @@
   `stack.indexOf('\n')>0` 烙 V8 假设（JSC 未抛 Error stack 单行）→ 断言引擎中立化，
   runtime 归一化两端都对。坑复刻自抓：run.sh "all" 当过滤子串传执行器（R144
   同型坑）在 webkit 侧又犯一次才修。验收 80/80 ALL PASS（计数与 Chromium 逐例
-  一致）+ 守门 134 处全对（3 覆盖值）；门禁 9→10 步；四端 80/94/80/80。
+  一致）+ 守门 134 处全对（3 覆盖值）；门禁 9→10 步；四端 80/94/80/80（28a39fa，
+  Mimosa 0 findings seal sha256:9cb679df…）。
   更早：**R147 batchinput/Motion 重构建入阵**——R145 清单最后一个开发性尾巴。
   两页 R66 产出但 main_pages 未登记→从未编译（batchinput 编译失败根因：四族组件
   不在 CLT 26 SDK，页头注释早预言但没人编译过）。登记→裁四族段→BUILD OK→fixture
