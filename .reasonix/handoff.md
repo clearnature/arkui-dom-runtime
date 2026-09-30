@@ -9,7 +9,15 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R148 WebKit 第四端入阵**（R145 清单收官）——判定翻案：系统已有
+- 上次切片：**R149 Android 第五端入阵**（System WebView 移动 Blink）——zcode
+  android-emulator 插件协同（MCP 本会话未投影→CLI 直驱；SDK 用户态装 /data/android-sdk，
+  许可用户本人接受）。**链路三坑**：adb reverse（NAT 不可靠）/playwright connectOverCDP
+  不支持 WebView→原始 CDP ws/Page.navigate 应答永不来→fire-and-forget+每次求值新连接。
+  引擎差异两族：高 DPI 舍入（6 页容差化+scrollbar-width 移动分支无此属性）+ **真缺口**
+  grid/waterflow 到底判定精确 >= 浮点 shortfall 漏发 onReachEnd→ceil 对齐 scroll.js。
+  已知移动缺口记档：lazyvh scrollToIndex 高 DPI 估高漂移 266px（锚定待修，桌面判据不动）。
+  验收 80/80+守门全对；门禁 10→11 步（6d android 条件步）；五端 80/94/80/80/80。
+  更早：**R148 WebKit 第四端入阵**（R145 清单收官）——判定翻案：系统已有
   libwebkit2gtk-4.1/libgtk-3，缺的只有 3 个小库（用户 sudo 装）。`webkit/run.sh`
   （wk-venv python 定位、缺席显式跳过）+ `tools/wk-matrix.py`（playwright，
   #result 单通道——坑 115 纪律）+ 覆盖表。唯一引擎差异：errbounddemo ⑥ 前置

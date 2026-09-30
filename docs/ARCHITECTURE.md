@@ -1763,29 +1763,29 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   fixtures 转换产物  80 个：AlphabetIndexerDemo AnimDemo AnimatorDemo AsyncIO AttrHeavyDemo BatchFuncDemo BatchInputDemo BatchLayoutDemo BatchMediaDemo BatchVerifyDemo BuiltinDemo CalendarPickerDemo Callee CanvasDemo CjkDemo DatePickerDemo Detail DrawDemo GestureDemo GestureGroupDemo GridDemo GridRowDemo Home ImageDemo Index InputDemo Layout Lazy LazyVar ListGroupDemo MeasArea MeasImage MeasNotify Measure MediaDemo MotionDemo NavBarDemo NavDemo NavShimDemo NavTransDemo NetFile NotesDetail NotesHome Observe PanelDemo PerfBigDemo PerfDemo PickerDemo PopDemo PromptAct Provide QrDemo RefreshDemo RelDemo ResourceDemo Rich RichVideoDemo ScrollDemo ShapeDemo ShowDemo SideBarDemo SmallDemo SplitDemo StepDemo Stress10kDemo Stress1kDemo SwiperDemo TabsGrid TextDemo TextMeasure TextPickerDemo TextTimeDemo TimePickerDemo TransitionDemo UiContextDemo V2 WaterFlowDemo Widgets WindowDemo XCompDemo
 
 == 性能基线（Electron 实测）==
-  首渲染            36.3 ms（33 节点：Column+Button+Text+ForEach×30）
-  最小 rerender     16.8 ms（@State 计数脏区单 Text，rAF 口径）
+  首渲染            33.5 ms（33 节点：Column+Button+Text+ForEach×30）
+  最小 rerender     13.6 ms（@State 计数脏区单 Text，rAF 口径）
   rerender 管道     0.9 ms / 1 tick（setTimeout 轮询口径，R70）
   微任务底噪        0.00 ms
   行数              31
-  剖面 R71          loadRoute 同步 7.0 ms（require 0.3）· raf1 0.9 / raf2 28.4 ms（offscreen 首帧）
-  脚本 eval         runtime 156.5 / generated 153.9 / shims 154.4 / module 154.1 ms（计时起点之前）
+  剖面 R71          loadRoute 同步 6.8 ms（require 0.4）· raf1 0.1 / raf2 26.6 ms（offscreen 首帧）
+  脚本 eval         runtime 133.1 / generated 128.9 / shims 131.0 / module 130.7 ms（计时起点之前）
   判定              框架同步构建 3.5ms 无大头；"首渲染"=脚本 eval + offscreen 首帧（非框架成本）
-  千节点 R79        首渲染同步 31.9 ms（350 节点/~3500 属性，亚线性）· 单点 flush 0.3 ms · 批量翻转 flush 3.1 ms
+  千节点 R79        首渲染同步 29.8 ms（350 节点/~3500 属性，亚线性）· 单点 flush 0.3 ms · 批量翻转 flush 3.2 ms
   规模曲线          203→4.8 / 304→11.2 / 1055→19.0 ms（创建路径亚线性）；行复用+守卫千节点级保持
-  万节点 R138       首渲染同步 127.7 ms（3300 节点/~33000 属性）· 批量翻转 poll 149.9 ms / flush 16.8 ms · 单点 flush 0.2 ms（R139 增量走查后）
+  万节点 R138       首渲染同步 128.7 ms（3300 节点/~33000 属性）· 批量翻转 poll 148.1 ms / flush 16.0 ms · 单点 flush 0.2 ms（R139 增量走查后）
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          9357.8 KB
-  runtime(src)     1411.0 KB
-  test             1531.0 KB
-  tools            271.1 KB
+  runtime          9358.1 KB
+  runtime(src)     1411.3 KB
+  test             1533.2 KB
+  tools            287.1 KB
   electron(src)    83.9 KB
-  docs             880.6 KB
+  docs             882.9 KB
   fixtures         552.5 KB
 
 == 逐文件（文档"文件职责"表的来源）==
-  runtime/arkui-dom-runtime.js            1169311 B  1141.9 KB
+  runtime/arkui-dom-runtime.js            1169612 B  1142.2 KB
   runtime/generated-components.js          57617 B  56.3 KB
   runtime/ohos-shims.js                    94100 B  91.9 KB
   tools/extract.mjs                         6936 B  6.8 KB
@@ -1794,7 +1794,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   tools/stats.mjs                          22773 B  22.2 KB
   tools/assert-counts.mjs                   9247 B  9.0 KB
   tools/preflight.mjs                       5422 B  5.3 KB
-  tools/check-all.sh                        7684 B  7.5 KB
+  tools/check-all.sh                        8514 B  8.3 KB
   tools/build-runtime.mjs                   5138 B  5.0 KB
   run.sh                                   39922 B  39.0 KB
   electron/run.sh                          23155 B  22.6 KB
@@ -1802,12 +1802,12 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   electron/preload.js                      11432 B  11.2 KB
   package.json                              1366 B  1.3 KB
   .gitignore                                 983 B  1.0 KB
-  README.md                               157970 B  154.3 KB
+  README.md                               158202 B  154.5 KB
   THIRD-PARTY-NOTICES.md                   12820 B  12.5 KB
-  docs/ARCHITECTURE.md                    166872 B  163.0 KB
+  docs/ARCHITECTURE.md                    167196 B  163.3 KB
   docs/CAPABILITY.md                       64461 B  63.0 KB
   docs/DEVELOPING.md                       76775 B  75.0 KB
-  docs/ROADMAP.md                         250966 B  245.1 KB
+  docs/ROADMAP.md                         253019 B  247.1 KB
   docs/surface-measurement.md               6496 B  6.3 KB
   docs/SESSION-2026-09-20.md               12842 B  12.5 KB
   runtime/src/.mimosa                       4096 B  4.0 KB
@@ -1834,7 +1834,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   runtime/src/generated-app-resources.js    1607 B  1.6 KB
   runtime/src/generated-sys-resources.js  303141 B  296.0 KB
   runtime/src/gesture.js                   31744 B  31.0 KB
-  runtime/src/grid.js                       7187 B  7.0 KB
+  runtime/src/grid.js                       7384 B  7.2 KB
   runtime/src/gridrow.js                    3128 B  3.1 KB
   runtime/src/i18n.js                      10170 B  9.9 KB
   runtime/src/image.js                      7211 B  7.0 KB
@@ -1860,7 +1860,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   runtime/src/timepicker.js                 5159 B  5.0 KB
   runtime/src/v2.js                        13962 B  13.6 KB
   runtime/src/video.js                      4441 B  4.3 KB
-  runtime/src/waterflow.js                 19719 B  19.3 KB
+  runtime/src/waterflow.js                 19823 B  19.4 KB
   fixtures/pages/AlphabetIndexerDemo.ts     3960 B  3.9 KB
   fixtures/pages/AnimDemo.ts                6451 B  6.3 KB
   fixtures/pages/AnimatorDemo.ts            4050 B  4.0 KB
@@ -1956,7 +1956,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   test/batchinputdemo.html                  6064 B  5.9 KB
   test/batchlayout.html                     8996 B  8.8 KB
   test/batchmediademo.html                  6542 B  6.4 KB
-  test/builtindemo.html                    14651 B  14.3 KB
+  test/builtindemo.html                    14699 B  14.4 KB
   test/calendarpickerdemo.html             11100 B  10.8 KB
   test/canvasedemo.html                     4301 B  4.2 KB
   test/cjk.html                            11796 B  11.5 KB
@@ -1969,7 +1969,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   test/funcbehavior.html                    5423 B  5.3 KB
   test/gesturedemo.html                     9875 B  9.6 KB
   test/gesturegroupdemo.html               14791 B  14.4 KB
-  test/griddemo.html                        6045 B  5.9 KB
+  test/griddemo.html                        6387 B  6.2 KB
   test/gridrowdemo.html                     3899 B  3.8 KB
   test/i18ndemo.html                        8597 B  8.4 KB
   test/imagedemo.html                       5733 B  5.6 KB
@@ -1977,7 +1977,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   test/inputdemo.html                       9334 B  9.1 KB
   test/layout.html                          4135 B  4.0 KB
   test/lazy.html                            4380 B  4.3 KB
-  test/lazyvar.html                        10093 B  9.9 KB
+  test/lazyvar.html                        11058 B  10.8 KB
   test/leak.html                            3921 B  3.8 KB
   test/listitemgroup.html                   6933 B  6.8 KB
   test/measarea.html                        9231 B  9.0 KB
@@ -1990,7 +1990,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   test/navbardemo.html                     12670 B  12.4 KB
   test/navdemo.html                        14837 B  14.5 KB
   test/navshimdemo.html                     7168 B  7.0 KB
-  test/navtransdemo.html                   16591 B  16.2 KB
+  test/navtransdemo.html                   16808 B  16.4 KB
   test/netadvdemo.html                      5701 B  5.6 KB
   test/netfile.html                         5302 B  5.2 KB
   test/notesdemo.html                       9154 B  8.9 KB
@@ -2013,7 +2013,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   test/rich.html                            3794 B  3.7 KB
   test/richvideodemo.html                   3295 B  3.2 KB
   test/router.html                          4288 B  4.2 KB
-  test/scrolldemo.html                      6996 B  6.8 KB
+  test/scrolldemo.html                      7156 B  7.0 KB
   test/shapedemo.html                       9951 B  9.7 KB
   test/showdemo.html                        9917 B  9.7 KB
   test/sidebardemo.html                     5392 B  5.3 KB
@@ -2035,7 +2035,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   test/uictxdemo.html                       4532 B  4.4 KB
   test/v2.html                              7235 B  7.1 KB
   test/vendor                               4096 B  4.0 KB
-  test/waterflowdemo.html                   7924 B  7.7 KB
+  test/waterflowdemo.html                   8485 B  8.3 KB
   test/windowdemo.html                      7626 B  7.4 KB
   test/xcompdemo.html                       4113 B  4.0 KB
 ```
@@ -2097,12 +2097,14 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
 | `tools/stats.mjs` | 13.7 KB | 本文档所有数字的来源（`--json` 机器可读）；**`--check-doc`/`--write-doc` 守 §6 引用块** | 覆盖范围变化时 |
 | `tools/assert-counts.mjs` | 7.3 KB | 断言计数守门（运行期 emit 的 PASS 行 ↔ 文档声明的「N 条断言」，见坑表 77） | 声明写法/扫描范围变化时 |
 | `tools/preflight.mjs` | 5.3 KB | 环境自检（工具链/宿主/可执行位） | 外部依赖变化时 |
-| `tools/check-all.sh` | 7.5 KB | 一条命令做完验收（10 步，firefox/webkit 步缺席显式跳过），退出码只看被调命令 | 新增验收步骤时 |
+| `tools/check-all.sh` | 8.6 KB | 一条命令做完验收（11 步，firefox/webkit/android 步缺席显式跳过），退出码只看被调命令 | 新增验收步骤时 |
 | `run.sh` | 39.0 KB | 浏览器 80 用例驱动 | 新增用例 |
 | `electron/run.sh` | 22.6 KB | Electron 93 用例 + 磁盘验证 | 新增用例 |
 | `firefox/run.sh` | 3.9 KB | Firefox(Gecko) 同用例表跨引擎复跑（R144；geckodriver 缺席显式跳过，计数覆盖表 `firefox/assert-overrides.tsv`） | 引擎差异分诊 |
 | `webkit/run.sh` | 3.2 KB | WebKit 第四端同用例表复跑（R148；playwright python 缺席显式跳过，覆盖表 `webkit/assert-overrides.tsv`） | 引擎差异分诊 |
 | `tools/wk-matrix.py` | 5.0 KB | playwright WebKit 执行器（#result 单通道判定，坑 115 纪律） | 判定通道变化时 |
+| `android/run.sh` | 5.8 KB | Android 第五端（System WebView 移动 Blink；模拟器起停+socket 白名单发现+reverse 路由） | 引擎差异分诊 |
+| `tools/an-matrix.py` | 5.6 KB | 原始 CDP WebSocket 执行器（playwright connectOverCDP 不支持 WebView——实测坑） | 判定通道变化时 |
 | `tools/ff-plan.py` | 2.4 KB | 解析 run.sh all 块 → Firefox 矩阵用例计划（单一事实来源，run.sh 增删用例自动跟随） | 用例表语义变化时 |
 | `tools/ff-matrix.py` | 7.1 KB | geckodriver 环回 HTTP 执行器（title/#result 双通道判定；Fx 156 BiDi 无 script.* 的实录） | 判定通道变化时 |
 | `electron/main.js` | 6.6 KB | 主进程：offscreen 截图、**像素级**空白检测 | 截图/验证策略变化时 |

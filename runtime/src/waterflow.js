@@ -279,7 +279,8 @@
       }
       // 到达沿（过境判定）：分居 minOffset 两侧才发；lastEdge 记忆防重复（scroll.js 同款）
       const atTop = st <= 0;
-      const atBottom = el.scrollHeight > el.clientHeight && st >= el.scrollHeight - el.clientHeight;
+      // R149：高 DPI ceil 对齐（同 grid.js/scroll.js；精确 >= 漏发 onReachEnd）
+      const atBottom = el.scrollHeight > el.clientHeight && Math.ceil(st) >= el.scrollHeight - el.clientHeight;
       const edge = atTop ? 'top' : (atBottom ? 'bottom' : '');
       if (edge && edge !== w2.edgeMem) {
         if (edge === 'top') fire('reachStart'); else fire('reachEnd');

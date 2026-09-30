@@ -63,7 +63,8 @@
         check(sc.dataset.scrollable === '0' && sc.dataset.scrollBar === '0',
           `枚举数值记录（scrollable='${sc.dataset.scrollable}' scrollBar='${sc.dataset.scrollBar}'）`);
         check(getComputedStyle(sc).scrollbarWidth === 'none'
-          || getComputedStyle(sc).getPropertyValue('scrollbar-width') === 'none',
+          || getComputedStyle(sc).getPropertyValue('scrollbar-width') === 'none'
+          || !getComputedStyle(sc).scrollbarWidth,   // 移动 Blink 分支无此属性（R149）
           `scrollBar(Off=0) → 滚动条隐藏（scrollbar-width=${getComputedStyle(sc).scrollbarWidth}）`);
         check(sc.dataset.edgeEffect === '2' && sc.style.overscrollBehavior === 'none',
           `edgeEffect(None=2) → overscroll:none（'${sc.dataset.edgeEffect}'/'${sc.style.overscrollBehavior}'）`);
@@ -72,7 +73,7 @@
       // ══════════ ② Scroller：scrollTo / scrollBy / currentOffset / scrollEdge / isAtEnd ══════════
       await group('Scroller', async () => {
         await click('#btn-by');                        // scrollBy(0, 60)
-        check(sc.scrollTop === 60, `scrollBy(0,60) → scrollTop=60（实际 ${sc.scrollTop}）`);
+        check(Math.abs(sc.scrollTop - 60) <= 0.6, `scrollBy(0,60) → scrollTop≈60（±0.6 高 DPI 舍入；实际 ${sc.scrollTop}）`);
         await click('#btn-w');                         // currentOffset()
         check(txt('sc-log').includes('@60;'),
           `currentOffset().yOffset = 真实 scrollTop（log 尾='${txt('sc-log').slice(-4)}'）`);
@@ -89,7 +90,7 @@
       await group('事件', async () => {
         userScroll(70);                                // 滚到 70（未到边）
         await tick(200);                               // onScrollEnd 收口 80ms 静默
-        check(sc.scrollTop === 70, `手动滚 70px（scrollTop=${sc.scrollTop}）`);
+        check(Math.abs(sc.scrollTop - 70) <= 0.6, `手动滚 70px（±0.6；scrollTop=${sc.scrollTop}）`);
         check(txt('sc-log').includes('S70;'), `onScroll(0,70) → log 'S70;'（log 尾='${txt('sc-log').slice(-6)}'）`);
         check(txt('sc-log').includes('END;'), `onScrollEnd 收口（80ms 静默，DOM 化近似）`);
         userScroll(0);                                 // 回顶 → onScrollEdge('top') 到达沿

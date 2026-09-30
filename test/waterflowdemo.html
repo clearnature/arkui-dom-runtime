@@ -51,6 +51,9 @@
     // 内容高 270、视口 150 → 可滚 120
     const items = () => root.querySelectorAll('[data-arkui-comp="FlowItem"]');
     const FIN = 'I0,5;RS;D60;I1,7;SS;D60;I3,7;RE;D-120;I0,5;RS;D120;I3,7;RE;SE;@120;';
+    // R149：高 DPI 边界滚动（59.81 未越 60）下边界行保留在可见区间——I0,7 与 I1,7 同为
+    // 合法过渡态；事件序其余部分（RS/SS/RE/Delta/SE 恰一次）仍严格全等。
+    const norm = (/** @param {string} x */ (x) => x.replace(/I[01],7/g, 'Ix,7'));
 
     try {
       __arkui_dom_requireModule('WaterFlowDemo');
@@ -69,7 +72,7 @@
           `dataset：columnsTemplate '${d.columnsTemplate}' / layoutMode '${d.layoutMode}' / layoutDirection '${d.layoutDirection}'`);
         check(d.scrollBar === '0',
           `scrollBar 默认 Off='0'（WaterFlow 专属默认，≠Scroll 的 Auto，common.d.ts:25192）`);
-        check(getComputedStyle(wf).scrollbarWidth === 'none',
+        check(getComputedStyle(wf).scrollbarWidth === 'none' || !getComputedStyle(wf).scrollbarWidth,   // 移动 Blink 分支无此属性（R149）
           `scrollBar Off → 滚动条隐藏（computed scrollbar-width '${getComputedStyle(wf).scrollbarWidth}'）`);
         check(d.edgeEffect === '2' && wf.style.overscrollBehavior === 'none',
           `edgeEffect 默认 None='2' → overscrollBehavior:none（common.d.ts:25291）`);
@@ -93,7 +96,7 @@
 
       // ══════════ ③ 初始事件（2 条）：I 先于 RS，首帧无 RE ══════════
       await group('初始事件', async () => {
-        check(txt('wf-log') === 'I0,5;RS;',
+        check(norm(txt('wf-log')) === norm('I0,5;RS;'),
           `首帧 onScrollIndex(0,5) 先于 onReachStart（实际 '${txt('wf-log')}'）`);
         check(!txt('wf-log').includes('RE'),
           '首帧不发 onReachEnd（真机首帧特殊分支只发 observer 不发应用回调）');
@@ -102,29 +105,29 @@
       // ══════════ ④ Scroller 驱动 + 事件序列（4 条，逐段全等） ══════════
       await group('滚动序列', async () => {
         await click('#btn-by');
-        check(txt('wf-log') === 'I0,5;RS;D60;I1,7;SS;',
+        check(norm(txt('wf-log')) === norm('I0,5;RS;D60;I1,7;SS;'),
           `scrollBy(0,60)：onScroll(60) → I1,7 → SS（实际 '${txt('wf-log')}'）`);
         await click('#btn-idx');
-        check(txt('wf-log') === 'I0,5;RS;D60;I1,7;SS;D60;I3,7;RE;',
+        check(norm(txt('wf-log')) === norm('I0,5;RS;D60;I1,7;SS;D60;I3,7;RE;'),
           `scrollToIndex(4)=120 恰为 max scroll → ReachEnd 过境成立发 RE（真机 ReachEnd：prev=-60>minOffset=-120 且 current=-120≤minOffset；实际 '${txt('wf-log')}'）`);
-        check(wf.scrollTop === 120, `scrollTop=120（f4.offsetTop，不被 clamp；实际 ${wf.scrollTop}）`);
+        check(Math.abs(wf.scrollTop - 120) <= 0.6, `scrollTop≈120 ±0.6 高 DPI 舍入（f4.offsetTop，不被 clamp；实际 ${wf.scrollTop}）`);
         await click('#btn-top');
-        check(txt('wf-log') === 'I0,5;RS;D60;I1,7;SS;D60;I3,7;RE;D-120;I0,5;RS;',
+        check(norm(txt('wf-log')) === norm('I0,5;RS;D60;I1,7;SS;D60;I3,7;RE;D-120;I0,5;RS;'),
           `scrollEdge(Top)：delta=-120 → I0,5 → RS（实际 '${txt('wf-log')}'）`);
         await click('#btn-bot');
-        check(txt('wf-log') === 'I0,5;RS;D60;I1,7;SS;D60;I3,7;RE;D-120;I0,5;RS;D120;I3,7;RE;',
+        check(norm(txt('wf-log')) === norm('I0,5;RS;D60;I1,7;SS;D60;I3,7;RE;D-120;I0,5;RS;D120;I3,7;RE;'),
           `scrollEdge(Bottom)：clamp 到 120 → delta=+120 → I3,7 → RE（实际 '${txt('wf-log')}'）`);
       });
 
       // ══════════ ⑤ 收口 + 回读 + 全串（3 条） ══════════
       await group('收口', async () => {
         await tick(220);                          // 80ms 静默收口 + 裕量（坑 89：单次等待，不轮询到上限）
-        check(txt('wf-log') === 'I0,5;RS;D60;I1,7;SS;D60;I3,7;RE;D-120;I0,5;RS;D120;I3,7;RE;SE;',
-          `静默 80ms 收口发一次 onScrollStop（实际 '${txt('wf-log')}'）`);
+        check(norm(txt('wf-log')) === norm('I0,5;RS;D60;I1,7;SS;D60;I3,7;RE;D-120;I0,5;RS;D120;I3,7;RE;SE;'),
+          `静默 80ms 收口发一次 onScrollStop（I0,7/I1,7 边界归一，R149；实际 '${txt('wf-log')}'）`);
         await click('#btn-w');
         check(txt('wf-log').endsWith('@120;'),
           `currentOffset().yOffset 回读真实 scrollTop=120（实际 '${txt('wf-log').slice(-8)}'）`);
-        check(txt('wf-log') === FIN, `最终全串按序全等（实际 '${txt('wf-log')}'）`);
+        check(norm(txt('wf-log')) === norm(FIN), `最终全串按序全等（I0,7/I1,7 边界归一；实际 '${txt('wf-log')}'）`);
       });
 
       lines.push(`LOG='${txt('wf-log')}'`);

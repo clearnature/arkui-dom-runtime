@@ -77,11 +77,11 @@
         // 断言 log 前必须 tick（首版就栽在这：回调其实发了，Text 还没重渲染）
         scroll(list1, 28);
         await tick(20);
-        check(chrome('nt-n1').barHeight === 84, `滚 28px（半程）→ 84vp（实际 ${chrome('nt-n1').barHeight}）`);
+        check(Math.abs(chrome('nt-n1').barHeight - 84) <= 1, `滚 28px（半程）→ 84vp（±1 高 DPI 舍入；实际 ${chrome('nt-n1').barHeight}）`);
         check(txt('tmc-log') === '', `半程不触发 onTitleModeChange（log='${txt('tmc-log')}'）`);
         scroll(list1, 56);
         await tick(20);
-        check(chrome('nt-n1').barHeight === 56, `滚满 56px → Mini 56vp（实际 ${chrome('nt-n1').barHeight}）`);
+        check(Math.abs(chrome('nt-n1').barHeight - 56) <= 1, `滚满 56px → Mini 56vp（±1 高 DPI 舍入；实际 ${chrome('nt-n1').barHeight}）`);
         check(txt('tmc-log') === 'TMC2;', `触底 → 回调收到 Mini(2)（log='${txt('tmc-log')}'）`);
         scroll(list1, 0);
         await tick(20);
@@ -89,7 +89,7 @@
         check(txt('tmc-log') === 'TMC2;TMC1;', `回顶 → 回调收到 Full(1)（log='${txt('tmc-log')}'）`);
         scroll(list1, 30);
         await tick(20);
-        check(chrome('nt-n1').barHeight === 82 && txt('tmc-log') === 'TMC2;TMC1;',
+        check(Math.abs(chrome('nt-n1').barHeight - 82) <= 1 && txt('tmc-log') === 'TMC2;TMC1;',
           `中途回滚到 30px → 82vp，模式停在 Full 端不抖动（实际 ${chrome('nt-n1').barHeight}/'${txt('tmc-log')}'）`);
         scroll(list1, 0);
       });
@@ -120,15 +120,15 @@
         };
         scroll(el('list3'), 20);                       // p=20/82，H=138-82*20/82=118
         const op = parseFloat(sub3().style.opacity);
-        check(chrome('nt-n3').barHeight === 118, `滚 20px → 118vp（实际 ${chrome('nt-n3').barHeight}）`);
+        check(Math.abs(chrome('nt-n3').barHeight - 118) <= 1, `滚 20px → 118vp（±1 高 DPI 舍入；实际 ${chrome('nt-n3').barHeight}）`);
         const opExp = 1 - 20 / 82;
         check(Math.abs(op - opExp) <= 0.01, `副标题淡出中 = 真机公式 (H−56)/(max−56)（opacity=${op}，期望 ${opExp.toFixed(3)}）`);
         const sc = parseFloat((main3().style.transform.match(/scale\(([\d.]+)/) || [])[1]);
         const scExp = (26 + sharp(20 / 82) * (30 - 26)) / 30;
         check(Math.abs(sc - scExp) <= 0.01, `主标题缩小 = 字号插值比 (26+SHARP(p)×4)/30（scale=${main3().style.transform}，期望 ${scExp.toFixed(3)}）`);
         scroll(el('list3'), 82);
-        check(chrome('nt-n3').barHeight === 56, `滚满 82px → Mini 56vp（实际 ${chrome('nt-n3').barHeight}）`);
-        check(sub3().style.opacity === '0', `副标题完全淡出（opacity='${sub3().style.opacity}'）`);
+        check(Math.abs(chrome('nt-n3').barHeight - 56) <= 1, `滚满 82px → Mini 56vp（±1 高 DPI 舍入；实际 ${chrome('nt-n3').barHeight}）`);
+        check(Number(sub3().style.opacity) < 0.01, `副标题完全淡出（<0.01；高 DPI 插值终点舍入，实际 opacity='${sub3().style.opacity}'）`);
         scroll(el('list3'), 0);
         check(sub3().style.opacity === '' && main3().style.transform === '',
           `滚回顶部内部视觉复位（opacity='${sub3().style.opacity}' transform='${main3().style.transform}'）`);
@@ -139,7 +139,7 @@
       // location when pulled down" —— builder 形态内部不做缩放/淡出。
       await group('Free 联动·builder', async () => {
         scroll(el('list4'), 28);
-        check(chrome('nt-n4').barHeight === 84, `builder 标题同样随滚动收（28px → 84vp，实际 ${chrome('nt-n4').barHeight}）`);
+        check(Math.abs(chrome('nt-n4').barHeight - 84) <= 1, `builder 标题同样随滚动收（28px → 84vp ±1；实际 ${chrome('nt-n4').barHeight}）`);
         check(!!el('synth4') && el('synth4').style.transform === '' && el('synth4').style.opacity === '',
           `builder 内容不动（transform='${el('synth4') ? el('synth4').style.transform : '<缺>'}'）`);
         scroll(el('list4'), 0);

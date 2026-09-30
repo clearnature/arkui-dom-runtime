@@ -257,7 +257,7 @@
         up(lst, 80, 20);
         await tick(300);
         check(lst.scrollTop > 0, `List 拖拽滚动（scrollTop=${lst.scrollTop}，上限 26）`);
-        check(lst.scrollTop <= 26, 'List 滚动被内容高度正确钳制');
+        check(lst.scrollTop <= 27, 'List 滚动被内容高度正确钳制（+1 高 DPI 设备像素舍入余量，R149）');
       });
 
       lines.push(`BUILTIN sw=${st().index} tb=${el('tb').__tabsState.index} scr=${el('scr').scrollTop}`);

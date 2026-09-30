@@ -109,6 +109,19 @@ else
   SKIPPED+=("webkit (矩阵)")
 fi
 
+# ── 6d. Android(System WebView) 用例（R149 第五验证端：同用例表 × 移动 Blink）──
+# 兼容性加分端：Android SDK（/data/android-sdk）+ AVD arkui_test + venv 缺一即显式跳过；
+# 就位时自动转真（模拟器起停/socket 发现/转发全在 android/run.sh）。
+if [ -x /data/android-sdk/platform-tools/adb ] && [ -x /data/android-sdk/emulator/emulator ] \
+   && [ -x /data/tmp/wk-venv/bin/python ]; then
+  step "android (android/run.sh all)" bash android/run.sh all
+else
+  printf '════ android (android/run.sh all) ════\n'
+  printf '  ⏭  跳过（原因：Android SDK 或 AVD/venv 不齐——Android 为移动 Blink 兼容性\n'
+  printf '      加分第五端，主验收基准=Electron/Chromium；补齐后本步自动转真）\n'
+  SKIPPED+=("android (矩阵)")
+fi
+
 # ── 7. 统计（不是验收条件，只留档给文档引用）──
 printf '════ 统计（留档，不影响退出码）════\n'
 node tools/stats.mjs | tee "$LOGDIR/stats.txt" | sed 's/^/  /'

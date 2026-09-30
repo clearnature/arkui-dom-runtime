@@ -102,7 +102,9 @@
         w.lastRange = r;
         fire('scrollIndex', r.first, r.last);
       }
-      const atBottom = el.scrollHeight > el.clientHeight && st >= el.scrollHeight - el.clientHeight;
+      // R149：高 DPI 设备 scrollTop 带小数（89.9/90），ceil 对齐 scroll.js 同款惯例——
+      // 精确 >= 在移动 Blink 上会因浮点 shortfall 漏发 onReachEnd
+      const atBottom = el.scrollHeight > el.clientHeight && Math.ceil(st) >= el.scrollHeight - el.clientHeight;
       if (atBottom && w.edgeMem !== 'bottom') fire('reachEnd');
       w.edgeMem = atBottom ? 'bottom' : '';
       if (!w.scrolling) { w.scrolling = true; fire('start'); }
