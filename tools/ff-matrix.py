@@ -94,33 +94,36 @@ def start_server(want_port):
 
 
 def run_case(driver, sid, c):
-    """跑单个用例，返回 (verdict, npass, text, 耗时s)。"""
+    """跑单个用例，返回 (verdict, npass, text, 耗时s)。
+
+    判定通道 = #result 文本逐拍轮询（页面终态时写入 '=== ALL PASS ===' 或失败头，
+    与 run.sh grep 'ALL PASS' 同约定）。
+    教训（R145 实测）：首版 title 快通道早退会带走上一拍的陈旧 #result 快照
+    （'running…' 非空 → 终读被跳过 → 计 0 条，5 个快页同日中招）——title 只反映
+    "完成与否"，#result 才有计数，两个通道混用天然有竞态，干脆只留 #result。
+    """
     page_path = "/test/" + c["page"].split("test/", 1)[-1]
     url = "http://127.0.0.1:" + str(c["_port"]) + page_path + c["query"]
     t0 = time.time()
     driver("POST", f"/session/{sid}/url", {"url": url})
     time.sleep(POLL0)
-    verdict, deadline = None, time.time() + CASE_TIMEOUT
+    verdict, text, deadline = None, "", time.time() + CASE_TIMEOUT
     while time.time() < deadline:
         try:
-            t = driver("GET", f"/session/{sid}/title")["value"]
-            if t in ("PASS", "FAIL"):
-                verdict = t
+            el = driver("POST", f"/session/{sid}/element",
+                        {"using": "css selector", "value": "#result"})["value"]
+            text = driver("GET", f"/session/{sid}/element/{el[ELEMENT_KEY]}/text")["value"]
+            if "=== ALL PASS" in text:
+                verdict = "PASS"
+                break
+            if "FAILURES" in text or "=== HAS FAILURE" in text:
+                verdict = "FAIL"
                 break
         except Exception:
             pass
         time.sleep(POLL)
-    el = driver("POST", f"/session/{sid}/element",
-                {"using": "css selector", "value": "#result"})["value"]
-    text = driver("GET", f"/session/{sid}/element/{el[ELEMENT_KEY]}/text")["value"]
     if verdict is None:
-        # 页面不设 title 的（如 focusdemo）：按 #result 文本判，与 run.sh grep 'ALL PASS' 同约定
-        if "=== ALL PASS" in text:
-            verdict = "PASS"
-        elif "FAILURES" in text or "=== HAS FAILURE" in text:
-            verdict = "FAIL"
-        else:
-            verdict = "TIMEOUT"
+        verdict = "TIMEOUT"
     npass = sum(1 for ln in text.splitlines() if ln.startswith("PASS "))
     return verdict, npass, text, time.time() - t0
 

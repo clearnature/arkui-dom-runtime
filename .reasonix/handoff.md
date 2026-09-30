@@ -9,7 +9,16 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R144 Firefox(Gecko) 跨引擎全矩阵入仓**——企业级标准检查问出
+- 上次切片：**R145 驱动完备性清账**——① electron all 补 5 例（a11ydemo/i18ndemo/
+  rdbdemo/netadvdemo/leak，单跑实测计数与浏览器端逐一相同，双端声明固化为门禁
+  全覆盖，84→89 例+netfile 两连）；② 孤儿页判定：batchmediademo 复活入矩阵
+  （16 条双端 ALL PASS+守门声明），batchlayout（4 FAIL+global is not defined）/
+  navshimdemo（1 FAIL）判腐化待修（**陷阱：无文档声明的页失败会被 assert-counts
+  静默跳过——先修后进**），batchinput/Motion 判可实现未驱动（main_pages 未登记
+  无 fixture）；③ firefox 驱动 title+#result 双通道早退（focusdemo 26.8s→3.8s）
+  + 解析漂移哨兵（计划数 vs 独立行计数，首版 TSV 比对的新鲜度缺陷被单跑场景抓出）；
+  ④ WebKit 评估记未来切片（无二进制，~120MB 下载+GTK 依赖）。
+  更早：**R144 Firefox(Gecko) 跨引擎全矩阵入仓**——企业级标准检查问出
   "矩阵一直 Chromium-only"→ 3 页冒烟后正式化第三验证端：`firefox/run.sh`（geckodriver
   定位/缺席显式跳过）+ `tools/ff-plan.py`（解析 run.sh all 块=单一事实来源）+
   `tools/ff-matrix.py`（geckodriver 环回 HTTP 执行器）。选型实录：Fx 156 BiDi 无

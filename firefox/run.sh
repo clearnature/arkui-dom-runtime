@@ -44,6 +44,19 @@ fi
 mkdir -p build
 python3 tools/ff-plan.py > build/ff-plan.jsonl || exit 1
 
+# 解析漂移守卫（自包含，不依赖浏览器 TSV 的新鲜度）：计划用例数必须等于
+# 用"另一套解析法"（逐行数 run_one 行）数出来的 all 块用例数——
+# ff-plan 用 shlex 分词，这里用行计数；块边界锚或分词任一漂移都会红。
+# 注意 assert-counts 对"没跑到的用例"只跳过不报红，所以这道哨兵不能省。
+plan_n="$(grep -c '^{' build/ff-plan.jsonl 2>/dev/null || true)"
+plan_n="${plan_n:-0}"
+raw_n="$(sed -n '/^  all)/,/^    exit \$rc ;;/p' run.sh | grep -cE '^[[:space:]]*run_one ' || true)"
+raw_n="${raw_n:-0}"
+if [ "$plan_n" -ne "$raw_n" ]; then
+  printf '  ❌ 计划用例数(%d) ≠ all 块 run_one 行数(%d)——ff-plan 解析漂移\n' "$plan_n" "$raw_n"
+  exit 1
+fi
+
 # ── geckodriver 生命周期：固定端口 9555，先清残留 ──
 pkill -f "geckodriver --port $GD_PORT" 2>/dev/null && sleep 0.5
 "$GECKODRIVER" --port "$GD_PORT" >build/ff-geckodriver.log 2>&1 &

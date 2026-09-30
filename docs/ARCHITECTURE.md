@@ -1757,31 +1757,31 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   23 个：app.ability.AbilityConstant app.ability.ConfigurationConstant app.ability.UIAbility app.ability.Want arkui.node cjk data.preferences deviceInfo file.fs file.picker hilog measure multimedia.image multimedia.media net.http notificationManager pasteboard promptAction resourceManager router window window window.multi
 
 == 用例矩阵 ==
-  浏览器 run.sh     85 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify measure lazy provide v2 observe async ability promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo builtindemo resourcedemo errbounddemo focusdemo sysresdemo netadvdemo i18ndemo a11ydemo rdbdemo stress10k navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo mediademo smalldemo stepdemo imagedemo scrolldemo animatordemo listitemgroup refreshdemo datepickerdemo timepickerdemo waterflowdemo calendarpickerdemo textpickerdemo griddemo texttimedemo alphabetindexerdemo sidebardemo splitdemo paneldemo gridrowdemo richvideodemo batchverify perfdemo windowdemo pickerdemo batchfunc funcbehavior abilitydesktop sysapi batchbehavior cjk cjkdemo notesdemo router netfile persist
-  Electron          88 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo builtindemo resourcedemo errbounddemo focusdemo sysresdemo netadvdemo i18ndemo a11ydemo rdbdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo mediademo smalldemo stepdemo imagedemo scrolldemo animatordemo listitemgroup refreshdemo datepickerdemo timepickerdemo waterflowdemo calendarpickerdemo textpickerdemo griddemo texttimedemo alphabetindexerdemo sidebardemo splitdemo paneldemo gridrowdemo richvideodemo batchverify perfdemo perfbig attrheavy stress1k stress10k windowdemo pickerdemo abilitydesktop sysapi batchbehavior batchfunc funcbehavior cjk cjkdemo notesdemo measure lazy provide async v2 observe multiwindemo
+  浏览器 run.sh     88 个：index rich leak layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify measure lazy provide v2 observe async ability promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo builtindemo resourcedemo errbounddemo focusdemo sysresdemo netadvdemo i18ndemo a11ydemo rdbdemo stress10k navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo mediademo smalldemo stepdemo imagedemo scrolldemo animatordemo listitemgroup refreshdemo datepickerdemo timepickerdemo waterflowdemo calendarpickerdemo textpickerdemo griddemo texttimedemo alphabetindexerdemo sidebardemo splitdemo paneldemo gridrowdemo richvideodemo batchverify perfdemo windowdemo pickerdemo batchfunc batchlayout batchmediademo navshimdemo funcbehavior abilitydesktop sysapi batchbehavior cjk cjkdemo notesdemo router netfile persist
+  Electron          89 个：netfile layout rich index leak ability router widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo builtindemo resourcedemo errbounddemo focusdemo sysresdemo netadvdemo i18ndemo a11ydemo rdbdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo mediademo smalldemo stepdemo imagedemo scrolldemo animatordemo listitemgroup refreshdemo datepickerdemo timepickerdemo waterflowdemo calendarpickerdemo textpickerdemo griddemo texttimedemo alphabetindexerdemo sidebardemo splitdemo paneldemo gridrowdemo richvideodemo batchverify perfdemo perfbig attrheavy stress1k stress10k windowdemo pickerdemo abilitydesktop sysapi batchbehavior batchfunc funcbehavior cjk cjkdemo notesdemo measure lazy provide async v2 observe multiwindemo batchmediademo
   测试页            96 个
   fixtures 转换产物  78 个：AlphabetIndexerDemo AnimDemo AnimatorDemo AsyncIO AttrHeavyDemo BatchFuncDemo BatchLayoutDemo BatchMediaDemo BatchVerifyDemo BuiltinDemo CalendarPickerDemo Callee CanvasDemo CjkDemo DatePickerDemo Detail DrawDemo GestureDemo GestureGroupDemo GridDemo GridRowDemo Home ImageDemo Index InputDemo Layout Lazy LazyVar ListGroupDemo MeasArea MeasImage MeasNotify Measure MediaDemo NavBarDemo NavDemo NavShimDemo NavTransDemo NetFile NotesDetail NotesHome Observe PanelDemo PerfBigDemo PerfDemo PickerDemo PopDemo PromptAct Provide QrDemo RefreshDemo RelDemo ResourceDemo Rich RichVideoDemo ScrollDemo ShapeDemo ShowDemo SideBarDemo SmallDemo SplitDemo StepDemo Stress10kDemo Stress1kDemo SwiperDemo TabsGrid TextDemo TextMeasure TextPickerDemo TextTimeDemo TimePickerDemo TransitionDemo UiContextDemo V2 WaterFlowDemo Widgets WindowDemo XCompDemo
 
 == 性能基线（Electron 实测）==
-  首渲染            37.6 ms（33 节点：Column+Button+Text+ForEach×30）
-  最小 rerender     6.5 ms（@State 计数脏区单 Text，rAF 口径）
-  rerender 管道     1.1 ms / 1 tick（setTimeout 轮询口径，R70）
+  首渲染            34.5 ms（33 节点：Column+Button+Text+ForEach×30）
+  最小 rerender     7.0 ms（@State 计数脏区单 Text，rAF 口径）
+  rerender 管道     1.0 ms / 1 tick（setTimeout 轮询口径，R70）
   微任务底噪        0.00 ms
   行数              31
-  剖面 R71          loadRoute 同步 6.8 ms（require 0.3）· raf1 23.6 / raf2 7.2 ms（offscreen 首帧）
-  脚本 eval         runtime 152.1 / generated 147.3 / shims 149.5 / module 149.1 ms（计时起点之前）
+  剖面 R71          loadRoute 同步 7.0 ms（require 0.4）· raf1 0.5 / raf2 27.0 ms（offscreen 首帧）
+  脚本 eval         runtime 168.8 / generated 167.4 / shims 166.7 / module 166.3 ms（计时起点之前）
   判定              框架同步构建 3.5ms 无大头；"首渲染"=脚本 eval + offscreen 首帧（非框架成本）
-  千节点 R79        首渲染同步 29.8 ms（350 节点/~3500 属性，亚线性）· 单点 flush 0.2 ms · 批量翻转 flush 3.1 ms
+  千节点 R79        首渲染同步 31.9 ms（350 节点/~3500 属性，亚线性）· 单点 flush 0.2 ms · 批量翻转 flush 2.9 ms
   规模曲线          203→4.8 / 304→11.2 / 1055→19.0 ms（创建路径亚线性）；行复用+守卫千节点级保持
-  万节点 R138       首渲染同步 131.3 ms（3300 节点/~33000 属性）· 批量翻转 poll 154.4 ms / flush 16.2 ms · 单点 flush 0.2 ms（R139 增量走查后）
+  万节点 R138       首渲染同步 134.2 ms（3300 节点/~33000 属性）· 批量翻转 poll 181.6 ms / flush 17.6 ms · 单点 flush 0.3 ms（R139 增量走查后）
 
 == 体积（源码，不含产物/Electron 运行时）==
   runtime          9357.3 KB
   runtime(src)     1410.5 KB
   test             1534.3 KB
-  tools            244.5 KB
-  electron(src)    83.6 KB
-  docs             872.6 KB
+  tools            256.9 KB
+  electron(src)    83.8 KB
+  docs             874.7 KB
   fixtures         537.2 KB
 
 == 逐文件（文档"文件职责"表的来源）==
@@ -1796,18 +1796,18 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   tools/preflight.mjs                       5422 B  5.3 KB
   tools/check-all.sh                        6761 B  6.6 KB
   tools/build-runtime.mjs                   5138 B  5.0 KB
-  run.sh                                   37271 B  36.4 KB
-  electron/run.sh                          22772 B  22.2 KB
+  run.sh                                   38623 B  37.7 KB
+  electron/run.sh                          23055 B  22.5 KB
   electron/main.js                         50500 B  49.3 KB
   electron/preload.js                      11432 B  11.2 KB
   package.json                              1366 B  1.3 KB
-  .gitignore                                 909 B  0.9 KB
-  README.md                               157748 B  154.1 KB
+  .gitignore                                 983 B  1.0 KB
+  README.md                               157754 B  154.1 KB
   THIRD-PARTY-NOTICES.md                   12820 B  12.5 KB
-  docs/ARCHITECTURE.md                    166277 B  162.4 KB
+  docs/ARCHITECTURE.md                    166331 B  162.4 KB
   docs/CAPABILITY.md                       63212 B  61.7 KB
   docs/DEVELOPING.md                       76775 B  75.0 KB
-  docs/ROADMAP.md                         244624 B  238.9 KB
+  docs/ROADMAP.md                         246761 B  241.0 KB
   docs/surface-measurement.md               6496 B  6.3 KB
   docs/SESSION-2026-09-20.md               12842 B  12.5 KB
   runtime/src/.mimosa                       4096 B  4.0 KB
@@ -2096,8 +2096,8 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
 | `tools/assert-counts.mjs` | 7.3 KB | 断言计数守门（运行期 emit 的 PASS 行 ↔ 文档声明的「N 条断言」，见坑表 77） | 声明写法/扫描范围变化时 |
 | `tools/preflight.mjs` | 5.3 KB | 环境自检（工具链/宿主/可执行位） | 外部依赖变化时 |
 | `tools/check-all.sh` | 6.6 KB | 一条命令做完验收（9 步，firefox 步缺席显式跳过），退出码只看被调命令 | 新增验收步骤时 |
-| `run.sh` | 16.0 KB | 浏览器 32 用例驱动 | 新增用例 |
-| `electron/run.sh` | 10.4 KB | Electron 31 用例 + 磁盘验证 | 新增用例 |
+| `run.sh` | 37.7 KB | 浏览器 76 用例驱动 | 新增用例 |
+| `electron/run.sh` | 22.5 KB | Electron 89 用例 + 磁盘验证 | 新增用例 |
 | `firefox/run.sh` | 3.9 KB | Firefox(Gecko) 同用例表跨引擎复跑（R144；geckodriver 缺席显式跳过，计数覆盖表 `firefox/assert-overrides.tsv`） | 引擎差异分诊 |
 | `tools/ff-plan.py` | 2.4 KB | 解析 run.sh all 块 → Firefox 矩阵用例计划（单一事实来源，run.sh 增删用例自动跟随） | 用例表语义变化时 |
 | `tools/ff-matrix.py` | 7.1 KB | geckodriver 环回 HTTP 执行器（title/#result 双通道判定；Fx 156 BiDi 无 script.* 的实录） | 判定通道变化时 |

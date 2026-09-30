@@ -375,6 +375,12 @@ case "${1:-index}" in
     "$NODE" tools/extract.mjs "$(src_of pages/Detail.ts)" build/detail-module.js --cjs --register Detail >/dev/null || rc=1
     run_one router "$(src_of pages/Home.ts)" build/home-module.js test/router.html "--cjs --register Home" || rc=1
     echo
+    # R145：孤儿页复活——batchmediademo（16 条 ALL PASS）；batchlayout/navshimdemo
+    # 复活尝试发现断言已腐化（4/1 FAIL，R66/R67 语义漂移）→ 判定待修，不盲入矩阵
+    # （无文档声明的页失败会被守门静默跳过——先修后进）。单跑走 dispatch。
+    run_one batchmediademo "$(src_of pages/BatchMediaDemo.ts)" build/batchmediademo-module.js test/batchmediademo.html \
+      "--cjs --register BatchMediaDemo" || rc=1
+    echo
     PERSIST_PROFILE="$HERE/build/chrome-profile-persist"
     rm -rf "$PERSIST_PROFILE"; mkdir -p "$PERSIST_PROFILE"   # 从干净状态开始，否则"持久化"可能是上次残留
     PERSIST_PORT="$(pick_free_port)" || { echo "  ❌ 找不到空闲端口"; rc=1; }
@@ -622,6 +628,18 @@ case "${1:-index}" in
     # R66：批量功能组件（Calendar/Repeat/Indicator 等）
     run_one batchfunc "$(src_of pages/BatchFuncDemo.ts)" build/batchfunc-module.js test/batchfuncdemo.html \
       "--cjs --register BatchFuncDemo" ;;
+  batchlayout)
+    # R67：批次 E 布局/叠放族（FolderStack / GridContainer / Sheet / Section 等）——R145 复活
+    run_one batchlayout "$(src_of pages/BatchLayoutDemo.ts)" build/batchlayout-module.js test/batchlayout.html \
+      "--cjs --register BatchLayoutDemo" ;;
+  batchmediademo)
+    # R66：batch-media 六件（ContainerSpan / ImageSpan / RichText / SymbolGlyph / SymbolSpan / Web）——R145 复活
+    run_one batchmediademo "$(src_of pages/BatchMediaDemo.ts)" build/batchmediademo-module.js test/batchmediademo.html \
+      "--cjs --register BatchMediaDemo" ;;
+  navshimdemo)
+    # R66：导航垫片批次（NavRouter / Navigator / PageTransition / ToolBarItem 等）——R145 复活
+    run_one navshimdemo "$(src_of pages/NavShimDemo.ts)" build/navshimdemo-module.js test/navshimdemo.html \
+      "--cjs --register NavShimDemo" ;;
   funcbehavior)
     # R94：行为断言三批（func/motion/layout）
     run_one funcbehavior "$(src_of entryability/EntryAbility.ts)" build/funcbehavior-module.js test/funcbehavior.html \
