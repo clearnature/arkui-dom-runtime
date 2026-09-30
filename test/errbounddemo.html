@@ -160,13 +160,15 @@
       '⑥ seq 严格递增（缓冲旧→新有序）');
     const beforeClearSeq = lst[49].seq;
     EB.clear();
-    const errObj = new Error('normalized-err');   // V8 的 stack 天然多行（首行 + at 帧行）
+    const errObj = new Error('normalized-err');   // V8 未抛 Error 的 stack 多行；JSC（WebKit）单行——引擎差异，前置不烙死
     const one = EB.push(errObj);
     check(one.seq > beforeClearSeq && EB.list().length === 1,
       '⑥ clear 后 seq 仍单调（跨 clear 不回退，便于去重对账）');
-    check(errObj.stack.indexOf('\n') > 0 && one.message === 'normalized-err'
-      && one.stack.indexOf('\n') < 0 && one.stack.length > 0,
-      '⑥ push(Error) 归一化：message 取原文、stack 只留首行（原 stack 多行 → 条目单行）');
+    const rawMulti = errObj.stack.indexOf('\n') > 0;
+    check(one.message === 'normalized-err' && one.stack.length > 0
+      && (!rawMulti || one.stack.indexOf('\n') < 0),
+      '⑥ push(Error) 归一化：message 取原文、stack 只留首行（原 stack '
+      + (rawMulti ? '多' : '单') + '行 → 条目单行）');
     const snapList = EB.list();
     snapList[0].message = 'TAMPERED';
     check(EB.list()[0].message === 'normalized-err', '⑥ list() 返回快照（改副本不动缓冲）');

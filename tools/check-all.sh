@@ -95,6 +95,20 @@ else
   SKIPPED+=("firefox (矩阵)")
 fi
 
+# ── 6c. WebKit 用例（R148 第四验证端：同用例表 × playwright WebKit）──
+# 兼容性加分端：主验收基准是 Electron/Chromium（docs/ARCHITECTURE §1 三层一致性）。
+# 依赖两件套都不入库（带 playwright 的 python + ~/.cache/ms-playwright 的 WebKit
+# 二进制），缺席时显式跳过并声明原因；就位时本步自动转真（见 webkit/run.sh）。
+WK_PY="${WK_PYTHON:-/data/tmp/wk-venv/bin/python}"
+if [ -x "$WK_PY" ] && "$WK_PY" -c "import playwright" 2>/dev/null; then
+  step "webkit (webkit/run.sh all)" bash webkit/run.sh all
+else
+  printf '════ webkit (webkit/run.sh all) ════\n'
+  printf '  ⏭  跳过（原因：本机缺带 playwright 的 python（找 %s 失败）——\n' "$WK_PY"
+  printf '      WebKit 为兼容性加分第四端，主验收基准=Electron/Chromium；补齐后本步自动转真）\n'
+  SKIPPED+=("webkit (矩阵)")
+fi
+
 # ── 7. 统计（不是验收条件，只留档给文档引用）──
 printf '════ 统计（留档，不影响退出码）════\n'
 node tools/stats.mjs | tee "$LOGDIR/stats.txt" | sed 's/^/  /'

@@ -98,7 +98,7 @@ tools/gen-components.mjs       由 ets-loader 的组件 JSON 生成骨架（--ch
 tools/build-runtime.mjs        runtime/src/ 分片 → runtime/arkui-dom-runtime.js（--check 只校验不写）
 tools/serve.py                 极简静态服务（端口由 OS 分配，避免冲突）
 tools/preflight.mjs            环境自检（工具链 / 宿主 / 可执行位）
-tools/check-all.sh             一条命令做完所有验收（9 步，含 t --typecheck；firefox 步缺席显式跳过）
+tools/check-all.sh             一条命令做完所有验收（10 步，含 t --typecheck；firefox/webkit 步缺席显式跳过）
 tools/stats.mjs                覆盖范围统计（文档里的数字都来自它）
 test/*.html                    断言页（96 页；进全矩阵的用例由 runner 守门，见 docs/DEVELOPING.md 坑 77）
 fixtures/                      冻结的 ets-loader 转换产物（30 个，测试的输入）
@@ -107,6 +107,8 @@ run.sh                         浏览器 80 用例驱动
 electron/run.sh                Electron 93 用例 + 真实磁盘验证
 firefox/run.sh                 Firefox(Gecko) 同用例表跨引擎复跑（R144，缺席显式跳过；
                                geckodriver 定位顺序与计数覆盖见文件头注释）
+webkit/run.sh                  WebKit 第四端同用例表复跑（R148，playwright；缺席显式跳过）
+tools/wk-matrix.py             playwright 执行器（#result 单通道判定，坑 115 纪律）
 tools/ff-plan.py               解析 run.sh all 块 → Firefox 矩阵用例计划（单一事实来源）
 tools/ff-matrix.py             geckodriver 环回 HTTP 执行器（title/#result 双通道判定）
 docs/                          ARCHITECTURE / DEVELOPING / ROADMAP / CAPABILITY

@@ -1,0 +1,6 @@
+# WebKit 第四端断言计数覆盖表 —— assert-counts.mjs --overrides 的输入
+# 语义：命中行按「覆盖值（逗号分隔集合，任一命中即过）」核对；未命中行按文档声明值核对。
+# 只收录「互斥条件分支在不同引擎/不同时序下各走一支」的用例——不是失败，也不是豁免，
+# 是引擎差异的诚实账（每行必须写清理由，理由丢了这条覆盖就失去存在依据）。
+# 格式：<用例名>\t<WebKit 端期望值集合>\t<理由>
+realfs	20,21	OPFS 探测为时序敏感分支（预算 200ms/步）：WebKitGTK headless 实测走探测失败分支（21 条，与 Chromium headless 同支；首跑观测）；若环境支持 getDirectory 则走成功分支 20 条（同 Gecko 行为）。两端 backend 同为 localStorage、判定均 ALL PASS；两态皆合法，集合外值仍红（R148）

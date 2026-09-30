@@ -9,7 +9,15 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R147 batchinput/Motion 重构建入阵**——R145 清单最后一个开发性尾巴。
+- 上次切片：**R148 WebKit 第四端入阵**（R145 清单收官）——判定翻案：系统已有
+  libwebkit2gtk-4.1/libgtk-3，缺的只有 3 个小库（用户 sudo 装）。`webkit/run.sh`
+  （wk-venv python 定位、缺席显式跳过）+ `tools/wk-matrix.py`（playwright，
+  #result 单通道——坑 115 纪律）+ 覆盖表。唯一引擎差异：errbounddemo ⑥ 前置
+  `stack.indexOf('\n')>0` 烙 V8 假设（JSC 未抛 Error stack 单行）→ 断言引擎中立化，
+  runtime 归一化两端都对。坑复刻自抓：run.sh "all" 当过滤子串传执行器（R144
+  同型坑）在 webkit 侧又犯一次才修。验收 80/80 ALL PASS（计数与 Chromium 逐例
+  一致）+ 守门 134 处全对（3 覆盖值）；门禁 9→10 步；四端 80/94/80/80。
+  更早：**R147 batchinput/Motion 重构建入阵**——R145 清单最后一个开发性尾巴。
   两页 R66 产出但 main_pages 未登记→从未编译（batchinput 编译失败根因：四族组件
   不在 CLT 26 SDK，页头注释早预言但没人编译过）。登记→裁四族段→BUILD OK→fixture
   冻结（钩子拦 cp，Read/Write 合规）→测试页裁 12 条+格式归一（原页 `✅ ALL PASS`
