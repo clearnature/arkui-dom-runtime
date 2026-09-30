@@ -19,6 +19,11 @@
   验收 80/80+守门全对；门禁 10→11 步（6d android 条件步）；五端 80/94/80/80/80
   （a27f8dc，Mimosa 0 findings seal sha256:1b6b5a3e…）。realfs 在 Android 走 OPFS
   探测成功分支（System WebView 原生支持，20 条）——覆盖表两态皆合法。
+  **R149.1 iOS 通路终局判定**：官方 ios-simulator 插件实测结构性不可行（MCP server
+  包装 xcrun simctl/xcodebuild，preflight 判 darwin-only——Linux 实测输出
+  `{"ok":false,"detail":"linux"}`；无远程模式；iOS 模拟器运行时 Apple 专有）。
+  iOS WKWebView 门禁级验证只能等 macOS 环境（届时按第五端同款矩阵接入）；
+  Linux 上 WebKitGTK 已是 WebKit 家族代理。闭案。
   更早：**R148 WebKit 第四端入阵**（R145 清单收官）——判定翻案：系统已有
   libwebkit2gtk-4.1/libgtk-3，缺的只有 3 个小库（用户 sudo 装）。`webkit/run.sh`
   （wk-venv python 定位、缺席显式跳过）+ `tools/wk-matrix.py`（playwright，
