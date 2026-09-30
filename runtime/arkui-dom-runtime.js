@@ -3593,15 +3593,22 @@
   // Tabs 的语义性属性里本实现未覆盖的部分。回调类尤其不能静默——写上去却永远不触发，
   // 比报错更难查。纯外观项（颜色/模糊/divider/fadingEdge）不在此列。
   // R125：scrollable 移出本表（内置拖拽翻页真语义，默认 true，tabs.d.ts JSDoc 原文）。
-  // W4（本片）：vertical/barMode/barWidth/barHeight/barOverlap 与回调 onTabBarClick/
+  // W4（R151）：vertical/barMode/barWidth/barHeight/barOverlap 与回调 onTabBarClick/
   // onSelected/onUnselected 一并移出本表——它们改由 ensureComponent('Tabs') 里的
   // 【组件自有方法】拦截（原因见该处注释：applyAttr 的通用函数分支会把 onXxx 吞成
   // 永不触发的死监听，且它排在 TABS_UNSUPPORTED 诊断之前，连警告都发不出）。
+  // R152-B：动画/拖拽族四件（animationDuration/onAnimationStart/onAnimationEnd/
+  // onGestureSwipe）也移出本表走自有方法拦截（同 R151 原因 ①，且由内置拖拽生命周期派发）。
+  // barGridAlign 实参是 BarGridColumnOptions{sm?,md?,lg?}（tabs.d.ts:1481-1493），不是 Alignment
+  // 枚举（C 简报纠偏）——真语义：仅水平模式生效，bar 内容限定在栅格列宽内水平居中；按内容宽
+  // 定 SM≤4/MD≤8/LG≤12 列，columnNum 须非负偶数（奇/负→0 即整宽），左右留白=
+  // (contentWidth−gridWidth)/2（tab_bar_layout_algorithm.cpp:1090-1127）。栅格断点测量归后续片，
+  // 本片继续记警告。
   const TABS_UNSUPPORTED = new Set([
     'barGridAlign',
-    'animationDuration', 'animationMode', 'animationCurve', 'customContentTransition',
-    'pageFlipMode', 'edgeEffect', 'cachedMaxCount',
-    'onAnimationStart', 'onAnimationEnd', 'onGestureSwipe', 'onContentWillChange',
+    'animationMode', 'animationCurve',
+    'customContentTransition', 'pageFlipMode', 'edgeEffect', 'cachedMaxCount',
+    'onContentWillChange',
   ]);
 
   let tabsSeq = 0;
@@ -3632,6 +3639,16 @@
       barWidth: null, barHeight: null,// Length；null=走 d.ts 缺省（竖 56 宽 / 横 56 高）
       barOverlap: false,              // tabs.d.ts:1454-1467：bar 悬浮在 TabContent 上（默认 false）
       onTabBarClick: null, onSelected: null, onUnselected: null,   // 覆盖语义单槽（d.ts 单 Callback 入参）
+      // R152-B 动画/拖拽族状态（C 简报纠偏后的权威缺省）：
+      animationDuration: 300,         // 真机 ANIMATION_DURATION_DEFAULT=300（tab_theme.cpp:27,51-52；
+                                      //   API11+ 非 BottomTabBarStyle 缺省 300，d.ts:1240）；只有
+                                      //   BottomTabBarStyle 才是 0（tab_bar_pattern.cpp:3444-3462）。
+                                      //   0=无动画且不触发动画回调（swiper_pattern.cpp:2270-2273）
+      animStart: [], animEnd: [],     // onAnimationStart/End 多播（真机 SwiperEventHub 是 list
+                                      //   emplace_back，swiper_event_hub.h:162-163，重复注册都发）
+      gestureSwipe: null,             // onGestureSwipe 单槽覆盖（真机 SetGestureSwipeEvent swap，
+                                      //   swiper_event_hub.h:79-84/164——与 R125 Swiper 的数组实现不同，此处照真机）
+      tabAnim: null,                  // 进行中的切页动画舞台（animateTabSwitch 建立，settle 时清）
     });
     node.__tabsState = st;
     node.style.display = 'flex';
@@ -3659,6 +3676,8 @@
     applyTabsOptions(st, opt);
     applyTabsBarLayout(st);           // 初始方向/尺寸（含 d.ts 缺省：竖 56 宽、横 56 高）
     // R125 内置拖拽：内容区横扫翻 TabContent（scrollable 开关控制；恒横向、无 loop）
+    // R152-B：duration 接 animationDuration（0=即时翻页）；gesture/animStart/animEnd 由
+    // 拖拽生命周期派发到 Tabs 回调（门控与事件序见各 fireTabsXxx / setActiveTab 注释）
     attachPagedDrag(st.contentEl, {
       /** @returns {string} */
       axis: () => 'x',
@@ -3673,14 +3692,26 @@
       /** @returns {number} */
       size: () => st.contentEl.clientWidth,
       /** @returns {number} */
-      duration: () => 0,              // Tabs 无 duration 属性——切页即显（display 语义）
+      duration: () => st.animationDuration,   // 翻页收口过渡时长（真机拖拽路径是 interpolatingSpring
+                                              //   内禀时长，DOM 用本值作 CSS 过渡；0=即时翻页）
       /** @param {number} i */
       pageAt: (i) => (st.contents[i] ? st.contents[i].el : null),
       /** @param {number} i */
-      commit: (i) => { setActiveTab(st, i, true); },
-      gesture: () => {},              // Tabs.onGestureSwipe 在 UNSUPPORTED 表（本片不接）
-      animStart: () => {},
-      animEnd: () => {},
+      commit: (i) => { setActiveTab(st, i, true, true); },   // fromDrag：动画事件对由拖拽收口自己发
+      /** @param {number} i @param {any} extra */
+      gesture: (i, extra) => {
+        // 真机拖拽期 extra 只填 currentOffset、velocity 恒 0（C 简报对齐；
+        // builtin 拖拽舞台给的采样速度在 Tabs 侧丢弃，形状收敛到 TabsAnimationEvent 缺省）
+        fireTabsGestureSwipe(st, i, {
+          currentOffset: extra && typeof extra.currentOffset === 'number' ? extra.currentOffset : 0,
+          targetOffset: 0,
+          velocity: 0,
+        });
+      },
+      /** @param {number} idx @param {number} target */
+      animStart: (idx, target) => { if (st.animationDuration > 0) fireTabsAnimStart(st, idx, target); },
+      /** @param {number} i */
+      animEnd: (i) => { if (st.animationDuration > 0) fireTabsAnimEnd(st, i); },
     });
     return st;
   }
@@ -3768,6 +3799,36 @@
           layoutWarnings.push(`Tabs.${key} 需要函数，收到 ${typeof value}，已忽略`);
         }
         return;
+      // ── R152-B：动画/拖拽族四件（此前在 TABS_UNSUPPORTED，现真语义）──
+      case 'animationDuration': {
+        // d.ts tabs.d.ts:1221-1246：ms，[0,+∞)；只控制点击 tab / changeIndex 触发的切换动画
+        // （拖拽释放真机由 interpolatingSpring(-1,1,228,30) 内禀参数决定，DOM 里拖拽收口由
+        // builtin.js 承担、本值作 CSS 过渡时长——与 R65/R125 animateTo→CSS transition 同一惯例）。
+        // 负值/非法【不生效】（tabs_model_ng.cpp:474-490 只在 ≥0 时写，保持现值=缺省 300，
+        // 真机静默忽略故不记警告，避免重渲染刷屏）；0=无动画且不触发动画回调。
+        const n = Number(resolveResource(value));
+        if (Number.isFinite(n) && n >= 0) st.animationDuration = n;
+        return;
+      }
+      case 'onAnimationStart':  // d.ts tabs.d.ts:1379-1392：(index, targetIndex, extraInfo) 三参
+      case 'onAnimationEnd':    // d.ts tabs.d.ts:1395-1408：(index, extraInfo) 两参
+        // 多播（真机 SwiperEventHub list emplace_back，swiper_event_hub.h:69-77——重复注册都发，
+        // 与 R125 Swiper 的 push 数组同款；重渲染重复应用会翻倍是已知取舍，与 area.js 的
+        // Tabs/Swiper onChange push 同口径）
+        if (typeof value === 'function') {
+          (key === 'onAnimationStart' ? st.animStart : st.animEnd).push(value);
+        } else {
+          layoutWarnings.push(`Tabs.${key} 需要函数，收到 ${typeof value}，已忽略`);
+        }
+        return;
+      case 'onGestureSwipe':    // d.ts tabs.d.ts:1411-1423：(index, extraInfo) 逐帧
+        // 单槽覆盖（真机 SetGestureSwipeEvent swap，swiper_event_hub.h:79-84——后注册替前注册）
+        if (typeof value === 'function') st.gestureSwipe = value;
+        else {
+          st.gestureSwipe = null;
+          layoutWarnings.push(`Tabs.${key} 需要函数，收到 ${typeof value}，已忽略`);
+        }
+        return;
     }
   }
 
@@ -3832,8 +3893,16 @@
     }
   }
 
-  /** @param {any} st @param {number} i @param {boolean} fire */
-  function setActiveTab(st, i, fire) {
+  /**
+   * 切活动面板。fire=true 才发切换事件；fromDrag=true 表示来自内置拖拽的收口 commit——
+   * 动画事件对（onAnimationStart/End）已由拖拽生命周期（builtinFinishPagedDrag）发过，
+   * 这里只落内容/事件序，避免二次发。
+   * R152-B（C 简报对齐）：animationDuration 缺省 300（tab_theme.cpp:27,51-52），>0 时点击
+   * tab / changeIndex 路径走 animateTabSwitch 入场动画；=0 时即时切换且不发动画事件
+   * （swiper_pattern.cpp:2270-2273：duration=0 无动画、start/end 均不触发）。
+   * @param {any} st @param {number} i @param {boolean} fire @param {boolean=} [fromDrag]
+   */
+  function setActiveTab(st, i, fire, fromDrag) {
     const n = st.contents.length;
     if (!n || !Number.isInteger(i) || i < 0 || i >= n) {
       layoutWarnings.push(`Tabs.changeIndex(${i}): 越界（共 ${n} 个 TabContent）`);
@@ -3841,7 +3910,17 @@
     }
     const old = st.index;
     st.index = i;
-    onlyOneVisible(st.contents, i);
+    // 动画路径只认"点击 tab / changeIndex 的真实切换"（fire && old!==i）；拖拽 commit、
+    // finalizeTabs 初始定位一律即时落可见性。真机 animateToPage 的内容动画是横向的
+    // （Tabs 内容区恒横向滑动，与本实现 R125 拖拽同轴），vertical 时亦然。
+    const animate = !!(fire && old !== i && !fromDrag && st.animationDuration > 0 && n > 1);
+    if (animate) animateTabSwitch(st, old, i);
+    else {
+      // 非动画路径也要收掉可能在飞的上一场（如动画中又点了拖拽翻页）——否则旧舞台
+      // settle 时会用【它的】目标页覆盖本次可见性
+      settleTabsAnim(st);
+      onlyOneVisible(st.contents, i);
+    }
     [...st.barEl.children].forEach((b, k) => {
       b.setAttribute('data-arkui-tabbar-active', k === i ? 'true' : 'false');
     });
@@ -3849,23 +3928,113 @@
       // 同索引切换不发切换事件：真机 OnIndexChange 有 oldIndex != targetIndex 前置
       // （swiper_pattern.cpp:339），selected/unselected 还有 selectedIndex_/unselectedIndex_
       // 去重（同 index 重复切不重发）——本实现切页即显（display 语义），old !== i 即等价。
-      // 派发序照真机（点击 tab 的完整序列，W4.4）：
+      // 派发序照真机（点击 tab 的完整序列，W4.4 + R152-B 对齐 C 简报）：
       //   onTabBarClick(点击时先发，tab_bar_pattern.cpp:1597，见 finalizeTabs 的 click 监听)
       //   → onSelected(新) → onUnselected(旧)（动画启动时成对发，swiper_pattern.cpp:4389-4390）
-      //   → onChange(索引落定时，swiper_pattern.cpp:326-345；内容切换语义)
-      // selected/unselected 挂在 SwiperEventHub（tabs_pattern.cpp:466/1112 注册），
-      // hub 只带单参 fire（swiper_event_hub.cpp:231/30）：selected=新索引、unselected=旧索引。
+      //   → onAnimationStart(旧→新)（swiper_pattern.cpp:4783-4792）
+      //   → onChange(索引落定；真机在动画收口、紧贴 onAnimationEnd 之前发，
+      //     swiper_pattern.cpp:6435-6481/4943-4952——**onChange 夹在 Start/End 之间**。
+      //     本实现保持同步发以保证 R151 事件序断言兼容，但位置移到 Start 之后，序约束成立)
+      //   → onAnimationEnd(新)（动画收口时发；duration=0 时不发）
       const safe = (/** @type {string} */ tag, /** @type {any} */ fn, /** @type {number} */ arg) => {
         if (typeof fn !== 'function') return;
         try { fn(arg); } catch (e) { layoutWarnings.push(`Tabs.${tag} 抛错：${e && e.message}`); }
       };
       safe('onSelected', st.onSelected, i);
       safe('onUnselected', st.onUnselected, old);
+      if (animate) fireTabsAnimStart(st, old, i);
       for (const cb of st.onChange) {
         try { cb(i); } catch (e) { layoutWarnings.push(`Tabs.onChange 抛错：${e && e.message}`); }
       }
     }
     return true;
+  }
+
+  // ── R152-B：动画/拖拽族的事件派发与切页动画舞台 ──
+  // extra 都是 TabsAnimationEvent 三字段（tabs.d.ts:606-638）。Start/End 时本实现内容页是
+  // display 切换式，切/收口瞬间页内偏移恒 0、无速度 → currentOffset/targetOffset/velocity 填 0
+  // （与 R125 Swiper 的 animStart/End 同口径）；onGestureSwipe 的 currentOffset 是拖拽逐帧
+  // 真实位移、velocity 恒 0（真机拖拽期同，C 简报）；offsetInCurrentSegment 在 Tabs 上不存在，不实现。
+
+  /** @param {any} st @param {number} i @param {any} extra 逐帧：不受 duration 门控（d.ts 无此条件） */
+  function fireTabsGestureSwipe(st, i, extra) {
+    if (typeof st.gestureSwipe !== 'function') return;
+    try { st.gestureSwipe(i, extra); }
+    catch (e) { layoutWarnings.push(`Tabs.onGestureSwipe 抛错：${e && e.message}`); }
+  }
+  /** @param {any} st @param {number} index @param {number} targetIndex */
+  function fireTabsAnimStart(st, index, targetIndex) {
+    for (const cb of st.animStart) {
+      try { cb(index, targetIndex, { currentOffset: 0, targetOffset: 0, velocity: 0 }); }
+      catch (e) { layoutWarnings.push(`Tabs.onAnimationStart 抛错：${e && e.message}`); }
+    }
+  }
+  /** @param {any} st @param {number} index */
+  function fireTabsAnimEnd(st, index) {
+    for (const cb of st.animEnd) {
+      try { cb(index, { currentOffset: 0, targetOffset: 0, velocity: 0 }); }
+      catch (e) { layoutWarnings.push(`Tabs.onAnimationEnd 抛错：${e && e.message}`); }
+    }
+  }
+
+  // 点击 tab / changeIndex 的内容切换动画（animationDuration>0 时）：可见性【立即】落到
+  // 新页（display 语义不动——既有断言在 tick(50) 内断"恰好一页可见"，中途不能出现两页同显），
+  // 动画表达为【入场页纯 transform 滑入】（sign·size → 0），旧页即时离场。真机是两页对滑
+  // （swiper AnimateTo 双向 translate），单向滑入是同族近似，偏差已记录。
+  // 曲线照 d.ts 双默认（tabs.d.ts:1212-1232）：点击/changeIndex 路径 = cubicBezier(0.2,0,0.1,1)；
+  // 拖拽释放路径真机为 interpolatingSpring(-1,1,228,30)——DOM 拖拽收口在 builtin.js（不归本片
+  // 所有权），暂沿用其 ease-out，已列入报告待办。
+  // 收口"transitionend 见证 + 定时器兜底"（坑 ⑧：headless 动画事件不可靠）。
+  /** @param {any} st @param {number} old @param {number} i */
+  function animateTabSwitch(st, old, i) {
+    settleTabsAnim(st);                         // 先收上一场（打断补发 End，swiper_pattern.cpp:2826-2864）
+    const nextEl = st.contents[i] ? st.contents[i].el : null;
+    const size = st.contentEl.clientWidth;      // 恒横向（R125 拖拽同轴）
+    if (!nextEl || !(size > 0)) {
+      // 舞台摆不出来（理论上只在零尺寸/缺页时）：退化为即时切换，但 End 仍要在
+      // 下一拍补上，保证 Start/End 成对（setActiveTab 同步先发 Start）
+      onlyOneVisible(st.contents, i);
+      setTimeout(() => { fireTabsAnimEnd(st, i); }, 0);
+      return;
+    }
+    onlyOneVisible(st.contents, i);             // 可见性立即落新页（display 语义不变）
+    const sign = i > old ? 1 : -1;
+    const anim = {
+      old, i, settled: false, timer: 0, nextEl,
+      snap: { transform: nextEl.style.transform, transition: nextEl.style.transition },
+      settle: /** @type {any} */ (null),
+    };
+    st.tabAnim = anim;
+    // 入场舞台：只动 transform（版式/显示语义零接触）
+    nextEl.style.transition = 'none';
+    nextEl.style.transform = `translateX(${sign * size}px)`;   // 从拖拽方向前方滑入
+    anim.settle = () => {
+      const a = st.tabAnim;
+      if (!a || a.settled) return;
+      a.settled = true;
+      if (a.timer) clearTimeout(a.timer);
+      a.nextEl.removeEventListener('transitionend', a.settle);
+      a.nextEl.style.transition = 'none';       // 还原入场舞台，交回静止语义
+      a.nextEl.style.transform = a.snap.transform;
+      a.nextEl.style.transition = a.snap.transition;
+      fireTabsAnimEnd(st, a.i);                 // 打断/完成都发（isForceStop 同样发 End）
+    };
+    requestAnimationFrame(() => {
+      const a = st.tabAnim;
+      if (!a || a.settled || a !== anim) return;
+      a.nextEl.style.transition = `transform ${Math.max(0, st.animationDuration)}ms cubic-bezier(0.2, 0, 0.1, 1)`;
+      a.nextEl.style.transform = 'translateX(0px)';
+    });
+    nextEl.addEventListener('transitionend', anim.settle, { once: true });
+    anim.timer = setTimeout(anim.settle, st.animationDuration + 80);   // 坑 ⑧ 兜底
+  }
+  /** @param {any} st 强制收口进行中的切页动画（无动画则空操作） */
+  function settleTabsAnim(st) {
+    if (st.tabAnim && typeof st.tabAnim.settle === 'function') {
+      const settle = st.tabAnim.settle;
+      settle();
+    }
+    st.tabAnim = null;
   }
 
   // Tabs.pop() 之后才知道有几个 TabContent、各自的标签是什么 → 那时才建 bar
@@ -6591,15 +6760,16 @@
         const st = top && top.__tabsState;
         if (st) finalizeTabs(st);
       };
-      // W4.1-W4.4：语义属性/回调以【组件自有方法】拦截（Proxy get 命中 target 自有属性后
-      // 直接返回，不再进 applyAttr）。必须在这里拦的两个原因：
+      // W4.1-W4.4 + R152-B：语义属性/回调以【组件自有方法】拦截（Proxy get 命中 target 自有
+      // 属性后直接返回，不再进 applyAttr）。必须在这里拦的两个原因：
       // ① area.js applyAttrInner 的通用函数分支（≈:586）会把 onXxx(fn) 落成
       //    addEventListener('小写事件名')——永不触发的死监听，且它排在 TABS_UNSUPPORTED
       //    诊断（≈:616）之前，连"未实现"警告都发不出（静默失效，坑 86 同族）；
       // ② .vertical(true) 等布尔/枚举值走通用兜底只会落 data-*，版式静默错。
       // 实参全部转发 applyTabsAttr（第二参留给 barMode 的 ScrollableBarModeOptions）。
       for (const k of ['vertical', 'barMode', 'barWidth', 'barHeight', 'barOverlap',
-        'onTabBarClick', 'onSelected', 'onUnselected']) {
+        'onTabBarClick', 'onSelected', 'onUnselected',
+        'animationDuration', 'onAnimationStart', 'onAnimationEnd', 'onGestureSwipe']) {
         (/** @type {any} */ (C))[k] = function (/** @type {...any} */ ...args) {
           applyTabsAttr(ViewStackProcessor.top(), k, args[0], args[1]);
         };
@@ -9475,6 +9645,19 @@
     native.addEventListener('ended', () => {
       const cb = w.cbs.finish;
       if (typeof cb === 'function') { try { cb(); } catch (e) { /* 容错 */ } }
+    });
+    // R152-A：onPrepared/onUpdate 此前只收回调不派发（空 face）。补真实事件桥——
+    // loadedmetadata → PreparedInfo.duration、timeupdate → PlaybackInfo.time，单位秒
+    // （video.d.ts:226-237 PreparedInfo "Unit: second"、:254-266 PlaybackInfo 同），
+    // 与 <video> 元素的 duration/currentTime 同单位直通。未设置回调时零开销
+    // （richvideodemo 现有断言不消费这两个回调，行为不受影响）；不解码则不派发（同真机）。
+    native.addEventListener('loadedmetadata', () => {
+      const cb = w.cbs.prepared;
+      if (typeof cb === 'function') { try { cb({ duration: native.duration }); } catch (e) { /* 容错 */ } }
+    });
+    native.addEventListener('timeupdate', () => {
+      const cb = w.cbs.update;
+      if (typeof cb === 'function') { try { cb({ time: native.currentTime }); } catch (e) { /* 容错 */ } }
     });
     // VideoController 绑定
     if (o.controller && typeof o.controller._bind === 'function') {

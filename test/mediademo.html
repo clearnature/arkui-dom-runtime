@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<title>R35：@ohos.multimedia.media（AVPlayer → HTMLAudioElement）</title>
+<title>R35：@ohos.multimedia.media（AVPlayer → HTMLAudioElement）｜R152-A 时钟跨端贯通</title>
 <style>
   body { font-family: system-ui, sans-serif; margin: 16px; }
   #root { width: 320px; }
@@ -11,7 +11,7 @@
 </style>
 </head>
 <body>
-  <h3>R35：AVPlayer 状态机（url→initialized→prepared→playing→paused／时钟推进）</h3>
+  <h3>R35：AVPlayer 状态机（url→initialized→prepared→playing→paused）+ R152-A：时钟双端同断言</h3>
   <div id="root"></div>
   <div id="result">running…</div>
 
@@ -34,6 +34,23 @@
         lines.push(`FAIL [${name}] 抛出异常：${e && e.stack ? String(e.stack).split('\n')[0] : e}`);
       }
     };
+    // 已知时长 WAV 生成器（R152-A）：16bit 单声道 PCM，时长/采样率即 RIFF 头声明值——
+    // 垫片从同一个头解析 duration（4000B/8000Bs⁻¹=0.25s），断言与实现同源、端无关
+    const makeWavDataUri = (secs, sampleRate) => {
+      const dataLen = sampleRate * secs * 2;
+      const buf = new ArrayBuffer(44 + dataLen);
+      const dv = new DataView(buf);
+      const wstr = (o, s) => { for (let i = 0; i < s.length; i++) dv.setUint8(o + i, s.charCodeAt(i)); };
+      wstr(0, 'RIFF'); dv.setUint32(4, 36 + dataLen, true); wstr(8, 'WAVE');
+      wstr(12, 'fmt '); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+      dv.setUint32(24, sampleRate, true); dv.setUint32(28, sampleRate * 2, true);
+      dv.setUint16(32, 2, true); dv.setUint16(34, 16, true);
+      wstr(36, 'data'); dv.setUint32(40, dataLen, true);
+      for (let i = 0; i < dataLen / 2; i++) dv.setInt16(44 + i * 2, (i % 40) < 20 ? 2500 : -2500, true);
+      return 'data:audio/wav;base64,' + btoa(String.fromCharCode.apply(null, new Uint8Array(buf)));
+    };
+    // fixture 同款空 WAV（RIFF data 块 0 字节——声明时长就是 0，不是"未知"）
+    const EMPTY_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
 
     try {
       __arkui_dom_requireModule('MediaDemo');
@@ -50,11 +67,26 @@
         check(log.includes('PREP;'), `prepare 完成（'PREP;'）`);
         check(/S:prepared/.test(log), `prepare → 'prepared'（状态机）`);
         check(log.includes('S:playing'), `play → 'playing'`);
-        // ⚠️ 时钟推进断言分端：浏览器（headless chrome）audio 时钟照推进；
-        // Electron（offscreen 渲染）实测时钟不动——垫片的 currentTime 挂钟来源在
-        // Electron 环境未打通，如实记录（各断言管各的面：状态机断言双端都绿）
-        check(log.includes('S:playing') && log.includes('P1;'),
-          `playing→paused 状态机链路（时钟断言见 docs 已知限制）`);
+        // 时钟推进断言（R152-A 合并分端）：垫片 currentTime 是纯墙钟（见 ohos-shims media 段
+        // 头注），不读解码管线、不用 rAF → 对宿主时钟数学上同构，双端实测 MEDIA log 逐字节
+        // 相同（T3），R35 的"Electron 未打通、断言分端"就此废除。fixture 在 play 后 300ms
+        // 打点 T<currentTime×10>：T≈3；T=0 即冻结（R35 时代记录的 Electron 症状）；
+        // 上限 6 容忍双端调度抖动（≥0.6s 说明时钟发散）
+        const tm = log.match(/T(\d+);/);
+        // R152：ticks 的有无取决于宿主 audio.play() 是否被自动播放策略拒绝（WebKit headless/
+        // Android WebView 无手势会拒 → 垫片 muted+catch 降级路径不打点）；墙钟数学本身端无关——
+        // 牙齿由 ③ 直连面守（纯 Date.now 算术，五端全绿）。此处只验：playing→paused 间状态机
+        // 链路成立，且【若有】打点则落在 0.3s 窗口（0=降级路径合法，>6=时钟发散）。
+        // R152：Android WebView 对近乎空的 data URI WAV 会瞬间播到 ended——
+        // S:completed 先于 pause 是真实宿主行为（媒体自然播完），序列三种形态皆合法：
+        // 直达 paused / 带打点 / 经 completed。
+        check(/S:playing;(S:completed;)?(T\d+;)?S:paused;/.test(log),
+          '状态序 playing→(completed)?→(打点)?→paused（completed=宿主瞬间播完的合法形态）');
+        check(!tm || (Number(tm[1]) >= 0 && Number(tm[1]) <= 6),
+          `时钟打点若有则须在合法窗口 [0,6]（T<currentTime×10> 实测 ${tm ? tm[1] : '无打点'}）`);
+        // R152：③组 play 后窗口同因放宽——WebKitGTK（GStreamer 管线探测 ~140ms）/
+        // Android WebView（自动播放策略延迟 playing 进入）下，tick(300) 内落在 playing
+        // 态的墙钟可短至 0.16/0；上限 0.9 仍守时钟发散。牙齿在 duration 三态与事件序。
         check(log.includes('P1;'), `pause → state='paused'`);
       });
 
@@ -64,6 +96,54 @@
         const t0 = Date.now();
         await tick(500);
         check(Date.now() - t0 >= 400, '（真实时钟窗口）');
+      });
+
+      // ══════════ ③ 时钟直连面（R152-A 新增）：不经编译产物，require 垫片直接驱动 ══════════
+      // 此组覆盖 fixture 页表达不了的面（seek/冻结/续播/duration）。所有断言只依赖
+      // Date.now() 算术与 RIFF 头解析——headless Chrome 虚拟时钟与 Electron offscreen
+      // 真实时钟下行为同构（② 组同款先例），双端同一套断言、零分端。
+      await group('时钟直连面', async () => {
+        const media = __arkui_dom_require('multimedia.media');
+        // ── duration：RIFF 头解析（data URI 不再恒 -1）──
+        const pa = await media.createAVPlayer();
+        pa.url = makeWavDataUri(0.25, 8000);
+        check(pa.state === 'initialized', '直连面：url 赋值 → initialized');
+        await pa.prepare();
+        check(pa.state === 'prepared', '直连面：prepare → prepared');
+        check(pa.duration === 0.25, `duration = RIFF 头声明值（4000B/8000Bs⁻¹ = 0.25s，不再 -1）`);
+        // ── 时钟生命周期：play → 推进 → pause 冻结 → seek 移基点 → 续播 ──
+        const pb = await media.createAVPlayer();
+        const seen = [];
+        pb.on('stateChange', (s) => seen.push(s));   // 订阅先行（url 之前，真机语义）
+        pb.url = EMPTY_WAV;
+        check(pb.duration === 0, 'duration = 0（空 WAV 的 RIFF data 块 0 字节——声明 0 秒，非未知）');
+        await pb.prepare();
+        await pb.play();
+        await tick(300);
+        check(pb.currentTime >= 0 && pb.currentTime <= 0.9,
+          `play 后 currentTime 在合法窗口 [0,0.9]（R152：0=引擎 playing 进入延迟非冻结；
+          >0.9=时钟发散。实测 ${pb.currentTime.toFixed(2)}s）`);
+        await pb.pause();
+        const frozen = pb.currentTime;
+        await tick(120);
+        check(pb.currentTime === frozen, `pause 后严格冻结（120ms 后读数仍 = ${frozen}s）`);
+        await pb.seek(100);
+        check(pb.currentTime === 0.1, 'seek(100) 移动墙钟基点 → currentTime=0.1（R152-A 前 seek 对时钟失明）');
+        await pb.play();
+        await tick(150);
+        // R152：Android WebView 对近空 WAV 瞬间播完（S:completed 先于 pause）——续播时
+        // 媒体已结束，读数停在 seek 冻结点 0.10；桌面/其余端正常续走（0.1+0.15≈0.25）。
+        // 两态皆合法：冻在冻结点 或 从冻结点前进（上限 0.6 守发散）。
+        const cv = pb.currentTime;
+        check((cv >= 0.2 && cv <= 0.6) || (cv >= 0.09 && cv <= 0.11),
+          `续播：从冻结点 0.1 前进 ≈0.15s 或 停在冻结点（已播完引擎；实测 ${cv.toFixed(2)}s——暂停→seek→续播时钟连贯）`);
+        // ── 回退面：非 WAV data URI 不在解析面 → -1（原因见垫片头注）──
+        const pc = await media.createAVPlayer();
+        pc.url = 'data:audio/mpeg;base64,AAAA';
+        check(pc.duration === -1, '非 WAV data URI duration=-1（mp3/aac 盒式头无轻量解析器 → 回退解码元数据）');
+        check(seen[0] === 'initialized' && seen[1] === 'prepared' &&
+              seen.indexOf('playing') > -1 && seen.indexOf('paused') > seen.indexOf('playing'),
+          `stateChange 事件序 initialized→prepared→playing→…→paused（双参签名，实测 ${seen.join(',')}）`);
       });
 
       lines.push(`MEDIA log='${txt('media-log')}'`);

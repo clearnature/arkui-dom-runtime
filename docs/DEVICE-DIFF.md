@@ -59,7 +59,7 @@ ets-loader 前端本身就是 Node.js 上的 JS/TS 实现——本运行时与�
 | `getContext()` 的 `filesDir/cacheDir` 仍是 vfs 映射路径（Electron 指向 `electron/data/`、浏览器指向 localStorage 后端），非真机应用沙箱目录语义（R128 起 `resourceManager` 已真实现，见"资源"域） | **行为差异** | `docs/CAPABILITY.md:323`（R126 时点表述）；R128 现状见 `docs/ROADMAP.md:2056` |
 | `net.http` 无 cookie/代理/证书校验/重定向控制；`result` 除 `ARRAY_BUFFER` 外一律文本 | **功能缺失** | `docs/CAPABILITY.md:324` |
 | `file.fs` 的 `readSync(buffer)` 未实现（**显式抛错**，不静默返回 0） | **功能缺失** | `docs/CAPABILITY.md:325` |
-| `media` 垫片：`currentTime` 来自真实挂钟（非音频解码）、`duration` 对 data URI 恒 -1、Electron 的时钟推进未打通（浏览器已通——断言分端） | **行为差异** | `docs/CAPABILITY.md:344`（R35） |
+| `media` 垫片：`currentTime` 来自真实挂钟（非音频解码）；WAV data URI duration 已按 RIFF 头解析（R152-A），非 WAV 回退 -1；时钟推进已双端贯通（R35"Electron 未打通"系陈旧账，实测翻案） | ~~行为差异~~→已消除 | `docs/CAPABILITY.md:354`（R35/R152-A） |
 | 通知投递分档：浏览器无系统通知为**预期降级**（只记日志+原因）；Electron `permission='granted'` 且走了宿主 API 才算**确证送达**——真机是系统通知服务直达 | **行为差异** | `docs/CAPABILITY.md:132-133` |
 | 框架角色（`__arkui_dom_startAbility`、窗口 stage、路由栈）是本项目自己的迷你实现，与官方 `AbilityManagerService`/窗口管理的语义必然有偏差 | **行为差异** | `docs/CAPABILITY.md:342-343` |
 | 图像模块：只实现 `createImageSource(uri)` + `getImageInfo*` + `release`；`PixelMap`/`ImagePacker`/`ImageReceiver`/`createImageSource(buf\|fd)` 未实现（响亮报错）；`stride`/`density`/`pixelFormat`/`alphaType` 回常量 0 | **功能缺失** | `docs/CAPABILITY.md:276-280` |

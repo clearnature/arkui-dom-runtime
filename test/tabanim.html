@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R152-B：Tabs animationDuration / onAnimationStart·End / onGestureSwipe</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  /* 宽 360 固定：拖拽断言依赖确定内容区宽（半页阈值=180） */
+  #root { width: 360px; height: 280px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R152-B Tabs 长尾第二片：animationDuration（内容过渡时长）/ onAnimationStart·onAnimationEnd（翻页动画起止）/ onGestureSwipe（拖拽逐帧）</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms || 40));
+    const root = document.getElementById('root');
+    const cs = (el) => getComputedStyle(el);
+    const warns = () => (globalThis.__arkui_dom_layout_warnings || []);
+
+    // 纯 runtime 级：DSL 直调全局 Tabs/TabContent（tablong.html 同款；seed 常驻栈底，
+    // 外层 push 一次不弹，内部 create/pop 配对即可）。
+    const VSP = globalThis.ViewStackProcessor;
+    const { Tabs, TabContent, TabsController, Text } = globalThis;
+    const seed = document.createElement('div');
+    seed.style.display = 'block';
+    root.appendChild(seed);
+    VSP.push(seed);
+
+    // DSL 直调建一个 Tabs：create 选项 → 属性链（attrs）→ N 个 TabContent（字符串标签）
+    const buildTabs = (opts, attrs, labels) => {
+      const node = Tabs.create(opts || {});
+      if (attrs) attrs();
+      (labels || []).forEach((label) => {
+        TabContent.create(() => { Text.create(label + ' 内容'); Text.pop(); });
+        TabContent.tabBar(label);
+        TabContent.pop();
+      });
+      Tabs.pop();
+      return node;
+    };
+    const itemsOf = (tabs) => [...tabs.querySelectorAll('[data-arkui-tabbar-item]')];
+    const contentsOf = (tabs) => [...tabs.querySelectorAll('[data-arkui-comp="TabContent"]')];
+    const contentElOf = (tabs) => tabs.querySelector('[data-arkui-tabs-content]');
+
+    // 合成指针事件（builtindemo/gesturedemo 同一套）；timeStamp 不可注入 → 速度断言
+    // 用可编程时钟（劫持 performance.now，同步派发也能造出 dt>0），用完还原
+    const pev = (type, x, y, id) => new PointerEvent(type, {
+      bubbles: true, cancelable: true, composed: true,
+      clientX: x, clientY: y, pointerId: id || 1, pointerType: 'touch',
+      isPrimary: (id || 1) === 1, button: 0, buttons: type === 'pointerup' ? 0 : 1,
+    });
+    const down = (t, x, y) => t.dispatchEvent(pev('pointerdown', x, y));
+    const move = (t, x, y) => t.dispatchEvent(pev('pointermove', x, y));
+    const up = (t, x, y) => t.dispatchEvent(pev('pointerup', x, y));
+    let fakeNow = 0;
+    const realNow = performance.now.bind(performance);
+    const clock = (on) => { performance.now = on ? (() => fakeNow) : realNow; };
+
+    // 事件收集器：按真机序记 onTabBarClick/onSelected/onUnselected/onChange 与动画对
+    const makeLog = () => {
+      const log = [];
+      const startArgs = [];
+      const endArgs = [];
+      const swipeFrames = [];
+      return {
+        log, startArgs, endArgs, swipeFrames,
+        attrs: () => {
+          Tabs.onTabBarClick((i) => log.push('click:' + i));
+          Tabs.onSelected((i) => log.push('sel:' + i));
+          Tabs.onUnselected((i) => log.push('unsel:' + i));
+          Tabs.onChange((i) => log.push('change:' + i));
+          Tabs.onAnimationStart((/** @type {number} */ i, /** @type {number} */ t, /** @type {any} */ x) => {
+            startArgs.push([i, t, x]); log.push('animStart:' + i + '→' + t);
+          });
+          Tabs.onAnimationEnd((/** @type {number} */ i, /** @type {any} */ x) => {
+            endArgs.push([i, x]); log.push('animEnd:' + i);
+          });
+        },
+      };
+    };
+
+    const group = async (name, fn) => {
+      try { await fn(); } catch (e) {
+        allPass = false;
+        lines.push(`FAIL [${name}] 抛出异常：${e && e.stack ? String(e.stack).split('\n')[0] : e}`);
+      }
+    };
+
+    const extraOk = (x) => x && typeof x === 'object'
+      && x.currentOffset === 0 && x.targetOffset === 0 && x.velocity === 0;
+
+    try {
+      // ══════════ G1 缺省 300ms：可见性即时、onChange 夹在 Start/End 之间 ══════════
+      // 真机缺省 ANIMATION_DURATION_DEFAULT=300（tab_theme.cpp:27,51-52）；
+      // 序（C 简报）：click → sel → unsel → animStart → change → (300ms) → animEnd
+      await group('G1 缺省 300ms 动画', async () => {
+        const L = makeLog();
+        const t1 = buildTabs({}, () => { L.attrs(); }, ['A0', 'A1', 'A2']);
+        await tick(40);
+        check(L.log.length === 0, `初始渲染不发任何回调（log=[${L.log.join(',')}]）`);
+        itemsOf(t1)[1].click();
+        // 可见性立即落新页（display 语义不动，入场动画只动 transform）——既有 tick(50) 断言兼容
+        check(cs(contentsOf(t1)[1]).display === 'block' && cs(contentsOf(t1)[0]).display === 'none',
+          `缺省切换可见性立即落页1（页1='${cs(contentsOf(t1)[1]).display}' 页0='${cs(contentsOf(t1)[0]).display}'）`);
+        check(JSON.stringify(L.log) === JSON.stringify(
+          ['click:1', 'sel:1', 'unsel:0', 'animStart:0→1', 'change:1']),
+          `缺省同步相位：onChange 夹在 Start/End 之间（${L.log.join(' → ')}）`);
+        await tick(600);
+        check(JSON.stringify(L.log) === JSON.stringify(
+          ['click:1', 'sel:1', 'unsel:0', 'animStart:0→1', 'change:1', 'animEnd:1']),
+          `缺省 300ms 后收 animEnd:1（${L.log.join(' → ')}）`);
+      });
+
+      // ══════════ G2 animationDuration(120)：成对回调与三参/两参形状 ══════════
+      await group('G2 点击切换动画', async () => {
+        const L = makeLog();
+        const t2 = buildTabs({}, () => { Tabs.animationDuration(120); L.attrs(); }, ['B0', 'B1', 'B2']);
+        await tick(40);
+        itemsOf(t2)[2].click();
+        // 同步相位：sel/unsel/Start/change 已发，End 必须还没发（要等 120ms 过渡收口）
+        check(JSON.stringify(L.log) === JSON.stringify(
+          ['click:2', 'sel:2', 'unsel:0', 'animStart:0→2', 'change:2']),
+          `点击 tab2 同步相位：${L.log.join(' → ')}`);
+        check(L.startArgs.length === 1 && L.startArgs[0][0] === 0 && L.startArgs[0][1] === 2
+          && extraOk(L.startArgs[0][2]),
+          `onAnimationStart 三参形状 (0,2,TabsAnimationEvent{0,0,0})（${JSON.stringify(L.startArgs[0])}）`);
+        await tick(400);
+        check(L.endArgs.length === 1 && L.endArgs[0][0] === 2 && extraOk(L.endArgs[0][1]),
+          `onAnimationEnd 两参形状 (2,TabsAnimationEvent)（${JSON.stringify(L.endArgs[0])}）`);
+        check(JSON.stringify(L.log) === JSON.stringify(
+          ['click:2', 'sel:2', 'unsel:0', 'animStart:0→2', 'change:2', 'animEnd:2']),
+          `完整事件序：${L.log.join(' → ')}`);
+        check(cs(contentsOf(t2)[2]).display === 'block' && cs(contentsOf(t2)[0]).display === 'none',
+          '动画收口后可见性落新页（页2显示、页0隐藏）');
+        check(!warns().some((w) => /Tabs\.(animationDuration|onAnimationStart|onAnimationEnd|onGestureSwipe) 未实现/.test(w)),
+          '动画/拖拽族四件已实现、不再进"未实现"诊断');
+      });
+
+      // ══════════ G3 changeIndex 路径同样触发动画对 ══════════
+      await group('G3 changeIndex 路径', async () => {
+        const L = makeLog();
+        const ctrl3 = new TabsController();
+        const t3 = buildTabs({ controller: ctrl3 }, () => { Tabs.animationDuration(100); L.attrs(); }, ['C0', 'C1', 'C2']);
+        await tick(40);
+        ctrl3.changeIndex(2);
+        check(JSON.stringify(L.log) === JSON.stringify(['sel:2', 'unsel:0', 'animStart:0→2', 'change:2']),
+          `changeIndex(2) 同步相位（无 click）：${L.log.join(' → ')}`);
+        await tick(400);
+        check(JSON.stringify(L.log) === JSON.stringify(
+          ['sel:2', 'unsel:0', 'animStart:0→2', 'change:2', 'animEnd:2']),
+          `changeIndex 完整序含 animEnd:2（${L.log.join(' → ')}）`);
+      });
+
+      // ══════════ G4 显式 0 关动画（无回调）/ 负值不生效（保持缺省 300）══════════
+      await group('G4 duration 0 与负值', async () => {
+        // 显式 0：无动画且不触发 Start/End（swiper_pattern.cpp:2270-2273）
+        const L = makeLog();
+        const t4 = buildTabs({}, () => { Tabs.animationDuration(0); L.attrs(); }, ['D0', 'D1']);
+        await tick(40);
+        itemsOf(t4)[1].click();
+        await tick(30);
+        check(JSON.stringify(L.log) === JSON.stringify(['click:1', 'sel:1', 'unsel:0', 'change:1']),
+          `显式 animationDuration(0)：无动画事件、R151 序（${L.log.join(' → ')}）`);
+        // 负值不生效（tabs_model_ng.cpp:474-490 只在 ≥0 时写）→ 保持缺省 300，动画对照发
+        const L2 = makeLog();
+        const t4b = buildTabs({}, () => { Tabs.animationDuration(-5); L2.attrs(); }, ['E0', 'E1']);
+        await tick(40);
+        itemsOf(t4b)[1].click();
+        check(L2.log.includes('animStart:0→1'),
+          `animationDuration(-5) 不生效（负值不写，仍按缺省 300 出动画）`);
+        await tick(600);
+        check(L2.log.includes('animEnd:1'), `(-5) 后仍收 animEnd:1（${L2.log.join(' → ')}）`);
+      });
+
+      // ══════════ G5 onGestureSwipe 逐帧：跟手位移换算、不过半不翻页 ══════════
+      await group('G5 onGestureSwipe 逐帧', async () => {
+        const L = makeLog();
+        // 回调注册必须在 Tabs 在栈顶时完成（组件自有方法按栈顶转发，tablong 同款约束）
+        const t5 = buildTabs({}, () => {
+          L.attrs();
+          Tabs.onGestureSwipe((/** @type {number} */ i, /** @type {any} */ x) => {
+            L.swipeFrames.push({ index: i, currentOffset: x.currentOffset, velocity: x.velocity });
+          });
+        }, ['F0', 'F1']);
+        await tick(40);
+        // 左扫 90px（<半页 180）：逐帧回调、松手回弹不翻页
+        const ce = contentElOf(t5);
+        clock(true);
+        fakeNow = 100;
+        down(ce, 360, 100);
+        fakeNow += 100;
+        move(ce, 330, 100);          // raw −30
+        fakeNow += 100;
+        move(ce, 270, 100);          // raw −90
+        up(ce, 270, 100);
+        clock(false);
+        check(L.swipeFrames.length === 2, `逐帧回调每 move 一帧（实测 ${L.swipeFrames.length} 帧）`);
+        check(L.swipeFrames.every((f) => f.index === 0),
+          `帧 index=当前页 0（实测 [${L.swipeFrames.map((f) => f.index).join(',')}]）`);
+        check(L.swipeFrames[0].currentOffset === -30 && L.swipeFrames[1].currentOffset === -90,
+          `currentOffset=拖拽位移换算（实测 [${L.swipeFrames.map((f) => f.currentOffset).join(',')}]，期望 -30/-90）`);
+        check(L.swipeFrames.every((f) => f.velocity === 0),
+          `拖拽期 velocity 恒 0（真机形状，C 简报；实测 [${L.swipeFrames.map((f) => f.velocity).join(',')}]）`);
+        await tick(600);             // 回弹弹簧收口（缺省 300 下拖拽路径仍走弹簧回弹）
+        check(cs(contentsOf(t5)[0]).display === 'block' && cs(contentsOf(t5)[1]).display === 'none',
+          '不过半回弹：仍页0显示、页1隐藏（display 语义已还原）');
+      });
+
+      // ══════════ G6 拖拽过半翻页：动画族与拖拽生命周期联动 ══════════
+      await group('G6 拖拽过半翻页', async () => {
+        const L = makeLog();
+        const t6 = buildTabs({}, () => { Tabs.animationDuration(100); L.attrs(); }, ['G0', 'G1']);
+        await tick(40);
+        const ce6 = contentElOf(t6);
+        down(ce6, 360, 100);
+        move(ce6, 140, 100);         // raw −220 ≥ 半页 180 → 翻页
+        up(ce6, 140, 100);
+        await tick(500);             // 翻页过渡 100ms + 兜底
+        check(L.startArgs.length === 1 && L.startArgs[0][0] === 0 && L.startArgs[0][1] === 1,
+          `过半翻页发 onAnimationStart(0→1)（实测 ${JSON.stringify(L.startArgs)}）`);
+        check(JSON.stringify(L.log) === JSON.stringify(
+          ['animStart:0→1', 'sel:1', 'unsel:0', 'change:1', 'animEnd:1']),
+          `拖拽收口序 animStart → commit(sel·unsel·change) → animEnd（${L.log.join(' → ')}）`);
+        check(cs(contentsOf(t6)[1]).display === 'block' && cs(contentsOf(t6)[0]).display === 'none',
+          '翻页落页1（页1显示、页0隐藏）');
+      });
+
+      // ══════════ G7 onGestureSwipe 单槽覆盖 + 非函数告警 ══════════
+      await group('G7 单槽覆盖与告警', async () => {
+        const seenA = [];
+        const seenB = [];
+        // 全部注册都在属性链内（栈顶=Tabs）。链内顺序：A → 非法(123，告警+清槽) → B——
+        // ① A 被 123 覆盖再被 B 覆盖（真机 SetGestureSwipeEvent swap）；② 123 留下"需要函数"告警
+        const t7 = buildTabs({}, () => {
+          Tabs.onGestureSwipe((/** @type {number} */ i) => seenA.push(i));
+          Tabs.onGestureSwipe(/** @type {any} */ (123));
+          Tabs.onGestureSwipe((/** @type {number} */ i) => seenB.push(i));
+          Tabs.onAnimationStart(/** @type {any} */ ('nope'));
+        }, ['H0', 'H1']);
+        await tick(40);
+        const ce7 = contentElOf(t7);
+        down(ce7, 360, 100);
+        move(ce7, 300, 100);
+        up(ce7, 300, 100);
+        await tick(300);
+        check(seenB.length > 0 && seenA.length === 0,
+          `onGestureSwipe 单槽：后注册替前注册（B=${seenB.length} 帧，A=${seenA.length}）`);
+        check(warns().some((w) => w.includes('Tabs.onAnimationStart 需要函数'))
+          && warns().some((w) => w.includes('Tabs.onGestureSwipe 需要函数')),
+          '非函数注册记 layoutWarnings（不静默）');
+      });
+
+      // ══════════ G8 剩余未实现项：仍记警告不静默 ══════════
+      await group('G8 剩余项警告纪律', async () => {
+        const before = warns().length;
+        const t8 = buildTabs({}, () => {
+          Tabs.barGridAlign(/** @type {any} */ ({}));
+          Tabs.edgeEffect(/** @type {any} */ ('None'));
+        }, ['I0', 'I1']);
+        await tick(40);
+        void t8;
+        const fresh = warns().slice(before);
+        check(fresh.some((w) => w.includes('Tabs.barGridAlign 未实现'))
+          && fresh.some((w) => w.includes('Tabs.edgeEffect 未实现')),
+          `barGridAlign/edgeEffect 未实现仍记警告（${fresh.filter((w) => w.includes('未实现')).join('；')}）`);
+      });
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

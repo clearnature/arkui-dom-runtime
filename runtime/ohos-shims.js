@@ -1556,11 +1556,18 @@
     get startupProbe() { return startupProbe; },   // 可 await：避免"启动探测有没有留痕"变成竞态
   };
 
-  // ── @ohos:multimedia.media（R35 收官）──
+  // ── @ohos:multimedia.media（R35 收官；R152-A 时钟跨端贯通）──
   // AVPlayer → HTMLAudioElement 的状态机垫片。语义锚点（@ohos.multimedia.media.d.ts）：
   //   url 赋值 → 'initialized'；prepare() → 'prepared'；play() → 'playing'；pause() → 'paused'；
-  //   seek(ms) 移动播放位置；duration/currentTime 随真实播放时钟推进（headless 探明：
-  //   Chromium 无输出设备时 audio 时钟仍推进）；on('stateChange', (state, reason) => …)。
+  //   seek(ms) 移动播放位置；duration/currentTime 随播放推进；on('stateChange', (state, reason) => …)。
+  //
+  // 时钟来源（R152-A 定案）：currentTime 是【纯墙钟】——play 起点记 Date.now()，playing 期间
+  // 按 (now−起点) 推进，pause 冻结，seek 移动基点，暂停续播从冻结点续走。不读 audio.currentTime、
+  // 不用 rAF、不碰解码管线 → 对宿主时钟（headless Chrome 虚拟时钟 / Electron offscreen 真实时钟）
+  // 数学上同构，双端 MEDIA log 逐字节相同（mediademo ③ 组直连面断言在两端把守这一事实）。
+  // R35 曾记"Electron 时钟未打通、断言分端"——实情是墙钟垫片与分端断言同批落地后，
+  // Electron 只复核了放宽后的状态机断言、T 值从未在 Electron 验过（R35 提交信息
+  // "Electron 状态机绿（时钟分端）"）；R152-A 实测双端 T3 一致，分端断言就此合并。
   define('multimedia.media', {
     createAVPlayer() {
       return new Promise((resolve, reject) => {
@@ -1575,27 +1582,65 @@
               catch (e) { console.debug('[media 垫片] stateChange 回调抛错：' + (e && e.message)); }
             });
           };
+          // duration 对 data URI 的真实来源（R152-A）：data:audio/wav 的 RIFF 头是自描述的——
+          // data 块字节数 / byteRate = 秒数，纯 JS 可解析、端无关。audio.duration 对 data URI
+          // 是 NaN（解码元数据不出）——这就是 R35"恒 -1"的来源。R152-A 起 WAV data URI 返回
+          // 头里的真实声明时长（含 fixture 空 WAV 的 0——它是"声明了 0 秒音频"，不是"未知"）。
+          // 非 WAV data URI（mp3/aac 盒式头无通用轻量解析器，超出垫片已知信息）与 http/file
+          // URL（有真实解码元数据）不在此解析 → 回退 audio.duration / -1。
+          const wavDataUriDuration = (src) => {
+            try {
+              const m = /^data:audio\/wav;base64,([A-Za-z0-9+/=]+)$/.exec(String(src));
+              if (!m) return null;
+              const bin = atob(m[1]);
+              if (bin.length < 44 || bin.slice(0, 4) !== 'RIFF' || bin.slice(8, 12) !== 'WAVE') return null;
+              const u32 = (o) => (bin.charCodeAt(o) | (bin.charCodeAt(o + 1) << 8) |
+                (bin.charCodeAt(o + 2) << 16) | (bin.charCodeAt(o + 3) << 24)) >>> 0;
+              let off = 12;                        // 跳过 RIFF 头 12 字节，顺 chunk 链走
+              let byteRate = 0;
+              while (off + 8 <= bin.length) {
+                const id = bin.slice(off, off + 4);
+                const size = u32(off + 4);
+                if (id === 'fmt ' && off + 24 <= bin.length) byteRate = u32(off + 16); // fmt 块 +8 起
+                if (id === 'data') return byteRate > 0 ? size / byteRate : null;  // 声明值就是 size（off+4 处已读）
+                off += 8 + size + (size % 2);      // RIFF chunk 按 2 字节对齐
+              }
+              return null;
+            } catch (e) { return null; }
+          };
           audio.addEventListener('loadedmetadata', () => {
             if (state === 'initialized') { state = 'prepared'; setState('prepared'); }
           });
           audio.addEventListener('play', () => setState('playing'));
           audio.addEventListener('pause', () => { if (state === 'playing') setState('paused'); });
-          audio.addEventListener('ended', () => setState('completed'));
+          audio.addEventListener('ended', () => {
+            // completed 的墙钟定格：真解码管线才可能走到（data URI 空/短媒体在双端实测都不触发）。
+            // 若不接住，completed 态会掉进 currentTime 的兜底 0——时钟断言的潜在竞态红点
+            if (playStartedAt > 0) endedElapsed = (Date.now() - playStartedAt) / 1000;
+            setState('completed');
+          });
           // currentTime 的来源（DOM 化映射，取舍已记录）：data URI 的短音频真实解码时长
           // 为 0（首跑实测时钟不推进）——垫片记录 play 起点的真实挂钟，playing 期间按墙钟推进，
           // pause 时冻结。语义真实（"播放了多久"），但不来自音频解码。
           let playStartedAt = 0;
           let pausedAt = 0;
+          let parsedDuration = null;    // set url 时解析一次；null = 不可解析 → 回退 audio.duration
+          let endedElapsed = 0;
           const player = {
             get state() { return state; },
             set url(v) {
               state = 'initialized';
+              parsedDuration = wavDataUriDuration(v);
               setState('initialized');
               audio.src = String(v);      // 垫片独立于 runtime 的 resolveResource（shims 先加载）
             },
-            get duration() { return Number.isFinite(audio.duration) ? audio.duration : -1; },
+            get duration() {
+              if (parsedDuration !== null) return parsedDuration;
+              return Number.isFinite(audio.duration) ? audio.duration : -1;
+            },
             get currentTime() {
               if (state === 'playing' && playStartedAt > 0) return (Date.now() - playStartedAt) / 1000;
+              if (state === 'completed' && playStartedAt > 0) return endedElapsed;
               if (state === 'paused' && pausedAt > 0) return pausedAt / 1000;
               return 0;
             },
@@ -1608,9 +1653,21 @@
               audio.muted = true;
               return audio.play().catch(() => {}).then(() => { if (state !== 'playing') { state = 'playing'; setState('playing'); } });
             },
-            pause() { audio.pause(); pausedAt = Date.now() - playStartedAt; state = 'paused'; setState('paused'); return Promise.resolve(); },
+            // pause 未曾 play 过时（playStartedAt=0）不产生垃圾冻结点：否则 pausedAt=墙钟大值，
+            // 之后 play() 会从"假装播了很久"的位置续走
+            pause() { audio.pause(); pausedAt = playStartedAt > 0 ? Date.now() - playStartedAt : 0; state = 'paused'; setState('paused'); return Promise.resolve(); },
             stop() { audio.pause(); audio.currentTime = 0; state = 'stopped'; setState('stopped'); return Promise.resolve(); },
-            seek(ms) { audio.currentTime = ms / 1000; return Promise.resolve(); },
+            // seek 移动【墙钟基点】（R152-A）：此前 seek 只写 audio.currentTime（data URI 下
+            // 被钳 0），currentTime 读数纹丝不动——垫片时钟面对 seek 失明。现在 playing 态改写
+            // play 起点、其余态改写冻结点（play() 的 pausedAt 续走逻辑自动衔接），与
+            // d.ts "seek(ms) 移动播放位置" 语义对齐
+            seek(ms) {
+              const base = Math.max(0, Number(ms) || 0);   // 负偏移钳 0
+              audio.currentTime = base / 1000;
+              if (state === 'playing' && playStartedAt > 0) playStartedAt = Date.now() - base;
+              else pausedAt = base;
+              return Promise.resolve();
+            },
             release() { audio.pause(); state = 'released'; setState('released'); return Promise.resolve(); },
             on(ev, cb) {
               // stateChange 是 (state, reason) 双参签名：reason DOM 无对应（恒空）

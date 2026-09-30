@@ -100,11 +100,11 @@ tools/serve.py                 极简静态服务（端口由 OS 分配，避免
 tools/preflight.mjs            环境自检（工具链 / 宿主 / 可执行位）
 tools/check-all.sh             一条命令做完所有验收（11 步，含 t --typecheck；firefox/webkit/android 步缺席显式跳过）
 tools/stats.mjs                覆盖范围统计（文档里的数字都来自它）
-test/*.html                    断言页（98 页；进全矩阵的用例由 runner 守门，见 docs/DEVELOPING.md 坑 77）
+test/*.html                    断言页（99 页；进全矩阵的用例由 runner 守门，见 docs/DEVELOPING.md 坑 77）
 fixtures/                      冻结的 ets-loader 转换产物（30 个，测试的输入）
 harmony-proj/                  HarmonyOS 工程（页面 .ets 源码，转换产物的来源；构建输出不入库）
-run.sh                         浏览器 82 用例驱动
-electron/run.sh                Electron 95 用例 + 真实磁盘验证
+run.sh                         浏览器 83 用例驱动
+electron/run.sh                Electron 96 用例 + 真实磁盘验证
 firefox/run.sh                 Firefox(Gecko) 同用例表跨引擎复跑（R144，缺席显式跳过；
                                geckodriver 定位顺序与计数覆盖见文件头注释）
 webkit/run.sh                  WebKit 第四端同用例表复跑（R148，playwright；缺席显式跳过）
@@ -1126,9 +1126,8 @@ EnterKeyType + maxLength/caretColor/onSubmit 属性）、`runtime/src/area.js`�
 但不来自音频解码。
 
 **验收**：`bash run.sh mediademo`——浏览器 8 条全绿（状态机全链路 + 时钟推进）；
-Electron 状态机全绿、**时钟推进在 Electron 未打通**（offscreen 渲染下 audio 时钟不动，
-垫片挂钟来源在 Electron 环境未生效）——**断言分端**并如实写进 docs/CAPABILITY 已知限制
-（别把没验的当结论）。
+R152-A 起时钟推进双端贯通（合并分端）：mediademo 19 条断言 Electron 与浏览器逐字节一致
+（R35 年间的"Electron 未打通"系只验过放宽断言的陈旧账）。
 
 **已知限制**（写进 CAPABILITY）：`currentTime` 挂钟来源（不来自音频解码）；`duration` 对
 data URI 恒 -1（无真实解码）；`seek` 的 offset/`SubmitEvent` 类语义无对应；`AVRecorder` 未实现。

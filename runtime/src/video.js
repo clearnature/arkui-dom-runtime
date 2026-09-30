@@ -84,6 +84,19 @@
       const cb = w.cbs.finish;
       if (typeof cb === 'function') { try { cb(); } catch (e) { /* 容错 */ } }
     });
+    // R152-A：onPrepared/onUpdate 此前只收回调不派发（空 face）。补真实事件桥——
+    // loadedmetadata → PreparedInfo.duration、timeupdate → PlaybackInfo.time，单位秒
+    // （video.d.ts:226-237 PreparedInfo "Unit: second"、:254-266 PlaybackInfo 同），
+    // 与 <video> 元素的 duration/currentTime 同单位直通。未设置回调时零开销
+    // （richvideodemo 现有断言不消费这两个回调，行为不受影响）；不解码则不派发（同真机）。
+    native.addEventListener('loadedmetadata', () => {
+      const cb = w.cbs.prepared;
+      if (typeof cb === 'function') { try { cb({ duration: native.duration }); } catch (e) { /* 容错 */ } }
+    });
+    native.addEventListener('timeupdate', () => {
+      const cb = w.cbs.update;
+      if (typeof cb === 'function') { try { cb({ time: native.currentTime }); } catch (e) { /* 容错 */ } }
+    });
     // VideoController 绑定
     if (o.controller && typeof o.controller._bind === 'function') {
       o.controller._bind({
