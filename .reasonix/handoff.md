@@ -9,7 +9,20 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R150 lazyvh 锚定漂移修复**（R149 记档缺口 closure）——设备逐项量测
+- 上次切片：**R151 v2 语义三件 + Tabs 长尾第一片**（多智能体 A/B/C + 主会话集成）——
+  A=v2.js（279→707 行）：@Reusable 复用池（ctor 键/LIFO/容量 100-200/出池 reset 链在
+  finalizeConstruction 收尾）、@Computed 依赖收集+脏失效缓存（写命中立即重算+递归传播，
+  ARCHITECTURE「不缓存」设计决定节重写）、@Monitor 点分路径（绑定期逐段注册+写路径
+  重评估，items.0.name 形态）；B=main.js Tabs 区段：vertical 方向矩阵/barMode/bar 尺寸
+  （不随轴交换）/barOverlap/回调族（click→sel→unsel→change 同索引去重）+ 顺修
+  __tabsContentEl 从未赋值旧 bug；C=真机简报（puv2_globalreuse.ts/swiper_pattern.cpp
+  等 file:line）即时注入 A/B 纠偏。主会话集成抓三件：typecheck 7 处 JSDoc 归零
+  （含 purgeDetachedRecords var 化——v2.js 入池包装需重绑函数声明绑定）、batchfunc
+  跨月 data-today 断言转负向（显示月钉死 2026-09 vs 动态今天，R94 同族）、electron
+  负载型瞬态两例（模拟器常驻挤兑，减压复验即绿）。验收：v2sem 44 条/tablong 26 条
+  五端通过；门禁 11 步全绿（61a947b，Mimosa 0 findings seal sha256:d7e48cc9…）；
+  五端矩阵 82/95/82/82/82。
+  更早：**R150 lazyvh 锚定漂移修复**（R149 记档缺口 closure）——设备逐项量测
   推翻"锚定失效"：窗口内锚定精确（0.2px），266.4 出在**估高分支落点**（仅前 8 项
   实测时 offsetOf 用估高 advance ~87.1/项 vs 实测 ~90.4，92 项累计 −266px；锚定
   只管窗口内测量位移，结构性管不到区间级估高差；桌面估高=真值故四端测不出）。
