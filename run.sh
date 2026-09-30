@@ -394,6 +394,11 @@ case "${1:-index}" in
     run_one motiondemo "$(src_of pages/MotionDemo.ts)" build/motiondemo-module.js test/motiondemo.html \
       "--cjs --register MotionDemo" || rc=1
     echo
+    # R151：v2 语义三件（@Reusable/@Computed 缓存/@Monitor 点分路径）+ Tabs 长尾第一片
+    run_one v2sem "$(src_of pages/Index.ts)" build/app.js test/v2sem.html || rc=1
+    echo
+    run_one tablong "$(src_of pages/Index.ts)" build/app.js test/tablong.html || rc=1
+    echo
     PERSIST_PROFILE="$HERE/build/chrome-profile-persist"
     rm -rf "$PERSIST_PROFILE"; mkdir -p "$PERSIST_PROFILE"   # 从干净状态开始，否则"持久化"可能是上次残留
     PERSIST_PORT="$(pick_free_port)" || { echo "  ❌ 找不到空闲端口"; rc=1; }
@@ -661,6 +666,12 @@ case "${1:-index}" in
     # R66/R147：ScrollBar 滚动条 + 动效族原子件（Animator / FrictionMotion 等）——重构建入阵
     run_one motiondemo "$(src_of pages/MotionDemo.ts)" build/motiondemo-module.js test/motiondemo.html \
       "--cjs --register MotionDemo" ;;
+  v2sem)
+    # R151：v2 语义三件（@Reusable 复用池 / @Computed 缓存 / @Monitor 点分路径）
+    run_one v2sem "$(src_of pages/Index.ts)" build/app.js test/v2sem.html ;;
+  tablong)
+    # R151：Tabs 长尾第一片（vertical / barMode / bar 尺寸 / onTabBarClick 族）
+    run_one tablong "$(src_of pages/Index.ts)" build/app.js test/tablong.html ;;
   funcbehavior)
     # R94：行为断言三批（func/motion/layout）
     run_one funcbehavior "$(src_of entryability/EntryAbility.ts)" build/funcbehavior-module.js test/funcbehavior.html \

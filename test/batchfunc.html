@@ -123,8 +123,16 @@
       const todayExpect = d.getFullYear() + '-' +
         String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
       const todayCell = cal ? cal.querySelector('[data-cal-day][data-today="true"]') : null;
-      check(!!todayCell && todayCell.getAttribute('data-date') === todayExpect,
-        `今天 ${todayExpect} 带 data-today（实际 '${todayCell && todayCell.getAttribute('data-date')}'）`);
+      // R151：显示月钉死 2026-09，而"今天"是动态的——跨月（如 10-01）时网格里不该有
+      // data-today（负向断言同样是真语义：非当前月的日格不得误标今天）。
+      const todayInMonth = todayExpect.indexOf('2026-09-') === 0;
+      if (todayInMonth) {
+        check(!!todayCell && todayCell.getAttribute('data-date') === todayExpect,
+          `今天 ${todayExpect} 带 data-today（实际 '${todayCell && todayCell.getAttribute('data-date')}'）`);
+      } else {
+        check(!todayCell,
+          `显示月 2026-09 不含今天（${todayExpect}）→ 日格无误标 data-today（R151 负向断言）`);
+      }
       const w0 = cal ? cal.querySelector('[data-cal-week]') : null;
       check(!!w0 && w0.textContent === '一',
         `startOfWeek(1) → 周头从周一开始（实际 '${w0 ? w0.textContent : '<缺>'}'）`);

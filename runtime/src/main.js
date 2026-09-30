@@ -351,7 +351,9 @@
   }
 
   // 分支切换/列表重建后，把已脱离 DOM 树的记录清掉，避免 elmtId 泄漏与重复节点
-  function purgeDetachedRecords() {
+  // R151：var 赋值式（函数声明不可重绑，TS2630）——v2.js 的 @Reusable 入池包装需要
+  // 重绑此绑定；调用点全在运行期渲染管线，var 的提升差异无影响
+  var purgeDetachedRecords = function () {
     if (!rootNode) return;
     for (const [id, rec] of [...elmtRecords]) {
       if (rec.node && !rootNode.contains(rec.node)) {
@@ -738,23 +740,28 @@
   //   TabContent.tabBar('T0');  TabContent.pop();  …  Tabs.pop();
   //
   // DOM 结构（Tabs 自身在组件栈上，属性/Tabs.pop 都作用于它）：
-  //   <div data-arkui-comp="Tabs">           flex column
-  //     <div data-arkui-tabs-bar>            barPosition=Start 在前 / End 在后
+  //   <div data-arkui-comp="Tabs">           flex；方向由 vertical×barPosition 矩阵决定
+  //     <div data-arkui-tabs-bar>            恒为第一个子元素（视觉位置由 direction 表达）
   //     <div data-arkui-tabs-content>        TabContent 挂在这里（不是 Tabs 本身）
   //
   // 为什么 TabContent 要"跳过"父节点另挂：若直接挂进 Tabs 包装元素，就会和 tab bar 同级，
-  // 且 Tabs.width()/height() 会作用到内容区而不是整体。故由 TabContent 主动认领内容区。
+  // 且 Tabs.width()/height() 会作用到内容区而不是整体。故由 TabContent 主动认领内容区
+  // （挂靠点 node.__tabsContentEl 在 createTabsState 里指到 contentEl——旧实现漏挂，
+  //  TabContent 落成了 bar/空内容区/Tabs 平级的第三个 flex 子级，竖排 row 下会挤成一团）。
   const BarPosition = { Start: 'start', End: 'end' };
   const BarMode = { Fixed: 'fixed', Scrollable: 'scrollable' };
 
   // Tabs 的语义性属性里本实现未覆盖的部分。回调类尤其不能静默——写上去却永远不触发，
   // 比报错更难查。纯外观项（颜色/模糊/divider/fadingEdge）不在此列。
   // R125：scrollable 移出本表（内置拖拽翻页真语义，默认 true，tabs.d.ts JSDoc 原文）。
+  // W4（本片）：vertical/barMode/barWidth/barHeight/barOverlap 与回调 onTabBarClick/
+  // onSelected/onUnselected 一并移出本表——它们改由 ensureComponent('Tabs') 里的
+  // 【组件自有方法】拦截（原因见该处注释：applyAttr 的通用函数分支会把 onXxx 吞成
+  // 永不触发的死监听，且它排在 TABS_UNSUPPORTED 诊断之前，连警告都发不出）。
   const TABS_UNSUPPORTED = new Set([
-    'vertical', 'barMode', 'barWidth', 'barHeight', 'barOverlap', 'barGridAlign',
+    'barGridAlign',
     'animationDuration', 'animationMode', 'animationCurve', 'customContentTransition',
     'pageFlipMode', 'edgeEffect', 'cachedMaxCount',
-    'onTabBarClick', 'onSelected', 'onUnselected',
     'onAnimationStart', 'onAnimationEnd', 'onGestureSwipe', 'onContentWillChange',
   ]);
 
@@ -780,11 +787,18 @@
       node, index: 0, barPosition: 'start', controller: null,
       contents: [], onChange: [], barEl: null, contentEl: null,
       scrollable: true,               // tabs.d.ts JSDoc："**true** (default)"——内容区可滑动翻页
+      // W4.1-W4.4 状态（tabs.d.ts 缺省值）：
+      vertical: false,                // tabs.d.ts:1027-1043：false=水平（默认）
+      barMode: 'fixed',               // tabs.d.ts:1099：默认 BarMode.Fixed
+      barWidth: null, barHeight: null,// Length；null=走 d.ts 缺省（竖 56 宽 / 横 56 高）
+      barOverlap: false,              // tabs.d.ts:1454-1467：bar 悬浮在 TabContent 上（默认 false）
+      onTabBarClick: null, onSelected: null, onUnselected: null,   // 覆盖语义单槽（d.ts 单 Callback 入参）
     });
     node.__tabsState = st;
     node.style.display = 'flex';
     node.style.flexDirection = 'column';
     node.style.overflow = 'hidden';
+    node.style.position = 'relative';   // barOverlap 的 absolute bar 以此为包含块
 
     st.barEl = document.createElement('div');
     st.barEl.setAttribute('data-arkui-tabs-bar', st.barPosition);
@@ -800,7 +814,11 @@
 
     node.appendChild(st.barEl);
     node.appendChild(st.contentEl);
+    // TabContent 的挂靠点：mountTabContent 认领这里（此前恒走 parent 兜底，TabContent
+    // 落成了 Tabs 的直接子级，见上方结构注释）
+    (/** @type {any} */ (node)).__tabsContentEl = st.contentEl;   // R151 自有扩展属性
     applyTabsOptions(st, opt);
+    applyTabsBarLayout(st);           // 初始方向/尺寸（含 d.ts 缺省：竖 56 宽、横 56 高）
     // R125 内置拖拽：内容区横扫翻 TabContent（scrollable 开关控制；恒横向、无 loop）
     attachPagedDrag(st.contentEl, {
       /** @returns {string} */
@@ -843,6 +861,136 @@
       opt.controller._state = st;
       st.controller = opt.controller;
     }
+    // barPosition（重渲染重建路径也走这里）决定方向矩阵的一维 → 统一重算几何（幂等）
+    applyTabsBarLayout(st);
+  }
+
+  // ── W4.1-W4.4：vertical / barMode / barWidth·barHeight·barOverlap / 三回调 ──
+  // 统一入口：ensureComponent('Tabs') 的组件自有方法把属性链转发到这里。
+  /** @param {any} node @param {string} key @param {any} value @param {any} extra */
+  function applyTabsAttr(node, key, value, extra) {
+    const st = node && node.__tabsState;
+    if (!st) {
+      layoutWarnings.push(`Tabs.${key}: 栈顶不是 Tabs（属性方法必须紧跟 Tabs.create）`);
+      return;
+    }
+    switch (key) {
+      case 'vertical':
+        // d.ts tabs.d.ts:1027-1043：true=竖排（tab 栏在左/右），false=横排（上/下）
+        st.vertical = !!value;
+        applyTabsBarLayout(st);
+        return;
+      case 'barMode': {
+        // d.ts tabs.d.ts:59/69 枚举序：Scrollable=0、Fixed=1；:1099 默认 Fixed
+        const m = String(resolveResource(value));
+        if (m === 'scrollable' || m === '0') st.barMode = 'scrollable';
+        else if (m === 'fixed' || m === '1') st.barMode = 'fixed';
+        else {
+          layoutWarnings.push(`Tabs.barMode('${value}') 不是 Fixed/Scrollable，按 Fixed 处理`);
+          st.barMode = 'fixed';
+        }
+        // 第二参 ScrollableBarModeOptions（margin/nonScrollableLayoutStyle，tabs.d.ts:744-772）
+        // 本片不接——按纪律记诊断，不静默吞
+        if (extra && typeof extra === 'object') {
+          layoutWarnings.push('Tabs.barMode 的 ScrollableBarModeOptions'
+            + '（margin/nonScrollableLayoutStyle）未实现，已忽略');
+        }
+        applyTabsBarLayout(st);
+        return;
+      }
+      case 'barWidth':
+      case 'barHeight':
+        // 真机不随轴交换：setter 直接写 TabBar 节点的 userDefinedIdealSize 宽/高
+        // （tabs_model_ng.cpp:285-325）——width 恒作用宽、height 恒作用高；横排常设
+        // height、竖排常设 width 只是缺省方向不同（缺省见 applyTabsBarLayout）。
+        // 小于 0 按 d.ts "用缺省值" 处理（tabs.d.ts:1110-1111）；> Tabs 自身尺寸的
+        // 钳制需要几何信息，本片不做。
+        st[key] = (typeof value === 'number' && value < 0) ? null : value;
+        applyTabsBarLayout(st);
+        return;
+      case 'barOverlap':
+        // d.ts tabs.d.ts:1454-1467：true=bar 带模糊底悬浮在 TabContent 上（默认 COMPONENT_THICK）。
+        // 几何真做（absolute 悬浮 + 内容区不避让，tabs_layout_algorithm.cpp:898-940 overlap
+        // 分支不减 bar 尺寸）；模糊用 backdrop-filter 近似 + 记诊断（不是真机 BlurStyle）。
+        if (!!value && !st.barOverlap) {
+          layoutWarnings.push('Tabs.barOverlap(true)：模糊底为 backdrop-filter 近似'
+            + '（真机 BlurStyle.COMPONENT_THICK，tabs_model_ng.cpp:498-507），色彩/材质与设备有差');
+        }
+        st.barOverlap = !!value;
+        applyTabsBarLayout(st);
+        return;
+      case 'onTabBarClick':   // d.ts tabs.d.ts:1344-1355：点击 tab 触发，入参=点击索引
+      case 'onSelected':      // d.ts tabs.d.ts:1314-1342：选中变化，入参=新选中索引
+      case 'onUnselected':    // d.ts tabs.d.ts:1357-1377：选中变化，入参=即将隐藏的旧索引
+        // 覆盖语义（与通用事件 __arkuiEv 同口径）：重渲染重复应用不翻倍
+        if (typeof value === 'function') st[key] = value;
+        else {
+          st[key] = null;
+          layoutWarnings.push(`Tabs.${key} 需要函数，收到 ${typeof value}，已忽略`);
+        }
+        return;
+    }
+  }
+
+  // bar 的几何单一出口：容器方向矩阵、bar 内条目走向、条目 flex/换行、bar 尺寸/悬浮。
+  // finalizeTabs 重建条目后与每个属性 setter 之后都要走一遍（幂等，直接覆盖 style）。
+  /** @param {any} st */
+  function applyTabsBarLayout(st) {
+    const node = st.node, bar = st.barEl;
+    if (!node || !bar) return;
+    // W4.1 方向矩阵（bar 恒为第一个子元素，视觉位置全部由 direction 表达，不搬 DOM——
+    // d.ts tabs.d.ts:147-159：Start=上/左、End=下/右，取哪一维由 vertical 决定；
+    // 真机布局同构：VERTICAL+START bar 贴左 / VERTICAL+END bar 贴右，tabs_layout_algorithm.cpp:767-777）：
+    //   横 Start=column（bar 上）   横 End=column-reverse（bar 下）
+    //   竖 Start=row（bar 左）      竖 End=row-reverse（bar 右）
+    node.style.flexDirection = st.vertical
+      ? (st.barPosition === 'end' ? 'row-reverse' : 'row')
+      : (st.barPosition === 'end' ? 'column-reverse' : 'column');
+    // 竖排 Tabs 的 tab 栏是纵向列表（真机 tab_bar 沿主轴排布条目）
+    bar.style.flexDirection = st.vertical ? 'column' : 'row';
+    // W4.2 barMode（d.ts tabs.d.ts:1068-1095；真机 tab_bar_layout_algorithm.cpp:217-231 均分 /
+    // :281-334 按内容自然宽 + bar 可滚动）：Fixed=条目均分 bar 主轴（flex:1）；
+    // Scrollable=按内容实际宽/高（flex:0 0 auto + 不换行），超出 bar 沿主轴滚动
+    const scrollable = st.barMode === 'scrollable';
+    const items = bar.children;
+    for (let k = 0; k < items.length; k++) {
+      items[k].style.flex = scrollable ? '0 0 auto' : '1';
+      items[k].style.whiteSpace = scrollable ? 'nowrap' : '';
+    }
+    bar.style.overflowX = (!st.vertical && scrollable) ? 'auto' : '';
+    bar.style.overflowY = (st.vertical && scrollable) ? 'auto' : '';
+    // W4.3 尺寸/悬浮。缺省照 d.ts（tabs.d.ts:1113-1130/1148-1167）+ 真机（barWidth/barHeight
+    // 不随轴交换，缺省一轴拉满：竖排 bar 宽 56vp / 高拉满；横排 bar 高 56vp / 宽拉满，
+    // tab_bar_layout_algorithm.cpp:101-122——拉满由 flex 交叉轴 stretch 承担）。
+    const w = st.barWidth != null ? toCssSize(st.barWidth) : '';
+    const h = st.barHeight != null ? toCssSize(st.barHeight) : '';
+    if (st.barOverlap) {
+      // 悬浮：absolute 脱离 flex 流 → 内容区（flex:1）自动占满整个 Tabs，不避让；
+      // 停靠边随 barPosition（Start=左/上，End=右/下）。zIndex 显式压内容之上
+      // （真机 bar 在子节点序中后挂、画在 TabContent 之上，tabs_node.h:28-35）
+      bar.style.position = 'absolute';
+      bar.style.zIndex = '1';
+      bar.style.left = (st.vertical && st.barPosition === 'end') ? '' : '0';
+      bar.style.right = (st.vertical && st.barPosition === 'end') ? '0' : '';
+      bar.style.top = (!st.vertical && st.barPosition === 'end') ? '' : '0';
+      bar.style.bottom = (!st.vertical && st.barPosition === 'end') ? '0' : '';
+      bar.style.width = st.vertical ? (w || '56px') : (w || '100%');
+      bar.style.height = st.vertical ? (h || '100%') : (h || '56px');
+      // COMPONENT_THICK 的近似：backdrop-filter 模糊 + 浅色底（真机材质带系统取色，见上诊断）
+      bar.style.backdropFilter = 'blur(16px)';
+      bar.style.backgroundColor = 'rgba(247,247,247,0.55)';
+    } else {
+      bar.style.position = '';
+      bar.style.zIndex = '';
+      bar.style.left = '';
+      bar.style.right = '';
+      bar.style.top = '';
+      bar.style.bottom = '';
+      bar.style.backdropFilter = '';
+      bar.style.backgroundColor = '';
+      bar.style.width = w || (st.vertical ? '56px' : '');
+      bar.style.height = h || (st.vertical ? '' : '56px');
+    }
   }
 
   /** @param {any} st @param {number} i @param {boolean} fire */
@@ -852,12 +1000,28 @@
       layoutWarnings.push(`Tabs.changeIndex(${i}): 越界（共 ${n} 个 TabContent）`);
       return false;
     }
+    const old = st.index;
     st.index = i;
     onlyOneVisible(st.contents, i);
     [...st.barEl.children].forEach((b, k) => {
       b.setAttribute('data-arkui-tabbar-active', k === i ? 'true' : 'false');
     });
-    if (fire) {
+    if (fire && old !== i) {
+      // 同索引切换不发切换事件：真机 OnIndexChange 有 oldIndex != targetIndex 前置
+      // （swiper_pattern.cpp:339），selected/unselected 还有 selectedIndex_/unselectedIndex_
+      // 去重（同 index 重复切不重发）——本实现切页即显（display 语义），old !== i 即等价。
+      // 派发序照真机（点击 tab 的完整序列，W4.4）：
+      //   onTabBarClick(点击时先发，tab_bar_pattern.cpp:1597，见 finalizeTabs 的 click 监听)
+      //   → onSelected(新) → onUnselected(旧)（动画启动时成对发，swiper_pattern.cpp:4389-4390）
+      //   → onChange(索引落定时，swiper_pattern.cpp:326-345；内容切换语义)
+      // selected/unselected 挂在 SwiperEventHub（tabs_pattern.cpp:466/1112 注册），
+      // hub 只带单参 fire（swiper_event_hub.cpp:231/30）：selected=新索引、unselected=旧索引。
+      const safe = (/** @type {string} */ tag, /** @type {any} */ fn, /** @type {number} */ arg) => {
+        if (typeof fn !== 'function') return;
+        try { fn(arg); } catch (e) { layoutWarnings.push(`Tabs.${tag} 抛错：${e && e.message}`); }
+      };
+      safe('onSelected', st.onSelected, i);
+      safe('onUnselected', st.onUnselected, old);
       for (const cb of st.onChange) {
         try { cb(i); } catch (e) { layoutWarnings.push(`Tabs.onChange 抛错：${e && e.message}`); }
       }
@@ -869,23 +1033,34 @@
   /** @param {any} st */
   function finalizeTabs(st) {
     const n = st.node;
-    if (st.barPosition === 'end') {
-      if (n.lastElementChild !== st.barEl) n.appendChild(st.barEl);
-    } else if (n.firstElementChild !== st.barEl) {
-      n.insertBefore(st.barEl, st.contentEl);
-    }
+    // bar 恒为第一个子元素：视觉位置（上/下/左/右）由 applyTabsBarLayout 的 direction
+    // 矩阵表达，不搬 DOM（旧实现 End 时 appendChild 搬到末尾——与 row-reverse 方案冲突）
+    if (n.firstElementChild !== st.barEl) n.insertBefore(st.barEl, n.firstChild);
     st.barEl.textContent = '';                       // 重建（重渲染时不会残留旧项）
     st.contents.forEach((/** @type {any} */ c, /** @type {number} */ i) => {
       const item = document.createElement('div');
       item.setAttribute('data-arkui-tabbar-item', String(i));
       item.setAttribute('data-arkui-tabbar-active', 'false');
       item.textContent = c.label === undefined || c.label === null ? '' : String(c.label);
-      item.style.flex = '1';
       item.style.textAlign = 'center';
       item.style.cursor = 'pointer';
-      item.addEventListener('click', () => setActiveTab(st, i, true));
+      // flex/whiteSpace 由 applyTabsBarLayout 按 barMode 统一落（Fixed=flex:1 均分 /
+      // Scrollable=flex:0 0 auto + nowrap），这里不预置
+      item.addEventListener('click', () => {
+        // 真机：TabBarPattern::HandleClick 先同步发 onTabBarClick(index)（tab_bar_pattern.cpp:1597
+        // TabBarClickEvent），再驱动内容切换（ClickTo → swiper 换页）。同索引点击仍发
+        // onTabBarClick（点击事件本身），但后续切换事件被 OnIndexChange 的 oldIndex !=
+        // targetIndex 前置拦下（swiper_pattern.cpp:339），见 setActiveTab。
+        if (typeof st.onTabBarClick === 'function') {
+          try { st.onTabBarClick(i); }
+          catch (e) { layoutWarnings.push(`Tabs.onTabBarClick 抛错：${e && e.message}`); }
+        }
+        setActiveTab(st, i, true);
+      });
       st.barEl.appendChild(item);
     });
+    // 条目刚重建 → flex/whiteSpace/尺寸全部按当前 vertical×barMode×barWidth×barOverlap 重落
+    applyTabsBarLayout(st);
     const idx = Math.min(Math.max(0, st.index), Math.max(0, st.contents.length - 1));
     if (!st.contents.length) {
       layoutWarnings.push('Tabs 内没有任何 TabContent，无法确定活动面板');
@@ -1313,6 +1488,19 @@
         const st = top && top.__tabsState;
         if (st) finalizeTabs(st);
       };
+      // W4.1-W4.4：语义属性/回调以【组件自有方法】拦截（Proxy get 命中 target 自有属性后
+      // 直接返回，不再进 applyAttr）。必须在这里拦的两个原因：
+      // ① area.js applyAttrInner 的通用函数分支（≈:586）会把 onXxx(fn) 落成
+      //    addEventListener('小写事件名')——永不触发的死监听，且它排在 TABS_UNSUPPORTED
+      //    诊断（≈:616）之前，连"未实现"警告都发不出（静默失效，坑 86 同族）；
+      // ② .vertical(true) 等布尔/枚举值走通用兜底只会落 data-*，版式静默错。
+      // 实参全部转发 applyTabsAttr（第二参留给 barMode 的 ScrollableBarModeOptions）。
+      for (const k of ['vertical', 'barMode', 'barWidth', 'barHeight', 'barOverlap',
+        'onTabBarClick', 'onSelected', 'onUnselected']) {
+        (/** @type {any} */ (C))[k] = function (/** @type {...any} */ ...args) {
+          applyTabsAttr(ViewStackProcessor.top(), k, args[0], args[1]);
+        };
+      }
     }
 
     // ListItemGroup（R49）：create 选项含 header/footer 两个 CustomBuilder——header 在

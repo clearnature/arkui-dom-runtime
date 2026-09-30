@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>v2 语义：@Reusable 复用池 / @Computed 缓存 / @Monitor 点分路径</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 340px; height: 420px; border: 1px solid #ccc; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>v2 语义：@Reusable 复用池（W1）/ @Computed 缓存（W2）/ @Monitor 点分路径（W3）</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script>
+  // 纯 runtime 级测试页：不走 hvigorw / 产物，直接 new ViewV2 子类 + 手动装饰。
+  // 断言分三组：W1 @Reusable 复用池、W2 @Computed 缓存、W3 @Monitor 点分路径。
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const until = async (fn, tries) => {
+      for (let k = 0; k < (tries || 40); k++) { if (fn()) return true; await tick(25); }
+      return fn();
+    };
+    const val = (id) => { const e = document.getElementById(id); return e ? (e.textContent || '') : '<无此节点:' + id + '>'; };
+
+    try {
+      const D = __arkui_dom_decorators;
+      const ViewPU = Object.getPrototypeOf(D.ViewV2);          // static 原型链：ViewV2 extends ViewPU
+      const v2sem = __arkui_dom_v2sem;
+      __arkui_dom_v2sem.attachRoot(document.getElementById('root'));  // 纯 runtime 页：手工设根（产品页走 loadRoute）
+      let elmtSeq = 900000;                                    // childView 挂载点 elmtId（页面内自分配，避免撞运行时计数）
+      const mount = (v) => { ViewPU.create(v); return v; };
+      const unmount = (v) => {                                 // 摘 DOM → 触发卸载扫描（入池挂点在 purgeDetachedRecords）
+        for (const [, rec] of __arkui_dom_elmtRecords) {
+          if (rec.childView === v && rec.node) { rec.node.remove(); break; }
+        }
+        v2sem.purgeDetached();
+      };
+      const installComputed = (proto, key) => {                // 模拟 __decorate([Computed], proto, key, null)
+        const d = D.Computed(proto, key, Object.getOwnPropertyDescriptor(proto, key));
+        Object.defineProperty(proto, key, d);
+      };
+      const installMonitor = (proto, key, path) => {           // 模拟 __decorate([Monitor(path)], proto, key, null)
+        D.Monitor(path)(proto, key, Object.getOwnPropertyDescriptor(proto, key));
+      };
+
+      // ── W3/W1 共用的嵌套对象：@ObservedV2 + @Trace（真机：显式标记的深度观测）──
+      class Task {
+        constructor(id, name) { this.id = id; this.name = name; this.done = false; }
+      }
+      D.ObservedV2(Task);
+      D.Trace(Task.prototype, 'name');
+      D.Trace(Task.prototype, 'done');
+
+      // ════════════════ W2：@Computed 缓存 ════════════════
+      class SemCard extends D.ViewV2 {
+        constructor(parent, params, ls, elmtId = -1, paramsLambda, extraInfo) {
+          super(parent, elmtId, extraInfo);
+          this.initParam('base', (params && 'base' in params) ? params.base : 1);
+          this.initParam('noise', (params && 'noise' in params) ? params.noise : 0);
+          this.computeCount = 0; this.quadCount = 0;          // 计数器字段在 getter 里自增（断言重算次数）
+          this.finalizeConstruction();
+        }
+        get doubled() { this.computeCount += 1; return this.base * 2; }
+        get quad() { this.quadCount += 1; return this.doubled * 2; }   // 链式：quad 依赖 doubled
+        initialRender() {
+          this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create('doubled=' + this.doubled);
+            if (isInitialRender) { Text.id('sem-doubled'); Text.fontSize(12); }
+          }, Text);
+          Text.pop();
+        }
+        rerender() {}
+      }
+      D.Local(SemCard.prototype, 'base');
+      D.Local(SemCard.prototype, 'noise');
+      installComputed(SemCard.prototype, 'doubled');
+      installComputed(SemCard.prototype, 'quad');
+
+      const s = new SemCard(undefined, { base: 1 }, undefined, ++elmtSeq, () => ({}), {});
+      check(s.doubled === 2 && s.computeCount === 1, `W2 初读 doubled 恰算 1 次（值 ${s.doubled}）`);
+      check(s.doubled === 2 && s.computeCount === 1, 'W2 再读命中缓存（仍 1 次）');
+      s.noise = 9;
+      check(s.doubled === 2 && s.computeCount === 1, 'W2 无关属性(@Local noise)写后读不重算');
+      s.base = 5;
+      check(s.doubled === 10 && s.computeCount === 2, `W2 依赖写后读恰好重算 1 次（${s.computeCount} 次，值 ${s.doubled}）`);
+      check(s.quad === 20 && s.quadCount === 1, `W2 链式 quad 初读 1 次（值 ${s.quad}）`);
+      s.base = 7;
+      check(s.doubled === 14 && s.computeCount === 3, 'W2 链式：base 写 → doubled 重算（3 次，值 14）');
+      check(s.quad === 28 && s.quadCount === 2, `W2 链式：失效传播 → quad 恰好重算 1 次（${s.quadCount} 次，值 ${s.quad}）`);
+      s.base = 7;                                              // 同值写（Object.is 相等）
+      check(s.computeCount === 3 && s.quadCount === 2, 'W2 同值写不触发重算');
+
+      mount(s);                                                // 渲染读的是缓存
+      check(s.computeCount === 3 && val('sem-doubled') === 'doubled=14',
+        `W2 渲染读缓存且文本正确：'${val('sem-doubled')}'（计数仍 ${s.computeCount}）`);
+      s.base = 8;
+      await until(() => val('sem-doubled') === 'doubled=16', 40);
+      check(s.computeCount === 4 && val('sem-doubled') === 'doubled=16',
+        `W2 依赖写 → 读该 @Computed 的 elmtId 自动重渲染：'${val('sem-doubled')}'`);
+      s.doubled = 123;                                         // 非法写：应被拒且有告警
+      check(s.doubled === 16 && (__arkui_dom_layout_warnings || []).some((w) => w.indexOf("@Computed 'doubled'") >= 0),
+        'W2 @Computed 只读：写入被忽略 + 布局告警');
+
+      // ════════════════ W3：@Monitor 点分路径 ════════════════
+      class PathCard extends D.ViewV2 {
+        constructor(parent, params, ls, elmtId = -1, paramsLambda, extraInfo) {
+          super(parent, elmtId, extraInfo);
+          this.initParam('items', (params && 'items' in params) ? params.items : [new Task(0, 'a'), new Task(1, 'b')]);
+          this.initParam('deep', (params && 'deep' in params) ? params.deep : new Task(9, 'seed'));
+          this.hit = 0; this.dirtyLog = ''; this.nowLog = ''; this.beforeLog = ''; this.valLog = '';
+          this.deepHit = 0; this.deepDirtyLog = '';
+          this.finalizeConstruction();
+        }
+        onItemName(m) {
+          this.hit += 1; this.dirtyLog = m.dirty.join('|');
+          const mv = m.value('items.0.name');
+          this.nowLog = String(mv && mv.now); this.beforeLog = String(mv && mv.before);
+          this.valLog = JSON.stringify(m.value());             // 无参 value()：第一条 dirty
+        }
+        onDeepName(m) { this.deepHit += 1; this.deepDirtyLog = m.dirty.join('|'); }
+        initialRender() {
+          this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create('item0=' + this.items[0].name);
+            if (isInitialRender) { Text.id('sem-item0'); Text.fontSize(12); }
+          }, Text);
+          Text.pop();
+        }
+        rerender() {}
+      }
+      D.Local(PathCard.prototype, 'items');
+      D.Local(PathCard.prototype, 'deep');
+      installMonitor(PathCard.prototype, 'onItemName', 'items.0.name');
+      installMonitor(PathCard.prototype, 'onDeepName', 'deep.name');
+
+      const p = new PathCard(undefined,
+        { items: [new Task(0, 'a'), new Task(1, 'b')], deep: new Task(9, 'seed') },
+        undefined, ++elmtSeq, () => ({}), {});
+      mount(p);
+      check(p.hit === 0, 'W3 初态不触发');
+      p.items[0].name = 'x';                                   // 嵌套写：数组元素的字段
+      check(p.hit === 1, `W3 嵌套写 items[0].name 触发 1 次（${p.hit} 次）`);
+      check(p.dirtyLog === 'items.0.name', `W3 dirty=['items.0.name']：'${p.dirtyLog}'`);
+      check(p.beforeLog === 'a' && p.nowLog === 'x', `W3 value('items.0.name') 读回 before=${p.beforeLog}/now=${p.nowLog}`);
+      check(p.valLog === '{"before":"a","now":"x","path":"items.0.name"}', `W3 value() 无参返回第一条 dirty：${p.valLog}`);
+      p.items[1].name = 'y';                                   // 路径不匹配
+      check(p.hit === 1, 'W3 路径不匹配（items[1].name）不触发');
+      p.items[0].name = 'z';
+      check(p.hit === 2 && p.nowLog === 'z' && p.beforeLog === 'x', `W3 二次写再触发且 before 滚动（${p.beforeLog}→${p.nowLog}）`);
+      p.deep.name = 'grown';                                   // @Local 持 @ObservedV2 实例的点分路径
+      check(p.deepHit === 1 && p.deepDirtyLog === 'deep.name', `W3 @Monitor('deep.name')：dirty='${p.deepDirtyLog}'（${p.deepHit} 次）`);
+
+      // ════════════════ W1：@Reusable 复用池 ════════════════
+      class ReuseCard extends D.ViewV2 {
+        constructor(parent, params, ls, elmtId = -1, paramsLambda, extraInfo) {
+          super(parent, elmtId, extraInfo);
+          this.initParam('n', (params && 'n' in params) ? params.n : 1);
+          this.tag = (params && 'tag' in params) ? params.tag : 'x';
+          this.recycleCalls = 0; this.reuseCalls = 0; this.resetCalls = 0; this.monitorsReset = 0;
+          this.derivedReads = 0; this.receivedParams = null;
+          this.finalizeConstruction();
+        }
+        resetStateVarsOnReuse(params) {                        // 模拟产物生成的 reset 链入口（fixtures V2.ts:38 形态）
+          this.resetCalls += 1; this.receivedParams = params;
+          super.resetStateVarsOnReuse(params);                 // 默认兜底：params 回放 + resetComputed + resetMonitorsOnReuse
+        }
+        resetMonitorsOnReuse() { this.monitorsReset += 1; super.resetMonitorsOnReuse(); }
+        aboutToRecycle() { this.recycleCalls += 1; }           // 入池前回调（真机 v2_view.ts:303-320）
+        aboutToReuse() { this.reuseCalls += 1; }               // 出池后回调（真机 v2_view.ts:238-247，V2 无参）
+        get derived() { this.derivedReads += 1; return this.n * 10; }
+        initialRender() {
+          this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create(this.tag + ': n=' + this.n + ' d=' + this.derived);
+            if (isInitialRender) { Text.id('w1-' + this.tag); Text.fontSize(12); }
+          }, Text);
+          Text.pop();
+        }
+        rerender() {}
+      }
+      D.Local(ReuseCard.prototype, 'n');
+      installComputed(ReuseCard.prototype, 'derived');
+      D.ReusableV2(ReuseCard);                                 // 类装饰器：标记可复用
+
+      class PlainCard extends D.ViewV2 {                       // 负向对照：没标 @Reusable
+        constructor(parent, params, ls, elmtId = -1, paramsLambda, extraInfo) {
+          super(parent, elmtId, extraInfo);
+          this.initParam('n', (params && 'n' in params) ? params.n : 1);
+          this.finalizeConstruction();
+        }
+        initialRender() {
+          this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create('plain=' + this.n);
+            if (isInitialRender) { Text.id('w1-plain'); Text.fontSize(12); }
+          }, Text);
+          Text.pop();
+        }
+        rerender() {}
+      }
+      D.Local(PlainCard.prototype, 'n');
+
+      const stats = v2sem.reuseStats;
+      check(v2sem.poolMax() === 100, `W1 池默认容量 100（真机默认桶，puv2_globalreuse.ts:68）实际 ${v2sem.poolMax()}`);
+
+      const c1 = new ReuseCard(undefined, { n: 1, tag: 'first' }, undefined, ++elmtSeq, () => ({}), {});
+      mount(c1);
+      check(val('w1-first') === 'first: n=1 d=10', `W1 首挂渲染：'${val('w1-first')}'`);
+      c1.n = 5;
+      await until(() => val('w1-first') === 'first: n=5 d=50', 40);
+      check(val('w1-first') === 'first: n=5 d=50', `W1 改 n → 读 derived 的 elmtId 重渲染：'${val('w1-first')}'`);
+      const pooled0 = stats.pooled;
+      unmount(c1);
+      check(c1.recycleCalls === 1, `W1 卸载 → aboutToRecycle 调 ${c1.recycleCalls} 次`);
+      check(v2sem.poolSizeOf(ReuseCard) === 1 && stats.pooled === pooled0 + 1,
+        `W1 卸载后按构造函数入池（池存量 ${v2sem.poolSizeOf(ReuseCard)}）`);
+      const c2 = new ReuseCard(undefined, { n: 2, tag: 'reuse' }, undefined, ++elmtSeq, () => ({}), {});
+      check(c2 === c1, 'W1 同类型再挂载拿到同一实例（复用生效）');
+      check(stats.reused >= 1 && v2sem.poolSizeOf(ReuseCard) === 0, `W1 出池（LIFO）：复用计数 ${stats.reused}，池存量 ${v2sem.poolSizeOf(ReuseCard)}`);
+      check(c2.resetCalls === 1 && c2.receivedParams && c2.receivedParams.n === 2,
+        `W1 resetStateVarsOnReuse(params) 被调且参数是本次的（n=${c2.receivedParams && c2.receivedParams.n}）`);
+      check(c2.monitorsReset === 1, 'W1 resetMonitorsOnReuse 被调（点分路径重绑快照）');
+      check(c2.reuseCalls === 1, `W1 aboutToReuse 调 ${c2.reuseCalls} 次`);
+      check(c2.derived === 20, `W1 复用后 @Computed 无陈旧（${c2.derived}，旧值应是 50）`);
+      mount(c2);
+      check(val('w1-reuse') === 'reuse: n=2 d=20', `W1 复用后按新 params 渲染：'${val('w1-reuse')}'`);
+      c2.n = 7;
+      await until(() => val('w1-reuse') === 'reuse: n=7 d=70', 40);
+      check(val('w1-reuse') === 'reuse: n=7 d=70', `W1 复用后响应式仍活：'${val('w1-reuse')}'`);
+
+      // 池上限：默认 100 太大不便断言，调成 5（setPoolMax 钳制：负值截 0、硬上限 200）
+      v2sem.setPoolMax(5);
+      check(v2sem.poolMax() === 5, 'W1 setPoolMax(5) 生效（容量可配，默认 100 / 硬上限 200）');
+      unmount(c2);                                             // 池 1
+      const capIds = [];
+      for (let i = 0; i < 7; i++) {                            // 两段式：先挂满占住（首个复用 c2、其余全新建）
+        const c = new ReuseCard(undefined, { n: 100 + i, tag: 'cap' + i }, undefined, ++elmtSeq, () => ({}), {});
+        mount(c);
+        capIds.push(c);
+      }
+      check(v2sem.poolSizeOf(ReuseCard) === 0, 'W1 挂满 7 个后池被抽干（存量 0）');
+      const ev0 = stats.evicted, po0 = stats.pooled;
+      for (const c of capIds) unmount(c);
+      check(v2sem.poolSizeOf(ReuseCard) === 5, `W1 池上限 5：存量恒为 ${v2sem.poolSizeOf(ReuseCard)}`);
+      check(stats.evicted - ev0 === 2, `W1 满则拒绝入池=真销毁（${stats.evicted - ev0} 个被拒）`);
+      check(stats.pooled - po0 === 5, `W1 入池计数 ${stats.pooled - po0}（7 次卸载，2 次被拒）`);
+      const left = new ReuseCard(undefined, { n: 1, tag: 'lifo' }, undefined, ++elmtSeq, () => ({}), {});
+      check(v2sem.poolSizeOf(ReuseCard) === 4, 'W1 LIFO 出池取尾（池存量 5→4）');
+
+      // 非 @Reusable：不入池不复用
+      const q1 = new PlainCard(undefined, { n: 1 }, undefined, ++elmtSeq, () => ({}), {});
+      mount(q1);
+      const q1ref = q1;
+      unmount(q1);
+      const q2 = new PlainCard(undefined, { n: 2 }, undefined, ++elmtSeq, () => ({}), {});
+      check(q2 !== q1ref && v2sem.poolSizeOf(PlainCard) === 0, 'W1 非 @Reusable 不入池不复用（全新实例）');
+      mount(q2);
+
+      // W1×W3 交叉：复用后点分路径监视器重绑（不双发、不丢发）
+      class ReusePathCard extends D.ViewV2 {
+        constructor(parent, params, ls, elmtId = -1, paramsLambda, extraInfo) {
+          super(parent, elmtId, extraInfo);
+          this.initParam('items', (params && 'items' in params) ? params.items : [new Task(0, 'a')]);
+          this.hit = 0; this.pathLog = '';
+          this.finalizeConstruction();
+        }
+        onItemName(m) { this.hit += 1; this.pathLog = m.dirty.join('|'); }
+        initialRender() {
+          this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create('rp=' + this.items[0].name);
+            if (isInitialRender) { Text.id('w1-rp'); Text.fontSize(12); }
+          }, Text);
+          Text.pop();
+        }
+        rerender() {}
+      }
+      D.Local(ReusePathCard.prototype, 'items');
+      installMonitor(ReusePathCard.prototype, 'onItemName', 'items.0.name');
+      D.ReusableV2(ReusePathCard);
+      const r1 = new ReusePathCard(undefined, { items: [new Task(0, 'a')] }, undefined, ++elmtSeq, () => ({}), {});
+      mount(r1);
+      r1.items[0].name = 'a2';
+      check(r1.hit === 1, 'W1×W3 首挂期嵌套写触发 1 次');
+      unmount(r1);
+      const r2 = new ReusePathCard(undefined, { items: [new Task(0, 'fresh')] }, undefined, ++elmtSeq, () => ({}), {});
+      check(r2 === r1, 'W1×W3 复用同一实例');
+      check(r2.hit === 0, 'W1×W3 重绑快照后不误触发（计数随构造体重放归零、无脏）');
+      r2.items[0].name = 'q';
+      check(r2.hit === 1 && r2.pathLog === 'items.0.name',
+        `W1×W3 复用后嵌套写恰好触发 1 次（${r2.hit} 次，dirty='${r2.pathLog}'——重绑生效、无双发）`);
+
+      // 无额外告警（只允许 W2 只读测试故意造的那一条）
+      const warns = (__arkui_dom_layout_warnings || []).filter((w) => w.indexOf("@Computed 'doubled'") < 0);
+      check(warns.length === 0, `无其它 v2 相关告警（${warns.length}${warns.length ? ': ' + warns[0] : ''}）`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const el = document.getElementById('result');
+    el.textContent = lines.join('\n');
+    el.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

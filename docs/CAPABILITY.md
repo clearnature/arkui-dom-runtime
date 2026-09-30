@@ -61,8 +61,10 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 | **v2 `@Provider` / `@Consumer`**：按名跨层解析；绑定发生在 `finalizeConstruction`（产物在普通构造路径**不调** `resetConsumer`） | ✅ | v2（改提供者 → 消费者自动更新） |
 | **v2 `@ObservedV2` + `@Trace`**：字段级深度观测（数组元素内部字段变更也触发重渲染） | ✅ | v2 |
 | **`@Trace` 是选择性的**：未标 `@Trace` 的字段变更**不**触发重渲染 | ✅ | v2（负向断言） |
-| **v2 `@Computed`**：不缓存实现，靠"getter 体在渲染上下文里执行 ⇒ 传递依赖天然成立"保证正确 | ✅ | v2 |
+| **v2 `@Computed` 缓存**（R151）：依赖收集（求值期 cell 双向登记）+ 写命中立即重算（真机 fireChange 语义）+ 值变才 markDependentsDirty 递归传播；复用链 `resetComputed` 与 @Reusable 共用同一缓存结构 | ✅ | `bash run.sh v2sem`（W2 组 11 条：计算次数计数/无关写不重算/链式传播） |
 | **v1 与 v2 互通**：v2 的 `@Provider` 注册的对象带 `get/set`，v1 的 `@Consume` 可解析（反之亦可） | ✅ | v2 |
+| **v2 `@Reusable` 复用池**（R151）：出池 LIFO、容量默认 100/上限 200/满则真销毁（真机 puv2_globalreuse.ts 语义）；出池链 `resetStateVarsOnReuse(params)（initParam 回放）→ aboutToReuse`，`resetComputed`/`resetMonitorsOnReuse` 真实现并与缓存/Monitor 结构打通；入池挂点=自定义组件离开 DOM 的唯一收口 | ✅ | `bash run.sh v2sem`（W1 组 24 条：池命中/状态重置/复用计数/W1×W3 交叉） |
+| **v2 `@Monitor` 点分路径**（R151）：嵌套写入 dirty/path 升级为 `items.0.name` 形态（绑定期沿声明路径逐段注册 + 写路径重评估取 now 比对），`value(path)`/无参均可读回 before/now | ✅ | `bash run.sh v2sem`（W3 组 8 条 + W1×W3 复用重绑交叉 4 条） |
 
 ## 二、组件库（149 个骨架）
 
@@ -204,12 +206,19 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
   但**无模板时的轨道划分未实现**：`cellLength`/`maxCount`/`minCount`/`layoutDirection` 只记 `layoutWarnings`，不生效。
   另外行高仍是 CSS grid 的自动推导（`align-content: stretch` 会拉伸 auto 行），与 ArkUI 的尺寸推导不同——
   所以 tabgrid 的行距断言写成**关系式**（行距 = 行高 + `rowsGap`）而不是钉死绝对行高。
-- **`Tabs` 切换已实现**（`barPosition`/`index`/`TabsController.changeIndex`/`onChange`/点击切换/切走不销毁），
-  但下列项**未实现并会记 `layoutWarnings`**：`vertical`（侧边 bar）、`barMode`（Fixed/Scrollable）、
-  `barWidth`/`barHeight`/`barOverlap`/`barGridAlign`、全部动画项（`animationDuration`/`animationMode`/
-  `animationCurve`/`customContentTransition`/`pageFlipMode`）、以及回调 `onTabBarClick`/`onSelected`/
-  `onUnselected`/`onAnimationStart`/`onAnimationEnd`/`onGestureSwipe`/`onContentWillChange`。
+- **`Tabs` 切换已实现**（`barPosition`/`index`/`TabsController.changeIndex`/`onChange`/点击切换/切走不销毁）；
+  **R151 落地第一片长尾**：`vertical`（侧边 bar，方向矩阵单点：bar 恒首子元素、视觉全由 flex-direction
+  表达）、`barMode`（Fixed=均分 / Scrollable=按内容宽 + bar 可滚）、`barWidth`/`barHeight`（**不随轴交换**，
+  真机 userDefinedIdealSize 语义；缺省竖 56 宽/横 56 高、另一轴 stretch）、`barOverlap`（absolute+zIndex、
+  内容不避让、backdrop-filter 近似模糊并记警告）、回调 `onTabBarClick`/`onSelected`/`onUnselected`
+  （事件序 click → sel(新) → unsel(旧) → change(落定)，同索引去重）——语义依据 tabs.d.ts + 真机
+  tabs_layout_algorithm.cpp:729-782/tab_bar_layout_algorithm.cpp:217-334/swiper_pattern.cpp:4389。
+  **仍记 `layoutWarnings`**：`barGridAlign`、全部动画项（`animationDuration`/`animationMode`/
+  `animationCurve`/`customContentTransition`/`pageFlipMode`）、`edgeEffect`/`cachedMaxCount`、
+  `onAnimationStart`/`onAnimationEnd`/`onGestureSwipe`/`onContentWillChange`、barMode 第二参
+  ScrollableBarModeOptions。
   `TabContent.tabBar` **只支持字符串标签**：`SubTabBarStyle`/`BottomTabBarStyle`/自定义 builder 会记警告并留空标签。
+  新片断言：`bash run.sh tablong`（26 条断言，五端通过）。
 - **`Swiper` 轮播已实现**（切换/指示点/loop/autoPlay + **R125 内置拖拽翻页**），剩余限制：
   1. **内置拖拽已落地（R125）**：拖拽跟手 + 松手按"半页阈值/780vp/s 速度"翻页 + 非 loop 边界摩擦
      （swiper_pattern.h:62/971 + swiper_helper.cpp:566-578 参数原文）+ 回弹；`vertical`/`disableSwipe`/
@@ -291,10 +300,9 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 - 版本：`./run.sh measure` 的 16 条几何断言是当前布局能力的**可复现基线**——改布局相关代码后必须重跑。
 
 ## 未实现的框架语义
-- `Repeat`、`@LocalBuilder`、`@Reusable`（组件复用）——状态管理 v2 的**核心**已实现（见上表），
-  但 `@Reusable` 的复用路径**未实测**（产物里有 `resetStateVarsOnReuse`/`resetComputed`/`resetMonitorsOnReuse` 调用，运行时提供了空实现）
-- v2 的已知简化：`@Computed` **不缓存**；`@Monitor` 一次赋值只产生一条 `dirty`，且 `path` 是字段名而非
-  `items.0.name` 这样的**点分路径**（嵌套对象的 `@Trace` 变更能触发重渲染，但回调里的路径不精确）
+- `Repeat`、`@LocalBuilder`——状态管理 v2 的**核心**已实现（见上表）；`@Reusable` 已于 R151 落地（见 v2 `@Reusable` 复用池行）
+- v2 的已知简化（R151 后）：`@Monitor` 一次赋值仍只产生一条 dirty（点分路径已实现，见上）；数组**元素替换** `arr[0]=x`
+  不经访问器、点分路径监视器感知不到（元素**字段**写入正常——与真机差异已注释）；@Reusable 池为 V2 系，V1（ViewPU）复用未挂点
 - v1 深度观测的已知边界：`@Observed` 只观测该类的**自身字段**，嵌套的非 `@Observed` 对象内部变更不触发
   （与真机一致，有负向断言守着）；`@Observed` 经 Proxy 实现，**未验证**对 `instanceof`、序列化、
   展开运算符、`for...in` 之外的反射行为有无边界差异

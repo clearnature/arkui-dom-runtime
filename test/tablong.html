@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>W4：Tabs vertical / barMode / barWidth·barHeight·barOverlap / 三回调</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  /* 宽 360 高 280 固定：Fixed 均分断言依赖确定宽度（360/3=120） */
+  #root { width: 360px; height: 280px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>W4 长尾收官：vertical（侧边 bar）/ barMode（Fixed·Scrollable）/ barWidth·barHeight·barOverlap / onTabBarClick·onSelected·onUnselected</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms || 40));
+    const root = document.getElementById('root');
+    const cs = (el) => getComputedStyle(el);
+    const rect = (el) => el.getBoundingClientRect();
+    const warns = () => (globalThis.__arkui_dom_layout_warnings || []);
+    const near = (a, b, tol) => Math.abs(a - b) <= (tol === undefined ? 0.6 : tol);
+
+    // 纯 runtime 级：DSL 直调全局 Tabs/TabContent（不走 ArkTS 产物）。
+    // seed 常驻栈底（a11ydemo 同款坑）：外层 push 一次不弹，内部 create/pop 配对即可。
+    const VSP = globalThis.ViewStackProcessor;
+    const { Tabs, TabContent, TabsController, BarPosition, BarMode, Text } = globalThis;
+    const seed = document.createElement('div');
+    seed.style.display = 'block';
+    root.appendChild(seed);
+    VSP.push(seed);
+
+    // DSL 直调建一个 Tabs：create 选项 → 属性链（attrs）→ N 个 TabContent（tabBar 字符串标签）
+    const buildTabs = (opts, attrs, labels) => {
+      const node = Tabs.create(opts || {});
+      if (attrs) attrs();
+      (labels || []).forEach((label) => {
+        TabContent.create(() => { Text.create(label + ' 内容'); Text.pop(); });
+        TabContent.tabBar(label);
+        TabContent.pop();
+      });
+      Tabs.pop();
+      return node;
+    };
+    const barOf = (tabs) => tabs.querySelector('[data-arkui-tabs-bar]');
+    const itemsOf = (tabs) => [...tabs.querySelectorAll('[data-arkui-tabbar-item]')];
+    const contentOf = (tabs) => tabs.querySelector('[data-arkui-tabs-content]');
+
+    const group = async (name, fn) => {
+      try { await fn(); } catch (e) {
+        allPass = false;
+        lines.push(`FAIL [${name}] 抛出异常：${e && e.stack ? String(e.stack).split('\n')[0] : e}`);
+      }
+    };
+
+    try {
+      // ══════════ W4.1 vertical：侧边 bar（方向矩阵 + bar 位置）══════════
+      await group('W4.1 vertical', async () => {
+        // Start（默认）：竖排 bar 在左——容器 row，bar 内条目纵向排
+        const tv = buildTabs({}, () => Tabs.vertical(true), ['L0', 'L1', 'L2']);
+        await tick(40);
+        check(cs(tv).flexDirection === 'row',
+          `vertical(true)+Start → 容器 flexDirection=row（'${cs(tv).flexDirection}'）`);
+        const barV = barOf(tv);
+        check(cs(barV).flexDirection === 'column', `bar 内条目竖排（'${cs(barV).flexDirection}'）`);
+        check(rect(barV).right <= rect(contentOf(tv)).left + 0.5,
+          `bar 在内容区左侧（bar 右缘 ${rect(barV).right.toFixed(1)} ≤ 内容左缘 ${rect(contentOf(tv)).left.toFixed(1)}）`);
+        // End：竖排 bar 在右——row-reverse（bar 仍是第一个子元素，靠方向翻到右侧）
+        const tv2 = buildTabs({ barPosition: BarPosition.End }, () => Tabs.vertical(true), ['R0', 'R1']);
+        await tick(40);
+        check(cs(tv2).flexDirection === 'row-reverse',
+          `vertical(true)+End → 容器 flexDirection=row-reverse（'${cs(tv2).flexDirection}'）`);
+        check(rect(barOf(tv2)).left >= rect(contentOf(tv2)).right - 0.5,
+          `End → bar 在内容区右侧（bar 左缘 ${rect(barOf(tv2)).left.toFixed(1)} ≥ 内容右缘 ${rect(contentOf(tv2)).right.toFixed(1)}）`);
+        check(!warns().some((w) => /Tabs\.vertical 未实现/.test(w)),
+          'vertical 已实现、不再进"未实现"诊断');
+      });
+
+      // ══════════ W4.2 barMode：Fixed 均分 / Scrollable 按内容 ══════════
+      await group('W4.2 barMode', async () => {
+        // Fixed（默认）：三条目均分 360 → 各 120
+        const tf = buildTabs({}, undefined, ['A', '长标签BB', '长标签内容CC']);
+        await tick(40);
+        const fItems = itemsOf(tf);
+        // flex 简写在 CSSOM 里会序列化成 '1 1 0%'——断"均分"语义用计算 flexGrow
+        check(fItems.every((it) => cs(it).flexGrow === '1' && parseFloat(cs(it).flexBasis) === 0),
+          `Fixed → 条目 flexGrow=1、basis=0（flex '${fItems[0].style.flex}'）`);
+        const ws = fItems.map((it) => rect(it).width);
+        check(Math.max(...ws) - Math.min(...ws) <= 0.6 && near(ws[0], 120, 1),
+          `Fixed 均分：各 120（实测 ${ws.map((w) => w.toFixed(1)).join('/')}）`);
+        // Scrollable：按内容自然宽 + bar 超长可滚
+        const ts = buildTabs({}, () => Tabs.barMode(BarMode.Scrollable), ['长标签内容DD', 'S', 'M']);
+        await tick(40);
+        const sItems = itemsOf(ts);
+        check(sItems.every((it) => it.style.flex === '0 0 auto'),
+          `Scrollable → 条目 flex='0 0 auto'（'${sItems[0].style.flex}'）`);
+        check(sItems.every((it) => cs(it).whiteSpace === 'nowrap'),
+          `Scrollable → 条目 white-space=nowrap（'${cs(sItems[0]).whiteSpace}'）`);
+        check(cs(barOf(ts)).overflowX === 'auto', `Scrollable → bar overflow-x=auto（'${cs(barOf(ts)).overflowX}'）`);
+        const sws = sItems.map((it) => rect(it).width);
+        check(sws[0] > sws[1] + 8, `Scrollable 按内容宽：'长标签内容DD'(${sws[0].toFixed(1)}) > 'S'(${sws[1].toFixed(1)})`);
+        check(!warns().some((w) => /Tabs\.barMode 未实现/.test(w)), 'barMode 已实现、不再进"未实现"诊断');
+      });
+
+      // ══════════ W4.3 barWidth / barHeight / barOverlap ══════════
+      await group('W4.3 尺寸与悬浮', async () => {
+        // 横排：barHeight 作用高（真机 userDefinedIdealSize 直写高，不随轴交换）
+        const th = buildTabs({}, () => Tabs.barHeight(72), ['H0', 'H1']);
+        await tick(40);
+        check(near(rect(barOf(th)).height, 72, 0.5),
+          `barHeight(72) → bar 高 ${rect(barOf(th)).height.toFixed(1)}（期望 72）`);
+        // 横排缺省高 = 56vp（d.ts tabs.d.ts:1148-1150）
+        const td = buildTabs({}, undefined, ['D0', 'D1']);
+        await tick(40);
+        check(near(rect(barOf(td)).height, 56, 0.5),
+          `横排缺省 bar 高 56（实测 ${rect(barOf(td)).height.toFixed(1)}）`);
+        // 竖排：barWidth 作用宽（列厚），缺省 56vp（d.ts tabs.d.ts:1113-1117）
+        const tw = buildTabs({}, () => { Tabs.vertical(true); Tabs.barWidth(80); }, ['W0', 'W1']);
+        await tick(40);
+        check(near(rect(barOf(tw)).width, 80, 0.5),
+          `vertical+barWidth(80) → bar 宽 ${rect(barOf(tw)).width.toFixed(1)}（期望 80）`);
+        // barOverlap(true)：bar absolute 悬浮 + 内容区不避让（tabs_layout_algorithm.cpp:898-940
+        // overlap 分支不减 bar 尺寸）
+        const to = buildTabs({}, () => Tabs.barOverlap(true), ['O0', 'O1']);
+        await tick(40);
+        const barO = barOf(to);
+        check(cs(barO).position === 'absolute' && cs(barO).zIndex !== 'auto',
+          `barOverlap → bar 定位 absolute（'${cs(barO).position}'）`);
+        check(near(rect(contentOf(to)).top, rect(to).top, 0.5) && near(rect(barO).top, rect(to).top, 0.5),
+          `悬浮且内容不避让：内容区顶 ${rect(contentOf(to)).top.toFixed(1)} = bar 顶 ${rect(barO).top.toFixed(1)} = 容器顶 ${rect(to).top.toFixed(1)}`);
+        check(cs(barO).backdropFilter.includes('blur'),
+          `模糊近似 backdrop-filter（'${cs(barO).backdropFilter}'）`);
+        check(warns().some((w) => w.includes('barOverlap')),
+          'barOverlap 的模糊近似已记 layoutWarnings（不静默）');
+      });
+
+      // ══════════ W4.4 回调：onTabBarClick / onSelected / onUnselected ══════════
+      await group('W4.4 回调', async () => {
+        const log = [];
+        const ctrl = new TabsController();
+        const tc = buildTabs({
+          controller: ctrl,
+        }, () => {
+          Tabs.onChange((i) => log.push('change:' + i));
+          Tabs.onTabBarClick((i) => log.push('click:' + i));
+          Tabs.onSelected((i) => log.push('sel:' + i));
+          Tabs.onUnselected((i) => log.push('unsel:' + i));
+        }, ['T0', 'T1', 'T2']);
+        await tick(40);
+        check(log.length === 0, `初始渲染不发任何回调（log=[${log.join(',')}]）`);
+        // 点击 tab 2 的事件序（真机）：onTabBarClick(2) 同步先发（tab_bar_pattern.cpp:1597）
+        // → onSelected(2) → onUnselected(0)（swiper_pattern.cpp:4389-4390，成对、selected=新/unselected=旧）
+        // → onChange(2)（索引落定时，swiper_pattern.cpp:326-345）
+        itemsOf(tc)[2].click();
+        await tick(20);
+        check(JSON.stringify(log) === JSON.stringify(['click:2', 'sel:2', 'unsel:0', 'change:2']),
+          `点击 tab2 事件序：${log.join(' → ')}`);
+        // 控制器切换也发 selected/unselected（无 click）——tabs.d.ts:1317-1327/1359-1367 场景 2
+        log.length = 0;
+        ctrl.changeIndex(0);
+        await tick(20);
+        check(JSON.stringify(log) === JSON.stringify(['sel:0', 'unsel:2', 'change:0']),
+          `changeIndex(0) 事件序（无 click）：${log.join(' → ')}`);
+        // 同索引点击：只发 onTabBarClick（OnIndexChange 的 oldIndex != targetIndex 前置，
+        // swiper_pattern.cpp:339；selected/unselected 去重同理）
+        log.length = 0;
+        itemsOf(tc)[0].click();
+        await tick(20);
+        check(JSON.stringify(log) === JSON.stringify(['click:0']),
+          `同索引点击只发 onTabBarClick：${log.join(' → ')}`);
+        check(!warns().some((w) => /Tabs\.(onTabBarClick|onSelected|onUnselected) 未实现/.test(w)),
+          '三回调已实现、不再进"未实现"诊断（也不落死监听）');
+        // 与 onChange 的关系：两者都发，onChange 是内容切换语义（tabs.d.ts:1284-1294 场景 4 同源）
+        check(cs(tc).flexDirection === 'column' && rect(barOf(tc)).width > 0,
+          '回调不干扰默认横排布局');
+      });
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>
