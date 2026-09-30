@@ -14,11 +14,18 @@
  *   断言"也算进去。**唯一权威是运行期真的 emit 出来的 PASS 行**，所以计数由 runner 落盘。
  *
  * 用法：
- *   node tools/assert-counts.mjs --browser  <counts.tsv>   校验浏览器端
- *   node tools/assert-counts.mjs --electron <counts.tsv>   校验 Electron 端
- *   node tools/assert-counts.mjs --report   <counts.tsv>   只打印解析到的"文档声明"（查解析规则用）
+ *   node tools/assert-counts.mjs --browser  <counts.tsv>               校验浏览器端
+ *   node tools/assert-counts.mjs --electron <counts.tsv>               校验 Electron 端
+ *   node tools/assert-counts.mjs --browser  <counts.tsv> --overrides <file>
+ *   node tools/assert-counts.mjs --report   <counts.tsv>               只打印解析到的"文档声明"（查解析规则用）
  *
  *   counts.tsv 每行： <用例名>\t<实测 PASS 行数>      （由 run.sh / electron/run.sh 生成）
+ *
+ * --overrides（R144）：跨引擎矩阵用的「分端期望值表」——某些用例存在互斥条件分支，
+ *   不同引擎各走一支、emit 的 PASS 数天然不同（实例：realfs 的 OPFS 探测——
+ *   Chromium headless 卡 200ms 失败 / Gecko 8ms 成功，分支互斥差 1 条）。
+ *   文件每行：<用例名>\t<该端期望值>\t<理由>（# 开头为注释）。命中覆盖的用例按
+ *   覆盖值核对，偏差同样红——覆盖是「带理由的期望」，不是豁免；打印时显式标注。
  *
  * 文档声明的两种**规范写法**（改文档时照这两种写，别的写法守不住）：
  *   ① 同行：`bash run.sh <用例>` …（N 条断言…）          —— 数字与用例名必须在同一行
@@ -46,9 +53,26 @@ const COUNT_MEANING_RE = /条断言失败|条红|条断言被|条断言没牙齿
 const argv = process.argv.slice(2);
 const mode = argv[0];
 const file = argv[1];
+let overridePath = null;
+let label = null;
+for (let i = 2; i < argv.length; i++) {
+  if (argv[i] === '--overrides') { overridePath = argv[i + 1]; i++; }
+  else if (argv[i] === '--label') { label = argv[i + 1]; i++; }
+}
 if (!['--browser', '--electron', '--report'].includes(mode) || !file) {
-  console.error('用法: node tools/assert-counts.mjs --browser|--electron|--report <counts.tsv>');
+  console.error('用法: node tools/assert-counts.mjs --browser|--electron|--report <counts.tsv> [--overrides <file>] [--label <端名>]');
   process.exit(2);
+}
+
+// ── 分端期望值覆盖（R144，可选）──
+// 值域支持逗号分隔集合：`realfs\t20,21\t理由` = 20 或 21 都算过（时序敏感的互斥分支
+// 两态皆合法，实测见 firefox/assert-overrides.tsv）；集合之外的值仍然红。
+const overrides = new Map();
+if (overridePath) {
+  for (const line of fs.readFileSync(overridePath, 'utf8').split('\n')) {
+    const m = line.match(/^([a-z][a-z0-9-]*)\t([\d,]+)\t/);
+    if (m) overrides.set(m[1], m[2].split(',').map(Number));
+  }
 }
 
 // ── 实测值（runner 落盘）──
@@ -107,14 +131,20 @@ if (mode === '--report') {
   process.exit(ambiguous.length ? 1 : 0);
 }
 
-const end = mode === '--browser' ? '浏览器' : 'Electron';
+const end = label || (mode === '--browser' ? '浏览器' : 'Electron');
 const bad = [];
-let checked = 0, skipped = 0;
+let checked = 0, skipped = 0, overridden = 0;
 for (const d of decls) {
   const have = measured.get(d.caseName);
   if (have === undefined) { skipped++; continue; }
   checked++;
-  if (have !== d.declared) bad.push({ ...d, have });
+  const expected = overrides.get(d.caseName);
+  if (expected !== undefined) {
+    overridden++;
+    if (!expected.includes(have)) bad.push({ ...d, have, declared: expected.join('|'), how: d.how + '，覆盖值' });
+  } else if (have !== d.declared) {
+    bad.push({ ...d, have });
+  }
 }
 
 if (ambiguous.length) {
@@ -138,4 +168,5 @@ if (bad.length) {
 
 if (bad.length || ambiguous.length) process.exit(1);
 console.log(`✅ 断言计数守门（${end}端）：核对 ${checked} 处声明，全部与实测一致`
+  + (overridden ? `（其中 ${overridden} 处按分端覆盖值核对）` : '')
   + (skipped ? `（另有 ${skipped} 处因本次未跑该用例而跳过）` : ''));

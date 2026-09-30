@@ -485,15 +485,15 @@ node tools/extract.mjs fixtures/pages/NewPage.ts build/newpage.js --cjs --regist
 ## 11. 提交前检查清单
 
 ```bash
-# 1. 一条命令做完所有验收（preflight + 生成物一致 + 浏览器 + Electron）
-npm run check          # 或 bash tools/check-all.sh
+# 1. 一条命令做完所有验收（preflight + 生成物一致 + 浏览器 + Electron + Firefox）
+npm run check          # 或 bash tools/check-all.sh（9 步；firefox/geckodriver 缺席时该步显式跳过）
 npm run check:quick    # 跳过 Electron
 
 # 2. 统计与文档一致（改了覆盖范围就更新 ARCHITECTURE.md §6 的引用块）
 node tools/stats.mjs
 
 # 3. 新增/修改的脚本有可执行位（preflight 会查，这里再确认一次）
-ls -l run.sh electron/run.sh tools/*.mjs tools/*.py tools/*.sh
+ls -l run.sh electron/run.sh firefox/run.sh tools/*.mjs tools/*.py tools/*.sh
 
 # 4. 没改 fixtures（除非工具链升级）
 git status --short fixtures/

@@ -9,7 +9,16 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R143 更新通道文档化 + ROADMAP 行修复**——初版更新通道做在应用内
+- 上次切片：**R144 Firefox(Gecko) 跨引擎全矩阵入仓**——企业级标准检查问出
+  "矩阵一直 Chromium-only"→ 3 页冒烟后正式化第三验证端：`firefox/run.sh`（geckodriver
+  定位/缺席显式跳过）+ `tools/ff-plan.py`（解析 run.sh all 块=单一事实来源）+
+  `tools/ff-matrix.py`（geckodriver 环回 HTTP 执行器）。选型实录：Fx 156 BiDi 无
+  script.* → 经典 WebDriver；判定 = title 超时回退 #result（focusdemo 不设 title）。
+  实测 75/75 ALL PASS 零真失败；唯一计数差 realfs 20/21 摆动 = OPFS 探测时序敏感
+  分支（两端 backend 同 localStorage）→ assert-counts 增 `--overrides`（分端期望
+  值表、值域集合、偏差仍红，firefox/assert-overrides.tsv 带理由）。门禁 8→9 步
+  （6b firefox 条件步）；验收 75/75 + 守门 129 处全对（3 处覆盖值）。
+  更早：**R143 更新通道文档化 + ROADMAP 行修复**——初版更新通道做在应用内
   （updater.js：清单+下载+sha256 原子 rename）——Mimosa 深扫抓 4 高危（SSRF 入口/
   URL 派生路径穿越）无法收敛为 0 findings，**按纪律改道：更新通道=部署侧 shell 四步**
   （清单 curl→版本比对→下载+sha256sum -c 对账→原子 mv→UPGRADE 升级四步解包），

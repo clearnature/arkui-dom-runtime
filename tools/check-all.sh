@@ -80,6 +80,21 @@ else
   step "electron (electron/run.sh all)" bash electron/run.sh all
 fi
 
+# ── 6b. Firefox(Gecko) 用例（R144 第三验证端：同用例表跨引擎复跑）──
+# 兼容性加分端：主验收基准是 Electron/Chromium（docs/ARCHITECTURE §1 三层一致性）。
+# firefox 或 geckodriver 缺席时显式跳过并声明原因（同 supply 步纪律，绝不冒充通过）；
+# 驱动就位时本步自动转真（geckodriver ~3MB 二进制不入库，定位顺序见 firefox/run.sh）。
+if command -v firefox >/dev/null 2>&1 \
+   && { [ -n "${FF_GECKODRIVER:-}" ] || command -v geckodriver >/dev/null 2>&1 \
+        || [ -x "$HOME/.local/bin/geckodriver" ] || [ -x /data/tmp/geckodriver ]; }; then
+  step "firefox (firefox/run.sh all)" bash firefox/run.sh all
+else
+  printf '════ firefox (firefox/run.sh all) ════\n'
+  printf '  ⏭  跳过（原因：本机缺 firefox 或 geckodriver —— Firefox/Gecko 为兼容性加分端，\n'
+  printf '      主验收基准=Electron/Chromium；补齐后本步自动转真）\n'
+  SKIPPED+=("firefox (矩阵)")
+fi
+
 # ── 7. 统计（不是验收条件，只留档给文档引用）──
 printf '════ 统计（留档，不影响退出码）════\n'
 node tools/stats.mjs | tee "$LOGDIR/stats.txt" | sed 's/^/  /'
@@ -91,6 +106,7 @@ node tools/stats.mjs | tee "$LOGDIR/stats.txt" | sed 's/^/  /'
 # 绝不静默跳过、更不伪造 ✅。一旦将来引入 lock 文件，本步自动变成真审计：
 #   --omit=dev         只审生产依赖（devDependencies 的漏洞不算红）
 #   --audit-level=high 发现 high/critical 漏洞即退出非 0 → 按 step() 记败，门禁变红
+# （R144 起 gate 共 9 步：本步序号不变，前面 6b 插入了 firefox 矩阵步。）
 if [ -f "$ROOT/package-lock.json" ]; then
   step "supply (npm audit)" npm audit --omit=dev --audit-level=high
 else
