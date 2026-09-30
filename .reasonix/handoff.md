@@ -17,7 +17,8 @@
   实测 75/75 ALL PASS 零真失败；唯一计数差 realfs 20/21 摆动 = OPFS 探测时序敏感
   分支（两端 backend 同 localStorage）→ assert-counts 增 `--overrides`（分端期望
   值表、值域集合、偏差仍红，firefox/assert-overrides.tsv 带理由）。门禁 8→9 步
-  （6b firefox 条件步）；验收 75/75 + 守门 129 处全对（3 处覆盖值）。
+  （6b firefox 条件步）；验收 75/75 + 守门 129 处全对（3 处覆盖值）；门禁 9 步全绿
+  （9c60fcd，Mimosa 0 findings seal sha256:57bb4e87…）。
   更早：**R143 更新通道文档化 + ROADMAP 行修复**——初版更新通道做在应用内
   （updater.js：清单+下载+sha256 原子 rename）——Mimosa 深扫抓 4 高危（SSRF 入口/
   URL 派生路径穿越）无法收敛为 0 findings，**按纪律改道：更新通道=部署侧 shell 四步**
