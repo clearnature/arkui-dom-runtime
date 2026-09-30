@@ -30,3 +30,6 @@ kernel_stub.h
 
 # 统一契约套件编译产物（run-contract.sh 可再生）
 kernel/contract_common
+
+# python 字节码（ff-matrix 内嵌 serve.py 时产生）
+__pycache__/
