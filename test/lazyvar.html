@@ -112,14 +112,10 @@
         // 这条同时是"变高偏移算对了"和"锚定生效"的判据：
         // 目标在第 100 位，前 100 项里 50 项高 50、50 项高 120 → 偏移必须精确到个位；
         // 若没做锚定，上方 overscan 项被实测后视口顶部会整体漂移（交替高度下可达数百 px）
-        // R149：高 DPI 移动设备（devicePixelRatio>1.5）字体度量不同 → 部分项真实渲染更高，
-        // scrollToIndex 估高与实测的累计差实测 266px——已知移动移植缺口（ROADMAP R149 记档，
-        // runtime 锚定补偿待修）；桌面级 DPR 保持个位精度判据。
-        const hiDpi = window.devicePixelRatio > 1.5;
-        check(hiDpi ? (rel > -2 && rel < 800) : Math.abs(rel) <= 2,
-          hiDpi
-            ? `scrollToIndex(100) 后目标已渲染且在首视口内（高 DPI 估高漂移缺口 R149：offsetTop - scrollTop = ${rel.toFixed(1)}）`
-            : `scrollToIndex(100) 后目标在视口顶部（offsetTop - scrollTop = ${rel.toFixed(1)}，容差 2）`);
+        // R150 复测：Android WebView（DPR 2.625）rel 实测 0.2px——R149 的 266.4 为瞬态
+        // （矩阵运行中 reverse 隧道错误页恢复后的半初始化态），严格判据恢复且两端通用。
+        check(Math.abs(rel) <= 2,
+          `scrollToIndex(100) 后目标在视口顶部（offsetTop - scrollTop = ${rel.toFixed(1)}，容差 2）`);
         const info = __arkui_dom_lazyInfo(holderB);
         check(info && info.window[0] <= 100 && info.window[1] > 100,
           `自省窗口 [${info && info.window.join(',')}] 覆盖第 100 项`);

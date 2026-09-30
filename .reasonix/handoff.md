@@ -9,7 +9,14 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R149 Android 第五端入阵**（System WebView 移动 Blink）——zcode
+- 上次切片：**R150 lazyvh 锚定漂移修复**（R149 记档缺口 closure）——设备逐项量测
+  推翻"锚定失效"：窗口内锚定精确（0.2px），266.4 出在**估高分支落点**（仅前 8 项
+  实测时 offsetOf 用估高 advance ~87.1/项 vs 实测 ~90.4，92 项累计 −266px；锚定
+  只管窗口内测量位移，结构性管不到区间级估高差；桌面估高=真值故四端测不出）。
+  修复=layout.js scrollToIndex 估高分支 flush 后目标已入窗则按真实 offsetTop
+  二次对齐（桌面 delta≈0）；hiDpi 放宽断言恢复严格 ±2。Android 3 连过 22 条+
+  桌面/Gecko/WebKit 全绿。
+  更早：**R149 Android 第五端入阵**（System WebView 移动 Blink）——zcode
   android-emulator 插件协同（MCP 本会话未投影→CLI 直驱；SDK 用户态装 /data/android-sdk，
   许可用户本人接受）。**链路三坑**：adb reverse（NAT 不可靠）/playwright connectOverCDP
   不支持 WebView→原始 CDP ws/Page.navigate 应答永不来→fire-and-forget+每次求值新连接。

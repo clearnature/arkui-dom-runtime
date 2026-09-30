@@ -3444,6 +3444,21 @@
         const want = typeof meta.offsetOf === 'function' ? meta.offsetOf(i) : meta.estItemH * i;
         el.scrollTop = Math.min(want, max);
         if (typeof meta.flush === 'function') meta.flush();      // 同步刷新窗口（确定性）
+        // R150：估高落点的一次性校正。估高偏移来自【未渲染区间的估计 advance】，与真实
+        // 累计高在变高/高 DPI 列表下可差数百 px（实测 Android DPR2.6 交替高列表偏 266px——
+        // 估高 ~87/项 vs 实测 ~90.4/项），锚定只补偿窗口内的测量位移、管不到这一段。
+        // flush 后目标多半已入窗口 → 按真实 offsetTop 二次对齐（桌面估高精确 → delta≈0，
+        // 无行为变化）；仍未入窗（极端估偏）则保留估高落点。
+        const win2 = meta.window;
+        const k2 = win2 ? i - win2[0] : -1;
+        if (win2 && k2 >= 0 && k2 <= win2[1] - win2[0]) {
+          const items2 = el.querySelectorAll('[data-arkui-comp="ListItem"], [data-arkui-comp="FlowItem"]');
+          const t2 = /** @type {HTMLElement|undefined} */ (items2[k2]);
+          if (t2) {
+            const max2 = Math.max(0, el.scrollHeight - el.clientHeight);
+            el.scrollTop = Math.min(t2.offsetTop, max2);
+          }
+        }
         el.dispatchEvent(new Event('scroll'));
       } else {
         layoutWarnings.push(`Scroller.scrollToIndex(${i}): 目标不存在且非虚拟列表`);
