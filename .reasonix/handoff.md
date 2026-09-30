@@ -16,7 +16,8 @@
   前缀 firefox 驱动不认）。**又抓真 runtime 缺口**：input.js Checkbox.create 丢弃
   group（batch-input.js 注释自曝"补一行即生效"没做）→ 组员带不动组状态 → 补落
   data-arkui-checkbox-group。验收 batchinputdemo 14 条 / motiondemo 23 条（一次过，
-  非盲写页）三端 ALL PASS；三端矩阵 80/94/80。
+  非盲写页）三端 ALL PASS；三端矩阵 80/94/80；门禁 9 步全绿（6c1b94e，Mimosa
+  0 findings seal sha256:03b00b0f…）。
   更早：**R146 孤儿页腐化修复**——batchlayout/navshimdemo 修完入三端矩阵
   （78/92/78）。诊断颠覆 R145 判定：live DOM 转储证明不是 runtime 腐化，是
   **R66 页面盲写从未运行**——①@State→DOM 异步重渲染断言却同步读（补 await tick）；
