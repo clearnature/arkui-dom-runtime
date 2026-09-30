@@ -17,7 +17,8 @@
   静默跳过——先修后进**），batchinput/Motion 判可实现未驱动（main_pages 未登记
   无 fixture）；③ firefox 驱动 title+#result 双通道早退（focusdemo 26.8s→3.8s）
   + 解析漂移哨兵（计划数 vs 独立行计数，首版 TSV 比对的新鲜度缺陷被单跑场景抓出）；
-  ④ WebKit 评估记未来切片（无二进制，~120MB 下载+GTK 依赖）。
+  ④ WebKit 评估记未来切片（无二进制，~120MB 下载+GTK 依赖）。门禁 9 步全绿
+  （d39a2af，Mimosa 0 findings seal sha256:d6ca431b…）。
   更早：**R144 Firefox(Gecko) 跨引擎全矩阵入仓**——企业级标准检查问出
   "矩阵一直 Chromium-only"→ 3 页冒烟后正式化第三验证端：`firefox/run.sh`（geckodriver
   定位/缺席显式跳过）+ `tools/ff-plan.py`（解析 run.sh all 块=单一事实来源）+
