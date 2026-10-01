@@ -448,6 +448,159 @@
         check(evictedOf(t12c).every((v) => v === 'false'),
           `未设 cachedMaxCount → 全部缓存（实测 ${evictedOf(t12c).join(',')}）`);
       });
+      // ══════════ R155-B 新增 ══════════
+      // G13 edgeEffect 三态（tabs.d.ts:1273-1282 缺省 EdgeEffect.Spring；枚举序 enums.d.ts:1494
+      // Spring=0/Fade=1/None=2，本 SDK 枚举无 Shadow 成员——'shadow' 为前向扩展值=Spring 行为
+      // + data-shadow 标记；行为分支在 builtin.js attachPagedDrag 的 edgeEffect 槽位）。
+      // 时长纪律：run.sh 给本页的虚拟时钟预算 8000ms、现有 46 条已吃 ~5.8s——本组等待收在
+      // 450ms（弹簧振幅 ~110px、衰减率 15/s → 收敛 ≤0.4s，见 builtinSpringRebound 参数）。
+      await group('G13 edgeEffect 三态', async () => {
+        // ① 缺省 spring 回归：第 0 页往右拖（界外）→ 摩擦跟手 + 松手冲激回弹（R125/R126 现状）
+        const t13a = buildTabs({}, () => {}, ['a0', 'a1']);
+        await tick(40);
+        const ce13a = contentElOf(t13a);
+        const pg13a = () => contentsOf(t13a)[0];
+        clock(true);
+        fakeNow = 100;
+        down(ce13a, 270, 100);
+        fakeNow += 100;
+        move(ce13a, 300, 100);          // raw +30
+        fakeNow += 100;
+        move(ce13a, 360, 100);          // raw +90 → 界外方向（第 0 页往右拖）
+        const offDrag = parseFloat((/translateX\(([-\d.]+)px\)/.exec(pg13a().style.transform || '') || [])[1]);
+        check(offDrag > 0 && offDrag < 90 && t13a.dataset.edgeEffect === 'spring',
+          `缺省 spring：越界摩擦跟手 ${offDrag}px ∈ (0,90)（dataset=${t13a.dataset.edgeEffect}）`);
+        up(ce13a, 360, 100);
+        clock(false);
+        const offFly = parseFloat((/translateX\(([-\d.]+)px\)/.exec(pg13a().style.transform || '') || [])[1]);
+        check(Math.abs(offFly - offDrag) < 0.5 && offFly > 0,
+          `缺省 spring：松手冲激回弹在途（transform 仍在途 ${offFly}px，未被直接收口）`);
+        await tick(450);
+        check(pg13a().style.transform === '' && cs(pg13a()).display === 'block',
+          `缺省 spring：回弹收口还原（transform '${pg13a().style.transform}'，仍页 0 显示）`);
+        // ② EdgeEffect.None：越界硬停（不摩擦跟手）+ 松手直接回边界（无冲激弹簧）
+        const t13b = buildTabs({}, () => { Tabs.edgeEffect('none'); }, ['b0', 'b1']);
+        await tick(40);
+        const ce13b = contentElOf(t13b);
+        const pg13b = () => contentsOf(t13b)[0];
+        check(t13b.dataset.edgeEffect === 'none',
+          `edgeEffect('none') 进状态与 dataset（'${t13b.dataset.edgeEffect}'）`);
+        down(ce13b, 270, 100);
+        move(ce13b, 360, 100);          // raw +90 界外：None=到边硬停（swiper_pattern.cpp:302
+                                        //   SetCanOverScroll(effect==SPRING)，非 Spring 越界钳边界）
+        check(pg13b().style.transform === 'translateX(0px)',
+          `None：越界拖拽硬停（transform '${pg13b().style.transform}'，不摩擦跟手）`);
+        up(ce13b, 360, 100);
+        check(pg13b().style.transform === '' && pg13b().style.position === '',
+          `None：松手直接回边界并同步收口（transform '${pg13b().style.transform}'、position `
+          + `'${pg13b().style.position}'，无弹簧在途）`);
+        check(cs(pg13b()).display === 'block' && cs(contentsOf(t13b)[1]).display === 'none',
+          'None：回弹不翻页（仍页 0 显示）');
+        // ③ None 不影响正常翻页（flip 路径与到边行为分家）
+        down(ce13b, 360, 100);
+        move(ce13b, 140, 100);          // raw −220 ≥ 半页 180 → 翻页
+        up(ce13b, 140, 100);
+        await tick(420);                // 翻页过渡 270ms + 兜底 80ms
+        check(stateOf(t13b).index === 1 && cs(contentsOf(t13b)[1]).display === 'block',
+          `None：过半翻页路径不受影响（index=${stateOf(t13b).index}，页 1 显示）`);
+        // ④ EdgeEffect.shadow（前向扩展值）：Spring 行为 + data-shadow 标记，视觉记警告
+        const beforeShadow = warns().length;
+        const t13c = buildTabs({}, () => { Tabs.edgeEffect('shadow'); }, ['c0', 'c1']);
+        await tick(40);
+        check(t13c.dataset.shadow === 'true' && t13c.dataset.edgeEffect === 'shadow',
+          `shadow：data-shadow 标记 + 状态（'${t13c.dataset.shadow}'/'${t13c.dataset.edgeEffect}'）`);
+        check(warns().slice(beforeShadow).some((w) => w.includes('Tabs.edgeEffect(shadow)')),
+          'shadow：阴影无 DOM 对应物记警告（barOverlap backdrop-filter 先例）');
+        const ce13c = contentElOf(t13c);
+        down(ce13c, 270, 100);
+        move(ce13c, 360, 100);
+        const off13c = parseFloat((/translateX\(([-\d.]+)px\)/.exec(contentsOf(t13c)[0].style.transform || '') || [])[1]);
+        check(off13c > 0 && off13c < 90,
+          `shadow：行为同 Spring（越界摩擦跟手 ${off13c}px ∈ (0,90)）`);
+        up(ce13c, 360, 100);
+        await tick(450);
+        check(cs(contentsOf(t13c)[0]).display === 'block',
+          'shadow：松手冲激回弹收口（页 0 仍显示）');
+        // ⑤ 非法枚举：警告 + 保持缺省 spring（大小写敏感照 barMode 先例——'None' 大写形态
+        //   设备上不存在，同样落"未实现"警告，G8 依赖该文案）
+        const beforeIll = warns().length;
+        const t13d = buildTabs({}, () => {
+          Tabs.edgeEffect(/** @type {any} */ (99));
+        }, ['d0', 'd1']);
+        check(warns().slice(beforeIll).some((w) => w.includes('Tabs.edgeEffect 未实现入参 99'))
+          && t13d.dataset.edgeEffect === 'spring',
+          `非法枚举 99：警告 + 保持缺省 spring（dataset=${t13d.dataset.edgeEffect}）`);
+        // ⑥ 第二参 options{alwaysEnabled}：记录面（state + data-edge-always-enabled），
+        //    行为无对应如实记警告（本 SDK Tabs.edgeEffect 签名单参，options 属 Scrollable 通用面）
+        const beforeOpt = warns().length;
+        const t13e = buildTabs({}, () => {
+          Tabs.edgeEffect('none', { alwaysEnabled: true });
+        }, ['e0', 'e1']);
+        check(t13e.dataset.edgeAlwaysEnabled === 'true'
+          && warns().slice(beforeOpt).some((w) => w.includes('alwaysEnabled=true')),
+          `options.alwaysEnabled=true 记录（data-edge-always-enabled='`
+          + `${t13e.dataset.edgeAlwaysEnabled}'）+ 无生效面记警告`);
+      });
+
+      // ══════════ G14 Swiper effectMode/edgeEffect 接线（swiper.d.ts:1805-1823 真名
+      // effectMode，since 8，缺省 Spring，仅 loop=false 生效；edgeEffect 为同路别名）══════════
+      await group('G14 Swiper effectMode/edgeEffect', async () => {
+        const C14 = globalThis.Swiper;
+        const VSP14 = globalThis.ViewStackProcessor;
+        const mkSwiper = (/** @type {(() => void)=} */ setup) => {
+          const snap = VSP14 ? VSP14.snapshot() : null;
+          const node = C14.create();
+          C14.loop(false);              // effectMode 仅 loop=false 生效（d.ts JSDoc 原文）
+          if (setup) setup();
+          C14.pop();
+          if (VSP14) VSP14.restore(snap);
+          node.style.width = '360px';
+          node.style.height = '120px';
+          root.appendChild(node);
+          const cst = node.__swiperState;
+          for (let k = 0; k < 2; k++) {
+            const d = document.createElement('div');
+            d.textContent = 'E' + k;
+            d.style.height = '120px';
+            node.appendChild(d);
+          }
+          cst.entries = [...node.children].filter((c) => !c.hasAttribute('data-arkui-swiper-indicator'))
+            .map((/** @type {HTMLElement} */ c) => { c.setAttribute('data-arkui-swiper-page', ''); return { el: c }; });
+          cst.count = cst.entries.length;
+          cst.entries.forEach((/** @type {any} */ e, /** @type {number} */ k) => { if (k) e.el.style.display = 'none'; });
+          return node;
+        };
+        // ① effectMode(2 /* EdgeEffect.None */ 序数)：到边硬停 + 松手直接回边界
+        const s14 = mkSwiper(() => { C14.effectMode(2); });
+        await tick(40);
+        const sp14 = () => s14.__swiperState.entries[0].el;
+        check(s14.dataset.edgeEffect === 'none',
+          `effectMode(2)：枚举序数 None 进 dataset（'${s14.dataset.edgeEffect}'）`);
+        down(s14, 270, 30);
+        move(s14, 360, 30);             // raw +90 界外（第 0 页往右拖，loop=false）
+        check(sp14().style.transform === 'translateX(0px)',
+          `Swiper None：越界硬停（transform '${sp14().style.transform}'）`);
+        up(s14, 360, 30);
+        check(sp14().style.transform === '',
+          `Swiper None：松手直接回边界（transform '${sp14().style.transform}'）`);
+        check(s14.__swiperState.index === 0 && cs(sp14()).display === 'block',
+          'Swiper None：不翻页（index=0，页 0 显示）');
+        // ② edgeEffect 别名同路（shadow 前向扩展值）
+        VSP14.push(s14);
+        C14.edgeEffect('shadow');
+        VSP14.pop();
+        check(s14.dataset.shadow === 'true' && s14.__swiperState.edgeEffect === 'shadow',
+          `edgeEffect('shadow') 别名同路（data-shadow='${s14.dataset.shadow}'）`);
+        // ③ 非法入参：警告 + 保持现值（缺省 spring）
+        const beforeS14 = warns().length;
+        const s14b = mkSwiper(null);
+        VSP14.push(s14b);
+        C14.edgeEffect(/** @type {any} */ (99));
+        VSP14.pop();
+        check(warns().slice(beforeS14).some((w) => w.includes('Swiper.edgeEffect 未实现'))
+          && s14b.__swiperState.edgeEffect === 'spring' && s14b.dataset.edgeEffect === 'spring',
+          `非法枚举 99：警告 + 保持缺省 spring（state=${s14b.__swiperState.edgeEffect}）`);
+      });
     } catch (e) {
       allPass = false;
       lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));

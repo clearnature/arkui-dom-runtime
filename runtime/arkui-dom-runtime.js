@@ -1624,6 +1624,22 @@
   }
 
   /**
+   * EdgeEffect api 槽位读取（R155-B）。返回 'spring'|'none'|'shadow'；钩子未声明（R125-154
+   * 的旧调用方）→ 缺省 'spring'，与既有"越界摩擦 + 冲激回弹"行为一致（向后兼容）。
+   * 真机语义（swiper_pattern.cpp）：:302 SetCanOverScroll(effect==SPRING)——只有 Spring 允许
+   * 越界；:3341-3345 非 SPRING 越界拖拽钳到边界值；:4137-4166 CheckDragOutOfBoundary 的
+   * NONE 分支不 PlaySpringAnimation（位置停在边界）。Shadow 在本 SDK 的 EdgeEffect 枚举里
+   * 没有成员（enums.d.ts:1494 = Spring/Fade/None），按任务书收作前向扩展值=Spring 行为
+   * + 视觉标记（视觉 DOM 无对应，由调用方记 dataset/警告）。
+   * @param {any} api @returns {string} 'spring'|'none'|'shadow'
+   */
+  function builtinEdgeEffect(api) {
+    if (typeof api.edgeEffect !== 'function') return 'spring';
+    const v = api.edgeEffect();
+    return v === 'none' || v === 'shadow' ? v : 'spring';
+  }
+
+  /**
    * Swiper/Tabs 通用翻页拖拽。
    * sign 约定：sign=+1 表示"拖向下一页"（手指左移 raw<0），sign=-1 上一页。
    * @param {HTMLElement} el 容器（事件绑在这里）
@@ -1631,6 +1647,9 @@
    *   loop(): boolean; size(): number; duration(): number;
    *   finishCurve(): any（R154-B 曲线槽位，可选——返回 {kind:'css'|'spring', css} 或空=缺省
    *     ease-out；spring 族走 R126 弹簧解算器、不 respect duration，见 builtinFinishPagedDrag）;
+   *   edgeEffect(): string（R155-B 到边行为开关，可选——'spring'|'none'|'shadow'，缺省
+   *     'spring'。None=越界拖拽硬停（不摩擦跟手）+ 松手直接落位（无冲激弹簧，见
+   *     builtinFinishPagedDrag）；Spring/Shadow=现状摩擦跟手 + 冲激回弹）;
    *   pageAt(i): any; commit(i): void; gesture(i, extra): void; animStart(idx, target): void;
    *   animEnd(i): void }
    */
@@ -1694,7 +1713,13 @@
         && ((sign === -1 && idxNow === 0) || (sign === 1 && idxNow === api.count() - 1));
       let shown = raw;
       if (outward) {
-        shown = raw * calculateBuiltinFriction(Math.abs(raw) / size);
+        // R155-B：EdgeEffect.None = 到边硬停——真机只有 SPRING 允许越界
+        //（swiper_pattern.cpp:302 SetCanOverScroll(effect==SPRING)；:3341-3345 非 SPRING
+        // 越界位移钳到边界值）→ 位移恒 0、不乘摩擦跟手。Spring/Shadow（缺省）保持 R126
+        // 边界摩擦跟手（swiper_helper.cpp:566-578 原式）。
+        shown = builtinEdgeEffect(api) === 'none'
+          ? 0
+          : raw * calculateBuiltinFriction(Math.abs(raw) / size);
       }
       drag.shown = shown;
       const curEl = drag.cur.el;
@@ -1829,9 +1854,18 @@
       if (nbEl) nbEl.style.transform = axisX ? `translateX(${nbTarget}px)` : `translateY(${nbTarget}px)`;
     });
     if (!flip) {
-      // 回弹 = 弹簧（R126：真机 StartSpringMotion 同一物理，欠阻尼解析解）——弹簧无固定
-      // 时长，transitionend/duration 兜底对它无意义（transform 没挂 transition），二者并存
-      // 会提前收口、弹簧收尾再写 transform → 互斥，收口由解算器精度触发 settle
+      if (builtinEdgeEffect(api) === 'none') {
+        // R155-B：EdgeEffect.None 回弹 = 直接落位（无冲激弹簧）。真机 CheckDragOutOfBoundary
+        // 的 NONE 分支不 PlaySpringAnimation（swiper_pattern.cpp:4137-4166），位置钳在边界——
+        // transform 同步写边界值（0 位移）并立即收口，无弹簧帧/兜底定时器在途。
+        // Spring/Shadow（缺省）= 弹簧（R126：真机 StartSpringMotion 同一物理，欠阻尼解析解）
+        // ——弹簧无固定时长，transitionend/duration 兜底对它无意义（transform 没挂
+        // transition），二者并存会提前收口、弹簧收尾再写 transform → 互斥，收口由解算器
+        // 精度触发 settle。
+        springApply(0);
+        settle();
+        return;
+      }
       builtinSpringRebound(springApply, d.shown, 0, v0, settle);
       return;
     }
@@ -3636,12 +3670,13 @@
   // applyTabsBarGrid 注释里的 cpp 对照），移出本表走自有方法拦截。
   // R153-B：animationCurve（tabs.d.ts:1537-1551，Curve|ICurve 双缺省）/pageFlipMode
   //（tabs.d.ts:1885-1911，鼠标滚轮翻页）/cachedMaxCount（tabs.d.ts:1913-1958，TabsCacheMode）
-  // 同批移出本表。仍不覆盖的：
-  //   edgeEffect——拖拽越界的摩擦（pointermove 的 outward 分支）与回弹舞台（builtinSpringRebound）
-  //   都长在 builtin.js attachPagedDrag 内部，main.js 侧 api 面没有"关掉越界位移/回弹"的钩子；
-  //   需要动 builtin.js 才能真做（R153-B 所有权不含该文件，已列入报告"需要主会话配合的点"）。
+  // 同批移出本表。
+  // R155-B：edgeEffect（tabs.d.ts:1273-1282，since 12，缺省 EdgeEffect.Spring）移出本表走
+  // 自有方法拦截——到边行为开关真语义长在 builtin.js attachPagedDrag 的 edgeEffect 槽位
+  //（R153-B 记档的"需要动 builtin.js"欠账就此结清）。仍不覆盖的：
+  //   animationMode / onContentWillChange（认知/事件面，无 DOM 对应）与 customContentTransition。
   const TABS_UNSUPPORTED = new Set([
-    'animationMode', 'customContentTransition', 'edgeEffect', 'onContentWillChange',
+    'animationMode', 'customContentTransition', 'onContentWillChange',
   ]);
 
   // R153-B：interpolatingSpring(-1,1,228,30) 的内禀时长近似（ms）。ω=√(k/m)≈15.1 rad/s、
@@ -3709,8 +3744,13 @@
                                       //   （swiper_pattern.cpp:816：缺省 CACHE_BOTH_SIDE）
       cachedLru: [],                  // CACHE_LATEST_SWITCHED 的最近切换索引（容量 cachedMaxCount+1，
                                       //   swiper_pattern.cpp:838-842）
+      // R155-B EdgeEffect（tabs.d.ts:1273-1282 缺省 EdgeEffect.Spring；enums.d.ts:1494 枚举序
+      // Spring=0/Fade=1/None=2——本 SDK 枚举无 Shadow 成员，'shadow' 是任务书收的前向扩展值）：
+      edgeEffect: 'spring',           // 'spring'|'none'|'shadow'（builtin.js attachPagedDrag 槽位读取）
+      edgeAlwaysEnabled: null,        // EdgeEffectOptions.alwaysEnabled 记录面；null=未设（见 case 注释）
     });
     node.__tabsState = st;
+    node.dataset.edgeEffect = st.edgeEffect;   // R155-B：缺省面可观测（d.ts 缺省 Spring）
     node.style.display = 'flex';
     node.style.flexDirection = 'column';
     node.style.overflow = 'hidden';
@@ -3772,6 +3812,10 @@
           ? { kind: 'spring' }
           : { kind: 'css', css: st.animCurveCss })
         : null),
+      // R155-B：到边行为开关槽位（builtin.js builtinEdgeEffect 读取）——edgeEffect 属性
+      //（applyTabsAttr case 'edgeEffect'）落在 st.edgeEffect，拖拽越界分支（outward 摩擦）
+      // 与松手回弹分支按它分支化
+      edgeEffect: () => st.edgeEffect,
       /** @param {number} i */
       pageAt: (i) => (st.contents[i] ? st.contents[i].el : null),
       /** @param {number} i */
@@ -3985,6 +4029,58 @@
         applyTabsCache(st);
         return;
       }
+      // ── R155-B：edgeEffect（此前在 TABS_UNSUPPORTED，现真语义）──
+      case 'edgeEffect': {
+        // d.ts tabs.d.ts:1273-1282（since 12）：edgeEffect(edgeEffect: Optional<EdgeEffect>)，
+        // 缺省 EdgeEffect.Spring；真机到边行为：仅 Spring 允许越界（swiper_pattern.cpp:302
+        // SetCanOverScroll(effect==SPRING)），None 硬停（:3341-3345 越界钳边界、:4137-4166
+        // 松手不 PlaySpringAnimation）。枚举序 enums.d.ts:1494 = Spring=0/Fade=1/None=2
+        //（本 SDK 枚举【无 Shadow 成员】——common.d.ts:25290 的 "spring and shadow effects"
+        // 是 Scrollable 通用面的 JSDoc 散文；'shadow' 按任务书收作前向扩展值=Spring 行为
+        // + 视觉标记）。行为分支在 builtin.js attachPagedDrag 的 edgeEffect 槽位
+        //（pointermove outward 硬停 / builtinFinishPagedDrag 的 !flip 直接落位）。
+        const prev = st.edgeEffect;
+        const parsed = parseEdgeEffect(value);
+        if (!parsed) {
+          // 未实现/非法入参同槽记警告（含 G8 依赖的 'Tabs.edgeEffect 未实现' 前缀——
+          // 传入面只认本运行时 api 值与枚举序数，大小写敏感照 barMode 先例）
+          layoutWarnings.push(`Tabs.edgeEffect 未实现入参 ${JSON.stringify(value)}`
+            + `（本运行时已接 'spring'|'none'|'shadow' 与枚举序数 Spring=0/None=2；`
+            + 'Fade 未实现），保持现值');
+          return;
+        }
+        st.edgeEffect = parsed;
+        node.dataset.edgeEffect = parsed;
+        if (parsed === 'shadow') {
+          if (prev !== 'shadow') {
+            layoutWarnings.push('Tabs.edgeEffect(shadow)：真机 Shadow=Spring 行为叠加边界阴影'
+              + '视觉——阴影无 DOM 对应物，只落 data-shadow="true" 标记（barOverlap 的 '
+              + 'backdrop-filter 先例），行为与 Spring 相同（越界冲激回弹）');
+          }
+          node.dataset.shadow = 'true';
+        } else if (node.dataset.shadow) {
+          delete node.dataset.shadow;
+        }
+        // 第二参 options（EdgeEffectOptions{alwaysEnabled}，common.d.ts:25859）——【按任务书
+        // 面收】：本 SDK 的 Tabs.edgeEffect 签名没有 options（tabs.d.ts:1282 单参；带 options
+        // 的是 Scrollable 通用面 common.d.ts:25303）。记录 state+data-*，行为无对应如实记警告。
+        if (extra !== undefined && extra !== null) {
+          if (typeof extra === 'object' && typeof (/** @type {any} */ (extra)).alwaysEnabled === 'boolean') {
+            const ae = (/** @type {any} */ (extra)).alwaysEnabled;
+            if (st.edgeAlwaysEnabled !== ae) {
+              st.edgeAlwaysEnabled = ae;
+              node.dataset.edgeAlwaysEnabled = String(ae);
+              layoutWarnings.push(`Tabs.edgeEffect 第二参 options.alwaysEnabled=${ae}：仅记录`
+                + '（data-edge-always-enabled）——本运行时 Tabs 内容恒满容器，无"内容小于组件"'
+                + '的触发面可作用；且本 SDK Tabs.edgeEffect 签名无 options（tabs.d.ts:1282）');
+            }
+          } else {
+            layoutWarnings.push(`Tabs.edgeEffect 第二参 options=${JSON.stringify(extra)} `
+              + '不是 EdgeEffectOptions（缺 alwaysEnabled:boolean），已忽略');
+          }
+        }
+        return;
+      }
     }
   }
 
@@ -4044,6 +4140,24 @@
       }
       return null;
     }
+    return null;
+  }
+
+  // EdgeEffect 入参归一化（R155-B）：Tabs.edgeEffect 与 Swiper.effectMode/edgeEffect 共用。
+  // 已实现面 = 本运行时 api 字符串 'spring'|'none'|'shadow'（**精确小写**，大小写敏感照
+  // barMode 先例——不认 'None'/'Spring' 之类设备上不存在的字符串形态）+ 枚举序数 Spring=0 /
+  // None=2（enums.d.ts:1494；编译产物侧 EdgeEffect.X 就是序数）。返回 null = 未实现或非法
+  //（调用方记警告 + 保持现值）：1=Fade 是合法设备枚举但本片未实现；'shadow' 不是本 SDK
+  // 枚举成员（enums.d.ts:1494 只有 Spring/Fade/None），按任务书收作前向扩展值。
+  /** @param {any} v @returns {string|null} 'spring'|'none'|'shadow'，未实现/非法为 null */
+  function parseEdgeEffect(v) {
+    const r = resolveResource(v);
+    if (typeof r === 'number') {
+      if (r === 0) return 'spring';          // EdgeEffect.Spring
+      if (r === 2) return 'none';            // EdgeEffect.None
+      return null;                           // 1=Fade（未实现）与其余越界序数
+    }
+    if (typeof r === 'string' && (r === 'spring' || r === 'none' || r === 'shadow')) return r;
     return null;
   }
 
@@ -4439,8 +4553,12 @@
   //   Swiper.pop();
   // 本 SDK 的签名是 Swiper(controller?: SwiperController)（不是 options 对象，与 Tabs 不同）——
   // index/loop/autoPlay 全是属性 setter。这条是编译器判错后才查出来的，别凭印象写。
+  // R155-B：effectMode（swiper.d.ts:1805-1823，since 8，缺省 EdgeEffect.Spring，仅 loop=false
+  // 生效）移出本表真语义——【Swiper 侧的 edgeEffect 属性真名是 effectMode】（common.d.ts:25303
+  // 的 edgeEffect 属 Scrollable 通用面，Swiper 没有）；'edgeEffect' 键按任务书作为同路别名一并
+  // 接入（SWIPER_ATTRS 两键同一处理器）。到边行为开关长在 builtin.js attachPagedDrag 槽位。
   const SWIPER_UNSUPPORTED = new Set([
-    'displayArrow', 'displayMode', 'displayCount', 'effectMode', 'nextMargin', 'prevMargin',
+    'displayArrow', 'displayMode', 'displayCount', 'nextMargin', 'prevMargin',
     'itemSpace', 'cachedCount', 'customContentTransition',
     'pageFlipMode', 'nestedScroll', 'maintainVisibleContentPosition', 'indicatorStyle', 'indicatorInteractive',
     'onContentDidScroll', 'onContentWillScroll',
@@ -4450,6 +4568,7 @@
   // （内置拖拽，attachPagedDrag）；此前它们与上述一并落 data-*。
   // R154-B 起再加两件：curve（拖拽释放翻页曲线槽位，走 SWIPER_ATTRS.curve → api.finishCurve）
   // 与 indicator（DotIndicator/DigitIndicator 真语义，走 SWIPER_ATTRS.indicator）。
+  // R155-B 再加 effectMode/edgeEffect（到边行为开关，走 SWIPER_ATTRS 两键 → api.edgeEffect）。
 
   let swiperSeq = 0;
   class SwiperController {
@@ -4501,6 +4620,10 @@
       //   向后兼容；d.ts 缺省是 interpolatingSpring(-1,1,328,34)（swiper.d.ts:1858），偏差已记录）；
       //   'css'/'spring'=curve(...) 已设（spring 族不 respect duration，走 R126 解算器）
       curveKind: 'default', curveCss: 'ease-out',
+      // R155-B EdgeEffect（effectMode，swiper.d.ts:1805-1823 缺省 EdgeEffect.Spring；枚举序
+      // enums.d.ts:1494 Spring=0/Fade=1/None=2）：'spring'|'none'|'shadow'（builtin.js
+      // attachPagedDrag 槽位读取；'shadow' 是前向扩展值，同 Tabs 口径）
+      edgeEffect: 'spring',
       // R125 内置拖拽
       vertical: false,                 // swiper.d.ts JSDoc：vertical 默认 false（横向）
       disableSwipe: false,
@@ -4508,6 +4631,7 @@
       animStart: [], animEnd: [], gestureSwipe: [],
     });
     node.__swiperState = st;
+    node.dataset.edgeEffect = st.edgeEffect;   // R155-B：缺省面可观测（effectMode 缺省 Spring）
     node.style.position = 'relative';
     node.style.overflow = 'hidden';
     node.style.display = 'block';
@@ -4529,6 +4653,9 @@
       duration: () => st.duration,
       /** @returns {any} R154-B 曲线槽位：Swiper.curve 声明的翻页过渡曲线（null=缺省 ease-out） */
       finishCurve: () => (st.curveKind === 'default' ? null : { kind: st.curveKind, css: st.curveCss }),
+      // R155-B：到边行为开关槽位（builtin.js builtinEdgeEffect 读取）——effectMode/edgeEffect
+      // 属性（SWIPER_ATTRS 两键同处理器）落在 st.edgeEffect，越界/回弹分支按它分支化
+      edgeEffect: () => st.edgeEffect,
       /** @param {number} i */
       pageAt: (i) => (st.entries[i] ? st.entries[i].el : null),
       /** @param {number} i */
@@ -4908,6 +5035,38 @@
   }
 
   // Swiper 的语义属性：值要进 state 而不是 DOM
+  // R155-B：effectMode/edgeEffect 共用处理器（label 只影响警告文案——effectMode 是
+  // swiper.d.ts:1823 的真名，edgeEffect 是任务书面的同名别名）。
+  /**
+   * @param {any} st @param {any} v @param {string} label
+   */
+  function applySwiperEdgeEffect(st, v, label) {
+    const prev = st.edgeEffect;
+    const parsed = parseEdgeEffect(v);
+    if (!parsed) {
+      layoutWarnings.push(`Swiper.${label} 未实现入参 ${JSON.stringify(v)}`
+        + `（本运行时已接 'spring'|'none'|'shadow' 与枚举序数 Spring=0/None=2；`
+        + 'Fade 未实现），保持现值');
+      return;
+    }
+    st.edgeEffect = parsed;
+    st.node.dataset.edgeEffect = parsed;
+    if (parsed === 'shadow') {
+      if (prev !== 'shadow') {
+        layoutWarnings.push(`Swiper.${label}(shadow)：真机 Shadow=Spring 行为叠加边界阴影`
+          + '视觉——阴影无 DOM 对应物，只落 data-shadow="true" 标记（barOverlap 的 '
+          + 'backdrop-filter 先例），行为与 Spring 相同（越界冲激回弹）');
+      }
+      st.node.dataset.shadow = 'true';
+    } else if (st.node.dataset.shadow) {
+      delete st.node.dataset.shadow;
+    }
+    // d.ts "only when loop is false"：越界分支本就被 builtin.js 的 outward 判定（!loop &&
+    // 边界页）门住，loop=true 时永不触发——结构上满足，无需额外开关。
+    // 第二参 options：area.js 通用管道只透传 (st, value) 到 SWIPER_ATTRS，且本 SDK
+    // Swiper.effectMode 签名本就单参（swiper.d.ts:1823，无 options）——无功能缺口，不多收。
+  }
+
   /** @type {Record<string, (st: any, v: any, opts?: any) => void>} */
   const SWIPER_ATTRS = {
     index: (st, v) => { st.index = Number(resolveResource(v)) || 0; },
@@ -4964,6 +5123,12 @@
     onAnimationStart: (st, v) => { st.animStart.push(v); },
     onAnimationEnd: (st, v) => { st.animEnd.push(v); },
     onGestureSwipe: (st, v) => { st.gestureSwipe.push(v); },
+    // ── R155-B：到边行为开关（此前 effectMode 在 SWIPER_UNSUPPORTED）——effectMode 是
+    // swiper.d.ts:1823 真名（缺省 EdgeEffect.Spring，仅 loop=false 生效）；edgeEffect 为
+    // 任务书面的同名别名。解析器共用 Tabs 的 parseEdgeEffect（枚举序 enums.d.ts:1494，
+    // 组件无关）；行为分支在 builtin.js attachPagedDrag 的 edgeEffect 槽位。
+    effectMode: (st, v) => { applySwiperEdgeEffect(st, v, 'effectMode'); },
+    edgeEffect: (st, v) => { applySwiperEdgeEffect(st, v, 'edgeEffect'); },
   };
 
   // ────────────────── Navigation / NavDestination（栈导航）──────────────────
@@ -7374,7 +7539,8 @@
       for (const k of ['vertical', 'barMode', 'barWidth', 'barHeight', 'barOverlap',
         'onTabBarClick', 'onSelected', 'onUnselected',
         'animationDuration', 'onAnimationStart', 'onAnimationEnd', 'onGestureSwipe',
-        'barGridAlign', 'animationCurve', 'pageFlipMode', 'cachedMaxCount']) {
+        'barGridAlign', 'animationCurve', 'pageFlipMode', 'cachedMaxCount',
+        'edgeEffect']) {
         (/** @type {any} */ (C))[k] = function (/** @type {...any} */ ...args) {
           applyTabsAttr(ViewStackProcessor.top(), k, args[0], args[1]);
         };
@@ -15036,6 +15202,11 @@
   // R154-A：onMove 拖拽换位派发（__arkui_dom_repeatMove 驱动钩子 + repeatMoveDispatch）——
   //   真机协议 = 拖拽期间框架重排视觉节点、落定 FireOnMove 单发回调（两参裸 number from/to）、
   //   数据源由回调 splice；垫片把后两步折叠进钩子（详见钩子处块注释），与键 diff 共存。
+  // R155-A：onLazyLoading 数据源懒加载派发（__arkui_dom_repeatLazy 驱动钩子 + repeatLazyDispatch）——
+  //   真机协议 = 容器布局按需取项：请求的索引无数据时同步单发 onLazyLoading(index)（单参裸
+  //   number 绝对索引，repeat.d.ts:173），数据源由回调 arr[index]=item 自行补齐；垫片没有滚动
+  //   容器的按需取项管线，回调经驱动钩子派发（详见钩子处块注释）。数据到站后调度键 diff（新增
+  //   键走 case#3 新建分支）；渲染在首个缺数据索引处截断（repeat.d.ts:156-157 停止语义）。
   /** @param {any[]} prev @param {any[]} next @param {number} n */
   const repeatSigSame = (prev, next, n) => prev.length === n && next.length >= n
     && prev.every((/** @type {any} */ v, /** @type {number} */ k) => Object.is(v, next[k]));
@@ -15313,38 +15484,67 @@
   }
 
   /**
+   * R155-A：virtualScroll 的 totalCount 口径提取（onTotalCount() 与 totalCount 二选一，前者优先；
+   * 非自然数/非法/未配置 → null）。repeatEffectiveN（渲染裁剪）与 repeatLazyWindow（懒加载派发
+   * 窗口）共用，保证两处 totalCount 读数一致。
+   * @param {any} st @returns {number|null}
+   */
+  function repeatVsWant(st) {
+    if (!st.vs || typeof st.vs !== 'object') return null;
+    let want = null;
+    if (typeof st.vs.onTotalCount === 'function') {
+      try { want = Number(st.vs.onTotalCount()); } catch (e) {
+        warnOnce('Repeat.virtualScroll.onTotalCount 抛错：' + (e && e.message));
+      }
+    } else if (st.vs.totalCount !== undefined) {
+      want = Number(st.vs.totalCount);
+    }
+    return want !== null && Number.isFinite(want) && want >= 0 ? Math.floor(want) : null;
+  }
+
+  /**
    * virtualScroll 裁剪后的渲染条数 n（repeat.d.ts VirtualScrollOptions JSDoc 语义）：
    *   totalCount ∈ (0, 数据源长度] → 只渲染 [0, totalCount-1]；=0 → 不渲染；
    *   缺省/非法 → 数据源长度。onTotalCount() 与 totalCount 二选一，前者优先。
    * R154-A 起提取为独立函数：repeatRender 与 onMove 派发共用同一口径
    * （onMove 的 from/to 按同一 n 校验，virtualScroll 共存时语义一致）。
+   * R155-A：totalCount 超数据源长度且【未登记 onLazyLoading】= 真机 applicationError
+   * （pu_repeat_virtual_scroll_2_impl.ts:480-482 "'totalCount' must not exceed the array
+   * length without 'onLazyLoading' being defined!"）——垫片降级为警告 + 按数据源长度裁剪；
+   * 登记了 onLazyLoading 时渲染长度口径不变（仍 = min(数据源长度, totalCount)，真机 C++
+   * FrameCount = min(arrLen_, totalCount_)，repeat_virtual_scroll_2_node.cpp:762-767——
+   * 超出数据源的索引不凭空渲染，等 onLazyLoading 补齐数据后随 arr 长度增长进入渲染窗口）。
    * @param {any} st @returns {number}
    */
   function repeatEffectiveN(st) {
     let total = st.arr.length;
-    if (st.vs && typeof st.vs === 'object') {
-      let want = null;
-      if (typeof st.vs.onTotalCount === 'function') {
-        try { want = Number(st.vs.onTotalCount()); } catch (e) {
-          warnOnce('Repeat.virtualScroll.onTotalCount 抛错：' + (e && e.message));
-        }
-      } else if (st.vs.totalCount !== undefined) {
-        want = Number(st.vs.totalCount);
+    const want = repeatVsWant(st);
+    if (want !== null) {
+      if (typeof st.onLazy !== 'function' && want > total && !st.warnedNoLazy) {
+        st.warnedNoLazy = true;
+        layoutWarnings.push('Repeat.virtualScroll totalCount(' + want + ') 超过数据源长度(' + total
+          + ') 且未登记 onLazyLoading（真机 applicationError：totalCount must not exceed the '
+          + 'array length without onLazyLoading），已按数据源长度裁剪');
       }
-      if (want !== null && Number.isFinite(want) && want >= 0) total = Math.min(total, Math.floor(want));
+      total = Math.min(total, want);
     }
-    return Math.max(0, Math.min(st.arr.length, total));
+    return Math.max(0, total);
   }
 
   /** @param {any} st */
   function repeatRender(st) {
-    const n = repeatEffectiveN(st);
-    if (st.vs && typeof st.vs === 'object' && !st.warnedVs) {
-      st.warnedVs = true;
-      // 如实：DOM 运行时不做真·懒加载（onLazyLoading 没有触发源——本实现从不渲染
-      // 超出数据源的项），只保留 totalCount 的"裁剪渲染条数"语义。
-      layoutWarnings.push('Repeat.virtualScroll 未实现真懒加载：onLazyLoading 不会触发，'
-        + 'totalCount/onTotalCount 仅用于裁剪渲染条数');
+    let n = repeatEffectiveN(st);
+    // R155-A：懒加载缺口截断（repeat.d.ts:152-157 "After the onLazyLoading method is
+    // executed, if no data exists in the specified index, the components corresponding to
+    // the current index and subsequent indexes cannot be loaded"）——渲染窗口内首个缺数据
+    // 索引处停止：该索引及后续项不渲染（真机 getItemUnmonitored 无数据时容器停止渲染、
+    // pu_repeat_virtual_scroll_2_impl.ts:146-147 的对应物）。数据补齐（arr[index]=…）后
+    // arr 长度增长，下一轮键 diff 自然把新项纳入渲染。未登记 onLazyLoading 时零改动
+    // （行为与 R154 完全一致，稀疏数组语义不回退）。
+    if (st.onLazy) {
+      for (let i = 0; i < n; i++) {
+        if (!(i in st.arr)) { n = i; break; }
+      }
     }
     if (st.lastSig && repeatSigSame(st.lastSig, st.arr, n)) return;
     st.lastSig = st.arr.slice(0, n);
@@ -15407,7 +15607,22 @@
       const st = (/** @type {any} */ (n)).__repeat;
       if (!st) return;
       st.vs = v && typeof v === 'object' ? v : null;
+      // R155-A：onLazyLoading 在 virtualScroll 选项对象内（repeat.d.ts:173
+      // onLazyLoading?(index: number): void，since 19；真机 :473-475 同样从 config 取）——
+      // 不是独立链式属性，随 virtualScroll 一起登记。
+      st.onLazy = st.vs && typeof st.vs.onLazyLoading === 'function' ? st.vs.onLazyLoading : null;
       n.dataset.virtualScroll = st.vs ? 'on' : 'off';
+      n.dataset.onLazyLoading = st.onLazy ? 'registered' : 'none';
+      if (st.onLazy && !st.warnedLazy) {
+        st.warnedLazy = true;
+        // R155-A：如实——真机触发源 = 容器布局按需取项（GetFrameChildByIndex → L1 无此索引 →
+        // getItemUnmonitored 同步单发 onLazyLoading(i)，pu_repeat_virtual_scroll_2_impl.ts
+        // :401-414；预取距离由容器 cachedCount 决定——List 默认 1、上限 16，Repeat 级无阈值）。
+        // DOM 垫片没有滚动容器的按需取项管线，回调经驱动钩子 __arkui_dom_repeatLazy(node,
+        // index) 派发（同 R154-A onMove 先例）。
+        layoutWarnings.push('Repeat.onLazyLoading 已登记：DOM 垫片无容器按需取项管线，'
+          + '回调经 __arkui_dom_repeatLazy 驱动钩子派发');
+      }
       repeatSchedule(st);
     },
     onMove: (n, v) => {
@@ -15439,12 +15654,13 @@
       arr: args && Array.isArray(args[0]) ? args[0] : [],
       eachB: null, keyFn: null, templateIdFn: null,
       /** @type {Record<string, any>} */ templates: {},
-      vs: null, onMove: null,
+      vs: null, onMove: null, onLazy: null,   // onLazy = virtualScroll 选项里的 onLazyLoading（R155-A）
       scheduled: false, lastSig: null,
       items: null,           // Map<key, rec>：当前存活项；rec = {key, ri, tplKey, nodes}
       pool: [],              // 持久回收池（单池、上限 16、LIFO）
       lastBuilders: null,    // 构建器面指纹（each/templateId/template 更换 → 全量重建）
-      warnedEach: false, warnedVs: false, warnedMove: false, warnedDupKeys: false,
+      warnedEach: false, warnedMove: false, warnedDupKeys: false,
+      warnedLazy: false, warnedNoLazy: false,
     });
     return st.el;
   }, (/** @type {any} */ node, /** @type {any} */ args) => {
@@ -15562,6 +15778,77 @@
       const st = (/** @type {any} */ (node)).__repeat;
       if (!st) return false;
       return repeatMoveDispatch(st, from, to);
+    };
+
+  // ── R155-A：数据源懒加载派发（onLazyLoading）──
+  // 真机协议（pu_repeat_virtual_scroll_2_impl.ts:120-147 权威注释 + :401-414 实现）：
+  //   · 签名 = 单参裸 number：onLazyLoading?(index: number): void（repeat.d.ts:173，since 19；
+  //     pu_repeat.ts:157 OnLazyLoadingHandler 同型）——index 是【要加载的数据项绝对索引】，
+  //     不是"距 totalCount 还差多少"（任务书猜测已被真机源码纠偏）。
+  //   · 触发 = 按需逐索引：容器布局请求索引 i（滚动接近尾部时 = 可见窗 + 容器 cachedCount 预取
+  //     范围；List 默认 cachedCount=1、上限 16——预取距离是容器参数，Repeat 级无阈值）→ L1 无
+  //     此索引 → 若登记了 onLazyLoading 且 !(index in arr_) → 同步调 onLazyLoading(i) 一次。
+  //   · 数据源责任在开发者（同 onMove"框架只发事件"口径——但与 onMove 相反，这里垫片【不代写】
+  //     数据）：回调里必须 arr[index] = item，且真机只允许写该索引（Proxy 强制，其他数组操作/
+  //     写其他索引 → BusinessError 103804，:1592-1595 与 :1632-1635）；垫片无 Proxy，push 等
+  //     追加也收（超集，如实不模拟 103804）。框架从不改用户数组。
+  //   · 回调返回后 arr[index] 仍无数据 → 真机 applicationError "onLazyLoading function did
+  //     not provide data to index N"（:407-409），该索引及后续停止加载（repeat.d.ts:156-157），
+  //     无重试、无死循环（lazyLoadingIndex_ 复位 -1，:411；再次派发只会来自下一次独立的布局
+  //     请求——垫片对应物 = 再调一次驱动钩子）。垫片同口径：告警 + 不调度渲染。
+  //   · 回调给到数据 → 真机走 tryFastRelayout（:136-140：arr[index]= 的 Proxy 拦截 → 请求容器
+  //     重排版，无需整树 rerender；官方因此建议配 onTotalCount 用）；垫片对应物 = 调度标准键
+  //     diff 渲染（新增键走 case#3 新建分支，节点身份模型不变）。
+  /**
+   * R155-A：懒加载派发窗口 = totalCount 口径（repeatVsWant；真机登记 onLazyLoading 后传给 C++
+   * 的 arrLen 即 totalCount，pu_repeat_virtual_scroll_2_impl.ts:529/:594——布局请求得到 [0,
+   * totalCount) 内的任意索引）。totalCount 缺省/非法 → 数据源长度。
+   * @param {any} st @returns {number}
+   */
+  function repeatLazyWindow(st) {
+    const want = repeatVsWant(st);
+    return want !== null ? want : st.arr.length;
+  }
+
+  /**
+   * 单次懒加载询问（真机 getItemUnmonitored 的按需单发折叠）。返回 true = 回调给到了数据。
+   * @param {any} st @param {number} index @returns {boolean}
+   */
+  function repeatLazyDispatch(st, index) {
+    // 越界 = 滚动/布局请求不出来的索引（同 onMove 边界口径，告警忽略）
+    const win = repeatLazyWindow(st);
+    if (!Number.isInteger(index) || index < 0 || index >= win) {
+      layoutWarnings.push(`Repeat.onLazyLoading 非法索引（index=${index}, totalCount 窗口=${win}），已忽略`);
+      return false;
+    }
+    if (typeof st.onLazy !== 'function') {
+      layoutWarnings.push('Repeat.onLazyLoading 未登记，无法派发');
+      return false;
+    }
+    // 真机 :403 !(index in this.arr_) 守卫：数据已在的索引不派发（静默 false，非错误）
+    if (index in st.arr) return false;
+    try { st.onLazy(index); } catch (e) {
+      layoutWarnings.push('Repeat.onLazyLoading 回调抛错：' + (e && e.message));
+    }
+    if (!(index in st.arr)) {
+      // 真机 :407-409 applicationError 文案 + d.ts:156-157 停止语义：不重试、不调度渲染
+      layoutWarnings.push(`Repeat.onLazyLoading 回调未给 index=${index} 提供数据`
+        + `（真机 applicationError：onLazyLoading function did not provide data to index ${index}；`
+        + '该索引及后续停止加载，无重试）');
+      return false;
+    }
+    // 数据已到站：键 diff 渲染接管（tryFastRelayout 的垫片对应物）
+    repeatSchedule(st);
+    return true;
+  }
+
+  // 运行时级懒加载驱动钩子（模拟容器滚动取项对缺失索引的请求，供测试/诊断页直调）。
+  // 返回 boolean：true = 已派发且回调给到了数据（渲染已调度）；false = 非法/已有数据/未给数据。
+  (/** @type {any} */ (global)).__arkui_dom_repeatLazy
+    = (/** @type {any} */ node, /** @type {number} */ index) => {
+      const st = (/** @type {any} */ (node)).__repeat;
+      if (!st) return false;
+      return repeatLazyDispatch(st, index);
     };
 
   // ════════════════════ WithTheme ════════════════════

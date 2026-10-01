@@ -765,12 +765,13 @@
   // applyTabsBarGrid 注释里的 cpp 对照），移出本表走自有方法拦截。
   // R153-B：animationCurve（tabs.d.ts:1537-1551，Curve|ICurve 双缺省）/pageFlipMode
   //（tabs.d.ts:1885-1911，鼠标滚轮翻页）/cachedMaxCount（tabs.d.ts:1913-1958，TabsCacheMode）
-  // 同批移出本表。仍不覆盖的：
-  //   edgeEffect——拖拽越界的摩擦（pointermove 的 outward 分支）与回弹舞台（builtinSpringRebound）
-  //   都长在 builtin.js attachPagedDrag 内部，main.js 侧 api 面没有"关掉越界位移/回弹"的钩子；
-  //   需要动 builtin.js 才能真做（R153-B 所有权不含该文件，已列入报告"需要主会话配合的点"）。
+  // 同批移出本表。
+  // R155-B：edgeEffect（tabs.d.ts:1273-1282，since 12，缺省 EdgeEffect.Spring）移出本表走
+  // 自有方法拦截——到边行为开关真语义长在 builtin.js attachPagedDrag 的 edgeEffect 槽位
+  //（R153-B 记档的"需要动 builtin.js"欠账就此结清）。仍不覆盖的：
+  //   animationMode / onContentWillChange（认知/事件面，无 DOM 对应）与 customContentTransition。
   const TABS_UNSUPPORTED = new Set([
-    'animationMode', 'customContentTransition', 'edgeEffect', 'onContentWillChange',
+    'animationMode', 'customContentTransition', 'onContentWillChange',
   ]);
 
   // R153-B：interpolatingSpring(-1,1,228,30) 的内禀时长近似（ms）。ω=√(k/m)≈15.1 rad/s、
@@ -838,8 +839,13 @@
                                       //   （swiper_pattern.cpp:816：缺省 CACHE_BOTH_SIDE）
       cachedLru: [],                  // CACHE_LATEST_SWITCHED 的最近切换索引（容量 cachedMaxCount+1，
                                       //   swiper_pattern.cpp:838-842）
+      // R155-B EdgeEffect（tabs.d.ts:1273-1282 缺省 EdgeEffect.Spring；enums.d.ts:1494 枚举序
+      // Spring=0/Fade=1/None=2——本 SDK 枚举无 Shadow 成员，'shadow' 是任务书收的前向扩展值）：
+      edgeEffect: 'spring',           // 'spring'|'none'|'shadow'（builtin.js attachPagedDrag 槽位读取）
+      edgeAlwaysEnabled: null,        // EdgeEffectOptions.alwaysEnabled 记录面；null=未设（见 case 注释）
     });
     node.__tabsState = st;
+    node.dataset.edgeEffect = st.edgeEffect;   // R155-B：缺省面可观测（d.ts 缺省 Spring）
     node.style.display = 'flex';
     node.style.flexDirection = 'column';
     node.style.overflow = 'hidden';
@@ -901,6 +907,10 @@
           ? { kind: 'spring' }
           : { kind: 'css', css: st.animCurveCss })
         : null),
+      // R155-B：到边行为开关槽位（builtin.js builtinEdgeEffect 读取）——edgeEffect 属性
+      //（applyTabsAttr case 'edgeEffect'）落在 st.edgeEffect，拖拽越界分支（outward 摩擦）
+      // 与松手回弹分支按它分支化
+      edgeEffect: () => st.edgeEffect,
       /** @param {number} i */
       pageAt: (i) => (st.contents[i] ? st.contents[i].el : null),
       /** @param {number} i */
@@ -1114,6 +1124,58 @@
         applyTabsCache(st);
         return;
       }
+      // ── R155-B：edgeEffect（此前在 TABS_UNSUPPORTED，现真语义）──
+      case 'edgeEffect': {
+        // d.ts tabs.d.ts:1273-1282（since 12）：edgeEffect(edgeEffect: Optional<EdgeEffect>)，
+        // 缺省 EdgeEffect.Spring；真机到边行为：仅 Spring 允许越界（swiper_pattern.cpp:302
+        // SetCanOverScroll(effect==SPRING)），None 硬停（:3341-3345 越界钳边界、:4137-4166
+        // 松手不 PlaySpringAnimation）。枚举序 enums.d.ts:1494 = Spring=0/Fade=1/None=2
+        //（本 SDK 枚举【无 Shadow 成员】——common.d.ts:25290 的 "spring and shadow effects"
+        // 是 Scrollable 通用面的 JSDoc 散文；'shadow' 按任务书收作前向扩展值=Spring 行为
+        // + 视觉标记）。行为分支在 builtin.js attachPagedDrag 的 edgeEffect 槽位
+        //（pointermove outward 硬停 / builtinFinishPagedDrag 的 !flip 直接落位）。
+        const prev = st.edgeEffect;
+        const parsed = parseEdgeEffect(value);
+        if (!parsed) {
+          // 未实现/非法入参同槽记警告（含 G8 依赖的 'Tabs.edgeEffect 未实现' 前缀——
+          // 传入面只认本运行时 api 值与枚举序数，大小写敏感照 barMode 先例）
+          layoutWarnings.push(`Tabs.edgeEffect 未实现入参 ${JSON.stringify(value)}`
+            + `（本运行时已接 'spring'|'none'|'shadow' 与枚举序数 Spring=0/None=2；`
+            + 'Fade 未实现），保持现值');
+          return;
+        }
+        st.edgeEffect = parsed;
+        node.dataset.edgeEffect = parsed;
+        if (parsed === 'shadow') {
+          if (prev !== 'shadow') {
+            layoutWarnings.push('Tabs.edgeEffect(shadow)：真机 Shadow=Spring 行为叠加边界阴影'
+              + '视觉——阴影无 DOM 对应物，只落 data-shadow="true" 标记（barOverlap 的 '
+              + 'backdrop-filter 先例），行为与 Spring 相同（越界冲激回弹）');
+          }
+          node.dataset.shadow = 'true';
+        } else if (node.dataset.shadow) {
+          delete node.dataset.shadow;
+        }
+        // 第二参 options（EdgeEffectOptions{alwaysEnabled}，common.d.ts:25859）——【按任务书
+        // 面收】：本 SDK 的 Tabs.edgeEffect 签名没有 options（tabs.d.ts:1282 单参；带 options
+        // 的是 Scrollable 通用面 common.d.ts:25303）。记录 state+data-*，行为无对应如实记警告。
+        if (extra !== undefined && extra !== null) {
+          if (typeof extra === 'object' && typeof (/** @type {any} */ (extra)).alwaysEnabled === 'boolean') {
+            const ae = (/** @type {any} */ (extra)).alwaysEnabled;
+            if (st.edgeAlwaysEnabled !== ae) {
+              st.edgeAlwaysEnabled = ae;
+              node.dataset.edgeAlwaysEnabled = String(ae);
+              layoutWarnings.push(`Tabs.edgeEffect 第二参 options.alwaysEnabled=${ae}：仅记录`
+                + '（data-edge-always-enabled）——本运行时 Tabs 内容恒满容器，无"内容小于组件"'
+                + '的触发面可作用；且本 SDK Tabs.edgeEffect 签名无 options（tabs.d.ts:1282）');
+            }
+          } else {
+            layoutWarnings.push(`Tabs.edgeEffect 第二参 options=${JSON.stringify(extra)} `
+              + '不是 EdgeEffectOptions（缺 alwaysEnabled:boolean），已忽略');
+          }
+        }
+        return;
+      }
     }
   }
 
@@ -1173,6 +1235,24 @@
       }
       return null;
     }
+    return null;
+  }
+
+  // EdgeEffect 入参归一化（R155-B）：Tabs.edgeEffect 与 Swiper.effectMode/edgeEffect 共用。
+  // 已实现面 = 本运行时 api 字符串 'spring'|'none'|'shadow'（**精确小写**，大小写敏感照
+  // barMode 先例——不认 'None'/'Spring' 之类设备上不存在的字符串形态）+ 枚举序数 Spring=0 /
+  // None=2（enums.d.ts:1494；编译产物侧 EdgeEffect.X 就是序数）。返回 null = 未实现或非法
+  //（调用方记警告 + 保持现值）：1=Fade 是合法设备枚举但本片未实现；'shadow' 不是本 SDK
+  // 枚举成员（enums.d.ts:1494 只有 Spring/Fade/None），按任务书收作前向扩展值。
+  /** @param {any} v @returns {string|null} 'spring'|'none'|'shadow'，未实现/非法为 null */
+  function parseEdgeEffect(v) {
+    const r = resolveResource(v);
+    if (typeof r === 'number') {
+      if (r === 0) return 'spring';          // EdgeEffect.Spring
+      if (r === 2) return 'none';            // EdgeEffect.None
+      return null;                           // 1=Fade（未实现）与其余越界序数
+    }
+    if (typeof r === 'string' && (r === 'spring' || r === 'none' || r === 'shadow')) return r;
     return null;
   }
 
@@ -1568,8 +1648,12 @@
   //   Swiper.pop();
   // 本 SDK 的签名是 Swiper(controller?: SwiperController)（不是 options 对象，与 Tabs 不同）——
   // index/loop/autoPlay 全是属性 setter。这条是编译器判错后才查出来的，别凭印象写。
+  // R155-B：effectMode（swiper.d.ts:1805-1823，since 8，缺省 EdgeEffect.Spring，仅 loop=false
+  // 生效）移出本表真语义——【Swiper 侧的 edgeEffect 属性真名是 effectMode】（common.d.ts:25303
+  // 的 edgeEffect 属 Scrollable 通用面，Swiper 没有）；'edgeEffect' 键按任务书作为同路别名一并
+  // 接入（SWIPER_ATTRS 两键同一处理器）。到边行为开关长在 builtin.js attachPagedDrag 槽位。
   const SWIPER_UNSUPPORTED = new Set([
-    'displayArrow', 'displayMode', 'displayCount', 'effectMode', 'nextMargin', 'prevMargin',
+    'displayArrow', 'displayMode', 'displayCount', 'nextMargin', 'prevMargin',
     'itemSpace', 'cachedCount', 'customContentTransition',
     'pageFlipMode', 'nestedScroll', 'maintainVisibleContentPosition', 'indicatorStyle', 'indicatorInteractive',
     'onContentDidScroll', 'onContentWillScroll',
@@ -1579,6 +1663,7 @@
   // （内置拖拽，attachPagedDrag）；此前它们与上述一并落 data-*。
   // R154-B 起再加两件：curve（拖拽释放翻页曲线槽位，走 SWIPER_ATTRS.curve → api.finishCurve）
   // 与 indicator（DotIndicator/DigitIndicator 真语义，走 SWIPER_ATTRS.indicator）。
+  // R155-B 再加 effectMode/edgeEffect（到边行为开关，走 SWIPER_ATTRS 两键 → api.edgeEffect）。
 
   let swiperSeq = 0;
   class SwiperController {
@@ -1630,6 +1715,10 @@
       //   向后兼容；d.ts 缺省是 interpolatingSpring(-1,1,328,34)（swiper.d.ts:1858），偏差已记录）；
       //   'css'/'spring'=curve(...) 已设（spring 族不 respect duration，走 R126 解算器）
       curveKind: 'default', curveCss: 'ease-out',
+      // R155-B EdgeEffect（effectMode，swiper.d.ts:1805-1823 缺省 EdgeEffect.Spring；枚举序
+      // enums.d.ts:1494 Spring=0/Fade=1/None=2）：'spring'|'none'|'shadow'（builtin.js
+      // attachPagedDrag 槽位读取；'shadow' 是前向扩展值，同 Tabs 口径）
+      edgeEffect: 'spring',
       // R125 内置拖拽
       vertical: false,                 // swiper.d.ts JSDoc：vertical 默认 false（横向）
       disableSwipe: false,
@@ -1637,6 +1726,7 @@
       animStart: [], animEnd: [], gestureSwipe: [],
     });
     node.__swiperState = st;
+    node.dataset.edgeEffect = st.edgeEffect;   // R155-B：缺省面可观测（effectMode 缺省 Spring）
     node.style.position = 'relative';
     node.style.overflow = 'hidden';
     node.style.display = 'block';
@@ -1658,6 +1748,9 @@
       duration: () => st.duration,
       /** @returns {any} R154-B 曲线槽位：Swiper.curve 声明的翻页过渡曲线（null=缺省 ease-out） */
       finishCurve: () => (st.curveKind === 'default' ? null : { kind: st.curveKind, css: st.curveCss }),
+      // R155-B：到边行为开关槽位（builtin.js builtinEdgeEffect 读取）——effectMode/edgeEffect
+      // 属性（SWIPER_ATTRS 两键同处理器）落在 st.edgeEffect，越界/回弹分支按它分支化
+      edgeEffect: () => st.edgeEffect,
       /** @param {number} i */
       pageAt: (i) => (st.entries[i] ? st.entries[i].el : null),
       /** @param {number} i */
@@ -2037,6 +2130,38 @@
   }
 
   // Swiper 的语义属性：值要进 state 而不是 DOM
+  // R155-B：effectMode/edgeEffect 共用处理器（label 只影响警告文案——effectMode 是
+  // swiper.d.ts:1823 的真名，edgeEffect 是任务书面的同名别名）。
+  /**
+   * @param {any} st @param {any} v @param {string} label
+   */
+  function applySwiperEdgeEffect(st, v, label) {
+    const prev = st.edgeEffect;
+    const parsed = parseEdgeEffect(v);
+    if (!parsed) {
+      layoutWarnings.push(`Swiper.${label} 未实现入参 ${JSON.stringify(v)}`
+        + `（本运行时已接 'spring'|'none'|'shadow' 与枚举序数 Spring=0/None=2；`
+        + 'Fade 未实现），保持现值');
+      return;
+    }
+    st.edgeEffect = parsed;
+    st.node.dataset.edgeEffect = parsed;
+    if (parsed === 'shadow') {
+      if (prev !== 'shadow') {
+        layoutWarnings.push(`Swiper.${label}(shadow)：真机 Shadow=Spring 行为叠加边界阴影`
+          + '视觉——阴影无 DOM 对应物，只落 data-shadow="true" 标记（barOverlap 的 '
+          + 'backdrop-filter 先例），行为与 Spring 相同（越界冲激回弹）');
+      }
+      st.node.dataset.shadow = 'true';
+    } else if (st.node.dataset.shadow) {
+      delete st.node.dataset.shadow;
+    }
+    // d.ts "only when loop is false"：越界分支本就被 builtin.js 的 outward 判定（!loop &&
+    // 边界页）门住，loop=true 时永不触发——结构上满足，无需额外开关。
+    // 第二参 options：area.js 通用管道只透传 (st, value) 到 SWIPER_ATTRS，且本 SDK
+    // Swiper.effectMode 签名本就单参（swiper.d.ts:1823，无 options）——无功能缺口，不多收。
+  }
+
   /** @type {Record<string, (st: any, v: any, opts?: any) => void>} */
   const SWIPER_ATTRS = {
     index: (st, v) => { st.index = Number(resolveResource(v)) || 0; },
@@ -2093,6 +2218,12 @@
     onAnimationStart: (st, v) => { st.animStart.push(v); },
     onAnimationEnd: (st, v) => { st.animEnd.push(v); },
     onGestureSwipe: (st, v) => { st.gestureSwipe.push(v); },
+    // ── R155-B：到边行为开关（此前 effectMode 在 SWIPER_UNSUPPORTED）——effectMode 是
+    // swiper.d.ts:1823 真名（缺省 EdgeEffect.Spring，仅 loop=false 生效）；edgeEffect 为
+    // 任务书面的同名别名。解析器共用 Tabs 的 parseEdgeEffect（枚举序 enums.d.ts:1494，
+    // 组件无关）；行为分支在 builtin.js attachPagedDrag 的 edgeEffect 槽位。
+    effectMode: (st, v) => { applySwiperEdgeEffect(st, v, 'effectMode'); },
+    edgeEffect: (st, v) => { applySwiperEdgeEffect(st, v, 'edgeEffect'); },
   };
 
   // @include nav
@@ -2239,7 +2370,8 @@
       for (const k of ['vertical', 'barMode', 'barWidth', 'barHeight', 'barOverlap',
         'onTabBarClick', 'onSelected', 'onUnselected',
         'animationDuration', 'onAnimationStart', 'onAnimationEnd', 'onGestureSwipe',
-        'barGridAlign', 'animationCurve', 'pageFlipMode', 'cachedMaxCount']) {
+        'barGridAlign', 'animationCurve', 'pageFlipMode', 'cachedMaxCount',
+        'edgeEffect']) {
         (/** @type {any} */ (C))[k] = function (/** @type {...any} */ ...args) {
           applyTabsAttr(ViewStackProcessor.top(), k, args[0], args[1]);
         };

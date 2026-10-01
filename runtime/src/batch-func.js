@@ -56,6 +56,11 @@
   // R154-A：onMove 拖拽换位派发（__arkui_dom_repeatMove 驱动钩子 + repeatMoveDispatch）——
   //   真机协议 = 拖拽期间框架重排视觉节点、落定 FireOnMove 单发回调（两参裸 number from/to）、
   //   数据源由回调 splice；垫片把后两步折叠进钩子（详见钩子处块注释），与键 diff 共存。
+  // R155-A：onLazyLoading 数据源懒加载派发（__arkui_dom_repeatLazy 驱动钩子 + repeatLazyDispatch）——
+  //   真机协议 = 容器布局按需取项：请求的索引无数据时同步单发 onLazyLoading(index)（单参裸
+  //   number 绝对索引，repeat.d.ts:173），数据源由回调 arr[index]=item 自行补齐；垫片没有滚动
+  //   容器的按需取项管线，回调经驱动钩子派发（详见钩子处块注释）。数据到站后调度键 diff（新增
+  //   键走 case#3 新建分支）；渲染在首个缺数据索引处截断（repeat.d.ts:156-157 停止语义）。
   /** @param {any[]} prev @param {any[]} next @param {number} n */
   const repeatSigSame = (prev, next, n) => prev.length === n && next.length >= n
     && prev.every((/** @type {any} */ v, /** @type {number} */ k) => Object.is(v, next[k]));
@@ -333,38 +338,67 @@
   }
 
   /**
+   * R155-A：virtualScroll 的 totalCount 口径提取（onTotalCount() 与 totalCount 二选一，前者优先；
+   * 非自然数/非法/未配置 → null）。repeatEffectiveN（渲染裁剪）与 repeatLazyWindow（懒加载派发
+   * 窗口）共用，保证两处 totalCount 读数一致。
+   * @param {any} st @returns {number|null}
+   */
+  function repeatVsWant(st) {
+    if (!st.vs || typeof st.vs !== 'object') return null;
+    let want = null;
+    if (typeof st.vs.onTotalCount === 'function') {
+      try { want = Number(st.vs.onTotalCount()); } catch (e) {
+        warnOnce('Repeat.virtualScroll.onTotalCount 抛错：' + (e && e.message));
+      }
+    } else if (st.vs.totalCount !== undefined) {
+      want = Number(st.vs.totalCount);
+    }
+    return want !== null && Number.isFinite(want) && want >= 0 ? Math.floor(want) : null;
+  }
+
+  /**
    * virtualScroll 裁剪后的渲染条数 n（repeat.d.ts VirtualScrollOptions JSDoc 语义）：
    *   totalCount ∈ (0, 数据源长度] → 只渲染 [0, totalCount-1]；=0 → 不渲染；
    *   缺省/非法 → 数据源长度。onTotalCount() 与 totalCount 二选一，前者优先。
    * R154-A 起提取为独立函数：repeatRender 与 onMove 派发共用同一口径
    * （onMove 的 from/to 按同一 n 校验，virtualScroll 共存时语义一致）。
+   * R155-A：totalCount 超数据源长度且【未登记 onLazyLoading】= 真机 applicationError
+   * （pu_repeat_virtual_scroll_2_impl.ts:480-482 "'totalCount' must not exceed the array
+   * length without 'onLazyLoading' being defined!"）——垫片降级为警告 + 按数据源长度裁剪；
+   * 登记了 onLazyLoading 时渲染长度口径不变（仍 = min(数据源长度, totalCount)，真机 C++
+   * FrameCount = min(arrLen_, totalCount_)，repeat_virtual_scroll_2_node.cpp:762-767——
+   * 超出数据源的索引不凭空渲染，等 onLazyLoading 补齐数据后随 arr 长度增长进入渲染窗口）。
    * @param {any} st @returns {number}
    */
   function repeatEffectiveN(st) {
     let total = st.arr.length;
-    if (st.vs && typeof st.vs === 'object') {
-      let want = null;
-      if (typeof st.vs.onTotalCount === 'function') {
-        try { want = Number(st.vs.onTotalCount()); } catch (e) {
-          warnOnce('Repeat.virtualScroll.onTotalCount 抛错：' + (e && e.message));
-        }
-      } else if (st.vs.totalCount !== undefined) {
-        want = Number(st.vs.totalCount);
+    const want = repeatVsWant(st);
+    if (want !== null) {
+      if (typeof st.onLazy !== 'function' && want > total && !st.warnedNoLazy) {
+        st.warnedNoLazy = true;
+        layoutWarnings.push('Repeat.virtualScroll totalCount(' + want + ') 超过数据源长度(' + total
+          + ') 且未登记 onLazyLoading（真机 applicationError：totalCount must not exceed the '
+          + 'array length without onLazyLoading），已按数据源长度裁剪');
       }
-      if (want !== null && Number.isFinite(want) && want >= 0) total = Math.min(total, Math.floor(want));
+      total = Math.min(total, want);
     }
-    return Math.max(0, Math.min(st.arr.length, total));
+    return Math.max(0, total);
   }
 
   /** @param {any} st */
   function repeatRender(st) {
-    const n = repeatEffectiveN(st);
-    if (st.vs && typeof st.vs === 'object' && !st.warnedVs) {
-      st.warnedVs = true;
-      // 如实：DOM 运行时不做真·懒加载（onLazyLoading 没有触发源——本实现从不渲染
-      // 超出数据源的项），只保留 totalCount 的"裁剪渲染条数"语义。
-      layoutWarnings.push('Repeat.virtualScroll 未实现真懒加载：onLazyLoading 不会触发，'
-        + 'totalCount/onTotalCount 仅用于裁剪渲染条数');
+    let n = repeatEffectiveN(st);
+    // R155-A：懒加载缺口截断（repeat.d.ts:152-157 "After the onLazyLoading method is
+    // executed, if no data exists in the specified index, the components corresponding to
+    // the current index and subsequent indexes cannot be loaded"）——渲染窗口内首个缺数据
+    // 索引处停止：该索引及后续项不渲染（真机 getItemUnmonitored 无数据时容器停止渲染、
+    // pu_repeat_virtual_scroll_2_impl.ts:146-147 的对应物）。数据补齐（arr[index]=…）后
+    // arr 长度增长，下一轮键 diff 自然把新项纳入渲染。未登记 onLazyLoading 时零改动
+    // （行为与 R154 完全一致，稀疏数组语义不回退）。
+    if (st.onLazy) {
+      for (let i = 0; i < n; i++) {
+        if (!(i in st.arr)) { n = i; break; }
+      }
     }
     if (st.lastSig && repeatSigSame(st.lastSig, st.arr, n)) return;
     st.lastSig = st.arr.slice(0, n);
@@ -427,7 +461,22 @@
       const st = (/** @type {any} */ (n)).__repeat;
       if (!st) return;
       st.vs = v && typeof v === 'object' ? v : null;
+      // R155-A：onLazyLoading 在 virtualScroll 选项对象内（repeat.d.ts:173
+      // onLazyLoading?(index: number): void，since 19；真机 :473-475 同样从 config 取）——
+      // 不是独立链式属性，随 virtualScroll 一起登记。
+      st.onLazy = st.vs && typeof st.vs.onLazyLoading === 'function' ? st.vs.onLazyLoading : null;
       n.dataset.virtualScroll = st.vs ? 'on' : 'off';
+      n.dataset.onLazyLoading = st.onLazy ? 'registered' : 'none';
+      if (st.onLazy && !st.warnedLazy) {
+        st.warnedLazy = true;
+        // R155-A：如实——真机触发源 = 容器布局按需取项（GetFrameChildByIndex → L1 无此索引 →
+        // getItemUnmonitored 同步单发 onLazyLoading(i)，pu_repeat_virtual_scroll_2_impl.ts
+        // :401-414；预取距离由容器 cachedCount 决定——List 默认 1、上限 16，Repeat 级无阈值）。
+        // DOM 垫片没有滚动容器的按需取项管线，回调经驱动钩子 __arkui_dom_repeatLazy(node,
+        // index) 派发（同 R154-A onMove 先例）。
+        layoutWarnings.push('Repeat.onLazyLoading 已登记：DOM 垫片无容器按需取项管线，'
+          + '回调经 __arkui_dom_repeatLazy 驱动钩子派发');
+      }
       repeatSchedule(st);
     },
     onMove: (n, v) => {
@@ -459,12 +508,13 @@
       arr: args && Array.isArray(args[0]) ? args[0] : [],
       eachB: null, keyFn: null, templateIdFn: null,
       /** @type {Record<string, any>} */ templates: {},
-      vs: null, onMove: null,
+      vs: null, onMove: null, onLazy: null,   // onLazy = virtualScroll 选项里的 onLazyLoading（R155-A）
       scheduled: false, lastSig: null,
       items: null,           // Map<key, rec>：当前存活项；rec = {key, ri, tplKey, nodes}
       pool: [],              // 持久回收池（单池、上限 16、LIFO）
       lastBuilders: null,    // 构建器面指纹（each/templateId/template 更换 → 全量重建）
-      warnedEach: false, warnedVs: false, warnedMove: false, warnedDupKeys: false,
+      warnedEach: false, warnedMove: false, warnedDupKeys: false,
+      warnedLazy: false, warnedNoLazy: false,
     });
     return st.el;
   }, (/** @type {any} */ node, /** @type {any} */ args) => {
@@ -582,6 +632,77 @@
       const st = (/** @type {any} */ (node)).__repeat;
       if (!st) return false;
       return repeatMoveDispatch(st, from, to);
+    };
+
+  // ── R155-A：数据源懒加载派发（onLazyLoading）──
+  // 真机协议（pu_repeat_virtual_scroll_2_impl.ts:120-147 权威注释 + :401-414 实现）：
+  //   · 签名 = 单参裸 number：onLazyLoading?(index: number): void（repeat.d.ts:173，since 19；
+  //     pu_repeat.ts:157 OnLazyLoadingHandler 同型）——index 是【要加载的数据项绝对索引】，
+  //     不是"距 totalCount 还差多少"（任务书猜测已被真机源码纠偏）。
+  //   · 触发 = 按需逐索引：容器布局请求索引 i（滚动接近尾部时 = 可见窗 + 容器 cachedCount 预取
+  //     范围；List 默认 cachedCount=1、上限 16——预取距离是容器参数，Repeat 级无阈值）→ L1 无
+  //     此索引 → 若登记了 onLazyLoading 且 !(index in arr_) → 同步调 onLazyLoading(i) 一次。
+  //   · 数据源责任在开发者（同 onMove"框架只发事件"口径——但与 onMove 相反，这里垫片【不代写】
+  //     数据）：回调里必须 arr[index] = item，且真机只允许写该索引（Proxy 强制，其他数组操作/
+  //     写其他索引 → BusinessError 103804，:1592-1595 与 :1632-1635）；垫片无 Proxy，push 等
+  //     追加也收（超集，如实不模拟 103804）。框架从不改用户数组。
+  //   · 回调返回后 arr[index] 仍无数据 → 真机 applicationError "onLazyLoading function did
+  //     not provide data to index N"（:407-409），该索引及后续停止加载（repeat.d.ts:156-157），
+  //     无重试、无死循环（lazyLoadingIndex_ 复位 -1，:411；再次派发只会来自下一次独立的布局
+  //     请求——垫片对应物 = 再调一次驱动钩子）。垫片同口径：告警 + 不调度渲染。
+  //   · 回调给到数据 → 真机走 tryFastRelayout（:136-140：arr[index]= 的 Proxy 拦截 → 请求容器
+  //     重排版，无需整树 rerender；官方因此建议配 onTotalCount 用）；垫片对应物 = 调度标准键
+  //     diff 渲染（新增键走 case#3 新建分支，节点身份模型不变）。
+  /**
+   * R155-A：懒加载派发窗口 = totalCount 口径（repeatVsWant；真机登记 onLazyLoading 后传给 C++
+   * 的 arrLen 即 totalCount，pu_repeat_virtual_scroll_2_impl.ts:529/:594——布局请求得到 [0,
+   * totalCount) 内的任意索引）。totalCount 缺省/非法 → 数据源长度。
+   * @param {any} st @returns {number}
+   */
+  function repeatLazyWindow(st) {
+    const want = repeatVsWant(st);
+    return want !== null ? want : st.arr.length;
+  }
+
+  /**
+   * 单次懒加载询问（真机 getItemUnmonitored 的按需单发折叠）。返回 true = 回调给到了数据。
+   * @param {any} st @param {number} index @returns {boolean}
+   */
+  function repeatLazyDispatch(st, index) {
+    // 越界 = 滚动/布局请求不出来的索引（同 onMove 边界口径，告警忽略）
+    const win = repeatLazyWindow(st);
+    if (!Number.isInteger(index) || index < 0 || index >= win) {
+      layoutWarnings.push(`Repeat.onLazyLoading 非法索引（index=${index}, totalCount 窗口=${win}），已忽略`);
+      return false;
+    }
+    if (typeof st.onLazy !== 'function') {
+      layoutWarnings.push('Repeat.onLazyLoading 未登记，无法派发');
+      return false;
+    }
+    // 真机 :403 !(index in this.arr_) 守卫：数据已在的索引不派发（静默 false，非错误）
+    if (index in st.arr) return false;
+    try { st.onLazy(index); } catch (e) {
+      layoutWarnings.push('Repeat.onLazyLoading 回调抛错：' + (e && e.message));
+    }
+    if (!(index in st.arr)) {
+      // 真机 :407-409 applicationError 文案 + d.ts:156-157 停止语义：不重试、不调度渲染
+      layoutWarnings.push(`Repeat.onLazyLoading 回调未给 index=${index} 提供数据`
+        + `（真机 applicationError：onLazyLoading function did not provide data to index ${index}；`
+        + '该索引及后续停止加载，无重试）');
+      return false;
+    }
+    // 数据已到站：键 diff 渲染接管（tryFastRelayout 的垫片对应物）
+    repeatSchedule(st);
+    return true;
+  }
+
+  // 运行时级懒加载驱动钩子（模拟容器滚动取项对缺失索引的请求，供测试/诊断页直调）。
+  // 返回 boolean：true = 已派发且回调给到了数据（渲染已调度）；false = 非法/已有数据/未给数据。
+  (/** @type {any} */ (global)).__arkui_dom_repeatLazy
+    = (/** @type {any} */ node, /** @type {number} */ index) => {
+      const st = (/** @type {any} */ (node)).__repeat;
+      if (!st) return false;
+      return repeatLazyDispatch(st, index);
     };
 
   // ════════════════════ WithTheme ════════════════════

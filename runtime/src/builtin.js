@@ -64,6 +64,22 @@
   }
 
   /**
+   * EdgeEffect api 槽位读取（R155-B）。返回 'spring'|'none'|'shadow'；钩子未声明（R125-154
+   * 的旧调用方）→ 缺省 'spring'，与既有"越界摩擦 + 冲激回弹"行为一致（向后兼容）。
+   * 真机语义（swiper_pattern.cpp）：:302 SetCanOverScroll(effect==SPRING)——只有 Spring 允许
+   * 越界；:3341-3345 非 SPRING 越界拖拽钳到边界值；:4137-4166 CheckDragOutOfBoundary 的
+   * NONE 分支不 PlaySpringAnimation（位置停在边界）。Shadow 在本 SDK 的 EdgeEffect 枚举里
+   * 没有成员（enums.d.ts:1494 = Spring/Fade/None），按任务书收作前向扩展值=Spring 行为
+   * + 视觉标记（视觉 DOM 无对应，由调用方记 dataset/警告）。
+   * @param {any} api @returns {string} 'spring'|'none'|'shadow'
+   */
+  function builtinEdgeEffect(api) {
+    if (typeof api.edgeEffect !== 'function') return 'spring';
+    const v = api.edgeEffect();
+    return v === 'none' || v === 'shadow' ? v : 'spring';
+  }
+
+  /**
    * Swiper/Tabs 通用翻页拖拽。
    * sign 约定：sign=+1 表示"拖向下一页"（手指左移 raw<0），sign=-1 上一页。
    * @param {HTMLElement} el 容器（事件绑在这里）
@@ -71,6 +87,9 @@
    *   loop(): boolean; size(): number; duration(): number;
    *   finishCurve(): any（R154-B 曲线槽位，可选——返回 {kind:'css'|'spring', css} 或空=缺省
    *     ease-out；spring 族走 R126 弹簧解算器、不 respect duration，见 builtinFinishPagedDrag）;
+   *   edgeEffect(): string（R155-B 到边行为开关，可选——'spring'|'none'|'shadow'，缺省
+   *     'spring'。None=越界拖拽硬停（不摩擦跟手）+ 松手直接落位（无冲激弹簧，见
+   *     builtinFinishPagedDrag）；Spring/Shadow=现状摩擦跟手 + 冲激回弹）;
    *   pageAt(i): any; commit(i): void; gesture(i, extra): void; animStart(idx, target): void;
    *   animEnd(i): void }
    */
@@ -134,7 +153,13 @@
         && ((sign === -1 && idxNow === 0) || (sign === 1 && idxNow === api.count() - 1));
       let shown = raw;
       if (outward) {
-        shown = raw * calculateBuiltinFriction(Math.abs(raw) / size);
+        // R155-B：EdgeEffect.None = 到边硬停——真机只有 SPRING 允许越界
+        //（swiper_pattern.cpp:302 SetCanOverScroll(effect==SPRING)；:3341-3345 非 SPRING
+        // 越界位移钳到边界值）→ 位移恒 0、不乘摩擦跟手。Spring/Shadow（缺省）保持 R126
+        // 边界摩擦跟手（swiper_helper.cpp:566-578 原式）。
+        shown = builtinEdgeEffect(api) === 'none'
+          ? 0
+          : raw * calculateBuiltinFriction(Math.abs(raw) / size);
       }
       drag.shown = shown;
       const curEl = drag.cur.el;
@@ -269,9 +294,18 @@
       if (nbEl) nbEl.style.transform = axisX ? `translateX(${nbTarget}px)` : `translateY(${nbTarget}px)`;
     });
     if (!flip) {
-      // 回弹 = 弹簧（R126：真机 StartSpringMotion 同一物理，欠阻尼解析解）——弹簧无固定
-      // 时长，transitionend/duration 兜底对它无意义（transform 没挂 transition），二者并存
-      // 会提前收口、弹簧收尾再写 transform → 互斥，收口由解算器精度触发 settle
+      if (builtinEdgeEffect(api) === 'none') {
+        // R155-B：EdgeEffect.None 回弹 = 直接落位（无冲激弹簧）。真机 CheckDragOutOfBoundary
+        // 的 NONE 分支不 PlaySpringAnimation（swiper_pattern.cpp:4137-4166），位置钳在边界——
+        // transform 同步写边界值（0 位移）并立即收口，无弹簧帧/兜底定时器在途。
+        // Spring/Shadow（缺省）= 弹簧（R126：真机 StartSpringMotion 同一物理，欠阻尼解析解）
+        // ——弹簧无固定时长，transitionend/duration 兜底对它无意义（transform 没挂
+        // transition），二者并存会提前收口、弹簧收尾再写 transform → 互斥，收口由解算器
+        // 精度触发 settle。
+        springApply(0);
+        settle();
+        return;
+      }
       builtinSpringRebound(springApply, d.shown, 0, v0, settle);
       return;
     }
