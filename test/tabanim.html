@@ -601,6 +601,109 @@
           && s14b.__swiperState.edgeEffect === 'spring' && s14b.dataset.edgeEffect === 'spring',
           `非法枚举 99：警告 + 保持缺省 spring（state=${s14b.__swiperState.edgeEffect}）`);
       });
+
+      // ══════════ R156-B 新增 ══════════
+      // G15 @ohos:curves 垫片 + Tabs.animationCurve / Swiper.curve 的 ICurve 参数读取。
+      // ICurve 形状照真机 jsi_curves_module.cpp ParseCurves：{ interpolate(fraction), __curveString }
+      // （6 位小数无空格 std::to_string 串）。垫片面（①-③）纯同步零等待；接线面（④-⑦）只点
+      // 两次页 + 一次 Swiper 状态读，新增虚拟耗时 ~0.7s（预算 8000ms 内）。
+      const curves15 = globalThis.__arkui_dom_require('@ohos:curves');
+      await group('G15 curves 垫片 + ICurve 接线', async () => {
+        // ① 工厂形状：__curveString 前缀断言（cubic-bezier/spring/interpolating-spring/responsive-spring-motion）
+        const cb15 = curves15.cubicBezierCurve(0.33, 0, 0.67, 1);
+        check(typeof cb15.interpolate === 'function'
+          && cb15.__curveString === 'cubic-bezier(0.330000,0.000000,0.670000,1.000000)',
+          `cubicBezierCurve ICurve 形状（'${cb15.__curveString}'，interpolate 为函数成员）`);
+        const sc15 = curves15.springCurve(-1, 1, 228, 30);
+        const ips15 = curves15.interpolatingSpring(-1, 1, 328, 34);
+        const sm15 = curves15.springMotion();
+        check(sc15.__curveString === 'spring(-1.000000,1.000000,228.000000,30.000000)'
+          && ips15.__curveString === 'interpolating-spring(-1.000000,1.000000,328.000000,34.000000)'
+          && String(sm15.__curveString).startsWith('responsive-spring-motion('),
+          `spring 族 __curveString 6 位小数格式（'${sc15.__curveString}' / '${ips15.__curveString}'）`);
+        // ② interpolate 解析面：cubic-bezier 单调、steps 分段、spring 弹簧解算；springMotion 系不可用
+        check(cb15.interpolate(0) === 0 && cb15.interpolate(1) === 1
+          && cb15.interpolate(0.25) < cb15.interpolate(0.5) && cb15.interpolate(0.5) < cb15.interpolate(0.75),
+          `cubic-bezier 求根（0→0、1→1、单调递增）`);
+        const st15 = curves15.stepsCurve(4, true);
+        check(st15.__curveString === 'steps(4,end)'
+          && st15.interpolate(0) === 0 && st15.interpolate(0.3) === 0.25
+          && st15.interpolate(1) === 1 && curves15.stepsCurve(4, false).interpolate(0.3) === 0.5,
+          `stepsCurve 分段（end:0→0/0.3→0.25/1→1；start:0.3→0.5，'${st15.__curveString}'）`);
+        check(sc15.interpolate(0) === 0 && Math.abs(sc15.interpolate(1) - 1) < 1e-6,
+          `springCurve 解析弹簧解算（d.ts 未禁 interpolate：f(0)=0、f(1)=1）`);
+        check(ips15.interpolate(0.5) === undefined && sm15.interpolate(0.5) === undefined,
+          `springMotion 系 interpolate 不可用=undefined（d.ts:355-365/:431-437 明文）`);
+        const cc15 = curves15.customCurve((/** @type {number} */ f) => f * f);
+        check(cc15.interpolate(0.5) === 0.25 && cc15.__curveString === 'customCallback',
+          `customCurve 回调包装（f(0.5)=${cc15.interpolate(0.5)}，'${cc15.__curveString}'）`);
+        // ③ 枚举/deprecated 串：initCurve 驼峰表 + init/spring 别名回 string
+        check(curves15.initCurve(1).__curveString === 'Curves.Ease'
+          && curves15.initCurve(5).__curveString === 'Curves.FastOutSlowIn'
+          && curves15.initCurve().__curveString === 'linear'
+          && curves15.spring(-1, 1, 228, 30) === 'spring(-1.000000,1.000000,228.000000,30.000000)',
+          `枚举驼峰串与 deprecated 别名（initCurve(1)='${curves15.initCurve(1).__curveString}'，`
+          + `spring() 别名回 string）`);
+        // ④ 接线：cubicBezierCurve 的 ICurve → Tabs.animationCurve → 点击路径 transition 生效
+        //（计算样式串 Chrome 会把 0.330000 归一成 0.33——去空格比对参数包本身，G10 同口径）
+        const t15a = buildTabs({}, () => {
+          Tabs.animationDuration(120);
+          Tabs.animationCurve(cb15);
+        }, ['w0', 'w1', 'w2']);
+        await tick(40);
+        itemsOf(t15a)[1].click();
+        await tick(40);
+        check(cs(contentsOf(t15a)[1]).transitionTimingFunction.replace(/\s+/g, '') === 'cubic-bezier(0.33,0,0.67,1)'
+          && /transform 120ms/.test(contentsOf(t15a)[1].style.transition)
+          && t15a.__tabsState.animCurveKind === 'css',
+          `ICurve 接线：点击路径 transition 携带 cubic-bezier 参数包`
+          + `（'${cs(contentsOf(t15a)[1]).transitionTimingFunction}' + `
+          + `'${contentsOf(t15a)[1].style.transition}'）`);
+        // ⑤ 接线：springCurve 的 ICurve → spring 族（忽略 duration=0、270ms 内禀 + TABS_SPRING_CSS）
+        const t15b = buildTabs({}, () => {
+          Tabs.animationDuration(0);
+          Tabs.animationCurve(sc15);
+        }, ['x0', 'x1']);
+        await tick(40);
+        itemsOf(t15b)[1].click();
+        await tick(40);
+        check(t15b.__tabsState.animCurveKind === 'spring'
+          && cs(contentsOf(t15b)[1]).transitionTimingFunction === 'cubic-bezier(0.2, 0.7, 0.3, 1)'
+          && /transform 270ms/.test(contentsOf(t15b)[1].style.transition),
+          `springCurve ICurve → spring 族 270ms 内禀（'${contentsOf(t15b)[1].style.transition}'）`);
+        await tick(500);
+        // ⑥ 接线：枚举 ICurve 映射（EaseIn→CSS 关键字；FastOutSlowIn→等参 bezier；steps→CSS steps()）
+        const t15c = buildTabs({}, () => { Tabs.animationCurve(curves15.initCurve(2)); }, ['y0', 'y1']);
+        check(t15c.__tabsState.animCurveCss === 'ease-in',
+          `枚举 ICurve 'Curves.EaseIn' → CSS 关键字（'${t15c.__tabsState.animCurveCss}'）`);
+        const t15d = buildTabs({}, () => { Tabs.animationCurve(curves15.initCurve(5)); }, ['z0', 'z1']);
+        check(t15d.__tabsState.animCurveCss === 'cubic-bezier(0.4, 0, 0.2, 1)',
+          `FastOutSlowIn → 等参 bezier（'${t15d.__tabsState.animCurveCss}'）`);
+        const t15e = buildTabs({}, () => { Tabs.animationCurve(curves15.stepsCurve(3, true)); }, ['u0', 'u1']);
+        check(t15e.__tabsState.animCurveCss === 'steps(3, end)',
+          `stepsCurve ICurve → CSS steps()（'${t15e.__tabsState.animCurveCss}'）`);
+        // ⑦ 未识别 ICurve（裸 {interpolate} 无 __curveString）：警告 + 保持缺省点击曲线（现口径）
+        const before15 = warns().length;
+        const t15f = buildTabs({}, () => {
+          Tabs.animationCurve(/** @type {any} */ ({ interpolate: (/** @type {number} */ f) => f }));
+        }, ['v0', 'v1']);
+        check(warns().slice(before15).some((w) => w.includes('Tabs.animationCurve('))
+          && t15f.__tabsState.animCurveCss === 'cubic-bezier(0.2, 0, 0.1, 1)',
+          `无 __curveString 的 ICurve：警告 + 保持缺省点击曲线`
+          + `（'${t15f.__tabsState.animCurveCss}'）`);
+        // ⑧ Swiper.curve 同路（共用 parseTabsAnimCurve）：ICurve → curveKind/curveCss 状态
+        const C15 = globalThis.Swiper;
+        const snap15 = VSP.snapshot();
+        const s15 = C15.create();
+        C15.loop(false);
+        C15.curve(cb15);
+        C15.pop();
+        VSP.restore(snap15);
+        check(s15.__swiperState.curveKind === 'css'
+          && s15.__swiperState.curveCss === 'cubic-bezier(0.330000,0.000000,0.670000,1.000000)',
+          `Swiper.curve(ICurve) 同路：curveKind/curveCss 落状态`
+          + `（'${s15.__swiperState.curveKind}'/'${s15.__swiperState.curveCss}'）`);
+      });
     } catch (e) {
       allPass = false;
       lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));

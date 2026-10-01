@@ -41,7 +41,7 @@
       __arkui_dom_loadRoute('pages/BatchFuncDemo', root);
       await tick(160);   // Repeat/Calendar/Indicator 的 microtask 渲染 + 首帧
 
-      // ══════════ ① Repeat（4 + R153-A 11 + R154-A 8 + R155-A 7 条） ══════════
+      // ══════════ ① Repeat（4 + R153-A 11 + R154-A 8 + R155-A 7 + R156-A 9 条） ══════════
       const rep = root.querySelector('[data-arkui-repeat]');
       check(!!rep && rep.style.display === 'contents',
         `Repeat 基座：display:contents 逻辑容器（实际 '${rep && rep.style.display}'）`);
@@ -286,6 +286,138 @@
         && !root.querySelector('#lz-ly'),
         `与 virtualScroll 裁剪共存：数据源 7 项 > totalCount=6 → 只渲染 6 项`
         + `（#lz-lx='#lx@5' 在、#lz-ly 不越裁剪，实际 repeatCount='${lzRep.dataset.repeatCount}'）`);
+
+      // ── R156-A：onMoveThrough 拖拽进行中细粒度派发（独立第五个 Repeat 实例）──
+      // 真机协议（list_item_drag_manager.cpp:645-663）：每个拖拽更新帧 from_live=GetIndex() →
+      // to=ScaleNearItem（越过中线的邻居）→ to==from 直接 return（唯一守卫，无防抖）→
+      // HandleSwapAnimation（MoveData 平移表：拖拽项移到 to、邻居腾位；弹簧只是视觉插值）→
+      // FireOnMoveThrough(fromIndex_, to)：首参=拖拽起始索引（:198 赋值一次，全手势恒定）。
+      // common.d.ts:25788 onMoveThrough?: OnMoveHandler（两参裸 number），经 onMove 第二参
+      // ItemDragEventHandler 传入（common.d.ts:25838）——非独立链式属性。拖拽期间数据源不动。
+      const mtArr = [{ id: 'mp', name: 'MP' }, { id: 'mq', name: 'MQ' },
+        { id: 'mr', name: 'MR' }, { id: 'ms', name: 'MS' }];
+      const mtRep = R.create(mtArr, null);
+      const mtMoves = [];
+      const mtThroughs = [];
+      const mtRis = {};
+      const mtThrough = (/** @type {number} */ from, /** @type {number} */ to) => {
+        mtThroughs.push([from, to]);
+      };
+      R.each((ri) => {
+        mtRis[ri.item.id] = ri;
+        Column.create();
+        Column.id('mt-' + ri.item.id);
+        Text.create(ri.item.id + '@' + ri.index);
+        Text.pop();
+        Column.pop();
+      });
+      R.key((item) => item.id);
+      R.onMove((/** @type {number} */ from, /** @type {number} */ to) => {
+        mtMoves.push([from, to]);
+      }, { onMoveThrough: mtThrough });
+      R.pop();
+      await tick(20);
+      check(mtRep.dataset.onMoveThrough === 'registered'
+        && (/** @type {any} */ (mtRep)).__repeat.onMoveThrough === mtThrough,
+        `onMoveThrough 登记面：onMove 第二参 ItemDragEventHandler.onMoveThrough 存进 st（`
+        + `dataset='${mtRep.dataset.onMoveThrough}'、__repeat.onMoveThrough 同引用）`);
+      const mtOrder = () => Array.from(mtRep.children)
+        .map((/** @type {any} */ c) => c.id.replace('mt-', '')).join('');
+      const mtArrIds = () => mtArr.map((/** @type {any} */ x) => x.id).join('');
+      const mtP = root.querySelector('#mt-mp');
+      const t1 = /** @type {boolean} */ (__arkui_dom_repeatMoveThrough(mtRep, 0, 1));
+      check(t1 === true && mtThroughs.length === 1 && mtThroughs[0].length === 2
+        && mtThroughs[0][0] === 0 && mtThroughs[0][1] === 1 && mtOrder() === 'mqmpmrms',
+        `驱动钩子两参裸 number：(from,to)=(${mtThroughs.length ? mtThroughs[0][0] : '?'},`
+        + `${mtThroughs.length ? mtThroughs[0][1] : '?'})——无事件对象；`
+        + `首跨视觉换位同步完成 DOM 序 '${mtOrder()}'`);
+      check(mtArrIds() === 'mpmqmrms' && root.querySelector('#mt-mp') === mtP,
+        `拖拽进行中数据源不动（真机框架只重排视觉节点不碰用户数组）：arr 内容仍 '${mtArrIds()}'、`
+        + `节点身份保持（#mt-mp 同引用）`);
+      check((/** @type {any} */ (mtRis.mp)).index === 1 && (/** @type {any} */ (mtRis.mq)).index === 0
+        && (/** @type {any} */ (mtRis.mr)).index === 2 && (/** @type {any} */ (mtRis.ms)).index === 3,
+        `RepeatItem.index 原地改写：mp 0→1、mq 1→0、mr/ms 不变（ri 实例不换，MoveData 平移表口径）`);
+      const t2 = /** @type {boolean} */ (__arkui_dom_repeatMoveThrough(mtRep, 0, 2));
+      check(t2 === true && mtThroughs.length === 2 && mtThroughs[1][0] === 0 && mtThroughs[1][1] === 2
+        && mtOrder() === 'mqmrmpms' && mtArrIds() === 'mpmqmrms',
+        `from 恒=拖拽起始索引（事件序 (0,1),(0,2)——fromIndex_ 全手势不随换位更新）：`
+        + `二跨按在途被拖项实时位换位 DOM 序 '${mtOrder()}'、arr 仍 '${mtArrIds()}'`);
+      // 未声明槽位不派发（真机换位与事件守卫解耦：for_each_base_node.h:52-55 只门回调不门换位）
+      const nuArr = [{ id: 'np', name: 'NP' }, { id: 'nq', name: 'NQ' }];
+      const nuRep = R.create(nuArr, null);
+      R.each((ri) => {
+        Column.create();
+        Column.id('nu-' + ri.item.id);
+        Text.create(ri.item.id + '@' + ri.index);
+        Text.pop();
+        Column.pop();
+      });
+      R.key((item) => item.id);
+      R.onMove(() => {});                       // 无第二参 → onMoveThrough 未声明
+      R.pop();
+      await tick(20);
+      const nuT = /** @type {boolean} */ (__arkui_dom_repeatMoveThrough(nuRep, 0, 1));
+      const nuOrder = () => Array.from(nuRep.children)
+        .map((/** @type {any} */ c) => c.id.replace('nu-', '')).join('');
+      check(nuT === true && (/** @type {any} */ (nuRep)).__repeat.onMoveThrough === null
+        && nuRep.dataset.onMoveThrough === 'none' && nuOrder() === 'nqnp',
+        `未声明槽位不派发：onMove 无第二参 → st.onMoveThrough=null、dataset='none'，驱动不炸且`
+        + `视觉换位照常（DOM 序 '${nuOrder()}'，真机 HandleSwapAnimation 与 FireOnMoveThrough 解耦）`);
+      // 落定收口：onMove 落定 splice 数据源 + 键 diff 重放 index 依赖内容（moved 强制重放）
+      const mtSettled = /** @type {boolean} */ (__arkui_dom_repeatMove(mtRep, 0, 2));
+      await tick(20);
+      check(mtSettled === true && mtMoves.length === 1 && mtMoves[0][0] === 0 && mtMoves[0][1] === 2
+        && mtArrIds() === 'mqmrmpms' && mtThroughs.length === 2
+        && Array.from(mtRep.children).map((/** @type {any} */ c) => c.textContent).join('|')
+          === 'mq@0|mr@1|mp@2|ms@3',
+        `落定收口：onMove(0,2) 数据源 splice（'${mtArrIds()}'）+ moved 标记强制重放 index 依赖内容`
+        + `（'${Array.from(mtRep.children).map((/** @type {any} */ c) => c.textContent).join('|')}'）、`
+        + `through 不重派发（mtThroughs 仍 2 次）`);
+
+      // ── R156-A：onTotalCount 登记面 + 口径提取（repeat.d.ts:208 onTotalCount?(): number，since 19；
+      // 与 totalCount 二选一、两者都设时 totalCount 被忽略（:181 口径）；返回值 > 数据源长度且未登记
+      // onLazyLoading → 按数据源长度裁剪（:190，repeatEffectiveN 降级口径）──
+      const ocArr = [{ id: 'oc', name: 'OC' }, { id: 'od', name: 'OD' },
+        { id: 'oe', name: 'OE' }, { id: 'of', name: 'OF' }];
+      const ocRep = R.create(ocArr, null);
+      let ocReads = 0;
+      const ocFn = () => { ocReads++; return 2; };
+      R.each((ri) => {
+        Column.create();
+        Column.id(ri.item.id);
+        Text.create(ri.item.id + '@' + ri.index);
+        Text.pop();
+        Column.pop();
+      });
+      R.key((item) => item.id);
+      R.virtualScroll({ totalCount: 99, onTotalCount: ocFn });   // 两者都设 → totalCount 被忽略
+      R.pop();
+      await tick(20);
+      check((/** @type {any} */ (ocRep)).__repeat.vs.onTotalCount === ocFn && ocReads >= 1
+        && ocRep.dataset.repeatCount === '2' && !!root.querySelector('#oc')
+        && !!root.querySelector('#od') && !root.querySelector('#oe'),
+        `onTotalCount 登记面+口径优先：virtualScroll options 原样存进 st.vs（同引用）且生效——`
+        + `totalCount=99 被忽略、onTotalCount()=2 裁剪渲染 2 项（repeatCount='${ocRep.dataset.repeatCount}'）`);
+      const warnBeforeOc = __arkui_dom_layout_warnings.length;
+      const ogArr = [{ id: 'og', name: 'OG' }, { id: 'oh', name: 'OH' }];
+      const ogRep = R.create(ogArr, null);
+      R.each((ri) => {
+        Column.create();
+        Column.id(ri.item.id);
+        Text.create(ri.item.id + '@' + ri.index);
+        Text.pop();
+        Column.pop();
+      });
+      R.key((item) => item.id);
+      R.virtualScroll({ onTotalCount: () => 5 });   // > 数据源长度 2 且未登记 onLazyLoading
+      R.pop();
+      await tick(20);
+      const ogWarns = __arkui_dom_layout_warnings.slice(warnBeforeOc).map(String);
+      check(ogRep.dataset.repeatCount === '2' && !!root.querySelector('#og')
+        && !!root.querySelector('#oh')
+        && ogWarns.some((/** @type {string} */ m) => m.indexOf('超过数据源长度') >= 0),
+        `onTotalCount()>数据源长度：按数据源长度裁剪（仍 2 项不凭空渲染）+ 未登记 onLazyLoading `
+        + `告警（repeatEffectiveN 降级口径，真机 applicationError 对应物）`);
 
       // ══════════ ② WithTheme（2 条） ══════════
       const wt = el('wt');

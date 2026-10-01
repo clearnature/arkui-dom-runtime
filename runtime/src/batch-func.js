@@ -61,6 +61,12 @@
   //   number 绝对索引，repeat.d.ts:173），数据源由回调 arr[index]=item 自行补齐；垫片没有滚动
   //   容器的按需取项管线，回调经驱动钩子派发（详见钩子处块注释）。数据到站后调度键 diff（新增
   //   键走 case#3 新建分支）；渲染在首个缺数据索引处截断（repeat.d.ts:156-157 停止语义）。
+  // R156-A：onMoveThrough 拖拽进行中细粒度派发（__arkui_dom_repeatMoveThrough 驱动钩子 +
+  //   repeatMoveThroughDispatch）——真机协议 = 拖拽中每跨过一项先 MoveData 平移表换位、再
+  //   FireOnMoveThrough(fromIndex_, to)（首参=拖拽起始索引整个手势恒定；数据源不动，落定
+  //   onMove 才由开发者 splice）；垫片只做视觉换位 + RepeatItem.index 原地改写 + 事件派发
+  //   （详见钩子处块注释）。登记面 = onMove 第二参 ItemDragEventHandler.onMoveThrough
+  //   （common.d.ts:25838 since 20 重载，非独立链式属性）。
   /** @param {any[]} prev @param {any[]} next @param {number} n */
   const repeatSigSame = (prev, next, n) => prev.length === n && next.length >= n
     && prev.every((/** @type {any} */ v, /** @type {number} */ k) => Object.is(v, next[k]));
@@ -289,11 +295,14 @@
       if (keptRec) {
         // case#1 键保留：仅 updateIndex（item 不动——键相等即同一逻辑项，pu_repeat_impl.ts）。
         // index 没变就不重放（真机 pu_repeat.ts:64-71 "无人依赖 index 跳过 set" 的对应物）。
+        // R156-A：moved = onMoveThrough 拖拽期已把 ri.index 原地改写到视觉序——「index 没变跳
+        // 重放」的基线被改写，落定键 diff 须强制重放一次 index 依赖内容（收口 'p@0'→'p@2'）。
         oldItems.delete(key);
-        if (keptRec.ri.index !== i) {
+        if (keptRec.ri.index !== i || keptRec.moved) {
           keptRec.ri.index = i;                    // RepeatItem 原地改写（不换对象）
           repeatReplayPatch(st, keptRec, res.b);   // 重放 + 补丁：内容更新、节点身份保持
         }
+        keptRec.moved = false;
         for (const nd of keptRec.nodes) st.el.appendChild(nd);   // 从暂存区取回
         items.set(key, keptRec);
       } else {
@@ -387,6 +396,10 @@
 
   /** @param {any} st */
   function repeatRender(st) {
+    // R156-A：渲染即拖拽手势状态失效（真机拖拽期间不允许改数组、也不 rerender；垫片防御性
+    // 复位在途 onMoveThrough 手势——after 渲染 DOM 序已按键 diff 收敛，旧"被拖项"引用作废）
+    st.mtFrom = null;
+    st.mtDragged = null;
     let n = repeatEffectiveN(st);
     // R155-A：懒加载缺口截断（repeat.d.ts:152-157 "After the onLazyLoading method is
     // executed, if no data exists in the specified index, the components corresponding to
@@ -479,11 +492,27 @@
       }
       repeatSchedule(st);
     },
-    onMove: (n, v) => {
+    onMove: (n, v, opts) => {
       const st = (/** @type {any} */ (n)).__repeat;
       if (!st) return;
       st.onMove = typeof v === 'function' ? v : null;
       n.dataset.onMove = st.onMove ? 'registered' : 'none';
+      // R156-A：onMoveThrough 走 onMove 的第二参 ItemDragEventHandler（common.d.ts:25838
+      // onMove(handler, eventHandler) since 20 重载；:25788 onMoveThrough?: OnMoveHandler）——
+      // 非独立链式属性；area.js:441 已把 args[1] 透传到 opts。同接口的 onLongPress/onDragStart/
+      // onDrop 不在本片范围（不消费，如声明实记档于此注释）。
+      const evh = opts && typeof opts === 'object' ? opts : null;
+      st.onMoveThrough = evh && typeof evh.onMoveThrough === 'function' ? evh.onMoveThrough : null;
+      n.dataset.onMoveThrough = st.onMoveThrough ? 'registered' : 'none';
+      if (st.onMoveThrough && !st.warnedMoveThrough) {
+        st.warnedMoveThrough = true;
+        // R156-A：如实——真机触发源 = List/Grid 父容器拖拽中每跨过一项（HandleSwapAnimation
+        // 换位后 FireOnMoveThrough，list_item_drag_manager.cpp:660-663），DOM 垫片无拖拽手势。
+        // 回调由驱动钩子 __arkui_dom_repeatMoveThrough(node, from, to) 派发（两参裸 number，
+        // from=拖拽起始索引手势内恒定；数据源仍由 onMove 落定时开发者 splice）。
+        layoutWarnings.push('Repeat.onMoveThrough 已登记：DOM 垫片无拖拽手势触发源，'
+          + '回调经 __arkui_dom_repeatMoveThrough 驱动钩子派发');
+      }
       if (st.onMove && !st.warnedMove) {
         st.warnedMove = true;
         // R154-A：如实——onMove 的真机触发源是 List/Grid 父容器的拖拽手势
@@ -509,11 +538,13 @@
       eachB: null, keyFn: null, templateIdFn: null,
       /** @type {Record<string, any>} */ templates: {},
       vs: null, onMove: null, onLazy: null,   // onLazy = virtualScroll 选项里的 onLazyLoading（R155-A）
+      onMoveThrough: null,   // R156-A = onMove 第二参 ItemDragEventHandler.onMoveThrough（API 20）
+      mtFrom: null, mtDragged: null,         // R156-A 在途拖拽手势（fromIndex_ 恒定 + 被拖项 rec）
       scheduled: false, lastSig: null,
       items: null,           // Map<key, rec>：当前存活项；rec = {key, ri, tplKey, nodes}
       pool: [],              // 持久回收池（单池、上限 16、LIFO）
       lastBuilders: null,    // 构建器面指纹（each/templateId/template 更换 → 全量重建）
-      warnedEach: false, warnedMove: false, warnedDupKeys: false,
+      warnedEach: false, warnedMove: false, warnedMoveThrough: false, warnedDupKeys: false,
       warnedLazy: false, warnedNoLazy: false,
     });
     return st.el;
@@ -575,6 +606,10 @@
       layoutWarnings.push('Repeat.onMove：尚无已渲染项，已忽略');
       return false;
     }
+    // R156-A：落定 = 结束在途 onMoveThrough 手势（真机 FireOnMove 在 drop/cancel 收口路径，
+    // list_item_drag_manager.cpp:872-877——手势状态不跨落定存活）
+    st.mtFrom = null;
+    st.mtDragged = null;
     const keys = repeatComputeKeys(st, n).keys;
     // 渲染序条目（= 当前 DOM 序；缺 each 的项未渲染，跳过——与子节点序列一致）
     const seq = [];
@@ -632,6 +667,121 @@
       const st = (/** @type {any} */ (node)).__repeat;
       if (!st) return false;
       return repeatMoveDispatch(st, from, to);
+    };
+
+  // ── R156-A：拖拽进行中细粒度派发（onMoveThrough，API 20）──
+  // 真机协议（list_item_drag_manager.cpp HandleOnItemDragUpdate，每个拖拽更新帧，:645-663）：
+  //   · from_live = GetIndex()（被拖项在框架子节点序的实时索引）；to = ScaleNearItem(from_live,…)
+  //     = 越过中线的最近邻居目标（:337-356 IsNeedMove 中线口径）；to == from_live → 直接 return
+  //     （:595-597【唯一守卫】——无 lastThroughIndex 防抖，往复摆动会反复触发）；
+  //   · 先 HandleSwapAnimation(from_live, to)（:660 → MoveData 平移表换位：拖拽项移到 to、邻居
+  //     顺次腾位；InterpolatingSpring(0,1,400,38)/30ms 只是视觉插值，内部顺序换位在动画启动即
+  //     生效），【再】FireOnMoveThrough(fromIndex_, to)（:663/:707）；
+  //   · 回调首参 fromIndex_ = 拖拽起始索引（:198 赋值一次，全手势【恒定不随换位更新】——即一次
+  //     拖拽的事件序为 (from0,t1),(from0,t2),…），次参 to = 本次越过的目标（实时序）；
+  //   · 【框架只重排自己的视觉节点（MoveData），数据源不动】——数据源仍由 onMove 落定时开发者
+  //     splice（权威七步 pu_repeat_virtual_scroll_2_impl.ts:71-83）；未登记回调时换位照常
+  //     （for_each_base_node.h:52-55 FireOnMoveThrough 只门回调，不门换位）。
+  // 签名 = 两参裸 number OnMoveHandler（common.d.ts:25744/:25788，同 onMove 无事件对象）。
+  // DOM 垫片无拖拽会话（无手势系统），驱动钩子按「真机回调同形两参」驱动：
+  //   · 首次调用（或 from 与在途手势不同 = 新手势开始）：from 定位被拖项——首次跨越时该帧实时位
+  //     恰等于起始索引，两者相等；
+  //   · 同手势后续调用：按在途被拖项 rec 反查实时位 cur（真机 GetIndex 口径），换位 cur→to；
+  //   · 回调收 (from, to) 原样两参——from 即 fromIndex_ 恒定口径。
+  // 本钩子依次：
+  //   ① 视觉平移换位（erase 先行再插入，同 MoveData/canonical splice 语义：[a,b,c,d] move(0,2)
+  //      → [b,c,a,d]；DocumentFragment 一批回填，节点身份保持——同 R154 先例）；
+  //   ② RepeatItem.index 原地改写（ri 实例不换）+ rec.moved 标记——不重放 builder（真机拖拽期
+  //      MoveData 不重渲染，内容收口在落定键 diff；moved 强制 case#1 重放：R153 的「index 没变
+  //      跳重放」以 ri.index 为基线，through 已把它改写，不强制会漏收 'p@0'→'p@2'）；
+  //   ③ lastSig 置 null：R153 前缀快照按旧数组序记，换位后 DOM 序与 st.arr 序脱钩——真机
+  //      moveFromTo_ 平移表同款失效语义，下一次键 diff 不得误判"数组没变"而跳过；
+  //   ④ 派发 onMoveThrough(from, to)。
+  // 【不 splice st.arr、不调度渲染】——真机拖拽期间不 rerender、不动用户数组；渲染收口只在
+  // onMove 落定的 splice rerender（__arkui_dom_repeatMove → repeatSchedule）。
+  /**
+   * @param {any} st @param {number} from @param {number} to @returns {boolean} 是否已换位派发
+   */
+  function repeatMoveThroughDispatch(st, from, to) {
+    const n = repeatEffectiveN(st);
+    // 真机口径：越界/非整数 = 拖拽手势产生不了的索引，告警忽略（同 onMove 边界口径）
+    if (!Number.isInteger(from) || !Number.isInteger(to)
+      || from < 0 || to < 0 || from >= n || to >= n) {
+      layoutWarnings.push(`Repeat.onMoveThrough 非法换位（from=${from}, to=${to}, 渲染条数=${n}），已忽略`);
+      return false;
+    }
+    if (!st.items || st.items.size === 0) {
+      layoutWarnings.push('Repeat.onMoveThrough：尚无已渲染项，已忽略');
+      return false;
+    }
+    // 视觉序 = 当前 DOM 序（through 换位后 DOM 与 st.arr 序脱钩，不能按 keys 表重建——
+    // 节点→rec 反查后按 childNodes 走序；st.items 的键→rec 映射与顺序无关，仍有效）
+    const byNode = new Map();
+    for (const rec of st.items.values()) {
+      for (const nd of rec.nodes) byNode.set(nd, rec);
+    }
+    const seq = [];
+    for (const nd of st.el.childNodes) {
+      const rec = byNode.get(nd);
+      if (rec) seq.push(rec);
+    }
+    if (!seq.length) {
+      layoutWarnings.push('Repeat.onMoveThrough：尚无已渲染项，已忽略');
+      return false;
+    }
+    // 手势状态：首次调用 / from 变化 = 新手势（真机 drag start 重赋 fromIndex_，:198）
+    let cur;
+    if (typeof st.mtFrom !== 'number' || st.mtFrom !== from) {
+      st.mtFrom = from;
+      st.mtDragged = seq[from];
+      cur = from;
+    } else {
+      cur = seq.indexOf(st.mtDragged);
+      if (cur < 0) {
+        // 防御：在途被拖项已不在渲染序（中途全量重建等）——复位手势，告警忽略本次
+        st.mtFrom = null;
+        st.mtDragged = null;
+        layoutWarnings.push(`Repeat.onMoveThrough：在途被拖项未渲染（from=${from}），手势状态已复位`);
+        return false;
+      }
+    }
+    if (cur === to) return false;      // 真机 :595-597 唯一守卫（无跨越不换位不派发；拖拽更新帧
+                                       // 高频触发，静默同款——不同于 onMove 的"落定调用"告警口径）
+    // ① 视觉平移换位（erase 先行再插入）
+    const movedRec = seq.splice(cur, 1)[0];
+    seq.splice(to, 0, movedRec);
+    const frag = document.createDocumentFragment();
+    for (const rec of seq) {
+      for (const node of rec.nodes) frag.appendChild(node);
+    }
+    st.el.appendChild(frag);
+    st.items = new Map(seq.map((/** @type {any} */ rec) => [rec.key, rec]));
+    // ② RepeatItem.index 原地改写（不重放 builder——内容收口在落定键 diff，moved 见块注释）
+    for (let k = 0; k < seq.length; k++) {
+      seq[k].ri.index = k;
+      seq[k].moved = true;
+    }
+    // ③ R153 前缀快照过期（本钩子不调度渲染，何时重放由落定/数据源变更决定）
+    st.lastSig = null;
+    st.el.dataset.repeatMoveThroughFrom = String(from);
+    st.el.dataset.repeatMoveThroughTo = String(to);
+    // ④ 派发（两参裸 number 原样——from 即真机 fromIndex_ 恒定口径；回调抛错不阻断，同 onMove）
+    if (typeof st.onMoveThrough === 'function') {
+      try { st.onMoveThrough(from, to); } catch (e) {
+        layoutWarnings.push('Repeat.onMoveThrough 回调抛错：' + (e && e.message));
+      }
+    }
+    return true;
+  }
+
+  // 运行时级拖拽进行中驱动钩子（同 __arkui_dom_repeatMove 先例，供测试/诊断页直调）。
+  // 返回 boolean：true = 已换位（回调是否派发取决于是否登记——真机换位与事件守卫解耦）；
+  // false = 非法/无跨越（已告警或静默，见 repeatMoveThroughDispatch）。
+  (/** @type {any} */ (global)).__arkui_dom_repeatMoveThrough
+    = (/** @type {any} */ node, /** @type {number} */ from, /** @type {number} */ to) => {
+      const st = (/** @type {any} */ (node)).__repeat;
+      if (!st) return false;
+      return repeatMoveThroughDispatch(st, from, to);
     };
 
   // ── R155-A：数据源懒加载派发（onLazyLoading）──

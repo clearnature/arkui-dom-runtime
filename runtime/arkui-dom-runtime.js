@@ -1651,7 +1651,10 @@
    *     'spring'。None=越界拖拽硬停（不摩擦跟手）+ 松手直接落位（无冲激弹簧，见
    *     builtinFinishPagedDrag）；Spring/Shadow=现状摩擦跟手 + 冲激回弹）;
    *   pageAt(i): any; commit(i): void; gesture(i, extra): void; animStart(idx, target): void;
-   *   animEnd(i): void }
+   *   animEnd(i): void;
+   *   onMoveThrough(i): void（R156-A 可选槽位——拖拽进行中每越过一次"中线"派发一次越过目标页
+   *     索引 i，真机 IsNeedMove 中线口径 list_item_drag_manager.cpp:337-356、API 20 同名细粒度
+   *     事件 common.d.ts:25788；未声明不派发——Tabs/Swiper 既有调用方零感知，向后兼容） }
    */
   function attachPagedDrag(el, api) {
     /** @type {any} */ let drag = null;
@@ -1722,6 +1725,11 @@
           : raw * calculateBuiltinFriction(Math.abs(raw) / size);
       }
       drag.shown = shown;
+      // R156-A 槽位：onMoveThrough(越过目标索引)——拖拽进行中每越过一次中线派发一次（真机
+      // IsNeedMove 中线口径 list_item_drag_manager.cpp:337-356；API 20 onMoveThrough 同名事件
+      // common.d.ts:25788）。未声明不派发（Tabs/Swiper 既有调用方零感知，向后兼容）。
+      if (typeof api.onMoveThrough === 'function' && drag.nIdx >= 0
+        && Math.abs(shown) * BUILTIN_DRAG_PROPORTION > size) api.onMoveThrough(drag.nIdx);
       const curEl = drag.cur.el;
       curEl.style.transform = axisX ? `translateX(${shown}px)` : `translateY(${shown}px)`;
       const nbEl = drag.neighbor ? drag.neighbor.el : null;
@@ -4112,14 +4120,42 @@
     return { sm: col(o.sm), md: col(o.md), lg: col(o.lg), margin: dim(o.margin, 24), gutter: dim(o.gutter, 24) };
   }
 
-  // animationCurve 入参面：Curve 枚举值（数字）/ spring 族名 / CSS 曲线串 → {kind, css}。
+  // animationCurve 入参面：Curve 枚举值（数字）/ spring 族名 / CSS 曲线串 / ICurve 对象 → {kind, css}。
   //   · Curve 枚举（d.ts curve.d.ts）：0=Linear 1=Ease 2=EaseIn 3=EaseOut 4=EaseInOut 与 CSS
   //     同名关键字一一对应（真机即同名 bezier）；5=Friction 6=Smooth 无官方 CSS 等价，取近似
   //     （仅近似，不在断言面）。
   //   · spring 族名（curves.interpolatingSpring/springMotion/responsiveSpringMotion/springCurve
   //     对应的字符串形态）→ kind='spring'：内禀时长（TABS_SPRING_SWITCH_MS）、CSS 近似曲线。
-  //   · ICurve 对象（含 .interpolate）本运行时无 @ohos.curves 垫片、读不出曲线参数 → 返回 null
-  //     由调用方记警告（不静默吞）。
+  //   · ICurve 对象（R156-B，@ohos:curves 垫片产出、真机形状 { interpolate, __curveString }）：
+  //     读 __curveString 序列化参数包（真机 jsi_curves_module.cpp ParseCurves 的 curve->ToString()
+  //     产物，6 位小数无空格）——'spring(v,m,s,d)'/'interpolating-spring(v,m,s,d)'/
+  //     'responsive-spring-motion(...)' → kind='spring'（内禀时长 + TABS_SPRING_CSS 近似；参数包
+  //     语义已由 spring 分族表达，不解参不落状态）；'cubic-bezier(x1,y1,x2,y2)' → kind='css' 直通
+  //     （CSS 同名函数原生支持）；'steps(n,end|start)' → kind='css' 归一成 'steps(n, end|start)'
+  //     （CSS steps() 原生支持，jump-end/jump-start 语义同构）；枚举名两形态——'Curves.Ease' 驼峰
+  //     （C++ Curves::ToString 表，core/animation/curves.cpp:33-40）与小写 kebab（'ease'/
+  //     'fast-out-slow-in'/...，dom_type.cpp:292-304 同词汇）→ CSS 关键字或【等参】cubic-bezier
+  //     串（参数表见 TABS_ICURVE_ENUM_CSS，core/animation/curves.cpp:22-40 全清单）。
+  //   · 'customCallback'（curves.customCurve 产物）/无 __curveString/未识别前缀 → 返回 null 由
+  //     调用方记警告保持现值（不静默吞，现口径）。
+  // 枚举名 → CSS：前 5 项与 CSS 关键字同名直通；后 8 项 CSS 无对应关键字 → 按真机常数表给等参
+  // cubic-bezier（比"近似曲线"更真，值逐项对齐 core/animation/curves.cpp:22-40）。
+  /** @type {Record<string, string>} */
+  const TABS_ICURVE_ENUM_CSS = {
+    'linear': 'linear',
+    'ease': 'ease',
+    'ease-in': 'ease-in',
+    'ease-out': 'ease-out',
+    'ease-in-out': 'ease-in-out',
+    'fast-out-slow-in': 'cubic-bezier(0.4, 0, 0.2, 1)',
+    'linear-out-slow-in': 'cubic-bezier(0, 0, 0.2, 1)',
+    'fast-out-linear-in': 'cubic-bezier(0.4, 0, 1, 1)',
+    'friction': 'cubic-bezier(0.2, 0, 0.2, 1)',
+    'extreme-deceleration': 'cubic-bezier(0, 0, 0, 1)',
+    'sharp': 'cubic-bezier(0.33, 0, 0.67, 1)',
+    'rhythm': 'cubic-bezier(0.7, 0, 0.2, 1)',
+    'smooth': 'cubic-bezier(0.4, 0, 0.4, 1)',
+  };
   /** @param {any} v @returns {any} */
   function parseTabsAnimCurve(v) {
     const r = resolveResource(v);
@@ -4139,6 +4175,31 @@
         return { kind: 'css', css: s };
       }
       return null;
+    }
+    // R156-B ICurve 对象分支（对象/数组都走这里；数组无 __curveString 落 null 警告路径）
+    if (r && typeof r === 'object') {
+      // 保留原大小写（驼峰枚举名 'Curves.EaseIn' 的 [A-Z] 是 kebab 化依据）；cs 为小写比较串
+      const raw = typeof (/** @type {any} */ (r)).__curveString === 'string'
+        ? (/** @type {any} */ (r)).__curveString.trim() : '';
+      const cs = raw.toLowerCase();
+      if (!cs) return null;                      // 无参数包（裸 {interpolate} / 数组）→ 警告保持现值
+      if (/^(?:spring|interpolating-spring|responsive-spring-motion)\(/.test(cs)) {
+        return { kind: 'spring', css: TABS_SPRING_CSS };
+      }
+      if (/^cubic-bezier\(/.test(cs)) {
+        return { kind: 'css', css: cs };         // 真机 6 位小数串是合法 CSS，直通
+      }
+      const steps = /^steps\((\d+),(end|start)\)$/.exec(cs);
+      if (steps) return { kind: 'css', css: `steps(${steps[1]}, ${steps[2]})` };
+      // 枚举名两形态：'Curves.EaseIn'（C++ Curves::ToString 驼峰，curves.cpp:33-40）→ kebab 化后
+      // 查表（驼峰边界取小写字母→大写字母的过渡，首字符大写不产前导连字符）；小写 kebab
+      //（'ease-in'，dom_type.cpp:292-304 词汇）直查。'curves.easein' 之类无分隔小写驼峰不认
+      //（两形态之外，落警告保持现值）
+      const name = raw.startsWith('Curves.')
+        ? raw.slice(7).replace(/([a-z])([A-Z])/g, (/** @type {string} */ _m, /** @type {string} */ a, /** @type {string} */ b) => a + '-' + b).toLowerCase()
+        : cs;
+      if (TABS_ICURVE_ENUM_CSS[name]) return { kind: 'css', css: TABS_ICURVE_ENUM_CSS[name] };
+      return null;                               // customCallback / 未识别形状 → 警告保持现值
     }
     return null;
   }
@@ -15207,6 +15268,12 @@
   //   number 绝对索引，repeat.d.ts:173），数据源由回调 arr[index]=item 自行补齐；垫片没有滚动
   //   容器的按需取项管线，回调经驱动钩子派发（详见钩子处块注释）。数据到站后调度键 diff（新增
   //   键走 case#3 新建分支）；渲染在首个缺数据索引处截断（repeat.d.ts:156-157 停止语义）。
+  // R156-A：onMoveThrough 拖拽进行中细粒度派发（__arkui_dom_repeatMoveThrough 驱动钩子 +
+  //   repeatMoveThroughDispatch）——真机协议 = 拖拽中每跨过一项先 MoveData 平移表换位、再
+  //   FireOnMoveThrough(fromIndex_, to)（首参=拖拽起始索引整个手势恒定；数据源不动，落定
+  //   onMove 才由开发者 splice）；垫片只做视觉换位 + RepeatItem.index 原地改写 + 事件派发
+  //   （详见钩子处块注释）。登记面 = onMove 第二参 ItemDragEventHandler.onMoveThrough
+  //   （common.d.ts:25838 since 20 重载，非独立链式属性）。
   /** @param {any[]} prev @param {any[]} next @param {number} n */
   const repeatSigSame = (prev, next, n) => prev.length === n && next.length >= n
     && prev.every((/** @type {any} */ v, /** @type {number} */ k) => Object.is(v, next[k]));
@@ -15435,11 +15502,14 @@
       if (keptRec) {
         // case#1 键保留：仅 updateIndex（item 不动——键相等即同一逻辑项，pu_repeat_impl.ts）。
         // index 没变就不重放（真机 pu_repeat.ts:64-71 "无人依赖 index 跳过 set" 的对应物）。
+        // R156-A：moved = onMoveThrough 拖拽期已把 ri.index 原地改写到视觉序——「index 没变跳
+        // 重放」的基线被改写，落定键 diff 须强制重放一次 index 依赖内容（收口 'p@0'→'p@2'）。
         oldItems.delete(key);
-        if (keptRec.ri.index !== i) {
+        if (keptRec.ri.index !== i || keptRec.moved) {
           keptRec.ri.index = i;                    // RepeatItem 原地改写（不换对象）
           repeatReplayPatch(st, keptRec, res.b);   // 重放 + 补丁：内容更新、节点身份保持
         }
+        keptRec.moved = false;
         for (const nd of keptRec.nodes) st.el.appendChild(nd);   // 从暂存区取回
         items.set(key, keptRec);
       } else {
@@ -15533,6 +15603,10 @@
 
   /** @param {any} st */
   function repeatRender(st) {
+    // R156-A：渲染即拖拽手势状态失效（真机拖拽期间不允许改数组、也不 rerender；垫片防御性
+    // 复位在途 onMoveThrough 手势——after 渲染 DOM 序已按键 diff 收敛，旧"被拖项"引用作废）
+    st.mtFrom = null;
+    st.mtDragged = null;
     let n = repeatEffectiveN(st);
     // R155-A：懒加载缺口截断（repeat.d.ts:152-157 "After the onLazyLoading method is
     // executed, if no data exists in the specified index, the components corresponding to
@@ -15625,11 +15699,27 @@
       }
       repeatSchedule(st);
     },
-    onMove: (n, v) => {
+    onMove: (n, v, opts) => {
       const st = (/** @type {any} */ (n)).__repeat;
       if (!st) return;
       st.onMove = typeof v === 'function' ? v : null;
       n.dataset.onMove = st.onMove ? 'registered' : 'none';
+      // R156-A：onMoveThrough 走 onMove 的第二参 ItemDragEventHandler（common.d.ts:25838
+      // onMove(handler, eventHandler) since 20 重载；:25788 onMoveThrough?: OnMoveHandler）——
+      // 非独立链式属性；area.js:441 已把 args[1] 透传到 opts。同接口的 onLongPress/onDragStart/
+      // onDrop 不在本片范围（不消费，如声明实记档于此注释）。
+      const evh = opts && typeof opts === 'object' ? opts : null;
+      st.onMoveThrough = evh && typeof evh.onMoveThrough === 'function' ? evh.onMoveThrough : null;
+      n.dataset.onMoveThrough = st.onMoveThrough ? 'registered' : 'none';
+      if (st.onMoveThrough && !st.warnedMoveThrough) {
+        st.warnedMoveThrough = true;
+        // R156-A：如实——真机触发源 = List/Grid 父容器拖拽中每跨过一项（HandleSwapAnimation
+        // 换位后 FireOnMoveThrough，list_item_drag_manager.cpp:660-663），DOM 垫片无拖拽手势。
+        // 回调由驱动钩子 __arkui_dom_repeatMoveThrough(node, from, to) 派发（两参裸 number，
+        // from=拖拽起始索引手势内恒定；数据源仍由 onMove 落定时开发者 splice）。
+        layoutWarnings.push('Repeat.onMoveThrough 已登记：DOM 垫片无拖拽手势触发源，'
+          + '回调经 __arkui_dom_repeatMoveThrough 驱动钩子派发');
+      }
       if (st.onMove && !st.warnedMove) {
         st.warnedMove = true;
         // R154-A：如实——onMove 的真机触发源是 List/Grid 父容器的拖拽手势
@@ -15655,11 +15745,13 @@
       eachB: null, keyFn: null, templateIdFn: null,
       /** @type {Record<string, any>} */ templates: {},
       vs: null, onMove: null, onLazy: null,   // onLazy = virtualScroll 选项里的 onLazyLoading（R155-A）
+      onMoveThrough: null,   // R156-A = onMove 第二参 ItemDragEventHandler.onMoveThrough（API 20）
+      mtFrom: null, mtDragged: null,         // R156-A 在途拖拽手势（fromIndex_ 恒定 + 被拖项 rec）
       scheduled: false, lastSig: null,
       items: null,           // Map<key, rec>：当前存活项；rec = {key, ri, tplKey, nodes}
       pool: [],              // 持久回收池（单池、上限 16、LIFO）
       lastBuilders: null,    // 构建器面指纹（each/templateId/template 更换 → 全量重建）
-      warnedEach: false, warnedMove: false, warnedDupKeys: false,
+      warnedEach: false, warnedMove: false, warnedMoveThrough: false, warnedDupKeys: false,
       warnedLazy: false, warnedNoLazy: false,
     });
     return st.el;
@@ -15721,6 +15813,10 @@
       layoutWarnings.push('Repeat.onMove：尚无已渲染项，已忽略');
       return false;
     }
+    // R156-A：落定 = 结束在途 onMoveThrough 手势（真机 FireOnMove 在 drop/cancel 收口路径，
+    // list_item_drag_manager.cpp:872-877——手势状态不跨落定存活）
+    st.mtFrom = null;
+    st.mtDragged = null;
     const keys = repeatComputeKeys(st, n).keys;
     // 渲染序条目（= 当前 DOM 序；缺 each 的项未渲染，跳过——与子节点序列一致）
     const seq = [];
@@ -15778,6 +15874,121 @@
       const st = (/** @type {any} */ (node)).__repeat;
       if (!st) return false;
       return repeatMoveDispatch(st, from, to);
+    };
+
+  // ── R156-A：拖拽进行中细粒度派发（onMoveThrough，API 20）──
+  // 真机协议（list_item_drag_manager.cpp HandleOnItemDragUpdate，每个拖拽更新帧，:645-663）：
+  //   · from_live = GetIndex()（被拖项在框架子节点序的实时索引）；to = ScaleNearItem(from_live,…)
+  //     = 越过中线的最近邻居目标（:337-356 IsNeedMove 中线口径）；to == from_live → 直接 return
+  //     （:595-597【唯一守卫】——无 lastThroughIndex 防抖，往复摆动会反复触发）；
+  //   · 先 HandleSwapAnimation(from_live, to)（:660 → MoveData 平移表换位：拖拽项移到 to、邻居
+  //     顺次腾位；InterpolatingSpring(0,1,400,38)/30ms 只是视觉插值，内部顺序换位在动画启动即
+  //     生效），【再】FireOnMoveThrough(fromIndex_, to)（:663/:707）；
+  //   · 回调首参 fromIndex_ = 拖拽起始索引（:198 赋值一次，全手势【恒定不随换位更新】——即一次
+  //     拖拽的事件序为 (from0,t1),(from0,t2),…），次参 to = 本次越过的目标（实时序）；
+  //   · 【框架只重排自己的视觉节点（MoveData），数据源不动】——数据源仍由 onMove 落定时开发者
+  //     splice（权威七步 pu_repeat_virtual_scroll_2_impl.ts:71-83）；未登记回调时换位照常
+  //     （for_each_base_node.h:52-55 FireOnMoveThrough 只门回调，不门换位）。
+  // 签名 = 两参裸 number OnMoveHandler（common.d.ts:25744/:25788，同 onMove 无事件对象）。
+  // DOM 垫片无拖拽会话（无手势系统），驱动钩子按「真机回调同形两参」驱动：
+  //   · 首次调用（或 from 与在途手势不同 = 新手势开始）：from 定位被拖项——首次跨越时该帧实时位
+  //     恰等于起始索引，两者相等；
+  //   · 同手势后续调用：按在途被拖项 rec 反查实时位 cur（真机 GetIndex 口径），换位 cur→to；
+  //   · 回调收 (from, to) 原样两参——from 即 fromIndex_ 恒定口径。
+  // 本钩子依次：
+  //   ① 视觉平移换位（erase 先行再插入，同 MoveData/canonical splice 语义：[a,b,c,d] move(0,2)
+  //      → [b,c,a,d]；DocumentFragment 一批回填，节点身份保持——同 R154 先例）；
+  //   ② RepeatItem.index 原地改写（ri 实例不换）+ rec.moved 标记——不重放 builder（真机拖拽期
+  //      MoveData 不重渲染，内容收口在落定键 diff；moved 强制 case#1 重放：R153 的「index 没变
+  //      跳重放」以 ri.index 为基线，through 已把它改写，不强制会漏收 'p@0'→'p@2'）；
+  //   ③ lastSig 置 null：R153 前缀快照按旧数组序记，换位后 DOM 序与 st.arr 序脱钩——真机
+  //      moveFromTo_ 平移表同款失效语义，下一次键 diff 不得误判"数组没变"而跳过；
+  //   ④ 派发 onMoveThrough(from, to)。
+  // 【不 splice st.arr、不调度渲染】——真机拖拽期间不 rerender、不动用户数组；渲染收口只在
+  // onMove 落定的 splice rerender（__arkui_dom_repeatMove → repeatSchedule）。
+  /**
+   * @param {any} st @param {number} from @param {number} to @returns {boolean} 是否已换位派发
+   */
+  function repeatMoveThroughDispatch(st, from, to) {
+    const n = repeatEffectiveN(st);
+    // 真机口径：越界/非整数 = 拖拽手势产生不了的索引，告警忽略（同 onMove 边界口径）
+    if (!Number.isInteger(from) || !Number.isInteger(to)
+      || from < 0 || to < 0 || from >= n || to >= n) {
+      layoutWarnings.push(`Repeat.onMoveThrough 非法换位（from=${from}, to=${to}, 渲染条数=${n}），已忽略`);
+      return false;
+    }
+    if (!st.items || st.items.size === 0) {
+      layoutWarnings.push('Repeat.onMoveThrough：尚无已渲染项，已忽略');
+      return false;
+    }
+    // 视觉序 = 当前 DOM 序（through 换位后 DOM 与 st.arr 序脱钩，不能按 keys 表重建——
+    // 节点→rec 反查后按 childNodes 走序；st.items 的键→rec 映射与顺序无关，仍有效）
+    const byNode = new Map();
+    for (const rec of st.items.values()) {
+      for (const nd of rec.nodes) byNode.set(nd, rec);
+    }
+    const seq = [];
+    for (const nd of st.el.childNodes) {
+      const rec = byNode.get(nd);
+      if (rec) seq.push(rec);
+    }
+    if (!seq.length) {
+      layoutWarnings.push('Repeat.onMoveThrough：尚无已渲染项，已忽略');
+      return false;
+    }
+    // 手势状态：首次调用 / from 变化 = 新手势（真机 drag start 重赋 fromIndex_，:198）
+    let cur;
+    if (typeof st.mtFrom !== 'number' || st.mtFrom !== from) {
+      st.mtFrom = from;
+      st.mtDragged = seq[from];
+      cur = from;
+    } else {
+      cur = seq.indexOf(st.mtDragged);
+      if (cur < 0) {
+        // 防御：在途被拖项已不在渲染序（中途全量重建等）——复位手势，告警忽略本次
+        st.mtFrom = null;
+        st.mtDragged = null;
+        layoutWarnings.push(`Repeat.onMoveThrough：在途被拖项未渲染（from=${from}），手势状态已复位`);
+        return false;
+      }
+    }
+    if (cur === to) return false;      // 真机 :595-597 唯一守卫（无跨越不换位不派发；拖拽更新帧
+                                       // 高频触发，静默同款——不同于 onMove 的"落定调用"告警口径）
+    // ① 视觉平移换位（erase 先行再插入）
+    const movedRec = seq.splice(cur, 1)[0];
+    seq.splice(to, 0, movedRec);
+    const frag = document.createDocumentFragment();
+    for (const rec of seq) {
+      for (const node of rec.nodes) frag.appendChild(node);
+    }
+    st.el.appendChild(frag);
+    st.items = new Map(seq.map((/** @type {any} */ rec) => [rec.key, rec]));
+    // ② RepeatItem.index 原地改写（不重放 builder——内容收口在落定键 diff，moved 见块注释）
+    for (let k = 0; k < seq.length; k++) {
+      seq[k].ri.index = k;
+      seq[k].moved = true;
+    }
+    // ③ R153 前缀快照过期（本钩子不调度渲染，何时重放由落定/数据源变更决定）
+    st.lastSig = null;
+    st.el.dataset.repeatMoveThroughFrom = String(from);
+    st.el.dataset.repeatMoveThroughTo = String(to);
+    // ④ 派发（两参裸 number 原样——from 即真机 fromIndex_ 恒定口径；回调抛错不阻断，同 onMove）
+    if (typeof st.onMoveThrough === 'function') {
+      try { st.onMoveThrough(from, to); } catch (e) {
+        layoutWarnings.push('Repeat.onMoveThrough 回调抛错：' + (e && e.message));
+      }
+    }
+    return true;
+  }
+
+  // 运行时级拖拽进行中驱动钩子（同 __arkui_dom_repeatMove 先例，供测试/诊断页直调）。
+  // 返回 boolean：true = 已换位（回调是否派发取决于是否登记——真机换位与事件守卫解耦）；
+  // false = 非法/无跨越（已告警或静默，见 repeatMoveThroughDispatch）。
+  (/** @type {any} */ (global)).__arkui_dom_repeatMoveThrough
+    = (/** @type {any} */ node, /** @type {number} */ from, /** @type {number} */ to) => {
+      const st = (/** @type {any} */ (node)).__repeat;
+      if (!st) return false;
+      return repeatMoveThroughDispatch(st, from, to);
     };
 
   // ── R155-A：数据源懒加载派发（onLazyLoading）──

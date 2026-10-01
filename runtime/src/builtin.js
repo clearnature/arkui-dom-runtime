@@ -91,7 +91,10 @@
    *     'spring'。None=越界拖拽硬停（不摩擦跟手）+ 松手直接落位（无冲激弹簧，见
    *     builtinFinishPagedDrag）；Spring/Shadow=现状摩擦跟手 + 冲激回弹）;
    *   pageAt(i): any; commit(i): void; gesture(i, extra): void; animStart(idx, target): void;
-   *   animEnd(i): void }
+   *   animEnd(i): void;
+   *   onMoveThrough(i): void（R156-A 可选槽位——拖拽进行中每越过一次"中线"派发一次越过目标页
+   *     索引 i，真机 IsNeedMove 中线口径 list_item_drag_manager.cpp:337-356、API 20 同名细粒度
+   *     事件 common.d.ts:25788；未声明不派发——Tabs/Swiper 既有调用方零感知，向后兼容） }
    */
   function attachPagedDrag(el, api) {
     /** @type {any} */ let drag = null;
@@ -162,6 +165,11 @@
           : raw * calculateBuiltinFriction(Math.abs(raw) / size);
       }
       drag.shown = shown;
+      // R156-A 槽位：onMoveThrough(越过目标索引)——拖拽进行中每越过一次中线派发一次（真机
+      // IsNeedMove 中线口径 list_item_drag_manager.cpp:337-356；API 20 onMoveThrough 同名事件
+      // common.d.ts:25788）。未声明不派发（Tabs/Swiper 既有调用方零感知，向后兼容）。
+      if (typeof api.onMoveThrough === 'function' && drag.nIdx >= 0
+        && Math.abs(shown) * BUILTIN_DRAG_PROPORTION > size) api.onMoveThrough(drag.nIdx);
       const curEl = drag.cur.el;
       curEl.style.transform = axisX ? `translateX(${shown}px)` : `translateY(${shown}px)`;
       const nbEl = drag.neighbor ? drag.neighbor.el : null;

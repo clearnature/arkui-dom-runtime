@@ -1207,14 +1207,42 @@
     return { sm: col(o.sm), md: col(o.md), lg: col(o.lg), margin: dim(o.margin, 24), gutter: dim(o.gutter, 24) };
   }
 
-  // animationCurve 入参面：Curve 枚举值（数字）/ spring 族名 / CSS 曲线串 → {kind, css}。
+  // animationCurve 入参面：Curve 枚举值（数字）/ spring 族名 / CSS 曲线串 / ICurve 对象 → {kind, css}。
   //   · Curve 枚举（d.ts curve.d.ts）：0=Linear 1=Ease 2=EaseIn 3=EaseOut 4=EaseInOut 与 CSS
   //     同名关键字一一对应（真机即同名 bezier）；5=Friction 6=Smooth 无官方 CSS 等价，取近似
   //     （仅近似，不在断言面）。
   //   · spring 族名（curves.interpolatingSpring/springMotion/responsiveSpringMotion/springCurve
   //     对应的字符串形态）→ kind='spring'：内禀时长（TABS_SPRING_SWITCH_MS）、CSS 近似曲线。
-  //   · ICurve 对象（含 .interpolate）本运行时无 @ohos.curves 垫片、读不出曲线参数 → 返回 null
-  //     由调用方记警告（不静默吞）。
+  //   · ICurve 对象（R156-B，@ohos:curves 垫片产出、真机形状 { interpolate, __curveString }）：
+  //     读 __curveString 序列化参数包（真机 jsi_curves_module.cpp ParseCurves 的 curve->ToString()
+  //     产物，6 位小数无空格）——'spring(v,m,s,d)'/'interpolating-spring(v,m,s,d)'/
+  //     'responsive-spring-motion(...)' → kind='spring'（内禀时长 + TABS_SPRING_CSS 近似；参数包
+  //     语义已由 spring 分族表达，不解参不落状态）；'cubic-bezier(x1,y1,x2,y2)' → kind='css' 直通
+  //     （CSS 同名函数原生支持）；'steps(n,end|start)' → kind='css' 归一成 'steps(n, end|start)'
+  //     （CSS steps() 原生支持，jump-end/jump-start 语义同构）；枚举名两形态——'Curves.Ease' 驼峰
+  //     （C++ Curves::ToString 表，core/animation/curves.cpp:33-40）与小写 kebab（'ease'/
+  //     'fast-out-slow-in'/...，dom_type.cpp:292-304 同词汇）→ CSS 关键字或【等参】cubic-bezier
+  //     串（参数表见 TABS_ICURVE_ENUM_CSS，core/animation/curves.cpp:22-40 全清单）。
+  //   · 'customCallback'（curves.customCurve 产物）/无 __curveString/未识别前缀 → 返回 null 由
+  //     调用方记警告保持现值（不静默吞，现口径）。
+  // 枚举名 → CSS：前 5 项与 CSS 关键字同名直通；后 8 项 CSS 无对应关键字 → 按真机常数表给等参
+  // cubic-bezier（比"近似曲线"更真，值逐项对齐 core/animation/curves.cpp:22-40）。
+  /** @type {Record<string, string>} */
+  const TABS_ICURVE_ENUM_CSS = {
+    'linear': 'linear',
+    'ease': 'ease',
+    'ease-in': 'ease-in',
+    'ease-out': 'ease-out',
+    'ease-in-out': 'ease-in-out',
+    'fast-out-slow-in': 'cubic-bezier(0.4, 0, 0.2, 1)',
+    'linear-out-slow-in': 'cubic-bezier(0, 0, 0.2, 1)',
+    'fast-out-linear-in': 'cubic-bezier(0.4, 0, 1, 1)',
+    'friction': 'cubic-bezier(0.2, 0, 0.2, 1)',
+    'extreme-deceleration': 'cubic-bezier(0, 0, 0, 1)',
+    'sharp': 'cubic-bezier(0.33, 0, 0.67, 1)',
+    'rhythm': 'cubic-bezier(0.7, 0, 0.2, 1)',
+    'smooth': 'cubic-bezier(0.4, 0, 0.4, 1)',
+  };
   /** @param {any} v @returns {any} */
   function parseTabsAnimCurve(v) {
     const r = resolveResource(v);
@@ -1234,6 +1262,31 @@
         return { kind: 'css', css: s };
       }
       return null;
+    }
+    // R156-B ICurve 对象分支（对象/数组都走这里；数组无 __curveString 落 null 警告路径）
+    if (r && typeof r === 'object') {
+      // 保留原大小写（驼峰枚举名 'Curves.EaseIn' 的 [A-Z] 是 kebab 化依据）；cs 为小写比较串
+      const raw = typeof (/** @type {any} */ (r)).__curveString === 'string'
+        ? (/** @type {any} */ (r)).__curveString.trim() : '';
+      const cs = raw.toLowerCase();
+      if (!cs) return null;                      // 无参数包（裸 {interpolate} / 数组）→ 警告保持现值
+      if (/^(?:spring|interpolating-spring|responsive-spring-motion)\(/.test(cs)) {
+        return { kind: 'spring', css: TABS_SPRING_CSS };
+      }
+      if (/^cubic-bezier\(/.test(cs)) {
+        return { kind: 'css', css: cs };         // 真机 6 位小数串是合法 CSS，直通
+      }
+      const steps = /^steps\((\d+),(end|start)\)$/.exec(cs);
+      if (steps) return { kind: 'css', css: `steps(${steps[1]}, ${steps[2]})` };
+      // 枚举名两形态：'Curves.EaseIn'（C++ Curves::ToString 驼峰，curves.cpp:33-40）→ kebab 化后
+      // 查表（驼峰边界取小写字母→大写字母的过渡，首字符大写不产前导连字符）；小写 kebab
+      //（'ease-in'，dom_type.cpp:292-304 词汇）直查。'curves.easein' 之类无分隔小写驼峰不认
+      //（两形态之外，落警告保持现值）
+      const name = raw.startsWith('Curves.')
+        ? raw.slice(7).replace(/([a-z])([A-Z])/g, (/** @type {string} */ _m, /** @type {string} */ a, /** @type {string} */ b) => a + '-' + b).toLowerCase()
+        : cs;
+      if (TABS_ICURVE_ENUM_CSS[name]) return { kind: 'css', css: TABS_ICURVE_ENUM_CSS[name] };
+      return null;                               // customCallback / 未识别形状 → 警告保持现值
     }
     return null;
   }

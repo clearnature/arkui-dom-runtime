@@ -328,6 +328,279 @@
     debug: record('debug'), fatal: record('fatal'),
     isLoggable: () => true,  });
 
+  // ── @ohos:curves —— 插值曲线工厂（R156-B）──
+  //
+  // 权威语义来自 `<CLT>/.../ets/api/@ohos.curves.d.ts`：initCurve(:193)/stepsCurve(:220)/customCurve(:238)/
+  // cubicBezierCurve(:268)/springCurve(:318)/springMotion(:371)/responsiveSpringMotion(:398)/interpolatingSpring(:438)
+  // 返回 ICurve；deprecated since 9 别名 init(:205)/steps(:252)/cubicBezier(:284)/spring(:338) 返回【string】
+  //（= 同参 *Curve 工厂写进 __curveString 的那串）。
+  //
+  // ICurve 形状照真机 jsi_curves_module.cpp ParseCurves（:402-449）：普通 JS 对象
+  // `{ interpolate(fraction), __curveString }`（customCurve 另挂 `__curveCustomFunc`，真机同名属性 :434）。
+  // __curveString 序列化照 C++ Curve::ToString() 族——std::to_string 6 位小数、无空格：
+  //   · CubicCurve::ToString()  = 'cubic-bezier(x1,y1,x2,y2)'（cubic_curve.cpp:57-64，x 坐标已钳 [0,1]）
+  //   · SpringCurve::ToString() = 'spring(velocity,mass,stiffness,damping)'（spring_curve.cpp:115-122）
+  //   · InterpolatingSpring 同法 = 'interpolating-spring(v,m,s,d)'
+  //   · 枚举曲线 = 'Curves.Ease' 驼峰（core/animation/curves.cpp:33-40 的 ToString 映射表【原样】；
+  //     Rhythm 不在表内 → 落回其 CubicCurve::ToString 参数串，照真机缺表行为）；小写 kebab
+  //     （'ease'/'fast-out-slow-in'/...，dom_type.cpp:292-304 的解析词汇）是另一端真机形态，
+  //     parseTabsAnimCurve 两种都认（R155-C 简报）。
+  //   · springMotion/responsiveSpringMotion 真机同为 ResponsiveSpringMotion 曲线（ani_curves.cpp
+  //     :83-132/:241-278 均 MakeRefPtr<ResponsiveSpringMotion>）→ 串前缀 'responsive-spring-motion('。
+  // interpolate 可用性按 d.ts 明文分家：
+  //   · cubic-bezier/steps/枚举：JS 解析式实现（x(t) 求根牛顿+二分 / 分段跳变 / 等参 bezier）；
+  //   · springCurve：d.ts 未禁 interpolate（时长由 animation 控制、时间可归一化）→ 解析弹簧解算
+  //     近似（三模型解析解 + estimateDuration 二分，spring_model.cpp:104-176 与 spring_curve.cpp
+  //     :61-104 的阈值 0.001/0.025、步距 1/100s、上限 1000s 同参）；
+  //   · interpolatingSpring/springMotion/responsiveSpringMotion：d.ts :431-437/:355-365/:384-392 明文
+  //     interpolate 不可用（物理弹簧时长不归一化）→ interpolate 为恒返 undefined 的函数成员。
+  {
+    /** std::to_string 对齐：双精度 6 位小数（非有限数按 0，照真机 IsNumber→ToDouble 的非数兜底） */
+    const f6 = (/** @type {number} */ n) => {
+      const x = typeof n === 'number' && Number.isFinite(n) ? n : 0;
+      return x.toFixed(6);
+    };
+    /** d.ts NOTE：mass/stiffness/damping ≤0 一律取 1（CreateSpringCurve/CreateInterpolatingSpring 同） */
+    const pos1 = (/** @type {number} */ n) => (typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : 1);
+    /** 数参缺省（可选参未传/非数 → 缺省值） */
+    const numOr = (/** @type {number|undefined} */ n, /** @type {number} */ def) =>
+      (typeof n === 'number' && Number.isFinite(n) ? n : def);
+    /** fraction 钳 [0,1]（d.ts ICurve.interpolate NOTE：<0 按 0、>1 按 1） */
+    const clamp01 = (/** @type {number} */ f) => {
+      const x = typeof f === 'number' && Number.isFinite(f) ? f : 0;
+      return Math.min(1, Math.max(0, x));
+    };
+    /** x 坐标钳 [0,1]、非数按 0（d.ts cubicBezierCurve NOTE + ani_curves.cpp:58-80 NaN→0 同口径） */
+    const ux = (/** @type {number} */ n) => clamp01(typeof n === 'number' && Number.isFinite(n) ? n : 0);
+
+    /** cubic-bezier 求值器：x(t)=((ax·t+bx)t+cx)t 求根（牛顿 8 次 + 二分 24 次兜底，x1/x2∈[0,1] 保 x 单调） */
+    const bezSolver = (/** @type {number} */ x1, /** @type {number} */ y1,
+      /** @type {number} */ x2, /** @type {number} */ y2) => {
+      const cx = 3 * x1;
+      const bx = 3 * (x2 - x1) - cx;
+      const ax = 1 - cx - bx;
+      const cy = 3 * y1;
+      const by = 3 * (y2 - y1) - cy;
+      const ay = 1 - cy - by;
+      const sampleX = (/** @type {number} */ t) => ((ax * t + bx) * t + cx) * t;
+      const sampleY = (/** @type {number} */ t) => ((ay * t + by) * t + cy) * t;
+      const sampleDX = (/** @type {number} */ t) => (3 * ax * t + 2 * bx) * t + cx;
+      return (/** @type {number} */ fraction) => {
+        const x = clamp01(fraction);
+        if (x <= 0) return 0;
+        if (x >= 1) return 1;
+        let t = x;
+        for (let i = 0; i < 8; i++) {
+          const err = sampleX(t) - x;
+          if (Math.abs(err) < 1e-6) return sampleY(t);
+          const d = sampleDX(t);
+          if (Math.abs(d) < 1e-6) break;
+          t -= err / d;
+        }
+        let lo = 0;
+        let hi = 1;
+        t = x;
+        for (let i = 0; i < 24; i++) {
+          const mid = (lo + hi) / 2;
+          if (sampleX(mid) < x) lo = mid; else hi = mid;
+        }
+        t = (lo + hi) / 2;
+        return sampleY(t);
+      };
+    };
+
+    // 解析弹簧解算（SpringCurve 近似，spring_model.cpp:104-176 同式：HIGH_RATIO=4/LOW_RATIO=2）。
+    // 0→1 归一：distance = startPosition−endPosition = −1；estimateDuration 二分同 spring_curve.cpp
+    // :61-102（位移阈值 0.001、速度阈值 0.001×25、步距 1/100s、上限 1000s、收敛取双 NearZero）。
+    const springSolver = (/** @type {number} */ velocity, /** @type {number} */ mass,
+      /** @type {number} */ stiffness, /** @type {number} */ damping) => {
+      const m = pos1(mass);
+      const k = pos1(stiffness);
+      const c = pos1(damping);
+      const v = typeof velocity === 'number' && Number.isFinite(velocity) ? velocity : 0;
+      const dist = -1;
+      const cmk = c * c - 4 * m * k;                  // 判型式同 SpringModel::Build（spring_model.cpp:79）
+      let pos;
+      let vel;
+      if (Math.abs(cmk) < 1e-9) {
+        const r = -c / (2 * m);
+        const c2 = v / (r * dist);                    // CriticalDampedModel ctor（:98-100）
+        pos = (/** @type {number} */ t) => (dist + c2 * t) * Math.exp(r * t);
+        vel = (/** @type {number} */ t) => {
+          const p = Math.exp(r * t);
+          return r * (dist + c2 * t) * p + c2 * p;
+        };
+      } else if (cmk > 0) {
+        const sq = Math.sqrt(cmk);
+        const r1 = (-c - sq) / (2 * m);
+        const r2 = (-c + sq) / (2 * m);
+        const c2 = (v - r1 * dist) / (r2 - r1);       // OverdampedModel ctor（:121-130）
+        const c1 = dist - c2;
+        pos = (/** @type {number} */ t) => c1 * Math.exp(r1 * t) + c2 * Math.exp(r2 * t);
+        vel = (/** @type {number} */ t) => c1 * r1 * Math.exp(r1 * t) + c2 * r2 * Math.exp(r2 * t);
+      } else {
+        const w = Math.sqrt(4 * m * k - c * c) / (2 * m);
+        const r = -c / (2 * m);
+        const c2 = (v - r * dist) / w;                // UnderdampedModel ctor（:152-161）
+        pos = (/** @type {number} */ t) => Math.exp(r * t) * (dist * Math.cos(w * t) + c2 * Math.sin(w * t));
+        vel = (/** @type {number} */ t) => {
+          const p = Math.exp(r * t);
+          const cs = Math.cos(w * t);
+          const sn = Math.sin(w * t);
+          return p * (c2 * w * cs - dist * w * sn) + r * p * (c2 * sn + dist * cs);
+        };
+      }
+      let lo = 0;                                     // estimateDuration 二分（收敛时 hi=最小 settled 时长）
+      let hi = 1000;
+      while (hi - lo >= 0.01) {
+        const mid = (lo + hi) / 2;
+        if (Math.abs(pos(mid)) < 0.001 && Math.abs(vel(mid)) < 0.025) hi = mid; else lo = mid;
+      }
+      return (/** @type {number} */ fraction) => {
+        const p = 1 + pos(clamp01(fraction) * hi);    // currentPosition = end + Position(t·estimate)
+        return Math.abs(p - 1) < 0.001 ? 1 : p;       // NearEqual 收口 → 恰 1（MoveInternal 收尾语义）
+      };
+    };
+
+    // steps 分段（t 先钳 [0,1]；step=floor(t·n)；START 且 step<n → +1；取 step/n——C 简报公式，
+    // 与 CSS jump-end/jump-start 同构；d.ts stepsCurve(count, end) 双参签名口径为准，C++ argc=1
+    // 省略 end 时缺省 START 的分歧已在此记录）
+    const stepsSolver = (/** @type {number} */ count, /** @type {boolean} */ isEnd) => {
+      const n = Math.max(1, Math.trunc(typeof count === 'number' && Number.isFinite(count) ? count : 1));
+      return (/** @type {number} */ fraction) => {
+        let step = Math.floor(clamp01(fraction) * n);
+        if (!isEnd && step < n) step += 1;
+        return step / n;
+      };
+    };
+
+    // Curve 枚举 → 等参 cubic-bezier（core/animation/curves.cpp:22-40 全清单，C 简报核过；
+    // Linear 恒等无参）。枚举序 = d.ts enum Curve 声明序（curve.d.ts）。
+    const ENUM_PARAM = [
+      null,                     // 0 Linear：恒等
+      [0.25, 0.1, 0.25, 1],     // 1 Ease
+      [0.42, 0, 1, 1],          // 2 EaseIn
+      [0, 0, 0.58, 1],          // 3 EaseOut
+      [0.42, 0, 0.58, 1],       // 4 EaseInOut
+      [0.4, 0, 0.2, 1],         // 5 FastOutSlowIn
+      [0, 0, 0.2, 1],           // 6 LinearOutSlowIn
+      [0.4, 0, 1, 1],           // 7 FastOutLinearIn
+      [0, 0, 0, 1],             // 8 ExtremeDeceleration
+      [0.33, 0, 0.67, 1],       // 9 Sharp
+      [0.7, 0, 0.2, 1],         // 10 Rhythm
+      [0.4, 0, 0.4, 1],         // 11 Smooth
+      [0.2, 0, 0.2, 1],         // 12 Friction
+    ];
+    // 枚举序 → __curveString：Curves::ToString 驼峰表【原样】（curves.cpp:33-40）；Rhythm 不在
+    // 真机表内 → null=落回其参数串（照缺表行为）。
+    const ENUM_STR = [
+      'Curves.Linear', 'Curves.Ease', 'Curves.EaseIn', 'Curves.EaseOut', 'Curves.EaseInOut',
+      'Curves.FastOutSlowIn', 'Curves.LinearOutSlowIn', 'Curves.FastOutLinearIn',
+      'Curves.ExtremeDeceleration', 'Curves.Sharp', null, 'Curves.Smooth', 'Curves.Friction',
+    ];
+
+    /** ICurve 工厂：真机形状 { interpolate, __curveString }；interpolate 缺位 = d.ts 明文不可用
+     *（属性仍存在、恒返 undefined——真机该成员是函数，语义按 d.ts 收敛） */
+    const makeICurve = (/** @type {string} */ curveString, /** @type {((f: number) => number)|null} */ fn) => ({
+      interpolate: fn
+        ? (/** @type {number} */ f) => fn(clamp01(f))
+        : (/** @type {number} */ _f) => undefined,
+      __curveString: curveString,
+    });
+
+    const bezierStr = (/** @type {number} */ x1, /** @type {number} */ y1,
+      /** @type {number} */ x2, /** @type {number} */ y2) =>
+      `cubic-bezier(${[ux(x1), y1, ux(x2), y2].map(f6).join(',')})`;
+    const springParams = (/** @type {any[]} */ a) => {
+      const v = typeof a[0] === 'number' && Number.isFinite(a[0]) ? a[0] : 0;
+      return [v, pos1(a[1]), pos1(a[2]), pos1(a[3])].map((n) => f6(n)).join(',');
+    };
+    const stepsStr = (/** @type {number} */ count, /** @type {boolean} */ end) => {
+      const n = Math.max(1, Math.trunc(typeof count === 'number' && Number.isFinite(count) ? count : 1));
+      return `steps(${n},${end ? 'end' : 'start'})`;
+    };
+
+    const initCurveImpl = (/** @type {number|undefined} */ curve) => {
+      // d.ts:193 JSDoc：curve 缺省 Curve.Linear——真机无参存的是小写 'linear'
+      //（jsi_curves_module.cpp:72 else curveString = "linear"）；显式枚举序数才走驼峰表
+      if (curve === undefined) return makeICurve('linear', null);
+      const ord = Math.trunc(curve);
+      const param = ord >= 0 && ord < ENUM_PARAM.length ? ENUM_PARAM[ord] : null;
+      const named = ord >= 0 && ord < ENUM_STR.length ? ENUM_STR[ord] : null;
+      // 越界序数按缺省线性（真机 CreateCurve 未知串同落 linear）
+      const str = named || (param ? bezierStr(param[0], param[1], param[2], param[3]) : 'linear');
+      return makeICurve(str, param ? bezSolver(param[0], param[1], param[2], param[3]) : null);
+    };
+
+    define('curves', {
+      // d.ts enum Curve（:32-160 声明序；编译产物侧 Curve.X 就是序数，此处照排供 require 方引用）
+      Curve: {
+        Linear: 0, Ease: 1, EaseIn: 2, EaseOut: 3, EaseInOut: 4, FastOutSlowIn: 5,
+        LinearOutSlowIn: 6, FastOutLinearIn: 7, ExtremeDeceleration: 8, Sharp: 9,
+        Rhythm: 10, Smooth: 11, Friction: 12,
+      },
+      initCurve(curve) {
+        return initCurveImpl(typeof curve === 'number' ? curve : undefined);
+      },
+      stepsCurve(count, end) {
+        return makeICurve(stepsStr(count, end !== false), stepsSolver(count, end !== false));
+      },
+      cubicBezierCurve(x1, y1, x2, y2) {
+        return makeICurve(bezierStr(x1, y1, x2, y2), bezSolver(ux(x1), y1, ux(x2), y2));
+      },
+      springCurve(velocity, mass, stiffness, damping) {
+        const p = [velocity, mass, stiffness, damping];
+        const s = springParams(p);
+        return makeICurve(`spring(${s})`,
+          springSolver(p[0], pos1(p[1]), pos1(p[2]), pos1(p[3])));
+      },
+      interpolatingSpring(velocity, mass, stiffness, damping) {
+        // d.ts:431-437 明文 interpolate 不可用 → undefined 成员；串照真机 InterpolatingSpring::ToString
+        return makeICurve(`interpolating-spring(${springParams([velocity, mass, stiffness, damping])})`, null);
+      },
+      springMotion(response, dampingFraction, overlapDuration) {
+        // 归一照 ani_curves.cpp:83-132（response ≤0→0.55；dampingFraction <0→0.825（0=无阻尼合法）；
+        // overlapDuration <0→0）；真机串 = ResponsiveSpringMotion::ToString 前缀
+        const r = numOr(response, 0.55) <= 0 ? 0.55 : numOr(response, 0.55);
+        const d = numOr(dampingFraction, 0.825) < 0 ? 0.825 : numOr(dampingFraction, 0.825);
+        const o = numOr(overlapDuration, 0) < 0 ? 0 : numOr(overlapDuration, 0);
+        return makeICurve(`responsive-spring-motion(${[r, d, o].map((n) => f6(n)).join(',')})`, null);
+      },
+      responsiveSpringMotion(response, dampingFraction, overlapDuration) {
+        // 缺省 0.15/0.86/0.25（d.ts:398 JSDoc）；真机与 springMotion 同为 ResponsiveSpringMotion 曲线
+        const r = numOr(response, 0.15) <= 0 ? 0.15 : numOr(response, 0.15);
+        const d = numOr(dampingFraction, 0.86) < 0 ? 0.86 : numOr(dampingFraction, 0.86);
+        const o = numOr(overlapDuration, 0.25) < 0 ? 0.25 : numOr(overlapDuration, 0.25);
+        return makeICurve(`responsive-spring-motion(${[r, d, o].map((n) => f6(n)).join(',')})`, null);
+      },
+      customCurve(interpolate) {
+        // 真机 ParseCurves：回调非函数 → curveCreated=false → 返回 null（:426-434 同口径）；
+        // 回调非数值返回 → 1.0（CurvesInterpolate 同式）；fraction 钳 [0,1] 在 makeICurve 层统一做
+        if (typeof interpolate !== 'function') return null;
+        const fn = /** @type {(f: number) => number} */ (interpolate);
+        const curve = makeICurve('customCallback', (f) => {
+          const r = fn(f);
+          return typeof r === 'number' && Number.isFinite(r) ? r : 1;
+        });
+        curve.__curveCustomFunc = fn;    // 真机同名属性（jsi_curves_module.cpp:434）
+        return curve;
+      },
+      // ── deprecated since 9 别名（d.ts 返回【string】：= 同参工厂的 __curveString 串）──
+      init(curve) {
+        return initCurveImpl(typeof curve === 'number' ? curve : undefined).__curveString;
+      },
+      steps(count, end) {
+        return stepsStr(count, end !== false);
+      },
+      cubicBezier(x1, y1, x2, y2) {
+        return bezierStr(x1, y1, x2, y2);
+      },
+      spring(velocity, mass, stiffness, damping) {
+        return `spring(${springParams([velocity, mass, stiffness, damping])})`;
+      },
+    });
+  }
+
   // ── @ohos:app.ability.* ──
   define('app.ability.ConfigurationConstant', {
     ColorMode: { COLOR_MODE_NOT_SET: -1, COLOR_MODE_DARK: 0, COLOR_MODE_LIGHT: 1 },

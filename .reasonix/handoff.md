@@ -9,7 +9,20 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R154 Repeat onMove 派发 + Swiper indicator 三态 + 弹簧曲线槽位**
+- 上次切片：**R155 Repeat onLazyLoading + edgeEffect 三态**（多智能体 A/B/C）——
+  A=Repeat onLazyLoading 懒加载协议（R152 记档警告分支升级真实现；签名 `onLazyLoading(index)`
+  绝对索引——C 纠偏任务书"差值"假设；单发防死循环/只写该索引 BusinessError 103804/
+  min(arrLen,totalCount) 裁剪）+ __arkui_dom_repeatLazy 驱动钩子；① 组 23→30、页总 53。
+  B=edgeEffect 三态（SDK 枚举实证 Spring=0/Fade=1/None=2 **无 Shadow**——任务书
+  "Spring/Shadow/None"纠偏，shadow 收前向扩展值；None=越界硬停+直接落边界；
+  Tabs.edgeEffect since 12 单参/Swiper 真名 effectMode；G8 大写 None 警告兼容）+
+  tabanim 46→66。C=onLazyLoading 协议（getItemUnmonitored 同步单发/:1592 BusinessError/
+  :411 复位）+ @ohos:curves 模块面（**ICurve 可读**——__curveString 序列化参数包；
+  springMotion 系 interpolate 不可用——Swiper.curve ICurve 读取铺路）。
+  **集成三修**：坑 117 家族五连红根治记档（三条铁律入 R155.1 行）；batchfunc 46→53、
+  tabanim 46→66 声明同步；门禁 11 步全绿（4a6ce49/8708dbe，Mimosa 0 findings seal
+  sha256:1941ab4e…）；五端矩阵 84/97/84/84/84。
+  更早：**R154 Repeat onMove 派发 + Swiper indicator 三态 + 弹簧曲线槽位**
   （多智能体 A/B/C）——A=Repeat onMove 两参裸 number 协议（RepeatMoveEvent 类型
   不存在，C 调研 grep 零命中纠偏；拖拽落定单发/取消同发/from==to 不派发；数据源
   责任=开发者 splice——权威七步注释 pu_repeat_virtual_scroll_2_impl.ts:71-83；
