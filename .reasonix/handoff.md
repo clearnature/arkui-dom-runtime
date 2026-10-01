@@ -9,7 +9,25 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R153 Repeat 键 diff 深化 + Tabs 长尾第三片**（多智能体 A/B/C）——
+- 上次切片：**R154 Repeat onMove 派发 + Swiper indicator 三态 + 弹簧曲线槽位**
+  （多智能体 A/B/C）——A=Repeat onMove 两参裸 number 协议（RepeatMoveEvent 类型
+  不存在，C 调研 grep 零命中纠偏；拖拽落定单发/取消同发/from==to 不派发；数据源
+  责任=开发者 splice——权威七步注释 pu_repeat_virtual_scroll_2_impl.ts:71-83；
+  List/Grid 父容器激活）+ __arkui_dom_repeatMove 驱动钩子四步（视觉重排→splice→
+  派发→R153 键 diff 收口）+ ① 组 15→23。B=Swiper indicator 三态（DotIndicator
+  几何/配色全量/DigitIndicator 两段 Text/入参=链式 setter 配置对象——arkswiper.ts
+  口径）+ 弹簧曲线槽位（builtin.js finishCurve——spring 走 R126 解算器初速=采样
+  速度，css 串直通，未声明保持 ease-out）+ Swiper.curve 移出 UNSUPPORTED +
+  builtindemo 29→48。C=onMove 协议 + indicator 全属性清单（两处纠偏任务书错误
+  假设：RepeatMoveEvent 不存在、selectedWidth 实为 selectedItemWidth）。
+  **集成实锤三修**：Android WebView 串行化 'none 0s ease 0s'（startsWith 比较）+
+  builtinSampleVelocity **dt 下限 8ms**（合成同拍 dispatch v0 达 10 万 px/s、弹簧
+  飞出数万 px 不收敛——真机指针事件按帧合并无此形态，运行时健壮性修复全端受益）+
+  builtindemo 虚拟预算 VTBUDGET=12000 per-case 机制（弹簧收口等待 1200ms 使全页
+  虚拟耗时超默认 8000）。验收：`bash run.sh batchfunc`（46 条断言，五端通过）、
+  builtindemo 48 条五端通过；门禁 11 步全绿（5d0febb，Mimosa 0 findings seal
+  sha256:80a4cf63…）；五端矩阵 84/97/84/84/84。
+  更早：**R153 Repeat 键 diff 深化 + Tabs 长尾第三片**（多智能体 A/B/C）——
   A=Repeat 三分支（暂存区摘入→按新序 append 回填，不做 LCS；键保留只 updateIndex
   未变跳重放/复用先 updateItem 再 updateIndex/否则新建；持久池 16；scratch 重放+
   逐位补丁=节点身份保持，与 ForEach 整体重建的可观测差异）+11 条断言；B=Tabs
