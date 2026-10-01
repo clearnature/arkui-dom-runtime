@@ -829,6 +829,8 @@
       barGridAlign: null,             // BarGridColumnOptions 归一化产物（normalizeBarGridAlign）；null=未设=整宽
       animCurveKind: 'css',           // 'css'=缺省点击曲线（TABS_CLICK_CURVE）；'spring'=spring 族
                                       //   （interpolatingSpring/springMotion 等，内禀时长、不受 duration 控制）
+      animCurveSet: false,            // R154：是否显式设过 animationCurve——未设时拖拽释放保持 ease-out
+                                      //   （R125 既有行为）；显式设过才把曲线接到 builtin.js finishCurve 槽位
       animCurveCss: TABS_CLICK_CURVE, // 点击/changeIndex 路径实际进 CSS transition 的曲线串
       pageFlipMode: 0,                // PageFlipMode{CONTINUOUS=0, SINGLE=1}（tabs.d.ts:1885-1911 默认 CONTINUOUS）
       cachedMaxCount: -1,             // -1=未设=全部缓存（swiper_pattern.cpp:868-869：<0 或 ≥ 页数 → 不设限）
@@ -891,6 +893,14 @@
                                               //   d.ts animationDuration JSDoc 明说 animationDuration
                                               //   只控制点击/changeIndex，拖拽释放由 interpolatingSpring
                                               //   内禀参数决定——R152 曾把 animationDuration 接到这里）
+      // R154：拖拽释放曲线槽位（builtin.js builtinFinishPagedDrag 读取）——显式设过
+      // animationCurve 才接管曲线（spring=真机 interpolatingSpring 的解算器近似；
+      // css=点击曲线串）；未设返回 null 保持 R125 既有 ease-out 行为
+      finishCurve: () => (st.animCurveSet
+        ? (st.animCurveKind === 'spring'
+          ? { kind: 'spring' }
+          : { kind: 'css', css: st.animCurveCss })
+        : null),
       /** @param {number} i */
       pageAt: (i) => (st.contents[i] ? st.contents[i].el : null),
       /** @param {number} i */
@@ -1069,6 +1079,7 @@
         }
         st.animCurveKind = parsed.kind;
         st.animCurveCss = parsed.css;
+        st.animCurveSet = true;   // R154：显式设过才接 builtin.js 的 finishCurve 槽位（拖拽释放曲线）
         return;
       }
       case 'pageFlipMode': {
@@ -1559,13 +1570,15 @@
   // index/loop/autoPlay 全是属性 setter。这条是编译器判错后才查出来的，别凭印象写。
   const SWIPER_UNSUPPORTED = new Set([
     'displayArrow', 'displayMode', 'displayCount', 'effectMode', 'nextMargin', 'prevMargin',
-    'itemSpace', 'cachedCount', 'curve', 'customContentTransition',
+    'itemSpace', 'cachedCount', 'customContentTransition',
     'pageFlipMode', 'nestedScroll', 'maintainVisibleContentPosition', 'indicatorStyle', 'indicatorInteractive',
     'onContentDidScroll', 'onContentWillScroll',
     'onSelected', 'onUnselected', 'onScrollStateChanged',
   ]);
   // R125 起真语义：vertical/disableSwipe/duration/onAnimationStart/onAnimationEnd/onGestureSwipe
   // （内置拖拽，attachPagedDrag）；此前它们与上述一并落 data-*。
+  // R154-B 起再加两件：curve（拖拽释放翻页曲线槽位，走 SWIPER_ATTRS.curve → api.finishCurve）
+  // 与 indicator（DotIndicator/DigitIndicator 真语义，走 SWIPER_ATTRS.indicator）。
 
   let swiperSeq = 0;
   class SwiperController {
@@ -1608,6 +1621,15 @@
       autoPlay: false, interval: 3000, // 默认间隔 3000ms
       indicatorWanted: false, controller: null, onChange: [], timer: 0,
       dots: [], indicatorEl: null,
+      // R154-B indicator 真语义状态（入参面/缺省值取舍见 SWIPER_ATTRS.indicator 处注释）：
+      indicatorKind: 'dot',           // 'dot'=圆点 / 'digit'=数字（DigitIndicator）
+      indicatorCfg: null,             // DotIndicator/DigitIndicator 配置载体；null=布尔形态（缺省配置）
+      dotStyle: null,                 // 圆点几何/配色 {iw,ih,sw,sh,col,sel}（setActiveSwiper 落选中态）
+      digitEls: null,                 // DigitIndicator 两段文本 {current,total}（随索引重设）
+      // R154-B 曲线槽位状态：'default'=未设 Swiper.curve → 拖拽释放 ease-out 缺省（R125 契约、
+      //   向后兼容；d.ts 缺省是 interpolatingSpring(-1,1,328,34)（swiper.d.ts:1858），偏差已记录）；
+      //   'css'/'spring'=curve(...) 已设（spring 族不 respect duration，走 R126 解算器）
+      curveKind: 'default', curveCss: 'ease-out',
       // R125 内置拖拽
       vertical: false,                 // swiper.d.ts JSDoc：vertical 默认 false（横向）
       disableSwipe: false,
@@ -1634,6 +1656,8 @@
       size: () => (st.vertical ? st.node.clientHeight : st.node.clientWidth),
       /** @returns {number} */
       duration: () => st.duration,
+      /** @returns {any} R154-B 曲线槽位：Swiper.curve 声明的翻页过渡曲线（null=缺省 ease-out） */
+      finishCurve: () => (st.curveKind === 'default' ? null : { kind: st.curveKind, css: st.curveCss }),
       /** @param {number} i */
       pageAt: (i) => (st.entries[i] ? st.entries[i].el : null),
       /** @param {number} i */
@@ -1676,7 +1700,24 @@
     }
     st.index = idx;
     onlyOneVisible(st.entries, idx);
-    st.dots.forEach((/** @type {any} */ d, /** @type {number} */ k) => d.setAttribute('data-arkui-swiper-dot-active', k === idx ? 'true' : 'false'));
+    st.dots.forEach((/** @type {any} */ d, /** @type {number} */ k) => {
+      const active = k === idx;
+      d.setAttribute('data-arkui-swiper-dot-active', active ? 'true' : 'false');
+      // R154-B DotIndicator 选中态：几何（selectedItemWidth/Height）与配色（selectedColor）随
+      // 活动点切换（缺省 selected 尺寸=常态 6vp，只有显式配置才见尺寸差）
+      const s = st.dotStyle;
+      if (s) {
+        d.style.width = active ? s.sw : s.iw;
+        d.style.height = active ? s.sh : s.ih;
+        d.style.background = active ? s.sel : s.col;
+      }
+    });
+    if (st.digitEls) {
+      // R154-B DigitIndicator：索引变化事件驱动两段文本重设（current 从 1 起，
+      // swiper_indicator_pattern.cpp:2052-2056；total=页数）
+      st.digitEls.current.textContent = String(idx + 1);
+      st.digitEls.total.textContent = String(n);
+    }
     if (fire) {
       for (const cb of st.onChange) {
         try { cb(idx); } catch (e) { layoutWarnings.push(`Swiper.onChange 抛错：${e && e.message}`); }
@@ -1725,7 +1766,7 @@
     });
     st.count = st.entries.length;
 
-    if (st.indicatorWanted) st.indicatorEl = buildSwiperIndicator(st);
+    if (st.indicatorWanted) refreshSwiperIndicator(st);
 
     if (!st.entries.length) {
       layoutWarnings.push('Swiper 内没有任何子组件');
@@ -1736,33 +1777,263 @@
     startSwiperAutoPlay(st);
   }
 
+  // ── R154-B：Swiper indicator 真语义（原 main.js:1779 处"只支持 boolean"退化的真实现）──
+  //
+  // 入参面（swiper.d.ts:1471/:1495 + C 简报 #3）：indicator(true|false) / indicator(new
+  // DotIndicator()) / indicator(new DigitIndicator()) 三种。对象是链式 setter 返回 this 的
+  // 【配置载体】（内部存 xxxValue 字段），不是 builder——DOM 端照此实现配置类，挂 global
+  // （产物里 `new DotIndicator()` 是自由变量引用）。
+  //
+  // DotIndicator 属性取舍（swiper.d.ts:422-589 JSDoc 逐条）：
+  //   DOM 可达 → itemWidth/itemHeight/selectedItemWidth/selectedItemHeight（尺寸落 CSS，d.ts
+  //              禁百分比）、color/selectedColor（点色/活动点色）、space（点距，缺省 8vp/PC 10）；
+  //              Indicator 基座 left/top/right/bottom/start/end（覆盖层定位；start/end 是 RTL
+  //              感知边距，本运行时恒 LTR → 同 left/right）
+  //   记警告   → mask(true)（真机按压遮罩）、maxDisplayCount（[6,9] 溢出窗口显示，真机有专门
+  //              overflow 效果）、indicatorIcon（since 26 图标点）、按压放大 1.33 倍（交互细节）
+  // DigitIndicator（swiper.d.ts:717-711）：文本 = 当前页/总页数【两段独立 Text】（current 从 1
+  //   起，swiper_indicator_pattern.cpp:2052-2056）；fontColor/selectedFontColor、digitFont/
+  //   selectedDigitFont（d.ts 明说 Font 只有 size/weight 生效）直接落 CSS。
+  //
+  // 缺省：d.ts 未设 indicator = true（=DotIndicator 形态，swiper.d.ts:1471 JSDoc）——本实现
+  //   沿用 R125 以来"未设=false"（既有 fixtures/断言按缺省无指示器写的，改缺省全量换视觉，
+  //   偏差已记录；显式 indicator(true|new DotIndicator()) 均可得真机缺省形态）。
+
+  /** DotIndicator 配置载体（swiper.d.ts:422-589；链式 setter 返回 this，字段照真机 xxxValue 惯例） */
+  class DotIndicator {
+    constructor() {
+      /** @type {any} */ this.itemWidthValue = 6;              // 缺省 6vp（swiper.d.ts:449）
+      /** @type {any} */ this.itemHeightValue = 6;             // 缺省 6vp（:471）
+      /** @type {any} */ this.selectedItemWidthValue = 6;      // 缺省 6vp（:485）
+      /** @type {any} */ this.selectedItemHeightValue = 6;     // 缺省 6vp（:499）
+      /** @type {boolean} */ this.maskValue = false;           // 缺省 false（:517；DOM 未达，记警告）
+      /** @type {any} */ this.colorValue = '#1A182431';        // 缺省浅灰（:533）
+      /** @type {any} */ this.selectedColorValue = '#007DFF';  // 缺省蓝（:549）
+      /** @type {number} */ this.maxDisplayCountValue = 0;     // 无缺省，范围 [6,9]（:565；DOM 未达）
+      /** @type {any} */ this.spaceValue = 8;                  // 缺省 8vp、PC 10vp（:581；取非 PC 值）
+      /** @type {any} */ this.iconListValue = null;            // indicatorIcon（since 26；DOM 未达）
+      /** @type {any} */ this.leftValue = null;
+      /** @type {any} */ this.topValue = null;
+      /** @type {any} */ this.rightValue = null;
+      /** @type {any} */ this.bottomValue = null;
+      /** @type {any} */ this.bottomIgnoreSizeValue = false;
+      /** @type {any} */ this.startValue = null;
+      /** @type {any} */ this.endValue = null;
+    }
+    /** @param {any} v @returns {DotIndicator} */
+    itemWidth(v) { this.itemWidthValue = v; return this; }
+    /** @param {any} v @returns {DotIndicator} */
+    itemHeight(v) { this.itemHeightValue = v; return this; }
+    /** @param {any} v @returns {DotIndicator} */
+    selectedItemWidth(v) { this.selectedItemWidthValue = v; return this; }
+    /** @param {any} v @returns {DotIndicator} */
+    selectedItemHeight(v) { this.selectedItemHeightValue = v; return this; }
+    /** @param {boolean} v @returns {DotIndicator} */
+    mask(v) { this.maskValue = !!v; return this; }
+    /** @param {any} v @returns {DotIndicator} */
+    color(v) { this.colorValue = v; return this; }
+    /** @param {any} v @returns {DotIndicator} */
+    selectedColor(v) { this.selectedColorValue = v; return this; }
+    /** @param {number} v @returns {DotIndicator} */
+    maxDisplayCount(v) { this.maxDisplayCountValue = Number(v) || 0; return this; }
+    /** @param {any} v @returns {DotIndicator} */
+    space(v) { this.spaceValue = v; return this; }
+    /** @param {any} v @returns {DotIndicator} */
+    indicatorIcon(v) { this.iconListValue = v; return this; }
+    /** @param {any} v @returns {DotIndicator} */
+    left(v) { this.leftValue = v; return this; }
+    /** @param {any} v @returns {DotIndicator} */
+    top(v) { this.topValue = v; return this; }
+    /** @param {any} v @returns {DotIndicator} */
+    right(v) { this.rightValue = v; return this; }
+    /** @param {any} v @param {boolean=} [ignoreSize] @returns {DotIndicator} */
+    bottom(v, ignoreSize) { this.bottomValue = v; this.bottomIgnoreSizeValue = !!ignoreSize; return this; }
+    /** @param {any} v @returns {DotIndicator} */
+    start(v) { this.startValue = v; return this; }
+    /** @param {any} v @returns {DotIndicator} */
+    end(v) { this.endValue = v; return this; }
+  }
+
+  /** DigitIndicator 配置载体（swiper.d.ts:717-711；同 DotIndicator 的链式形态） */
+  class DigitIndicator {
+    constructor() {
+      /** @type {any} */ this.fontColorValue = '#ff182431';           // 缺省（swiper.d.ts JSDoc）
+      /** @type {any} */ this.selectedFontColorValue = '#ff182431';   // 缺省同上
+      /** @type {any} */ this.digitFontValue = { size: 14, weight: 400 };          // Font{size,weight}
+      /** @type {any} */ this.selectedDigitFontValue = { size: 14, weight: 400 };  // 同上（选中段）
+      /** @type {any} */ this.leftValue = null;
+      /** @type {any} */ this.topValue = null;
+      /** @type {any} */ this.rightValue = null;
+      /** @type {any} */ this.bottomValue = null;
+      /** @type {any} */ this.bottomIgnoreSizeValue = false;
+      /** @type {any} */ this.startValue = null;
+      /** @type {any} */ this.endValue = null;
+    }
+    /** @param {any} v @returns {DigitIndicator} */
+    fontColor(v) { this.fontColorValue = v; return this; }
+    /** @param {any} v @returns {DigitIndicator} */
+    selectedFontColor(v) { this.selectedFontColorValue = v; return this; }
+    /** @param {any} v @returns {DigitIndicator} */
+    digitFont(v) { this.digitFontValue = v; return this; }
+    /** @param {any} v @returns {DigitIndicator} */
+    selectedDigitFont(v) { this.selectedDigitFontValue = v; return this; }
+    /** @param {any} v @returns {DigitIndicator} */
+    left(v) { this.leftValue = v; return this; }
+    /** @param {any} v @returns {DigitIndicator} */
+    top(v) { this.topValue = v; return this; }
+    /** @param {any} v @returns {DigitIndicator} */
+    right(v) { this.rightValue = v; return this; }
+    /** @param {any} v @param {boolean=} [ignoreSize] @returns {DigitIndicator} */
+    bottom(v, ignoreSize) { this.bottomValue = v; this.bottomIgnoreSizeValue = !!ignoreSize; return this; }
+    /** @param {any} v @returns {DigitIndicator} */
+    start(v) { this.startValue = v; return this; }
+    /** @param {any} v @returns {DigitIndicator} */
+    end(v) { this.endValue = v; return this; }
+  }
+
+  // indicator 专用长度归一：数字=vp→px（1:1，本项目一贯做法）；'10'/'10vp'/'10px' 字符串取
+  // 数值；百分比被 d.ts 明令禁止（itemWidth 等 "cannot be set in percentage"）→ 按缺省处理。
+  /** @param {any} v @param {string} def @returns {string} */
+  function swiperIndicatorDim(v, def) {
+    if (v == null) return def;
+    const r = resolveResource(v);
+    if (typeof r === 'number' && Number.isFinite(r)) return Math.max(0, r) + 'px';
+    if (typeof r === 'string') {
+      const m = /^\s*(\d+(?:\.\d+)?)\s*(?:vp|fp|lpx|px)?\s*$/.exec(r);
+      if (m) return Math.max(0, parseFloat(m[1])) + 'px';
+    }
+    return def;
+  }
+
   /** @param {any} st */
   function buildSwiperIndicator(st) {
+    const cfg = st.indicatorCfg;
+    const digit = st.indicatorKind === 'digit';
+    // DotIndicator 未达子集：显式配置了才逐项记警告（不静默；配置载体其余字段全生效）
+    if (cfg && !digit) {
+      if (cfg.maskValue === true) {
+        warnOnce('Swiper indicator：DotIndicator.mask(true) 无 DOM 对应物（真机按压遮罩），未实现');
+      }
+      if (cfg.maxDisplayCountValue) {
+        warnOnce('Swiper indicator：DotIndicator.maxDisplayCount 的溢出窗口显示未实现'
+          + '（真机 [6,9] 截断+边缘收缩，swiper.d.ts:565），圆点全量显示');
+      }
+      if (cfg.iconListValue) {
+        warnOnce('Swiper indicator：DotIndicator.indicatorIcon（since 26 图标点）未实现，按普通圆点渲染');
+      }
+    }
     const wrap = document.createElement('div');
     wrap.setAttribute('data-arkui-swiper-indicator', '');
+    wrap.setAttribute('data-arkui-swiper-indicator-kind', digit ? 'digit' : 'dot');
+    // 覆盖层定位（C 简报 #4 + Indicator 基座 left/top/right/bottom/start/end，swiper.d.ts:247-410）：
+    // 无 left/right → 水平居中；无 top/bottom → 贴底（真机等效 bottom=0）。真机为 indicator 保留
+    // 32vp 默认交互区（swiper.d.ts:235-238）故视觉不贴死底边——DOM 缺省沿用 R125 的 bottom:2px
+    // 观感（交互区高度不复刻，偏差已记录）；完全贴底/自定义位置走显式 left/top/right/bottom
+    // 配置或独立 IndicatorComponent（真机同款建议，swiper.d.ts:238）。
     wrap.style.position = 'absolute';
-    wrap.style.left = '0';
-    wrap.style.right = '0';
-    wrap.style.bottom = '2px';
     wrap.style.display = 'flex';
     wrap.style.flexDirection = 'row';
-    wrap.style.justifyContent = 'center';
-    wrap.style.gap = '4px';
-    st.dots = st.entries.map((/** @type {any} */ _e, /** @type {number} */ k) => {
-      const d = document.createElement('div');
-      d.setAttribute('data-arkui-swiper-dot', String(k));
-      d.setAttribute('data-arkui-swiper-dot-active', 'false');
-      d.style.width = '6px';
-      d.style.height = '6px';
-      d.style.borderRadius = '50%';
-      d.style.background = '#bbb';
-      d.style.cursor = 'pointer';
-      d.addEventListener('click', () => setActiveSwiper(st, k, true));
-      wrap.appendChild(d);
-      return d;
-    });
+    wrap.style.alignItems = 'center';
+    const posCss = (/** @type {any} */ v) => (v == null ? '' : toCssSize(resolveResource(v)));
+    const leftV = cfg ? (cfg.leftValue != null ? cfg.leftValue : cfg.startValue) : null;
+    const rightV = cfg ? (cfg.rightValue != null ? cfg.rightValue : cfg.endValue) : null;
+    if (leftV != null || rightV != null) {
+      if (leftV != null) wrap.style.left = posCss(leftV);
+      if (rightV != null) wrap.style.right = posCss(rightV);
+    } else {
+      wrap.style.left = '0';
+      wrap.style.right = '0';
+      wrap.style.justifyContent = 'center';
+    }
+    if (cfg && cfg.topValue != null) {
+      wrap.style.top = posCss(cfg.topValue);            // d.ts：top 优先级高于 bottom（swiper.d.ts:267）
+    } else if (cfg && cfg.bottomValue != null) {
+      wrap.style.bottom = posCss(cfg.bottomValue);
+    } else {
+      wrap.style.bottom = '2px';
+    }
+    if (!digit) {
+      const iw = swiperIndicatorDim(cfg && cfg.itemWidthValue, '6px');
+      const ih = swiperIndicatorDim(cfg && cfg.itemHeightValue, '6px');
+      const sw = swiperIndicatorDim(cfg && cfg.selectedItemWidthValue, iw);
+      const sh = swiperIndicatorDim(cfg && cfg.selectedItemHeightValue, ih);
+      const col = colorOf(resolveResource(cfg && cfg.colorValue != null ? cfg.colorValue : '#1A182431'));
+      const sel = colorOf(resolveResource(cfg && cfg.selectedColorValue != null ? cfg.selectedColorValue : '#007DFF'));
+      wrap.style.gap = swiperIndicatorDim(cfg && cfg.spaceValue, '8px');
+      st.dotStyle = { iw, ih, sw, sh, col, sel };
+      st.digitEls = null;
+      st.dots = st.entries.map((/** @type {any} */ _e, /** @type {number} */ k) => {
+        const d = document.createElement('div');
+        d.setAttribute('data-arkui-swiper-dot', String(k));
+        d.setAttribute('data-arkui-swiper-dot-active', 'false');
+        d.style.width = iw;
+        d.style.height = ih;
+        d.style.borderRadius = '50%';
+        d.style.background = col;
+        d.style.cursor = 'pointer';
+        d.addEventListener('click', () => setActiveSwiper(st, k, true));
+        wrap.appendChild(d);
+        return d;
+      });
+    } else {
+      // DigitIndicator：current/total 两段独立文本 + '/' 分隔段。非当前段（total/分隔）=
+      // fontColor/digitFont；当前段 = selectedFontColor/selectedDigitFont（selected* 命名语义）。
+      // d.ts 明说 Font 只有 size/weight 生效，family/style 不读。文本由 setActiveSwiper 随
+      // 索引重设（current 从 1 起，swiper_indicator_pattern.cpp:2052-2056）。
+      const dc = cfg || new DigitIndicator();
+      const fontCss = (/** @type {any} */ f) => {
+        const o = f && typeof f === 'object' ? f : {};
+        return {
+          size: swiperIndicatorDim(o.size, '14px'),
+          weight: o.weight == null ? 'normal' : String(resolveResource(o.weight)),
+        };
+      };
+      const nf = fontCss(dc.digitFontValue);
+      const sf = fontCss(dc.selectedDigitFontValue);
+      const nc = colorOf(resolveResource(dc.fontColorValue != null ? dc.fontColorValue : '#ff182431'));
+      const sc = colorOf(resolveResource(dc.selectedFontColorValue != null ? dc.selectedFontColorValue : '#ff182431'));
+      const mk = (/** @type {string} */ tag) => {
+        const s = document.createElement('span');
+        s.setAttribute('data-arkui-swiper-digit', tag);
+        return s;
+      };
+      const cur = mk('current');
+      const sep = mk('sep');
+      sep.textContent = '/';
+      const total = mk('total');
+      cur.style.color = sc;
+      cur.style.fontSize = sf.size;
+      cur.style.fontWeight = sf.weight;
+      sep.style.color = nc;
+      sep.style.fontSize = nf.size;
+      sep.style.fontWeight = nf.weight;
+      total.style.color = nc;
+      total.style.fontSize = nf.size;
+      total.style.fontWeight = nf.weight;
+      wrap.style.gap = '2px';
+      wrap.appendChild(cur);
+      wrap.appendChild(sep);
+      wrap.appendChild(total);
+      st.dots = [];
+      st.dotStyle = null;
+      st.digitEls = { current: cur, total: total };
+    }
     st.node.appendChild(wrap);
     return wrap;
+  }
+
+  // 指示器重建单一出口：finalizeSwiper 首建与 indicator(...) 事后切换/重渲染路径共用
+  //（真机重渲染同语义：indicator(false) 摘除、换配置即换形态）
+  /** @param {any} st */
+  function refreshSwiperIndicator(st) {
+    if (st.indicatorEl) {
+      st.indicatorEl.remove();
+      st.indicatorEl = null;
+    }
+    st.dots = [];
+    st.dotStyle = null;
+    st.digitEls = null;
+    if (st.indicatorWanted) st.indicatorEl = buildSwiperIndicator(st);
   }
 
   // Swiper 的语义属性：值要进 state 而不是 DOM
@@ -1773,10 +2044,47 @@
     autoPlay: (st, v) => { st.autoPlay = !!v; },
     interval: (st, v) => { st.interval = Number(resolveResource(v)) || st.interval; },
     indicator: (st, v) => {
-      if (typeof v === 'boolean') { st.indicatorWanted = v; return; }
-      // DotIndicator/DigitIndicator 是带 builder 的对象，运行时读不到其配置
-      st.indicatorWanted = true;
-      layoutWarnings.push('Swiper.indicator 只支持 boolean；DotIndicator/DigitIndicator 的配置未实现（已退化为默认圆点）');
+      if (typeof v === 'boolean') {
+        st.indicatorWanted = v;
+        if (v) st.indicatorCfg = null;        // true=缺省形态圆点（d.ts boolean 缺省即 DotIndicator）
+        refreshSwiperIndicator(st);
+        return;
+      }
+      // ── R154-B 真语义（swiper.d.ts:1471/:1495 + C 简报 #3）：DotIndicator/DigitIndicator
+      // 是链式 setter 配置载体（new DotIndicator()），不再是"读不到配置的退化对象"——
+      // 显式圆点与缺省圆点语义等价，不记退化警告；配置子集取舍见 buildSwiperIndicator 注释。
+      if (v instanceof DotIndicator) {
+        st.indicatorWanted = true;
+        st.indicatorKind = 'dot';
+        st.indicatorCfg = v;
+        refreshSwiperIndicator(st);
+        return;
+      }
+      if (v instanceof DigitIndicator) {
+        st.indicatorWanted = true;
+        st.indicatorKind = 'digit';
+        st.indicatorCfg = v;
+        refreshSwiperIndicator(st);
+        return;
+      }
+      layoutWarnings.push(`Swiper.indicator(${JSON.stringify(v)}) 非法入参：只支持 boolean / `
+        + 'DotIndicator / DigitIndicator（swiper.d.ts:1471），已忽略');
+    },
+    // ── R154-B Swiper.curve（swiper.d.ts:1838-1859，Curve|string|ICurve；此前在
+    // SWIPER_UNSUPPORTED）──真机缺省 interpolatingSpring（见 createSwiperState 注释）；设置后
+    // 作用于拖拽释放翻页的过渡曲线（本运行时 Swiper 唯一的动画路径——切页是 display 语义、
+    // 自动播放同，无过渡可言）。解析器复用 Tabs.animationCurve 的 parseTabsAnimCurve（Curve
+    // 枚举序/spring 族名/CSS 曲线串——curve.d.ts 定义、组件无关，名字里的 Tabs 是历史前缀）；
+    // ICurve 对象本运行时读不出曲线参数 → 记警告保持现值（与 Tabs.animationCurve 同口径）。
+    curve: (st, v) => {
+      const parsed = parseTabsAnimCurve(v);
+      if (!parsed) {
+        layoutWarnings.push(`Swiper.curve(${JSON.stringify(v)}) 不是 Curve 枚举/spring 族名/CSS 曲线串`
+          + '（ICurve 对象本运行时读不出参数），保持现值');
+        return;
+      }
+      st.curveKind = parsed.kind;
+      st.curveCss = parsed.css;
     },
     // ── R125 内置拖拽六件（此前落 data-*，现真语义；默认值见 createSwiperState 注释）──
     vertical: (st, v) => { st.vertical = !!v; },
@@ -2794,6 +3102,9 @@
     Text, Button, Column, Row, Stack, List, ListItem, If, ForEach, LazyForEach, RelativeContainer,
     Tabs, TabContent, TabsController, BarPosition, BarMode,
     Swiper, SwiperController,
+    // R154-B：indicator 配置载体（产物里 `new DotIndicator()` / `new DigitIndicator()` 是
+    // 自由变量引用，不挂 global 直接 ReferenceError；类本体在 Swiper 区段）
+    DotIndicator, DigitIndicator,
     Navigation, NavDestination, NavPathStack, NavigationMode,
     // R12 收口：标题栏/工具栏/分栏用到的枚举在产物里都是自由变量，必须挂 global
     NavigationTitleMode, NavBarPosition, TitleHeight,

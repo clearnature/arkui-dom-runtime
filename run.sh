@@ -96,9 +96,12 @@ run_one() {
     echo '  ❌ 服务未启动：'; sed 's/^/     /' "$logf"; kill $server_pid 2>/dev/null; rm -f "$logf"; return 1
   fi
 
+  # 虚拟时钟预算：默认 8000ms；用例可经 VTBUDGET 覆盖（R154：builtindemo 的弹簧解算器
+  # 收口等待 tick(1200) 使全页虚拟耗时超 8s——长等待页用例自行声明更大预算）
+  local vtb="${VTBUDGET:-8000}"
   dom="$(timeout 60 "$CHROME" --headless --disable-gpu --no-sandbox \
     --user-data-dir="$profdir" \
-    --virtual-time-budget=8000 --dump-dom "http://127.0.0.1:$port/$page$query" 2>/dev/null)"
+    --virtual-time-budget="$vtb" --dump-dom "http://127.0.0.1:$port/$page$query" 2>/dev/null)"
 
   # 只解析 #result 节点文本再判定：整页 DOM 里含脚本源码（'=== ALL PASS ===' 字面量），
   # 直接对 DOM grep 会永远"通过"——这个假阳性陷阱必须避免。
@@ -115,7 +118,7 @@ print(html.unescape(m.group(1)) if m else '（未取到 result 节点）')
   mkdir -p build
   timeout 60 "$CHROME" --headless --disable-gpu --no-sandbox \
     --user-data-dir="$profdir" \
-    --window-size=440,340 --virtual-time-budget=8000 \
+    --window-size=440,340 --virtual-time-budget="$vtb" \
     --screenshot="$HERE/build/$name.png" "http://127.0.0.1:$port/$page$query" 2>/dev/null
 
   kill $server_pid 2>/dev/null; wait $server_pid 2>/dev/null; rm -f "$logf"
@@ -188,7 +191,9 @@ case "${1:-index}" in
     run_one gesturegroupdemo "$(src_of pages/GestureGroupDemo.ts)" build/gesturegroupdemo-module.js test/gesturegroupdemo.html \
       "--cjs --register GestureGroupDemo" || rc=1
     echo
-    # R125 收口：组件内置手势
+    # R125 收口：组件内置手势（R154：VTBUDGET=12000——弹簧解算器收口等待 tick(1200)
+    #   使全页虚拟耗时超默认 8000，长等待页用例自行声明更大预算）
+    VTBUDGET=12000 \
     run_one builtindemo "$(src_of pages/BuiltinDemo.ts)" build/builtindemo-module.js test/builtindemo.html \
       "--cjs --register BuiltinDemo" || rc=1
     echo
@@ -383,6 +388,11 @@ case "${1:-index}" in
     run_one batchlayout "$(src_of pages/BatchLayoutDemo.ts)" build/batchlayout-module.js test/batchlayout.html \
       "--cjs --register BatchLayoutDemo" || rc=1
     echo
+    # R153：batchfunc 补入 all 块（R66 起只有 per-case dispatch，all 块漏收——
+    # 浏览器矩阵一直没驱动它，38 条断言靠单跑维持；R153 假绿坏指针的根因之一）
+    run_one batchfunc "$(src_of pages/BatchFuncDemo.ts)" build/batchfunc-module.js test/batchfunc.html \
+      "--cjs --register BatchFuncDemo" || rc=1
+    echo
     run_one navshimdemo "$(src_of pages/NavShimDemo.ts)" build/navshimdemo-module.js test/navshimdemo.html \
       "--cjs --register NavShimDemo" || rc=1
     echo
@@ -469,6 +479,8 @@ case "${1:-index}" in
       "--cjs --register GestureGroupDemo" ;;
   builtindemo)
     # R125 收口：组件内置手势（Swiper 拖拽翻页 / Tabs 滑动切换 / Scroll+List 拖拽滚动）
+    # R154：弹簧解算器收口等待 tick(1200) 使全页虚拟耗时超 8s → 本用例扩容虚拟预算
+    VTBUDGET=12000 \
     run_one builtindemo "$(src_of pages/BuiltinDemo.ts)" build/builtindemo-module.js test/builtindemo.html \
       "--cjs --register BuiltinDemo" ;;
   resourcedemo)

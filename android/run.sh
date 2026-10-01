@@ -55,7 +55,7 @@ mkdir -p build
 python3 tools/ff-plan.py > build/ff-plan.jsonl || exit 1
 plan_n="$(grep -c '^{' build/ff-plan.jsonl 2>/dev/null || true)"
 plan_n="${plan_n:-0}"
-raw_n="$(sed -n '/^  all)/,/^    exit \$rc ;;/p' run.sh | grep -cE '^[[:space:]]*run_one ' || true)"
+raw_n="$(sed -n '/^  all)/,/^    exit \$rc ;;/p' run.sh | grep -cE '^[[:space:]]*(VTBUDGET=[0-9]+[[:space:]]+)?run_one ' || true)"
 raw_n="${raw_n:-0}"
 if [ "$plan_n" -ne "$raw_n" ]; then
   printf '  ❌ 计划用例数(%d) ≠ all 块 run_one 行数(%d)——ff-plan 解析漂移\n' "$plan_n" "$raw_n"

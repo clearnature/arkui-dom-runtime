@@ -1742,7 +1742,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   属性元数据总数       47（平均 0.3／组件，最多 FormComponent=9）
 
 == 运行时 API ==
-  global 导出        403 个
+  global 导出        405 个
   状态类            ObservedPropertySimplePU ObservedPropertyObjectPU SynchedPropertySimpleOneWayPU SynchedPropertySimpleTwoWayPU SynchedPropertyNesedObjectPU
   内置组件          Text Button Column Row Stack List ListItem If ForEach LazyForEach RelativeContainer Tabs TabContent Swiper Navigation NavDestination Progress Gauge DataPanel Rating
   内部钩子 __arkui_dom_*  32 个
@@ -1765,29 +1765,29 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   fixtures 转换产物  80 个：AlphabetIndexerDemo AnimDemo AnimatorDemo AsyncIO AttrHeavyDemo BatchFuncDemo BatchInputDemo BatchLayoutDemo BatchMediaDemo BatchVerifyDemo BuiltinDemo CalendarPickerDemo Callee CanvasDemo CjkDemo DatePickerDemo Detail DrawDemo GestureDemo GestureGroupDemo GridDemo GridRowDemo Home ImageDemo Index InputDemo Layout Lazy LazyVar ListGroupDemo MeasArea MeasImage MeasNotify Measure MediaDemo MotionDemo NavBarDemo NavDemo NavShimDemo NavTransDemo NetFile NotesDetail NotesHome Observe PanelDemo PerfBigDemo PerfDemo PickerDemo PopDemo PromptAct Provide QrDemo RefreshDemo RelDemo ResourceDemo Rich RichVideoDemo ScrollDemo ShapeDemo ShowDemo SideBarDemo SmallDemo SplitDemo StepDemo Stress10kDemo Stress1kDemo SwiperDemo TabsGrid TextDemo TextMeasure TextPickerDemo TextTimeDemo TimePickerDemo TransitionDemo UiContextDemo V2 WaterFlowDemo Widgets WindowDemo XCompDemo
 
 == 性能基线（Electron 实测）==
-  首渲染            34.4 ms（33 节点：Column+Button+Text+ForEach×30）
-  最小 rerender     12.6 ms（@State 计数脏区单 Text，rAF 口径）
+  首渲染            37.4 ms（33 节点：Column+Button+Text+ForEach×30）
+  最小 rerender     6.6 ms（@State 计数脏区单 Text，rAF 口径）
   rerender 管道     1.1 ms / 1 tick（setTimeout 轮询口径，R70）
   微任务底噪        0.00 ms
   行数              31
-  剖面 R71          loadRoute 同步 7.3 ms（require 0.4）· raf1 0.5 / raf2 26.6 ms（offscreen 首帧）
-  脚本 eval         runtime 154.6 / generated 150.8 / shims 151.7 / module 151.1 ms（计时起点之前）
+  剖面 R71          loadRoute 同步 7.1 ms（require 0.4）· raf1 23.2 / raf2 7.1 ms（offscreen 首帧）
+  脚本 eval         runtime 155.5 / generated 153.1 / shims 152.3 / module 153.3 ms（计时起点之前）
   判定              框架同步构建 3.5ms 无大头；"首渲染"=脚本 eval + offscreen 首帧（非框架成本）
-  千节点 R79        首渲染同步 27.3 ms（350 节点/~3500 属性，亚线性）· 单点 flush 0.2 ms · 批量翻转 flush 3.3 ms
+  千节点 R79        首渲染同步 29.8 ms（350 节点/~3500 属性，亚线性）· 单点 flush 0.2 ms · 批量翻转 flush 3.2 ms
   规模曲线          203→4.8 / 304→11.2 / 1055→19.0 ms（创建路径亚线性）；行复用+守卫千节点级保持
-  万节点 R138       首渲染同步 141.3 ms（3300 节点/~33000 属性）· 批量翻转 poll 154.4 ms / flush 16.3 ms · 单点 flush 0.1 ms（R139 增量走查后）
+  万节点 R138       首渲染同步 130.3 ms（3300 节点/~33000 属性）· 批量翻转 poll 162.8 ms / flush 17.6 ms · 单点 flush 0.0 ms（R139 增量走查后）
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          9442.1 KB
-  runtime(src)     1491.2 KB
-  test             1599.7 KB
-  tools            287.1 KB
+  runtime          9469.5 KB
+  runtime(src)     1518.5 KB
+  test             1615.9 KB
+  tools            287.2 KB
   electron(src)    84.0 KB
-  docs             895.6 KB
+  docs             899.2 KB
   fixtures         552.5 KB
 
 == 逐文件（文档"文件职责"表的来源）==
-  runtime/arkui-dom-runtime.js            1251432 B  1222.1 KB
+  runtime/arkui-dom-runtime.js            1279405 B  1249.4 KB
   runtime/generated-components.js          57617 B  56.3 KB
   runtime/ohos-shims.js                    98355 B  96.0 KB
   tools/extract.mjs                         6936 B  6.8 KB
@@ -1798,18 +1798,18 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   tools/preflight.mjs                       5422 B  5.3 KB
   tools/check-all.sh                        8514 B  8.3 KB
   tools/build-runtime.mjs                   5138 B  5.0 KB
-  run.sh                                   41073 B  40.1 KB
+  run.sh                                   42006 B  41.0 KB
   electron/run.sh                          23199 B  22.7 KB
   electron/main.js                         50500 B  49.3 KB
   electron/preload.js                      11432 B  11.2 KB
   package.json                              1366 B  1.3 KB
   .gitignore                                 983 B  1.0 KB
-  README.md                               158136 B  154.4 KB
+  README.md                               158157 B  154.5 KB
   THIRD-PARTY-NOTICES.md                   12820 B  12.5 KB
-  docs/ARCHITECTURE.md                    168581 B  164.6 KB
-  docs/CAPABILITY.md                       67572 B  66.0 KB
+  docs/ARCHITECTURE.md                    168580 B  164.6 KB
+  docs/CAPABILITY.md                       68955 B  67.3 KB
   docs/DEVELOPING.md                       76775 B  75.0 KB
-  docs/ROADMAP.md                         261385 B  255.3 KB
+  docs/ROADMAP.md                         263768 B  257.6 KB
   docs/surface-measurement.md               6496 B  6.3 KB
   docs/SESSION-2026-09-20.md               12842 B  12.5 KB
   runtime/src/.mimosa                       4096 B  4.0 KB
@@ -1819,14 +1819,14 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   runtime/src/animation.js                 29910 B  29.2 KB
   runtime/src/animator.js                   6308 B  6.2 KB
   runtime/src/area.js                      34110 B  33.3 KB
-  runtime/src/batch-func.js                54169 B  52.9 KB
+  runtime/src/batch-func.js                61103 B  59.7 KB
   runtime/src/batch-input.js               37979 B  37.1 KB
   runtime/src/batch-layout.js              29614 B  28.9 KB
   runtime/src/batch-media.js               35046 B  34.2 KB
   runtime/src/batch-motion.js              25199 B  24.6 KB
   runtime/src/batch-nav.js                 30418 B  29.7 KB
   runtime/src/batch-platform.js            30369 B  29.7 KB
-  runtime/src/builtin.js                   16858 B  16.5 KB
+  runtime/src/builtin.js                   19559 B  19.1 KB
   runtime/src/calendarpicker.js            17806 B  17.4 KB
   runtime/src/canvas.js                    10679 B  10.4 KB
   runtime/src/datepicker.js                 8770 B  8.6 KB
@@ -1843,7 +1843,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   runtime/src/incremental.js                3155 B  3.1 KB
   runtime/src/input.js                     11921 B  11.6 KB
   runtime/src/layout.js                    20292 B  19.8 KB
-  runtime/src/main.js                     164048 B  160.2 KB
+  runtime/src/main.js                     182386 B  178.1 KB
   runtime/src/nav.js                       57837 B  56.5 KB
   runtime/src/panel.js                      3360 B  3.3 KB
   runtime/src/popup.js                      5042 B  4.9 KB
@@ -1954,11 +1954,11 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   test/attrheavy.html                       4064 B  4.0 KB
   test/batch-verify.html                   29056 B  28.4 KB
   test/batchbehavior.html                   6098 B  6.0 KB
-  test/batchfunc.html                      15814 B  15.4 KB
+  test/batchfunc.html                      20817 B  20.3 KB
   test/batchinputdemo.html                  6064 B  5.9 KB
   test/batchlayout.html                     8996 B  8.8 KB
   test/batchmediademo.html                  6542 B  6.4 KB
-  test/builtindemo.html                    14699 B  14.4 KB
+  test/builtindemo.html                    26247 B  25.6 KB
   test/calendarpickerdemo.html             11100 B  10.8 KB
   test/canvasedemo.html                     4301 B  4.2 KB
   test/cjk.html                            11796 B  11.5 KB
@@ -2103,8 +2103,8 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
 | `tools/assert-counts.mjs` | 7.3 KB | 断言计数守门（运行期 emit 的 PASS 行 ↔ 文档声明的「N 条断言」，见坑表 77） | 声明写法/扫描范围变化时 |
 | `tools/preflight.mjs` | 5.3 KB | 环境自检（工具链/宿主/可执行位） | 外部依赖变化时 |
 | `tools/check-all.sh` | 8.6 KB | 一条命令做完验收（11 步，firefox/webkit/android 步缺席显式跳过），退出码只看被调命令 | 新增验收步骤时 |
-| `run.sh` | 39.9 KB | 浏览器 83 用例驱动 | 新增用例 |
-| `electron/run.sh` | 22.7 KB | Electron 96 用例 + 磁盘验证 | 新增用例 |
+| `run.sh` | 40.5 KB | 浏览器 84 用例驱动 | 新增用例 |
+| `electron/run.sh` | 22.7 KB | Electron 97 用例 + 磁盘验证 | 新增用例 |
 | `firefox/run.sh` | 3.9 KB | Firefox(Gecko) 同用例表跨引擎复跑（R144；geckodriver 缺席显式跳过，计数覆盖表 `firefox/assert-overrides.tsv`） | 引擎差异分诊 |
 | `webkit/run.sh` | 3.2 KB | WebKit 第四端同用例表复跑（R148；playwright python 缺席显式跳过，覆盖表 `webkit/assert-overrides.tsv`） | 引擎差异分诊 |
 | `tools/wk-matrix.py` | 5.0 KB | playwright WebKit 执行器（#result 单通道判定，坑 115 纪律） | 判定通道变化时 |

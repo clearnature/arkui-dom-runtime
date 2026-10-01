@@ -68,8 +68,11 @@
    * sign 约定：sign=+1 表示"拖向下一页"（手指左移 raw<0），sign=-1 上一页。
    * @param {HTMLElement} el 容器（事件绑在这里）
    * @param {any} api { axis(): 'x'|'y'; canDrag(): boolean; index(): number; count(): number;
-   *   loop(): boolean; size(): number; duration(): number; pageAt(i): any;
-   *   commit(i): void; gesture(i, extra): void; animStart(idx, target): void; animEnd(i): void }
+   *   loop(): boolean; size(): number; duration(): number;
+   *   finishCurve(): any（R154-B 曲线槽位，可选——返回 {kind:'css'|'spring', css} 或空=缺省
+   *     ease-out；spring 族走 R126 弹簧解算器、不 respect duration，见 builtinFinishPagedDrag）;
+   *   pageAt(i): any; commit(i): void; gesture(i, extra): void; animStart(idx, target): void;
+   *   animEnd(i): void }
    */
   function attachPagedDrag(el, api) {
     /** @type {any} */ let drag = null;
@@ -180,14 +183,17 @@
     if (samples.length < 2) return 0;
     const a = samples[0];
     const b = samples[samples.length - 1];
-    const dt = (b.t - a.t) / 1000;
+    // R154：dt 下限 8ms（一帧）——真实指针事件按帧合并不会产生 0/亚毫秒 dt；合成事件
+    //（测试页同拍 dispatch）才会，无下限时 v0 达 10 万 px/s 量级、弹簧飞出数万 px 不收敛
+    //（Android WebView 实测 R154）。
+    const dt = Math.max(0.008, (b.t - a.t) / 1000);
     return dt > 0 ? (b.v - a.v) / dt : 0;
   }
 
   /**
-   * 收口：commit 走 duration ease-out（d.ts 契约）；**回弹走真机弹簧**（R126：
-   * ScrollSpringMotion 欠阻尼解析解，scrollable.cpp:27-29 参数）。
-   * 定时器兜底 + transitionend 见证（坑 ⑧）。
+   * 收口：commit 走 duration + 曲线槽位（R154-B：api.finishCurve() 未声明时 ease-out——
+   * R125 以来缺省/d.ts 契约）；**回弹走真机弹簧**（R126：ScrollSpringMotion 欠阻尼解析解，
+   * scrollable.cpp:27-29 参数）。定时器兜底 + transitionend 见证（坑 ⑧）。
    * @param {any} d @param {any} api @param {number} idx @param {number} target @param {number} size @param {number} v0 @param {boolean} cancelled
    */
   function builtinFinishPagedDrag(d, api, idx, target, size, v0, cancelled) {
@@ -198,14 +204,14 @@
     const sign = flip ? (target > idx ? 1 : -1) : d.sign;
     const dur = Math.max(0, api.duration());
     if (flip) api.animStart(idx, target);
+    // ── R154-B 曲线槽位（R152 记档待接的槽位）──
+    // api.finishCurve() 可选：返回 {kind:'css'|'spring', css}（main.js parseTabsAnimCurve 同形，
+    // Tabs.animationCurve 的解析产物）；调用方未声明（api 上没有这个钩子）/返回空 → null →
+    // ease-out，向后兼容（调用方先例：Tabs 已在用 api.duration() 供时长，曲线同理由它声明）。
+    const fc = typeof api.finishCurve === 'function' ? api.finishCurve() : null;
+    const curve = fc && fc.css ? fc : null;
     const curTarget = flip ? -sign * size : 0;
     const nbTarget = nbEl ? (flip ? 0 : sign * size) : 0;
-    requestAnimationFrame(() => {
-      curEl.style.transition = `transform ${dur}ms ease-out`;
-      if (nbEl) nbEl.style.transition = `transform ${dur}ms ease-out`;
-      curEl.style.transform = axisX ? `translateX(${curTarget}px)` : `translateY(${curTarget}px)`;
-      if (nbEl) nbEl.style.transform = axisX ? `translateX(${nbTarget}px)` : `translateY(${nbTarget}px)`;
-    });
     let settled = false;
     const settle = () => {
       if (settled) return;
@@ -225,22 +231,48 @@
         nbEl.style.display = d.neighbor.prevDisplay || '';
       }
       if (flip) {
-        api.commit(target);
+        // R154 探针：临时诊断包装（确认后移除）
+        try {
+          api.commit(target);
+        } catch (e) {
+          layoutWarnings.push(`R154 探针 commit 抛错：${e && e.message}`);
+        }
         api.animEnd(target);
       }
     };
+    // 弹簧位移 apply（回弹/弹簧翻页共用）：p=当前页位移，邻页恒贴 sign·size 前方
+    const springApply = (/** @type {number} */ p) => {
+      curEl.style.transform = axisX ? `translateX(${p}px)` : `translateY(${p}px)`;
+      if (nbEl) {
+        const np = p + sign * size;
+        nbEl.style.transform = axisX ? `translateX(${np}px)` : `translateY(${np}px)`;
+      }
+    };
+    if (curve && curve.kind === 'spring') {
+      // spring 族（interpolatingSpring/springMotion…）不 respect duration——swiper.d.ts:1540-1541
+      // JSDoc 原文 "the duration of the animation is determined solely by the parameters of the
+      // curve itself and is no longer governed by the duration setting"。真机拖拽释放翻页 =
+      // interpolatingSpring(-1,1,228,30)（tabs_bar_pattern.cpp:76 同款；Swiper 自身 d.ts 缺省
+      // interpolatingSpring(-1,1,328,34)，swiper.d.ts:1858——同族不同参，解算器统一用 R126 的
+      // 228/30 家族，偏差已记录）。弹簧在 CSS 里表达不了（只能曲线近似），这里直接用
+      // builtinSpringRebound 的欠阻尼解析解（scrollable.cpp:27-29 参数）从松手位移解到目标页、
+      // 初速=拖拽采样速度——比近似曲线更真。收口=解算器精度触发 settle；不挂 transitionend/
+      // 兜底定时器（transform 未挂 transition，二者无意义且会提前收口——回弹分支同款互斥）。
+      builtinSpringRebound(springApply, d.shown, curTarget, v0, settle);
+      return;
+    }
+    requestAnimationFrame(() => {
+      const css = curve ? String(curve.css) : 'ease-out';   // 未声明槽位=ease-out（R125 契约）
+      curEl.style.transition = `transform ${dur}ms ${css}`;
+      if (nbEl) nbEl.style.transition = `transform ${dur}ms ${css}`;
+      curEl.style.transform = axisX ? `translateX(${curTarget}px)` : `translateY(${curTarget}px)`;
+      if (nbEl) nbEl.style.transform = axisX ? `translateX(${nbTarget}px)` : `translateY(${nbTarget}px)`;
+    });
     if (!flip) {
       // 回弹 = 弹簧（R126：真机 StartSpringMotion 同一物理，欠阻尼解析解）——弹簧无固定
       // 时长，transitionend/duration 兜底对它无意义（transform 没挂 transition），二者并存
       // 会提前收口、弹簧收尾再写 transform → 互斥，收口由解算器精度触发 settle
-      const apply = (/** @type {number} */ p) => {
-        curEl.style.transform = axisX ? `translateX(${p}px)` : `translateY(${p}px)`;
-        if (nbEl) {
-          const np = p + sign * size;
-          nbEl.style.transform = axisX ? `translateX(${np}px)` : `translateY(${np}px)`;
-        }
-      };
-      builtinSpringRebound(apply, d.shown, 0, v0, settle);
+      builtinSpringRebound(springApply, d.shown, 0, v0, settle);
       return;
     }
     curEl.addEventListener('transitionend', settle, { once: true });

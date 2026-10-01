@@ -100,11 +100,11 @@ tools/serve.py                 极简静态服务（端口由 OS 分配，避免
 tools/preflight.mjs            环境自检（工具链 / 宿主 / 可执行位）
 tools/check-all.sh             一条命令做完所有验收（11 步，含 t --typecheck；firefox/webkit/android 步缺席显式跳过）
 tools/stats.mjs                覆盖范围统计（文档里的数字都来自它）
-test/*.html                    断言页（99 页；进全矩阵的用例由 runner 守门，见 docs/DEVELOPING.md 坑 77）
+test/*.html                    断言页（99 页 + builtindemo 扩容；进全矩阵的用例由 runner 守门，见 docs/DEVELOPING.md 坑 77）
 fixtures/                      冻结的 ets-loader 转换产物（30 个，测试的输入）
 harmony-proj/                  HarmonyOS 工程（页面 .ets 源码，转换产物的来源；构建输出不入库）
-run.sh                         浏览器 83 用例驱动
-electron/run.sh                Electron 96 用例 + 真实磁盘验证
+run.sh                         浏览器 84 用例驱动
+electron/run.sh                Electron 97 用例 + 真实磁盘验证
 firefox/run.sh                 Firefox(Gecko) 同用例表跨引擎复跑（R144，缺席显式跳过；
                                geckodriver 定位顺序与计数覆盖见文件头注释）
 webkit/run.sh                  WebKit 第四端同用例表复跑（R148，playwright；缺席显式跳过）

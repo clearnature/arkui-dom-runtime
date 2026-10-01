@@ -134,7 +134,7 @@ def main():
             out(f"CASE\t{c['name']}\t{verdict}\t{npass}\t{dt:.1f}")
             if verdict != "PASS" or os.environ.get("AN_DEBUG_DUMP"):
                 out(f"---- {c['name']} #result 摘要 ----")
-                for ln in text.splitlines()[:40]:
+                for ln in text.splitlines()[:80]:
                     out("  " + ln)
         except Exception as e:
             stats["ERROR"] += 1

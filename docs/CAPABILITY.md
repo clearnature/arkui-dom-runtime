@@ -241,9 +241,22 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
      精度收口（非固定时长）；Scroll/List 惯性到边改为越界冲激回弹（内容 translate 弹簧，
      ProcessScrollOver→StartSpringMotion 同物理）。`curve`/`effectMode`/`displayCount` 等仍记
      `layoutWarnings`。
-  2. `indicator` 只支持 boolean，传 `DotIndicator`/`DigitIndicator` 会**退化为默认圆点**并记警告。
+  2. **`indicator` 三态已实现（R154）**：boolean 照旧；`DotIndicator`——圆点几何/配色全量
+     （itemWidth/itemHeight/selectedItemWidth/selectedItemHeight 缺省 6vp、color '#1A182431'、
+     selectedColor '#007DFF'、space 8vp；mask(true)/maxDisplayCount/indicatorIcon/按压放大 1.33 记警告）；
+     `DigitIndicator`——"当前页/总页数"两段 Text（current 从 1 起；fontColor/selectedFontColor
+     '#ff182431'、digitFont/selectedDigitFont 只取 size/weight——d.ts 明文），随索引变化重设。
+     入参为配置对象（链式 setter 存 xxxValue，C 简报 #3 口径）；布局=覆盖层贴底水平居中
+     （真机 32vp 交互区不复刻，偏差注释）。**R154 同片**：拖拽释放曲线槽位（builtin.js
+     finishCurve）——`Swiper.curve`/`Tabs.animationCurve` 显式声明 spring 时拖拽释放走
+     builtinSpringRebound 解算器（初速=拖拽采样速度），css 串直通；未声明保持 ease-out
+     （R125 契约）。偏差记档：indicator 未设缺省保持 false（d.ts 缺省 true——改缺省会全量
+     换视觉）；Swiper.curve 未设缺省 ease-out（d.ts 缺省 interpolatingSpring(-1,1,328,34)，
+     解算器统一 228/30 家族——同族不同参）。
   `Swiper` 的直接子项必须是"页"本身：若用 `ForEach` 包一层，那个包裹层是 `display:contents`，
   页面边界识别不出来 → 会记警告（请把 `ForEach` 移到 `Swiper` 之外或用 `@Builder` 展开）。
+  **R154 indicator 三态 + 拖拽释放弹簧曲线槽位**（见上 `indicator` 条）：
+  `bash run.sh builtindemo`（48 条断言，五端通过；R125 首版 29 条 + 曲线槽位 8 + indicator 真语义 11）。
 - **布局仍不是约束求解器**：`alignRules` 现在支持多层链（不动点迭代）、`Guideline`、`bias` 与两套键名，
   但 **`chainMode`（链式排列）未实现**；环状锚定不会报错，而是迭代到上限后记一条 warning。
   `Guideline` 的位置字段只有 `start`/`end`（旧 API 的 `percent` 会被忽略并记警告）。

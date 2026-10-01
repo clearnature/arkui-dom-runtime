@@ -53,6 +53,9 @@
   //   · 回收池：本渲染删除集先尽（LIFO 尾取，同真机 tempChildren 尾 pop），再落持久池（单池、
   //     上限 16、同模板优先——真机非虚拟路径无持久池、虚拟路径按 ttype 分桶，此处是仓库纪律
   //     下的超集）；池满真销毁。重复键 → 告警（含真机修复指引文案）+ 整体回退缺省键全量重渲染。
+  // R154-A：onMove 拖拽换位派发（__arkui_dom_repeatMove 驱动钩子 + repeatMoveDispatch）——
+  //   真机协议 = 拖拽期间框架重排视觉节点、落定 FireOnMove 单发回调（两参裸 number from/to）、
+  //   数据源由回调 splice；垫片把后两步折叠进钩子（详见钩子处块注释），与键 diff 共存。
   /** @param {any[]} prev @param {any[]} next @param {number} n */
   const repeatSigSame = (prev, next, n) => prev.length === n && next.length >= n
     && prev.every((/** @type {any} */ v, /** @type {number} */ k) => Object.is(v, next[k]));
@@ -329,11 +332,15 @@
     st.el.dataset.repeatCount = String(rendered);
   }
 
-  /** @param {any} st */
-  function repeatRender(st) {
-    // virtualScroll 的总数语义（repeat.d.ts VirtualScrollOptions JSDoc）：
-    //   totalCount ∈ (0, 数据源长度] → 只渲染 [0, totalCount-1]；=0 → 不渲染；
-    //   缺省/非法 → 数据源长度。onTotalCount() 与 totalCount 二选一，前者优先。
+  /**
+   * virtualScroll 裁剪后的渲染条数 n（repeat.d.ts VirtualScrollOptions JSDoc 语义）：
+   *   totalCount ∈ (0, 数据源长度] → 只渲染 [0, totalCount-1]；=0 → 不渲染；
+   *   缺省/非法 → 数据源长度。onTotalCount() 与 totalCount 二选一，前者优先。
+   * R154-A 起提取为独立函数：repeatRender 与 onMove 派发共用同一口径
+   * （onMove 的 from/to 按同一 n 校验，virtualScroll 共存时语义一致）。
+   * @param {any} st @returns {number}
+   */
+  function repeatEffectiveN(st) {
     let total = st.arr.length;
     if (st.vs && typeof st.vs === 'object') {
       let want = null;
@@ -345,15 +352,20 @@
         want = Number(st.vs.totalCount);
       }
       if (want !== null && Number.isFinite(want) && want >= 0) total = Math.min(total, Math.floor(want));
-      if (!st.warnedVs) {
-        st.warnedVs = true;
-        // 如实：DOM 运行时不做真·懒加载（onLazyLoading 没有触发源——本实现从不渲染
-        // 超出数据源的项），只保留 totalCount 的"裁剪渲染条数"语义。
-        layoutWarnings.push('Repeat.virtualScroll 未实现真懒加载：onLazyLoading 不会触发，'
-          + 'totalCount/onTotalCount 仅用于裁剪渲染条数');
-      }
     }
-    const n = Math.max(0, Math.min(st.arr.length, total));
+    return Math.max(0, Math.min(st.arr.length, total));
+  }
+
+  /** @param {any} st */
+  function repeatRender(st) {
+    const n = repeatEffectiveN(st);
+    if (st.vs && typeof st.vs === 'object' && !st.warnedVs) {
+      st.warnedVs = true;
+      // 如实：DOM 运行时不做真·懒加载（onLazyLoading 没有触发源——本实现从不渲染
+      // 超出数据源的项），只保留 totalCount 的"裁剪渲染条数"语义。
+      layoutWarnings.push('Repeat.virtualScroll 未实现真懒加载：onLazyLoading 不会触发，'
+        + 'totalCount/onTotalCount 仅用于裁剪渲染条数');
+    }
     if (st.lastSig && repeatSigSame(st.lastSig, st.arr, n)) return;
     st.lastSig = st.arr.slice(0, n);
 
@@ -425,9 +437,13 @@
       n.dataset.onMove = st.onMove ? 'registered' : 'none';
       if (st.onMove && !st.warnedMove) {
         st.warnedMove = true;
-        // 如实：DOM 垫片没有列表拖拽排序的触发源（ArkUI 的拖拽排序由容器拖拽手势驱动），
-        // 回调只登记、不由本实现派发。
-        layoutWarnings.push('Repeat.onMove 已登记，但本实现没有拖拽排序触发源，回调不会被派发');
+        // R154-A：如实——onMove 的真机触发源是 List/Grid 父容器的拖拽手势
+        // （RepeatNode::SetOnMove 只对 LIST/GRID 父容器挂拖拽管理器，repeat_node.cpp:222-229；
+        // 落定单发一次，list_item_drag_manager.cpp:768-769），DOM 垫片没有手势系统。
+        // 回调由驱动钩子 __arkui_dom_repeatMove(node, from, to) 派发（两参裸 number，
+        // pu_foreach.d.ts:45 / i_repeat.ts:37 OnMoveHandler——不存在事件对象类型）。
+        layoutWarnings.push('Repeat.onMove 已登记：DOM 垫片无拖拽手势触发源，'
+          + '回调经 __arkui_dom_repeatMove 驱动钩子派发');
       }
     },
   };
@@ -467,6 +483,106 @@
     st.arr = Array.isArray(arr) ? arr : [];
     repeatSchedule(st);
   };
+
+  // ── R154-A：拖拽换位驱动（onMove 派发）──
+  // 真机协议（pu_repeat_virtual_scroll_2_impl.ts:71-83 权威七步）：
+  //   1) 长按 ListItem 拖拽开始；
+  //   2) 拖拽期间【框架自动重排视觉节点】（C++ RepeatNode::MoveData 平移表 moveFromTo_，
+  //      repeat_virtual_scroll_2_node / repeat_node.cpp:152-184），期间不允许 app 改数组；
+  //   3) 松手落定；
+  //   4) FireOnMove（list_item_drag_manager.cpp:768-769；拖拽取消同发 :793-794；from==to
+  //      不派发，for_each_base_node.h:33）；
+  //   5) onMove 回调给应用，【数据源由开发者在回调里 splice】——框架从不改用户数组；
+  //   6) 框架观察数组变化触发 rerender；
+  //   7) Repeat rerender（键 diff：键保留 → updateIndex + moveChild 回填）。
+  // 回调签名 = 两参裸 number (from, to)（pu_foreach.d.ts:45 / i_repeat.ts:37
+  // OnMoveHandler；from=拖拽起始原索引、to=落定索引，list_item_drag_manager.cpp:189/:767，
+  // 均为数据源索引口径）。真机源码与 SDK declarations 全量 grep 均无 RepeatMoveEvent
+  // 事件对象——事件对象形态不存在。
+  // 生效范围：真机只在父容器为 List/Grid 时激活（repeat_node.cpp:222-229 / virtual 2 node
+  // :921-925）；virtualScroll 与 onMove 完全兼容（同一驱动钩子口径，from/to 按裁剪后的
+  // n 校验）。
+  // DOM 垫片把手势协议折叠为一次调用，本钩子依次：
+  //   ① 视觉重排 DOM 子节点（MoveData 的 DOM 对应物；同步生效——真机落定时 UI 已是新序）；
+  //   ② splice st.arr：垫片无状态观察系统，把「开发者 splice + 框架观察 rerender」折叠进来
+  //      ——【onMove 回调里不要再 splice，否则双重换位】；
+  //   ③ 派发 onMove(from, to)（此时数据源已重排，value 可从 arr[to] 取；两参裸 number）；
+  //   ④ 调度标准键 diff 渲染（R153 暂存区回填模型）：视觉已是目标序，本步只收口
+  //      RepeatItem.index 原地改写与 index 依赖的内容重放——节点身份保持。
+  /**
+   * @param {any} st @param {number} from @param {number} to @returns {boolean} 是否已派发
+   */
+  function repeatMoveDispatch(st, from, to) {
+    const n = repeatEffectiveN(st);
+    // 真机口径：MoveData 对 from==to/负数直返（repeat_node.cpp:154）；越界 = 拖拽手势
+    // 产生不了的索引，告警忽略（同 indicatorStep 边界口径）。
+    if (!Number.isInteger(from) || !Number.isInteger(to) || from === to
+      || from < 0 || to < 0 || from >= n || to >= n) {
+      layoutWarnings.push(`Repeat.onMove 非法换位（from=${from}, to=${to}, 渲染条数=${n}），已忽略`);
+      return false;
+    }
+    if (!st.items || st.items.size === 0) {
+      layoutWarnings.push('Repeat.onMove：尚无已渲染项，已忽略');
+      return false;
+    }
+    const keys = repeatComputeKeys(st, n).keys;
+    // 渲染序条目（= 当前 DOM 序；缺 each 的项未渲染，跳过——与子节点序列一致）
+    const seq = [];
+    for (let i = 0; i < n; i++) {
+      const rec = st.items.get(keys[i]);
+      if (rec) seq.push({ rec, d: i });
+    }
+    const fi = seq.findIndex((/** @type {any} */ e) => e.d === from);
+    if (fi < 0) {
+      layoutWarnings.push(`Repeat.onMove：from=${from} 对应项未渲染，已忽略`);
+      return false;
+    }
+    // 数据序 splice 语义（应用侧 canonical op = splice(from,1) + splice(to,0,moved)）：
+    // 目标插入位 = 新序里排在 moved 前面的渲染项个数。旧序位置 d 换算新序：d<from → d、
+    // d>from → d-1（erase 先行，同 C++ children.erase+insert，repeat_node.cpp:168-176）。
+    let insertAt = 0;
+    for (const e of seq) {
+      if (e.d === from) continue;
+      const nd = e.d < from ? e.d : e.d - 1;
+      if (nd < to) insertAt++;
+    }
+    // ① 视觉重排：整组摘进 DocumentFragment 一批回填（appendChild 移位，节点身份保持——
+    //    同 R153 暂存区回填模型；一项多节点时按 rec.nodes 整组搬）
+    const [moved] = seq.splice(fi, 1);
+    seq.splice(insertAt, 0, moved);
+    const frag = document.createDocumentFragment();
+    for (const e of seq) {
+      for (const node of e.rec.nodes) frag.appendChild(node);
+    }
+    st.el.appendChild(frag);
+    st.items = new Map(seq.map((/** @type {any} */ e) => [e.rec.key, e.rec]));
+    st.el.dataset.repeatMoveFrom = String(from);
+    st.el.dataset.repeatMoveTo = String(to);
+    // ② splice 数据源（真机由开发者在回调里做——见块注释；垫片代做，回调里不要再 splice）
+    if (Array.isArray(st.arr)) {
+      const [movedItem] = st.arr.splice(from, 1);
+      st.arr.splice(to, 0, movedItem);
+    }
+    // ③ 派发（两参裸 number；回调抛错不阻断后续收口——同 onChange 口径）
+    if (typeof st.onMove === 'function') {
+      try { st.onMove(from, to); } catch (e) {
+        layoutWarnings.push('Repeat.onMove 回调抛错：' + (e && e.message));
+      }
+    }
+    // ④ 标准键 diff 收口：lastSig 仍是旧序 → 必跑；键保留分支原地改写 RepeatItem.index
+    //    并重放 index 依赖的内容，子节点按新序 append——视觉序不变、节点身份保持。
+    repeatSchedule(st);
+    return true;
+  }
+
+  // 运行时级拖拽换位驱动钩子（同 __arkui_dom_repeatUpdate 先例，供测试/诊断页直调）。
+  // 返回 boolean：true = 已派发；false = 非法/不可派发（已告警）。
+  (/** @type {any} */ (global)).__arkui_dom_repeatMove
+    = (/** @type {any} */ node, /** @type {number} */ from, /** @type {number} */ to) => {
+      const st = (/** @type {any} */ (node)).__repeat;
+      if (!st) return false;
+      return repeatMoveDispatch(st, from, to);
+    };
 
   // ════════════════════ WithTheme ════════════════════
   /** @param {HTMLElement} el @param {any} o @returns {any} */

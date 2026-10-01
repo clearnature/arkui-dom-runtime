@@ -33,6 +33,8 @@ def main():
     prev_key = None
     for line in block.splitlines():
         line = line.strip()
+        # R154：all 块用例可带 VTBUDGET=<n> 前缀（per-case 虚拟预算扩容）——解析时剥掉
+        line = re.sub(r"^VTBUDGET=\d+\s+", "", line)
         if not line.startswith("run_one "):
             continue
         toks = shlex.split(line)

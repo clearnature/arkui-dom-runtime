@@ -25,6 +25,12 @@
     let allPass = true;
     const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
     const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    // R154：弹簧解算器收口等待的宿主分端窗——Electron 真实时钟（合成拖拽采样速度极大 +
+    // offscreen 定时器节流）需长窗；浏览器虚拟时钟保持原 700 时序（页面调度稳定性）。
+    // 分端断言先例：mediademo 时钟断言分端（R35 记档，R152-A 翻案合并）。
+    const isElectron = /Electron/i.test(navigator.userAgent);
+    const isAndroid = /Android/i.test(navigator.userAgent);   // Android WebView（模拟器更慢）
+    const settleMs = () => ((isElectron || isAndroid) ? 1200 : 700);
     const root = document.getElementById('root');
     const el = (id) => root.querySelector('#' + id);
     const txt = (id) => String(el(id) ? el(id).textContent : '<缺>');
@@ -88,8 +94,9 @@
         const mid = pageOf(0).style.transform;
         check(atRelease !== '' && mid !== '' && mid !== atRelease,
           `回弹是欠阻尼弹簧（R126）：释放后 80ms 仍在动（'${atRelease}' → '${mid}'）`);
-        await tick(700);                  // 弹簧收口（精度触发，非固定时长）
-        check(pageOf(0).style.transform === '', '弹簧回弹收口后 transform 清空');
+        await tick(settleMs());           // 弹簧收口（精度触发，非固定时长；R154 宿主分端窗）
+        check(pageOf(0).style.transform === '',
+          `弹簧回弹收口后 transform 清空（实测 '${pageOf(0).style.transform}'）`);
         check(pageOf(0).style.position === '' && pageOf(1).style.display === 'none',
           '拖拽舞台已还原（P0 回流、P1 影藏）');
       });
@@ -258,6 +265,172 @@
         await tick(300);
         check(lst.scrollTop > 0, `List 拖拽滚动（scrollTop=${lst.scrollTop}，上限 26）`);
         check(lst.scrollTop <= 27, 'List 滚动被内容高度正确钳制（+1 高 DPI 设备像素舍入余量，R149）');
+      });
+
+      // ══════════ ⑦ 拖拽释放曲线槽位（R154-B：Swiper.curve → api.finishCurve）══════════
+      // 观察面说明（同 test/tabanim.html G10 先例）：虚拟时钟 headless（--dump-dom）不产帧，
+      // rAF 回调不被调度——翻页过渡的落笔在 builtinFinishPagedDrag 的 rAF 里，本组要断言它，
+      // 就把 rAF 重定向到 0ms 定时器（页面局部），让"舞台落笔"变成确定性的定时器序；
+      // 收口通道（transitionend + dur+80 定时器兜底）不受影响。本组拖拽不用 dragClock
+      //（不劫持 performance.now）——spring 解算器的 t0 取挂钟，劫持会让首拍 t 巨大、
+      // 弹簧瞬间收口，"在途"就观察不到了。duration(120) 是给用例省虚拟时间预算的
+      //（全页 --virtual-time-budget=8000，原 29 条已吃掉 ~6.6-7.0s）；spring 族照 d.ts
+      // 不 respect duration，时长对它无效——这本身就是 ⑥ 号断言的一部分。
+      window.requestAnimationFrame = (/** @type {Function} */ cb) => setTimeout(() => cb(performance.now()), 0);
+      await group('Swiper curve 槽位', async () => {
+        const C = globalThis.Swiper;
+        const VSP = globalThis.ViewStackProcessor;
+        const warns = globalThis.__arkui_dom_layout_warnings;
+        const snap = VSP ? VSP.snapshot() : null;
+        const node = C.create();
+        C.loop(false);
+        C.duration(120);
+        C.pop();
+        if (VSP) VSP.restore(snap);
+        node.style.width = '360px';
+        node.style.height = '120px';
+        root.appendChild(node);
+        const cst = node.__swiperState;
+        const mk = (t) => { const d = document.createElement('div'); d.textContent = t; d.style.height = '120px'; node.appendChild(d); return d; };
+        mk('C0'); mk('C1');
+        cst.entries = [...node.children].filter((c) => !c.hasAttribute('data-arkui-swiper-indicator'))
+          .map((c) => { c.setAttribute('data-arkui-swiper-page', ''); return { el: c }; });
+        cst.count = cst.entries.length;
+        cst.entries.forEach((/** @type {any} */ e, /** @type {number} */ k) => { if (k) e.el.style.display = 'none'; });
+        const pg = () => cst.entries[0].el;
+        // 缺省（未设 curve）：翻页过渡 = duration + ease-out（R125 契约，槽位空=向后兼容）
+        down(node, 80, 30);
+        move(node, 60, 30);                   // raw -20：越过 5px 启动阈值
+        move(node, -260, 30);                 // raw -340 > 半页 180（大位移→弹簧行程短、收口快）
+        up(node, -260, 30);
+        await tick(30);
+        check(pg().style.transition.replace(/ 0s/g, '') === 'transform 120ms ease-out',
+          `缺省槽位：翻页过渡 ease-out（实际 '${pg().style.transition}'）`);
+        await tick(240);
+        // R154：Android WebView 的 transition 还原串行化 = 'none 0s ease 0s'（带全尾随段）——
+        // 语义即 none，startsWith('none') 比较
+        check(cst.index === 1 && pg().style.transition.indexOf('none') === 0,
+          `ease-out 翻页收口（index=${cst.index}，transition 还原（实际 '${pg().style.transition}'）`);
+        // curve(0 /* Curve.Linear */)：钩子可切换 → linear
+        VSP.push(node);
+        C.curve(0);
+        VSP.pop();
+        check(cst.curveKind === 'css' && cst.curveCss === 'linear',
+          `curve(0) 进状态（${cst.curveKind}/${cst.curveCss}）`);
+        down(node, 80, 30);
+        move(node, 100, 30);                  // 右拖 raw +20
+        move(node, 270, 30);                  // raw +190 > 180
+        up(node, 270, 30);
+        await tick(30);
+        check(pg().style.transition.replace(/ 0s/g, '') === 'transform 120ms linear',
+          `curve(0) 后翻页过渡切到 linear（实际 '${pg().style.transition}'）`);
+        await tick(240);
+        // curve('interpolatingSpring')：spring 族不 respect duration → R126 解算器直驱
+        VSP.push(node);
+        C.curve('interpolatingSpring');
+        VSP.pop();
+        check(cst.curveKind === 'spring', `curve('interpolatingSpring') → spring 族（${cst.curveKind}）`);
+        down(node, 80, 30);
+        move(node, 60, 30);
+        move(node, -260, 30);
+        up(node, -260, 30);
+        await tick(40);
+        // R154：Android 串行化 'none 0s ease 0s' 语义同 none（startsWith 比较）
+        check(pg().style.transition.indexOf('none') === 0 && /translateX\(-[\d.]+px\)/.test(pg().style.transform || ''),
+          `spring 族：解算器直驱无 CSS 过渡（transition '${pg().style.transition}'，transform '${pg().style.transform}' 在途）`);
+        await tick(settleMs());  // R154：双因窗——①Electron 真实时钟下合成拖拽采样速度极大，
+                                 //   弹簧振幅衰减到收敛阈需 ~600ms；②offscreen 对 setInterval
+                                 //   有 ~1s 级节流（解算器首拍延迟）。浏览器虚拟时钟 700 即稳，
+                                 //   1200 覆盖 Electron 两因（实测收敛）
+        check(cst.index === 1 && pg().style.transform === '',
+          `弹簧翻页收口（index=${cst.index}，transform 清空）`);
+        // ICurve 对象读不出参数 → 告警 + 保持现值（与 Tabs.animationCurve 同口径）
+        const warnBefore = warns.length;
+        VSP.push(node);
+        C.curve({ interpolate: () => 0 });
+        VSP.pop();
+        check(warns.length > warnBefore && warns[warns.length - 1].indexOf('Swiper.curve') >= 0
+          && cst.curveKind === 'spring',
+          `curve(ICurve) 记警告且保持现值（'${warns[warns.length - 1]}'）`);
+      });
+
+      // ══════════ ⑧ indicator 真语义（R154-B：DotIndicator / DigitIndicator）══════════
+      await group('Swiper indicator 真语义', async () => {
+        const C = globalThis.Swiper;
+        const VSP = globalThis.ViewStackProcessor;
+        const warns = globalThis.__arkui_dom_layout_warnings;
+        const DI = globalThis.DotIndicator;
+        const DG = globalThis.DigitIndicator;
+        const freshSwiper = (/** @type {number} */ n, /** @type {any} */ ctl, /** @type {any=} */ setup) => {
+          const snap = VSP ? VSP.snapshot() : null;
+          const node = C.create(ctl);
+          C.loop(false);
+          if (setup) setup();
+          for (let k = 0; k < n; k++) {
+            const d = document.createElement('div');
+            d.textContent = 'N' + k;
+            d.style.height = '60px';
+            node.appendChild(d);
+          }
+          C.pop();
+          if (VSP) VSP.restore(snap);
+          node.style.width = '240px';
+          node.style.height = '60px';
+          root.appendChild(node);
+          return node;
+        };
+        // ① 显式 DotIndicator：圆点语义等价——不记退化/未实现警告，圆点数 = 页数
+        const warn0 = warns.length;
+        const dn = freshSwiper(3, null, () => C.indicator(new DI()));
+        check(dn.querySelectorAll('[data-arkui-swiper-dot]').length === 3,
+          'DotIndicator 显式圆点：圆点数 = 页数（3）');
+        check(!warns.slice(warn0).some((w) => w.indexOf('DotIndicator') >= 0 || w.indexOf('退化') >= 0),
+          'DotIndicator 显式圆点不记退化/未实现警告');
+        // ② 颜色/尺寸配置生效 + 活动态（selectedColor/selectedItemWidth）
+        const ctl2 = new globalThis.SwiperController();
+        const dn2 = freshSwiper(3, ctl2, () => C.indicator(new DI().color('#ff0000').selectedColor('#00ff00')
+          .itemWidth(10).itemHeight(10).selectedItemWidth(16).space(2)));
+        const dots2 = [...dn2.querySelectorAll('[data-arkui-swiper-dot]')];
+        check(dots2[1].style.background === 'rgb(255, 0, 0)' && dots2[1].style.width === '10px',
+          `DotIndicator.color/itemWidth 生效（'${dots2[1].style.background}' '${dots2[1].style.width}'）`);
+        check(dots2[0].style.background === 'rgb(0, 255, 0)' && dots2[0].style.width === '16px',
+          `DotIndicator.selectedColor/selectedItemWidth 活动态生效（'${dots2[0].style.background}' '${dots2[0].style.width}'）`);
+        ctl2.showNext();
+        check(dots2[1].getAttribute('data-arkui-swiper-dot-active') === 'true'
+          && dots2[1].style.background === 'rgb(0, 255, 0)' && dots2[1].style.width === '16px',
+          '切页后选中态跟走（属性 + selected 几何/配色）');
+        // ③ DigitIndicator：current/total 两段文本（current 从 1 起），随切换更新。
+        //    配色语义：当前段=selectedFontColor/selectedDigitFont，非当前段（total/分隔）=
+        //    fontColor/digitFont（selected* 命名语义）
+        const ctl3 = new globalThis.SwiperController();
+        const gn = freshSwiper(5, ctl3, () => C.indicator(new DG().fontColor('#123456').selectedFontColor('#654321')));
+        const curEl = gn.querySelector('[data-arkui-swiper-digit="current"]');
+        const totEl = gn.querySelector('[data-arkui-swiper-digit="total"]');
+        check(!!curEl && !!totEl && curEl.textContent === '1' && totEl.textContent === '5',
+          `DigitIndicator 初始 1/5 两段文本（'${curEl ? curEl.textContent : '<缺>'}/${totEl ? totEl.textContent : '<缺>'}'）`);
+        check(!!curEl && curEl.style.color === 'rgb(101, 67, 33)' && totEl.style.color === 'rgb(18, 52, 86)',
+          `selectedFontColor→当前段 '${curEl ? curEl.style.color : '<缺>'}' / fontColor→total 段 '${totEl ? totEl.style.color : '<缺>'}'`);
+        ctl3.showNext();
+        check(gn.querySelector('[data-arkui-swiper-indicator]').textContent === '2/5',
+          `切页后文本随索引更新为 2/5（'${gn.querySelector('[data-arkui-swiper-indicator]').textContent}'）`);
+        // ④ indicator(false) 摘除（重渲染同语义）；⑤ 非法入参告警
+        VSP.push(gn);
+        C.indicator(false);
+        VSP.pop();
+        check(!gn.querySelector('[data-arkui-swiper-indicator]'), 'indicator(false) 指示器摘除');
+        const warn1 = warns.length;
+        VSP.push(dn);
+        C.indicator('yes');
+        VSP.pop();
+        check(warns.length > warn1 && warns[warns.length - 1].indexOf('Swiper.indicator') >= 0
+          && !!dn.querySelector('[data-arkui-swiper-indicator]'),
+          `非法入参记警告且指示器不受影响（'${warns[warns.length - 1]}'）`);
+        // ⑥ DotIndicator 未达子集逐项记警告（mask/maxDisplayCount）
+        const warn2 = warns.length;
+        freshSwiper(3, null, () => C.indicator(new DI().mask(true).maxDisplayCount(9)));
+        check(warns.slice(warn2).some((w) => w.indexOf('DotIndicator.mask') >= 0)
+          && warns.slice(warn2).some((w) => w.indexOf('maxDisplayCount') >= 0),
+          'DotIndicator.mask/maxDisplayCount（未达子集）逐项记警告');
       });
 
       lines.push(`BUILTIN sw=${st().index} tb=${el('tb').__tabsState.index} scr=${el('scr').scrollTop}`);
