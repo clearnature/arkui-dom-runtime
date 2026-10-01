@@ -43,16 +43,18 @@
   //   · 数据源变更 = 暂存区 + 按新序 append 回填（真机 std::swap(children_, tempChildren_) 的
   //     DOM 对应物是 DocumentFragment）：①预扫删除集合（旧有新无）；②旧子树整体摘进暂存区；
   //     ③按新数组序逐键三分支——键保留 → 仅 updateIndex（item 不动：键相等即同一逻辑项）；
-  //     键消失但删除集/持久池非空 → 复用（先 updateItem 再 updateIndex，真机 :166-167 顺序）；
-  //     否则新建。逐项 appendChild 到尾部，循环结束顺序天然正确（不需要 LCS/insertBefore）。
+  //     键消失但删除集/持久池有【同模板】回收项 → 复用（先 updateItem 再 updateIndex，真机
+  //     :166-167 顺序；R158-A 起跨模板不复用，转新建）；否则新建。逐项 appendChild 到尾部，
+  //     循环结束顺序天然正确（不需要 LCS/insertBefore）。
   //   · RepeatItem 是状态对象（repeat.d.ts:279-286 "Do not destructure RepeatItem"）：同一键
   //     跨数据变更保持同一 ri 实例、item/index 原地改写。本项目无嵌套 Proxy，"响应性"的等价
   //     实现 = 需要更新的项重放 each builder，但 DOM 节点按 key 复用：scratch 重放 + 浅层 DOM
   //     补丁（属性/文本/子树逐位对齐），同 key 的项根节点对象引用不变——与 ForEach 整体重建
   //     基线的可观测差异就是这个节点身份保持。
-  //   · 回收池：本渲染删除集先尽（LIFO 尾取，同真机 tempChildren 尾 pop），再落持久池（单池、
-  //     上限 16、同模板优先——真机非虚拟路径无持久池、虚拟路径按 ttype 分桶，此处是仓库纪律
-  //     下的超集）；池满真销毁。重复键 → 告警（含真机修复指引文案）+ 整体回退缺省键全量重渲染。
+  //   · 回收池：本渲染删除集同模板项先尽（LIFO 尾取，同真机 tempChildren 尾 pop），再落持久
+  //     池（R158-A 起按模板桶分组 Map<tplKey, Array>、桶上限 16/桶——真机非虚拟路径无持久池、
+  //     虚拟路径 C++ L2 按 ttype 分桶，repeat_virtual_scroll_caches.cpp:590-613）；池满真销毁。
+  //     重复键 → 告警（含真机修复指引文案）+ 整体回退缺省键全量重渲染。
   // R154-A：onMove 拖拽换位派发（__arkui_dom_repeatMove 驱动钩子 + repeatMoveDispatch）——
   //   真机协议 = 拖拽期间框架重排视觉节点、落定 FireOnMove 单发回调（两参裸 number from/to）、
   //   数据源由回调 splice；垫片把后两步折叠进钩子（详见钩子处块注释），与键 diff 共存。
@@ -67,6 +69,14 @@
   //   onMove 才由开发者 splice）；垫片只做视觉换位 + RepeatItem.index 原地改写 + 事件派发
   //   （详见钩子处块注释）。登记面 = onMove 第二参 ItemDragEventHandler.onMoveThrough
   //   （common.d.ts:25838 since 20 重载，非独立链式属性）。
+  // R158-A：templateId 分桶深化——持久池从单池升级为 Map<tplKey, Array> 按模板桶分组（同模板
+  //   LIFO 优先、桶上限 16/桶），跨模板复用禁止：case#2 复用只取同模板回收项（删除集/池桶都
+  //   按 tplKey 匹配），不匹配转 case#3 新建——真机虚拟路径 L2 本就按 ttype 索引
+  //   （repeat_virtual_scroll_caches.cpp:590-613），非虚拟路径真机未做 ttype 匹配（TBD 注释，
+  //   :146），DOM 实现取保守面：复用前比对 templateId，不匹配不接管（避免跨模板复用样式错
+  //   乱）。case#1 键保留加 tplKey 守卫：templateId 依 (item, i) 重算，同键跨渲染模板类型变
+  //   更时旧子树视同本渲染删除项释放，本键走 case#2/case#3。onMove/onMoveThrough/onLazyLoading
+  //   驱动路径不触碰池结构，分桶不变式天然保持。
   /** @param {any[]} prev @param {any[]} next @param {number} n */
   const repeatSigSame = (prev, next, n) => prev.length === n && next.length >= n
     && prev.every((/** @type {any} */ v, /** @type {number} */ k) => Object.is(v, next[k]));
@@ -241,7 +251,7 @@
   function repeatBuildAll(st, n, keys) {
     st.el.textContent = '';
     purgeDetachedRecords();
-    st.pool = [];                          // 全量重建弃池（被弃节点已随 textContent='' 脱离文档）
+    st.pool = new Map();                   // 全量重建弃池（Map 清空；被弃节点已随 textContent='' 脱离文档）
     const items = new Map();
     let rendered = 0;
     for (let i = 0; i < n; i++) {
@@ -292,28 +302,40 @@
       if (!res) continue;
       const key = keys[i];
       const keptRec = oldItems.get(key);
-      if (keptRec) {
+      // R158-A：键保留还须模板桶一致。templateId 依 (item, i) 重算，同键跨渲染 tplKey 变更
+      // （item 的模板类型字段被改 / templateId 依赖 index 时重排换桶）时旧子树是另一模板的
+      // 产物——接管会让 A 模板节点冒充 B 模板项（样式错乱）。旧 rec 视同本渲染删除项释放进
+      // dead（收尾落自家桶；同模板 case#2 仍可复用它），本键转走 case#2/case#3。
+      let keepRec = keptRec;
+      if (keepRec && keepRec.tplKey !== res.tplKey) {
+        oldItems.delete(key);
+        dead.push(keepRec);
+        keepRec = null;
+      }
+      if (keepRec) {
         // case#1 键保留：仅 updateIndex（item 不动——键相等即同一逻辑项，pu_repeat_impl.ts）。
         // index 没变就不重放（真机 pu_repeat.ts:64-71 "无人依赖 index 跳过 set" 的对应物）。
         // R156-A：moved = onMoveThrough 拖拽期已把 ri.index 原地改写到视觉序——「index 没变跳
         // 重放」的基线被改写，落定键 diff 须强制重放一次 index 依赖内容（收口 'p@0'→'p@2'）。
         oldItems.delete(key);
-        if (keptRec.ri.index !== i || keptRec.moved) {
-          keptRec.ri.index = i;                    // RepeatItem 原地改写（不换对象）
-          repeatReplayPatch(st, keptRec, res.b);   // 重放 + 补丁：内容更新、节点身份保持
+        if (keepRec.ri.index !== i || keepRec.moved) {
+          keepRec.ri.index = i;                    // RepeatItem 原地改写（不换对象）
+          repeatReplayPatch(st, keepRec, res.b);   // 重放 + 补丁：内容更新、节点身份保持
         }
-        keptRec.moved = false;
-        for (const nd of keptRec.nodes) st.el.appendChild(nd);   // 从暂存区取回
-        items.set(key, keptRec);
+        keepRec.moved = false;
+        for (const nd of keepRec.nodes) st.el.appendChild(nd);   // 从暂存区取回
+        items.set(key, keepRec);
       } else {
-        // case#2 池选择：本渲染删除集优先，其次持久池；同模板优先，从尾部找（LIFO）；
-        // 同模板没有时退而取尾（跨模板复用——补丁对不兼容子树自动换新，内容仍正确）
+        // case#2 池选择（R158-A 起按模板桶分组）：本渲染删除集同模板项优先（LIFO 尾取，同真机
+        // tempChildren 尾 pop），其次持久池对应模板桶（Map<tplKey, Array>，同桶天然同模板、
+        // 尾取即 LIFO）；跨模板不复用——真机虚拟路径 L2 按 ttype 索引
+        // （repeat_virtual_scroll_caches.cpp:590-613），非虚拟路径真机未做 ttype 匹配（TBD，
+        // :146），DOM 实现取保守面：tplKey 不匹配不接管（避免跨模板复用样式错乱），转 case#3。
         let di = repeatRecycleIdx(dead, res.tplKey);
         let src = dead;
-        if (di < 0) { di = repeatRecycleIdx(st.pool, res.tplKey); src = st.pool; }
-        if (di < 0 && (dead.length || st.pool.length)) {
-          src = dead.length ? dead : st.pool;
-          di = src.length - 1;
+        if (di < 0) {
+          const bucket = st.pool.get(res.tplKey);
+          if (bucket && bucket.length) { src = bucket; di = bucket.length - 1; }
         }
         if (di >= 0) {
           const rec = src.splice(di, 1)[0];
@@ -335,11 +357,16 @@
       }
       rendered++;
     }
-    // 收尾：本渲染消失项入持久池（单池、上限 16——真机非虚拟路径无持久池，此处是超集；
-    // 池满真销毁：节点已随暂存区脱离文档，弃引用即可，再防御性清一次 elmtRecords）。
+    // 收尾：本渲染消失项入持久池（R158-A 起按模板桶分组：Map<tplKey, Array>、同模板 LIFO、
+    // 桶上限 16/桶——取舍记录：按桶继承 16 比全局 16 简单且对齐真机 L2 按 ttype 各桶独立
+    // 缓存的口径，多模板时总容量 = 16×桶数，是仓库纪律下的超集；单总量上限需跨桶逐出，
+    // 复杂度不值当）。池满真销毁：节点已随暂存区脱离文档，弃引用即可，再防御性清一次
+    // elmtRecords。
     for (const rec of dead) {
-      st.pool.push(rec);
-      while (st.pool.length > 16) st.pool.shift();
+      let bucket = st.pool.get(rec.tplKey);
+      if (!bucket) { bucket = []; st.pool.set(rec.tplKey, bucket); }
+      bucket.push(rec);
+      while (bucket.length > 16) bucket.shift();
     }
     if (dead.length) purgeDetachedRecords();
     st.items = items;
@@ -542,7 +569,7 @@
       mtFrom: null, mtDragged: null,         // R156-A 在途拖拽手势（fromIndex_ 恒定 + 被拖项 rec）
       scheduled: false, lastSig: null,
       items: null,           // Map<key, rec>：当前存活项；rec = {key, ri, tplKey, nodes}
-      pool: [],              // 持久回收池（单池、上限 16、LIFO）
+      pool: new Map(),       // 持久回收池（R158-A：Map<tplKey, Array> 按模板桶分组、桶上限 16/桶、同桶 LIFO）
       lastBuilders: null,    // 构建器面指纹（each/templateId/template 更换 → 全量重建）
       warnedEach: false, warnedMove: false, warnedMoveThrough: false, warnedDupKeys: false,
       warnedLazy: false, warnedNoLazy: false,

@@ -9,22 +9,18 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R156 Repeat onMoveThrough + @ohos:curves 垫片 + onTotalCount 登记**
-  （多智能体 A/B/C）——A=Repeat onMoveThrough 派发（两参裸 number/from 恒定/无防抖/
-  数据源不动——权威七步 pu_repeat_virtual_scroll_2_impl.ts:71-83）+ R153 键 diff
-  case#1 keptRec.moved 强制重放（through 改写"index 没变跳重放"基线——真 bug 级修复）
-  + builtin.js pointermove 越中线派发槽位 + ① 组 30→39、页总 62。B=@ohos:curves
-  垫片（ohos-shims.js curves 段：全导出面+deprecated 别名+ICurve {interpolate,
-  __curveString}+cubic-bezier 牛顿 8 次+二分 24 次+spring 三模型解析解+枚举映射
-  13 项+双形态解析）+ parseTabsAnimCurve ICurve 对象分支（__curveString 解析：
-  spring/interpolating-spring→kind='spring'/cubic-bezier→css 直通/steps→分段/
-  枚举→CSS 关键字）+ tabanim 66→81。C=onMoveThrough 触发细节（from 恒定/无防抖/
-  MoveData 即换位）+ Curve 枚举 13 项参数表（curves.cpp:22-40）+ __curveString
-  序列化格式。集成实锤：batchfunc 62 条声明同步（R153 行）、tabanim 声明 81
-  （R152 行）；VTBUDGET per-case 机制（builtindemo 虚拟预算 12000）；**pkill -f
-  自杀坑再现**（[x] 括号转义）。门禁 11 步全绿（5040733+452dae7，Mimosa 0 findings
-  seal sha256:c43ec83c…）；五端矩阵 84/97/84/84/84。
-  更早：**R155 Repeat onLazyLoading + edgeEffect 三态**（多智能体 A/B/C）——
+- 上次切片：**R157 chainMode 链式排列 + Gauge/DataPanel 绘制深化**（多智能体 A/B/C；
+  A 因限额中断由主会话补完收尾）——A=RelativeContainer chainMode（SPREAD/SPREAD_INSIDE/
+  PACKED 三分支+溢出居中+GONE 跳过+双链共存 bias 失效——真机 cpp:768-830 逐式对齐；
+  **链识别无显式分组**：链头=双锚规则+chainMode 标记、成员沿邻接图遍历；**chainBias 不存在**
+  ——bias 取自 alignRules 内字段）；B=Gauge 指针 CSS 线条（角度=弧度插值）+description+
+  DataPanel strokeWidth(24vp)/trackShadow(box-shadow 近似 radius 20/offset 5,5)/closeEffect
+  （缺省 false=阴影开启）+trackBackgroundColor 接入；C=chainMode 布局算法+Gauge/DataPanel
+  d.ts 全属性面。**Agent 限额耗尽应对**：A 中断时主会话补 chainBiasOf JSDoc（typecheck 归零）
+  +gaugedemo 接线（run.sh all 块+dispatch）。验收：`bash run.sh gaugedemo`（30 条断言，
+  五端通过）；门禁 11 步全绿（0a64208，Mimosa 0 findings seal sha256:fa6e8011…）；
+  五端矩阵 **85/98/85/85/85**。
+  更早：**R156 Repeat onMoveThrough + @ohos:curves 垫片 + onTotalCount 登记**
   A=Repeat onLazyLoading 懒加载协议（R152 记档警告分支升级真实现；签名 `onLazyLoading(index)`
   绝对索引——C 纠偏任务书"差值"假设；单发防死循环/只写该索引 BusinessError 103804/
   min(arrLen,totalCount) 裁剪）+ __arkui_dom_repeatLazy 驱动钩子；① 组 23→30、页总 53。

@@ -41,7 +41,7 @@
       __arkui_dom_loadRoute('pages/BatchFuncDemo', root);
       await tick(160);   // Repeat/Calendar/Indicator 的 microtask 渲染 + 首帧
 
-      // ══════════ ① Repeat（4 + R153-A 11 + R154-A 8 + R155-A 7 + R156-A 9 条） ══════════
+      // ══════════ ① Repeat（4 + R153-A 11 + R154-A 8 + R155-A 7 + R156-A 9 + R158-A 10 条） ══════════
       const rep = root.querySelector('[data-arkui-repeat]');
       check(!!rep && rep.style.display === 'contents',
         `Repeat 基座：display:contents 逻辑容器（实际 '${rep && rep.style.display}'）`);
@@ -418,6 +418,218 @@
         && ogWarns.some((/** @type {string} */ m) => m.indexOf('超过数据源长度') >= 0),
         `onTotalCount()>数据源长度：按数据源长度裁剪（仍 2 项不凭空渲染）+ 未登记 onLazyLoading `
         + `告警（repeatEffectiveN 降级口径，真机 applicationError 对应物）`);
+
+      // ── R158-A：templateId 分桶深化（多模板混排 + 池按模板分组，独立第六个 Repeat 实例）──
+      // 真机语义（R152-C 简报）：Repeat.templateId 按 item 产出模板类型串、未命中回落 each；
+      // 真机缓存按 templateId 分桶（C++ L2 按 ttype 索引，repeat_virtual_scroll_caches.cpp:590-613）；
+      // 非虚拟路径真机未做 ttype 匹配（TBD，:146）——DOM 实现取保守面：复用前比对 templateId，
+      // 不匹配不接管（跨模板复用会样式错乱）。池从单池升级为 Map<tplKey, Array> 分桶。
+      // 模板可观测标记：A 模板 = Column（style.flexDirection='column'）、B 模板 = Row（'row'）。
+      const mxArr = [{ id: 'a1', kind: 'A', name: 'A1' }, { id: 'b1', kind: 'B', name: 'B1' },
+        { id: 'a2', kind: 'A', name: 'A2' }, { id: 'b2', kind: 'B', name: 'B2' }];
+      const b3Item = { id: 'b3', kind: 'B', name: 'B3' };
+      const a3Item = { id: 'a3', kind: 'A', name: 'A3' };
+      const b4Item = { id: 'b4', kind: 'B', name: 'B4' };
+      const mxRep = R.create(mxArr, null);
+      R.each((ri) => {
+        Column.create();
+        Column.id('mx-' + ri.item.id);
+        Text.create('each@' + ri.item.id);
+        Text.pop();
+        Column.pop();
+      });
+      R.template('A', (ri) => {
+        Column.create();
+        Column.id('mx-' + ri.item.id);
+        Text.create(ri.item.id + '@' + ri.index + ':' + ri.item.name);
+        Text.pop();
+        Column.pop();
+      });
+      R.template('B', (ri) => {
+        Row.create();
+        Row.id('mx-' + ri.item.id);
+        Text.create(ri.item.id + '@' + ri.index + ':' + ri.item.name);
+        Text.pop();
+        Row.pop();
+      });
+      R.templateId((/** @type {any} */ item) => item.kind);
+      R.key((/** @type {any} */ item) => item.id);
+      R.pop();
+      await tick(20);
+      const mxRepAny = /** @type {any} */ (mxRep);
+      const mxStAny = mxRepAny.__repeat;
+      const mxOrder = () => Array.from(mxRep.children)
+        .map((/** @type {any} */ c) => c.id.replace('mx-', '')).join(',');
+      const mxDir = (/** @type {string} */ id) => {
+        const n = root.querySelector('#mx-' + id);
+        return n ? n.style.flexDirection : '<缺>';
+      };
+      check(mxOrder() === 'a1,b1,a2,b2' && mxRep.dataset.repeatCount === '4'
+        && mxDir('a1') === 'column' && mxDir('b1') === 'row'
+        && mxDir('a2') === 'column' && mxDir('b2') === 'row',
+        `多模板混排：A/B 交替按新数组序渲染（'${mxOrder()}'），A 项走 Column 模板、B 项走 Row `
+        + `模板（flexDirection '${mxDir('a1')}'/'${mxDir('b1')}'——各走各 builder，each 回落未触发）`);
+      const mxOldA1 = root.querySelector('#mx-a1');
+      const mxOldA2 = root.querySelector('#mx-a2');
+      const mxOldB2 = root.querySelector('#mx-b2');
+      __arkui_dom_repeatUpdate(mxRep, [mxArr[0], mxArr[1]]);      // a2/b2 键消失
+      await tick(20);
+      const mxPool1 = mxStAny.pool;
+      check(mxRep.dataset.repeatCount === '2' && mxPool1 instanceof Map
+        && mxPool1.get('tpl:A').length === 1 && mxPool1.get('tpl:B').length === 1,
+        `池按模板分桶：a2/b2 键消失后 pool 为 Map<tplKey, Array>，tpl:A/tpl:B 桶各 1 项（`
+        + `${mxPool1.get('tpl:A').length}/${mxPool1.get('tpl:B').length}，单池升级分桶）`);
+      __arkui_dom_repeatUpdate(mxRep, [mxArr[0], mxArr[1], b3Item]);
+      await tick(20);
+      const mxB3 = root.querySelector('#mx-b3');
+      check(mxB3 === mxOldB2 && mxDir('b3') === 'row' && mxB3.textContent === 'b3@2:B3',
+        `同模板池命中：新键 b3（B 模板）复用 tpl:B 桶回收的 #mx-b2 节点对象（同一引用）且内容`
+        + `已重烘（'${mxB3 && mxB3.textContent}'、flexDirection='${mxDir('b3')}'）`);
+      __arkui_dom_repeatUpdate(mxRep, [mxArr[0], mxArr[1], b3Item, a3Item]);
+      await tick(20);
+      const mxA3 = root.querySelector('#mx-a3');
+      check(mxA3 === mxOldA2 && mxDir('a3') === 'column' && mxOrder() === 'a1,b1,b3,a3',
+        `池分桶独立命中：新键 a3（A 模板）复用 tpl:A 桶的 #mx-a2（不碰 B 桶），序 '${mxOrder()}'`);
+      // 同键模板切换（a1 仍存活）：键保留但 templateId 改判 B → case#1 tplKey 守卫把旧 A 模板
+      // rec 释放进 dead（收尾落 tpl:A 桶），本键 case#2 查无同模板回收项 → case#3 新建。
+      __arkui_dom_repeatUpdate(mxRep,
+        [{ id: 'a1', kind: 'B', name: 'B9' }, mxArr[1], b3Item, a3Item]);
+      await tick(20);
+      const mxNewA1 = root.querySelector('#mx-a1');
+      check(mxNewA1 !== mxOldA1 && mxDir('a1') === 'row' && mxNewA1.textContent === 'a1@0:B9'
+        && mxOrder() === 'a1,b1,b3,a3',
+        `同键模板切换（case#1 tplKey 守卫）：a1 键保留但 templateId 改判 B → 旧 A 模板节点释放`
+        + `（身份让位非原地补丁）、新 B 模板节点接管（'${mxNewA1 && mxNewA1.textContent}'）`);
+      const mxSeen = new Set([mxOldA1, mxNewA1, root.querySelector('#mx-b1'), mxB3, mxA3]);
+      __arkui_dom_repeatUpdate(mxRep,
+        [{ id: 'a1', kind: 'B', name: 'B9' }, mxArr[1], b3Item, a3Item, b4Item]);
+      await tick(20);
+      const mxB4 = root.querySelector('#mx-b4');
+      check(!!mxB4 && !mxSeen.has(mxB4) && mxDir('b4') === 'row' && mxOrder() === 'a1,b1,b3,a3,b4'
+        && mxStAny.pool.get('tpl:A').length === 1 && mxStAny.pool.get('tpl:B').length === 0,
+        `跨模板不复用+池分桶独立：tpl:A 桶有 1 项回收节点（旧 a1），新增 B 项 #mx-b4 仍 case#3 `
+        + `全新建（不在历史节点集合——A 模板池不接客 B 项，旧单池"退而取尾"跨模板复用已禁止）`);
+      let mxSane = mxStAny.pool instanceof Map
+        && (mxStAny.pool.get('tpl:A') || []).every((/** @type {any} */ r) => r && r.tplKey === 'tpl:A');
+      check(mxSane,
+        `池分桶收尾健全：tpl:A 桶内全部 rec.tplKey 与桶键一致（分桶不变式，B 桶空数组不接客）`);
+
+      // onMoveThrough/onMove 跨模板换位（独立第七个 Repeat 实例，混排 A/B）——驱动路径不触碰
+      // 池结构，分桶不变式在换位/落定/收口全程保持。
+      const m2Arr = [{ id: 'p', kind: 'A', name: 'P' }, { id: 'q', kind: 'B', name: 'Q' },
+        { id: 'r', kind: 'A', name: 'R' }, { id: 's', kind: 'B', name: 'S' }];
+      const m2Rep = R.create(m2Arr, null);
+      const m2Moves = [];
+      const m2Throughs = [];
+      const m2Ris = {};
+      R.each((ri) => {
+        Column.create();
+        Column.id('m2-' + ri.item.id);
+        Text.create(ri.item.id + '@' + ri.index);
+        Text.pop();
+        Column.pop();
+      });
+      R.template('A', (ri) => {
+        m2Ris[ri.item.id] = ri;
+        Column.create();
+        Column.id('m2-' + ri.item.id);
+        Text.create(ri.item.id + '@' + ri.index);
+        Text.pop();
+        Column.pop();
+      });
+      R.template('B', (ri) => {
+        m2Ris[ri.item.id] = ri;
+        Row.create();
+        Row.id('m2-' + ri.item.id);
+        Text.create(ri.item.id + '@' + ri.index);
+        Text.pop();
+        Row.pop();
+      });
+      R.templateId((/** @type {any} */ item) => item.kind);
+      R.key((/** @type {any} */ item) => item.id);
+      R.onMove((/** @type {number} */ from, /** @type {number} */ to) => {
+        m2Moves.push([from, to]);
+      }, { onMoveThrough: (/** @type {number} */ from, /** @type {number} */ to) => {
+        m2Throughs.push([from, to]);
+      } });
+      R.pop();
+      await tick(20);
+      const m2Order = () => Array.from(m2Rep.children)
+        .map((/** @type {any} */ c) => c.id.replace('m2-', '')).join('');
+      const m2ArrIds = () => m2Arr.map((/** @type {any} */ x) => x.id).join('');
+      const m2P = root.querySelector('#m2-p');
+      const m2T1 = /** @type {boolean} */ (__arkui_dom_repeatMoveThrough(m2Rep, 0, 1));
+      check(m2T1 === true && m2Throughs.length === 1 && m2Throughs[0][0] === 0
+        && m2Throughs[0][1] === 1 && m2Order() === 'qprs' && m2ArrIds() === 'pqrs'
+        && root.querySelector('#m2-p') === m2P
+        && m2Ris.p.index === 1 && m2Ris.q.index === 0 && m2Ris.r.index === 2,
+        `onMoveThrough 跨模板换位：混排 A/B 间视觉平移 DOM 序 '${m2Order()}'、数据源不动 `
+        + `（'${m2ArrIds()}'）、#m2-p 身份保持、ri.index 原地改写 p 0→1 / q 1→0（MoveData 口径）`);
+      const m2Settled = /** @type {boolean} */ (__arkui_dom_repeatMove(m2Rep, 0, 2));
+      await tick(20);
+      const m2PoolInv = (/** @type {any} */ p) => {
+        if (!(p instanceof Map)) return false;
+        let ok = true;
+        p.forEach((/** @type {any[]} */ bkt, /** @type {string} */ tk) => {
+          ok = ok && bkt.every((/** @type {any} */ r) => r && r.tplKey === tk);
+        });
+        return ok;
+      };
+      check(m2Settled === true && m2Moves.length === 1 && m2Moves[0][0] === 0 && m2Moves[0][1] === 2
+        && m2ArrIds() === 'qrps' && m2Throughs.length === 1
+        && Array.from(m2Rep.children).map((/** @type {any} */ c) => c.textContent).join('|')
+          === 'q@0|r@1|p@2|s@3'
+        && m2PoolInv((/** @type {any} */ (m2Rep)).__repeat.pool),
+        `onMove 落定跨模板：数据源 splice（'${m2ArrIds()}'）+ textContent 按新数组序收口 `
+        + `（'q@0|r@1|p@2|s@3'）、through 不重派发（仍 1 次）、池分桶不变式保持`);
+
+      // onLazyLoading 跨模板新增（独立第八个 Repeat 实例）——懒加载新键走 case#3 新建，
+      // 池分桶不被扰动；混排下新增项按其 templateId 走对应模板。
+      const m3Arr = [{ id: 'm3a', kind: 'A', name: 'M1' }, { id: 'm3b', kind: 'B', name: 'M2' }];
+      const m3Rep = R.create(m3Arr, null);
+      R.each((ri) => {
+        Column.create();
+        Column.id('m3-' + ri.item.id);
+        Text.create(ri.item.id + '@' + ri.index);
+        Text.pop();
+        Column.pop();
+      });
+      R.template('A', (ri) => {
+        Column.create();
+        Column.id('m3-' + ri.item.id);
+        Text.create(ri.item.id + '@' + ri.index);
+        Text.pop();
+        Column.pop();
+      });
+      R.template('B', (ri) => {
+        Row.create();
+        Row.id('m3-' + ri.item.id);
+        Text.create(ri.item.id + '@' + ri.index);
+        Text.pop();
+        Row.pop();
+      });
+      R.templateId((/** @type {any} */ item) => item.kind);
+      R.key((/** @type {any} */ item) => item.id);
+      R.virtualScroll({
+        totalCount: 3,
+        onLazyLoading: (/** @type {number} */ index) => {
+          if (index === 2) m3Arr[2] = { id: 'm3c', kind: 'B', name: 'M3' };   // 真机契约 arr[index]=item
+        },
+      });
+      R.pop();
+      await tick(20);
+      const m3Before = m3Rep.dataset.repeatCount;    // 缺口截断：totalCount=3 但 index=2 无数据
+      const m3Got = /** @type {boolean} */ (__arkui_dom_repeatLazy(m3Rep, 2));
+      await tick(20);
+      const m3C = root.querySelector('#m3-m3c');
+      check(m3Before === '2' && m3Got === true
+        && m3Rep.dataset.repeatCount === '3' && !!m3C && m3C.style.flexDirection === 'row'
+        && m3C.textContent === 'm3c@2'
+        && Array.from(m3Rep.children).map((/** @type {any} */ c) => c.id.replace('m3-', '')).join(',')
+          === 'm3a,m3b,m3c'
+        && m2PoolInv((/** @type {any} */ (m3Rep)).__repeat.pool),
+        `onLazyLoading 跨模板新增：缺口截断 2 项 → 驱动 index=2 补 B 项数据 → case#3 新建走 B `
+        + `模板（#m3-m3c flexDirection='row'、'${m3C && m3C.textContent}'）尾插序正确、池分桶不乱`);
 
       // ══════════ ② WithTheme（2 条） ══════════
       const wt = el('wt');

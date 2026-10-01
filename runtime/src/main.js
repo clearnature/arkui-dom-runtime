@@ -768,10 +768,15 @@
   // 同批移出本表。
   // R155-B：edgeEffect（tabs.d.ts:1273-1282，since 12，缺省 EdgeEffect.Spring）移出本表走
   // 自有方法拦截——到边行为开关真语义长在 builtin.js attachPagedDrag 的 edgeEffect 槽位
-  //（R153-B 记档的"需要动 builtin.js"欠账就此结清）。仍不覆盖的：
-  //   animationMode / onContentWillChange（认知/事件面，无 DOM 对应）与 customContentTransition。
+  //（R153-B 记档的"需要动 builtin.js"欠账就此结清）。
+  // R158：animationMode（tabs.d.ts:80 AnimationMode 枚举）/ onContentWillChange（tabs.d.ts:1636）/
+  // onContentDidScroll（tabs.d.ts:1637+）一并移出本表真语义（见 applyTabsAttr 对应 case 与
+  // createTabsState 的 gesture 槽位）。仍不覆盖的只剩：
+  //   customContentTransition（tabs.d.ts:1532，自定义内容转场 delegate）——本运行时内容切换
+  //   是 display 切换 + 入场 transform 近似，没有可逐帧接管的内容转场管线，delegate 的
+  //   interpolate 回调无处消费；继续记"未实现"警告（认知/复杂面，不静默）。
   const TABS_UNSUPPORTED = new Set([
-    'animationMode', 'customContentTransition', 'onContentWillChange',
+    'customContentTransition',
   ]);
 
   // R153-B：interpolatingSpring(-1,1,228,30) 的内禀时长近似（ms）。ω=√(k/m)≈15.1 rad/s、
@@ -843,9 +848,19 @@
       // Spring=0/Fade=1/None=2——本 SDK 枚举无 Shadow 成员，'shadow' 是任务书收的前向扩展值）：
       edgeEffect: 'spring',           // 'spring'|'none'|'shadow'（builtin.js attachPagedDrag 槽位读取）
       edgeAlwaysEnabled: null,        // EdgeEffectOptions.alwaysEnabled 记录面；null=未设（见 case 注释）
+      // R158 长尾第四片状态：
+      animationMode: 0,               // AnimationMode{CONTENT_FIRST=0, ACTION_FIRST=1, NO_ANIMATION=2}
+                                      //   （tabs.d.ts:80，since 12；缺省 CONTENT_FIRST——先加载目标
+                                      //   页内容再播切换动画，本运行时"可见性立即落新页 + 入场
+                                      //   transform"正是 CONTENT_FIRST 语义，缺省无需额外改动）
+      contentWillChange: null,        // onContentWillChange 单槽覆盖（(cur, coming)=>boolean，
+                                      //   false=拒绝切换，tabs.d.ts:1636）
+      contentDidScroll: null,         // onContentDidScroll 单槽覆盖（拖拽逐帧，tabs.d.ts:1637+）
     });
     node.__tabsState = st;
     node.dataset.edgeEffect = st.edgeEffect;   // R155-B：缺省面可观测（d.ts 缺省 Spring）
+    // R158：AnimationMode 缺省面可观测（CONTENT_FIRST；三值登记面见 applyTabsAttr case）
+    node.dataset.animationMode = 'content_first';
     node.style.display = 'flex';
     node.style.flexDirection = 'column';
     node.style.overflow = 'hidden';
@@ -919,11 +934,27 @@
       gesture: (i, extra) => {
         // 真机拖拽期 extra 只填 currentOffset、velocity 恒 0（C 简报对齐；
         // builtin 拖拽舞台给的采样速度在 Tabs 侧丢弃，形状收敛到 TabsAnimationEvent 缺省）
+        const off = extra && typeof extra.currentOffset === 'number' ? extra.currentOffset : 0;
         fireTabsGestureSwipe(st, i, {
-          currentOffset: extra && typeof extra.currentOffset === 'number' ? extra.currentOffset : 0,
+          currentOffset: off,
           targetOffset: 0,
           velocity: 0,
         });
+        // R158 onContentDidScroll（tabs.d.ts:1637+，since 12）：与 onGestureSwipe 同期逐帧派发
+        //（builtin attachPagedDrag 的 gesture 槽位，每次 move 一帧）。真机每帧按 viewport 内
+        // 页数调用（两页各一次）；position 本实现取位移/size（任务书口径——真机是 vp 偏移，
+        // 单位偏差已记录，页宽归一后形状同构）。当前页 position=off/size；邻页贴在拖拽方向
+        // 前方一整页，position=off/size±1（同 builtin.js nbOff=shown+sign*size 的几何）；
+        // 界外拖拽无邻页（drag.nIdx=-1 同判）→ 只发当前页一帧。
+        const size = st.contentEl.clientWidth;
+        if (size > 0 && st.contentDidScroll) {
+          const ratio = off / size;
+          fireTabsContentDidScroll(st, i, i, ratio, size);
+          const nb = i + (off < 0 ? 1 : -1);
+          if (nb >= 0 && nb < st.contents.length) {
+            fireTabsContentDidScroll(st, i, nb, ratio + (nb > i ? 1 : -1), size);
+          }
+        }
       },
       /** @param {number} idx @param {number} target */
       animStart: (idx, target) => { fireTabsAnimStart(st, idx, target); },
@@ -1173,6 +1204,53 @@
             layoutWarnings.push(`Tabs.edgeEffect 第二参 options=${JSON.stringify(extra)} `
               + '不是 EdgeEffectOptions（缺 alwaysEnabled:boolean），已忽略');
           }
+        }
+        return;
+      }
+      // ── R158：长尾第四片四件（animationMode/onContentWillChange/onContentDidScroll 真语义；
+      // customContentTransition 仍留 TABS_UNSUPPORTED 记警告）──
+      case 'animationMode': {
+        // d.ts tabs.d.ts:80 AnimationMode 枚举序：CONTENT_FIRST=0 / ACTION_FIRST=1 /
+        // NO_ANIMATION=2（since 12，缺省 CONTENT_FIRST）。三值语义对本运行时的对应：
+        //   · CONTENT_FIRST（缺省）：先加载目标页内容再播切换动画——既有"可见性立即落新页 +
+        //     入场 transform"正是该语义，无需额外改动（登记面 dataset 区分三值）；
+        //   · ACTION_FIRST：先播动画再加载目标页内容——仅 tabs 高/宽均非 auto 生效；对本运行时
+        //     的 display 切换模型而言与 CONTENT_FIRST 视觉无差（内容页都是即时构建、无"加载"
+        //     阶段），如实记 dataset 不做行为分支；
+        //   · NO_ANIMATION：禁用默认切换动画——仅【点击路径】生效（setActiveTab 的 fromClick
+        //     判定，见该处注释）；changeIndex 不受影响（d.ts/任务书口径）；与 animationDuration
+        //     语义分家（duration=0 连 spring 曲线外的所有路径都关，NO_ANIMATION 只关点击路径
+        //     且不管曲线）。
+        // 入参面照 edgeEffect/barMode 先例：枚举序数（编译产物 AnimationMode.X 就是序数）+
+        // 小写枚举名（'content_first'|'action_first'|'no_animation'，精确小写、大小写敏感）。
+        // 非法值记警告 + 保持现值（不静默——G8 断言面依赖警告纪律）。
+        const r = resolveResource(value);
+        const byName = /** @type {Record<string, number>} */ (
+          { content_first: 0, action_first: 1, no_animation: 2 });
+        let mode = -1;
+        if (r === 0 || r === 1 || r === 2) mode = r;
+        else if (typeof r === 'string' && r in byName) mode = byName[r];
+        if (mode < 0) {
+          layoutWarnings.push(`Tabs.animationMode 未实现入参 ${JSON.stringify(value)}`
+            + '（本运行时已接枚举序数 CONTENT_FIRST=0/ACTION_FIRST=1/NO_ANIMATION=2 与'
+            + "小写枚举名 'content_first'/'action_first'/'no_animation'），保持现值");
+          return;
+        }
+        st.animationMode = mode;
+        node.dataset.animationMode = ['content_first', 'action_first', 'no_animation'][mode];
+        return;
+      }
+      case 'onContentWillChange':   // d.ts tabs.d.ts:1636：(currentIndex, comingIndex)=>boolean
+      case 'onContentDidScroll': {  // d.ts tabs.d.ts:1637+：(selectedIndex, index, position,
+                                    //   mainAxisLength) 拖拽逐帧（builtin gesture 槽位派发）
+        // 覆盖语义单槽（与 onGestureSwipe 同口径：后注册替前注册，重复应用不翻倍）。
+        // 状态字段名不带 on 前缀（gestureSwipe 先例）——消费点 setActiveTab 守卫 /
+        // createTabsState gesture 槽位读 st.contentWillChange / st.contentDidScroll
+        const slot = key === 'onContentWillChange' ? 'contentWillChange' : 'contentDidScroll';
+        if (typeof value === 'function') st[slot] = value;
+        else {
+          st[slot] = null;
+          layoutWarnings.push(`Tabs.${key} 需要函数，收到 ${typeof value}，已忽略`);
         }
         return;
       }
@@ -1445,28 +1523,48 @@
   /**
    * 切活动面板。fire=true 才发切换事件；fromDrag=true 表示来自内置拖拽的收口 commit——
    * 动画事件对（onAnimationStart/End）已由拖拽生命周期（builtinFinishPagedDrag）发过，
-   * 这里只落内容/事件序，避免二次发。
+   * 这里只落内容/事件序，避免二次发。fromClick=true 表示来自 tab bar 条目点击（finalizeTabs
+   * 的 click 监听）——仅该路径受 AnimationMode.NO_ANIMATION 影响（d.ts：NO_ANIMATION 禁用
+   * 默认切换动画，changeIndex 不受影响；拖拽释放动画由 spring 内禀参数决定、同样不受影响）。
    * R152-B（C 简报对齐）：animationDuration 缺省 300（tab_theme.cpp:27,51-52），>0 时点击
    * tab / changeIndex 路径走 animateTabSwitch 入场动画；=0 时即时切换且不发动画事件
    * （swiper_pattern.cpp:2270-2273：duration=0 无动画、start/end 均不触发）。
+   * R158 onContentWillChange（tabs.d.ts:1636）：真实切换（fire && old!==i）在【改 index 之前】
+   * 调 handler(currentIndex, comingIndex)，返回 false 拒绝切换——index 不动、可见性不动、
+   * 后续事件（onSelected/Unselected/动画对/onChange）全不发。三条路径（点击/changeIndex/
+   * 拖拽收口 commit）都过守卫；拖拽路径的偏差：builtin 的收口序是 settle（还原拖拽舞台）→
+   * commit → animEnd，拒绝时 commit 返回 false 内容留旧页（视觉正确），但 builtin 仍会补发
+   * onAnimationEnd(target)——收口点在 builtin.js（所有权外），无法在该路径上抑制，偏差已记。
+   * handler 抛错按 fail-open 处理（放行切换 + 记警告）：拦截器异常不应卡死切页。
    * @param {any} st @param {number} i @param {boolean} fire @param {boolean=} [fromDrag]
+   * @param {boolean=} [fromClick]
    */
-  function setActiveTab(st, i, fire, fromDrag) {
+  function setActiveTab(st, i, fire, fromDrag, fromClick) {
     const n = st.contents.length;
     if (!n || !Number.isInteger(i) || i < 0 || i >= n) {
       layoutWarnings.push(`Tabs.changeIndex(${i}): 越界（共 ${n} 个 TabContent）`);
       return false;
     }
     const old = st.index;
+    if (fire && old !== i && typeof st.contentWillChange === 'function') {
+      let allow = true;
+      try { allow = st.contentWillChange(old, i) !== false; }
+      catch (e) { layoutWarnings.push(`Tabs.onContentWillChange 抛错：${e && e.message}`); }
+      if (!allow) return false;   // 拒绝切换：不发任何后续事件（真机 willChange 拦截语义）
+    }
     st.index = i;
     // 动画路径只认"点击 tab / changeIndex 的真实切换"（fire && old!==i）；拖拽 commit、
     // finalizeTabs 初始定位一律即时落可见性。真机 animateToPage 的内容动画是横向的
     // （Tabs 内容区恒横向滑动，与本实现 R125 拖拽同轴），vertical 时亦然。
     // R153-B：spring 族 animationCurve 不受 animationDuration 控制（d.ts animationDuration
     // JSDoc "curves unaffected by animationDuration"）——duration=0 时 spring 路径仍出动画。
+    // R158：NO_ANIMATION 只关点击路径（fromClick）——直接落位（display 切换、无入场
+    // transform 舞台、不发动画对），与 duration=0 分工：后者是全局时长门控、前者只关点击
+    // 路径的默认动画（changeIndex/拖拽/spring 曲线均不受 NO_ANIMATION 影响）。
     const springSwitch = st.animCurveKind === 'spring';
     const animate = !!(fire && old !== i && !fromDrag && n > 1 &&
-      (springSwitch || st.animationDuration > 0));
+      (springSwitch || st.animationDuration > 0) &&
+      !(st.animationMode === 2 && fromClick));
     if (animate) animateTabSwitch(st, old, i);
     else {
       // 非动画路径也要收掉可能在飞的上一场（如动画中又点了拖拽翻页）——否则旧舞台
@@ -1523,6 +1621,17 @@
     if (typeof st.gestureSwipe !== 'function') return;
     try { st.gestureSwipe(i, extra); }
     catch (e) { layoutWarnings.push(`Tabs.onGestureSwipe 抛错：${e && e.message}`); }
+  }
+  // R158 onContentDidScroll（tabs.d.ts:1637+）逐帧派发器：四参 (selectedIndex, index,
+  // position, mainAxisLength)。position=位移/size（页宽归一，见 gesture 槽位注释）；
+  // mainAxisLength=内容区主轴长（px≈vp 1:1，normalizeBarGridAlign 同口径）。仅拖拽逐帧派发
+  //（点击/changeIndex 路径的入场动画不派发——本实现的动画是 transform 近似、非真实内容
+  // 滚动，真机逐帧语义对应的是拖拽跟手）。
+  /** @param {any} st @param {number} sel @param {number} idx @param {number} pos @param {number} len */
+  function fireTabsContentDidScroll(st, sel, idx, pos, len) {
+    if (typeof st.contentDidScroll !== 'function') return;
+    try { st.contentDidScroll(sel, idx, pos, len); }
+    catch (e) { layoutWarnings.push(`Tabs.onContentDidScroll 抛错：${e && e.message}`); }
   }
   /** @param {any} st @param {number} index @param {number} targetIndex */
   function fireTabsAnimStart(st, index, targetIndex) {
@@ -1631,7 +1740,9 @@
           try { st.onTabBarClick(i); }
           catch (e) { layoutWarnings.push(`Tabs.onTabBarClick 抛错：${e && e.message}`); }
         }
-        setActiveTab(st, i, true);
+        // setActiveTab 第五参 fromClick=true：该路径受 AnimationMode.NO_ANIMATION 门控
+        //（R158；changeIndex/拖拽路径不传，默认关闭）
+        setActiveTab(st, i, true, false, true);
       });
       gridWrap.appendChild(item);
     });
@@ -2424,7 +2535,11 @@
         'onTabBarClick', 'onSelected', 'onUnselected',
         'animationDuration', 'onAnimationStart', 'onAnimationEnd', 'onGestureSwipe',
         'barGridAlign', 'animationCurve', 'pageFlipMode', 'cachedMaxCount',
-        'edgeEffect']) {
+        'edgeEffect',
+        // R158：animationMode（AnimationMode 三值）/onContentWillChange（切页拦截）/
+        // onContentDidScroll（拖拽逐帧）——不走自有拦截的话 applyAttr 会把回调吞成死监听
+        //（原因 ① 同上）
+        'animationMode', 'onContentWillChange', 'onContentDidScroll']) {
         (/** @type {any} */ (C))[k] = function (/** @type {...any} */ ...args) {
           applyTabsAttr(ViewStackProcessor.top(), k, args[0], args[1]);
         };
@@ -3535,6 +3650,10 @@
         barPosition: st.barPosition,
         hasController: !!st.controller,
         controller: st.controller,
+        // R158：animationMode 三值与两个单槽回调的登记面（自省可观测）
+        animationMode: st.animationMode,
+        contentWillChange: st.contentWillChange,
+        contentDidScroll: st.contentDidScroll,
       };
     },
     // Swiper 自省：证明"控制器真绑上了、loop/autoPlay 真生效"，而不只看某个 div 的 display。

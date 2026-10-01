@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<title>R152-B/R153-B：Tabs animationDuration / onAnimationStart·End / onGestureSwipe / barGridAlign / animationCurve / pageFlipMode / cachedMaxCount</title>
+<title>R152-B/R153-B/R158：Tabs animationDuration / onAnimationStart·End / onGestureSwipe / barGridAlign / animationCurve / pageFlipMode / cachedMaxCount / animationMode / onContentWillChange / onContentDidScroll</title>
 <style>
   body { font-family: system-ui, sans-serif; margin: 16px; }
   /* 宽 360 固定：拖拽断言依赖确定内容区宽（半页阈值=180） */
@@ -12,7 +12,7 @@
 </style>
 </head>
 <body>
-  <h3>R152-B 第二片（animationDuration / onAnimationStart·End / onGestureSwipe）+ R153-B 第三片（barGridAlign 栅格 / animationCurve 曲线 / pageFlipMode 滚轮翻页 / cachedMaxCount 缓存窗口）</h3>
+  <h3>R152-B 第二片（animationDuration / onAnimationStart·End / onGestureSwipe）+ R153-B 第三片（barGridAlign 栅格 / animationCurve 曲线 / pageFlipMode 滚轮翻页 / cachedMaxCount 缓存窗口）+ R158 长尾收官（animationMode 三值 / onContentWillChange 拦截 / onContentDidScroll 拖拽逐帧）</h3>
   <div id="root"></div>
   <div id="result">running…</div>
 
@@ -265,9 +265,11 @@
       // ══════════ G8 剩余未实现项：仍记警告不静默 ══════════
       // R153-B 改写说明（原断言的"过渡标记"性质到期）：本片把 barGridAlign 实现为真语义并
       // 移出 TABS_UNSUPPORTED，其"未实现"警告不复存在——原 G8 里的 barGridAlign 半边被
-      // 【必做实现项】作废，改用仍在表内的 animationMode 承担同一"剩余项警告纪律"断言；
-      // edgeEffect 半边不变（越界摩擦/回弹长在 builtin.js attachPagedDrag 内部，本片未做）。
-      // 断言条数不变（仍是本组 1 条、全页 26 条）。
+      // 【必做实现项】作废，改用仍在表内的 edgeEffect 承担同一"剩余项警告纪律"断言。
+      // R158 改写说明（同规则、条数仍不变）：animationMode 实现为真语义（枚举序数 0 是合法
+      // 入参，不再有"未实现"警告）——原 animationMode 半边改为反向断言（实现后 0 入参
+      // 【不】再进未实现诊断），与 edgeEffect('None') 大写非法值的"未实现"警告并断；
+      // 断言条数不变（仍是本组 1 条、全页 81+新增 条）。
       await group('G8 剩余项警告纪律', async () => {
         const before = warns().length;
         const t8 = buildTabs({}, () => {
@@ -277,9 +279,9 @@
         await tick(40);
         void t8;
         const fresh = warns().slice(before);
-        check(fresh.some((w) => w.includes('Tabs.animationMode 未实现'))
-          && fresh.some((w) => w.includes('Tabs.edgeEffect 未实现')),
-          `animationMode/edgeEffect 未实现仍记警告（${fresh.filter((w) => w.includes('未实现')).join('；')}）`);
+        check(fresh.some((w) => w.includes('Tabs.edgeEffect 未实现'))
+          && !fresh.some((w) => w.includes('Tabs.animationMode 未实现')),
+          `edgeEffect 非法值仍记警告；animationMode(0) 已实现不再警告（${fresh.filter((w) => w.includes('未实现')).join('；')}）`);
       });
 
       // ══════════ R153-B 新增 ══════════
@@ -703,6 +705,166 @@
           && s15.__swiperState.curveCss === 'cubic-bezier(0.330000,0.000000,0.670000,1.000000)',
           `Swiper.curve(ICurve) 同路：curveKind/curveCss 落状态`
           + `（'${s15.__swiperState.curveKind}'/'${s15.__swiperState.curveCss}'）`);
+      });
+
+      // ══════════ R158 新增 ══════════
+      // G16 Tabs 长尾收官：animationMode（tabs.d.ts:80 AnimationMode 三值）/ onContentWillChange
+      //（tabs.d.ts:1636 切页拦截）/ onContentDidScroll（tabs.d.ts:1637+ 拖拽逐帧）。
+      // 派发口径：DidScroll 在 builtin gesture 槽位与 onGestureSwipe 同期（每 move 一帧），
+      // position=位移/size（任务书口径；真机 vp 偏移，页宽归一后形状同构——偏差记在实现注释）。
+      // 时长纪律：本页虚拟时钟预算 8000ms 已被前 15 组吃满——本组几乎零等待（登记/拦截
+      // 面纯同步），且刻意不留悬挂动画：允许路径 duration=20（收口 ≤100ms）、拖拽帧断言后
+      // 不派发 up（松手回弹动画会吃 ~400ms 预算）。
+      await group('G16a animationMode 三值登记面', async () => {
+        // 缺省 CONTENT_FIRST：dataset + 状态（tabs.d.ts:80 枚举序 CONTENT_FIRST=0）
+        const t16a = buildTabs({}, () => {}, ['A0', 'A1']);
+        check(t16a.dataset.animationMode === 'content_first' && stateOf(t16a).animationMode === 0,
+          `缺省 animationMode=content_first/0（dataset='${t16a.dataset.animationMode}'，`
+          + `state=${stateOf(t16a).animationMode}）`);
+        // 三值逐一登记（小写枚举名与枚举序数两形态，照 edgeEffect/barMode 先例）
+        const t16b = buildTabs({}, () => {
+          Tabs.animationMode(2);                                    // NO_ANIMATION
+          Tabs.animationMode('action_first');                       // ACTION_FIRST 名形态
+          Tabs.animationMode(0);                                    // CONTENT_FIRST 序数
+        }, ['B0', 'B1']);
+        check(t16b.dataset.animationMode === 'content_first' && stateOf(t16b).animationMode === 0,
+          `animationMode(2)→'no_animation'→(1)→'action_first'→(0)→'content_first'`
+          + `（末值 dataset='${t16b.dataset.animationMode}'，state=${stateOf(t16b).animationMode}）`);
+        const t16c = buildTabs({}, () => { Tabs.animationMode('no_animation'); }, ['C0', 'C1']);
+        check(t16c.dataset.animationMode === 'no_animation' && stateOf(t16c).animationMode === 2,
+          `animationMode('no_animation') → state 2（dataset='${t16c.dataset.animationMode}'）`);
+        // 非法值：警告 + 保持现值（不静默，G8 同纪律）
+        const before16 = warns().length;
+        const t16d = buildTabs({}, () => {
+          Tabs.animationMode(1);
+          Tabs.animationMode(/** @type {any} */ (99));
+        }, ['D0', 'D1']);
+        check(warns().slice(before16).some((w) => w.includes('Tabs.animationMode 未实现入参 99'))
+          && stateOf(t16d).animationMode === 1,
+          `animationMode(99) 非法：警告 + 保持现值 action_first（state=${stateOf(t16d).animationMode}）`);
+      });
+
+      await group('G16b NO_ANIMATION：点击路径禁动画、changeIndex 不受影响', async () => {
+        const L16b = makeLog();
+        const ctrl16b = new TabsController();
+        const t16e = buildTabs({ controller: ctrl16b }, () => {
+          Tabs.animationDuration(20);
+          Tabs.animationMode(2);            // NO_ANIMATION
+          L16b.attrs();
+        }, ['E0', 'E1', 'E2']);
+        // 点击路径：直接落位（display 切换、无入场 transform 舞台）——无动画事件对。
+        // animStart 在 setActiveTab 内【同步】发——log 无 animStart 即证明动画路径未启动。
+        itemsOf(t16e)[1].click();
+        check(JSON.stringify(L16b.log) === JSON.stringify(['click:1', 'sel:1', 'unsel:0', 'change:1']),
+          `NO_ANIMATION 点击：无 animStart/End、R151 序（${L16b.log.join(' → ')}）`);
+        check(cs(contentsOf(t16e)[1]).display === 'block' && cs(contentsOf(t16e)[0]).display === 'none',
+          'NO_ANIMATION 点击：可见性直接落页 1');
+        // changeIndex 不受影响（任务书口径：NO_ANIMATION 仅点击路径禁用）。本页虚拟时钟
+        // 预算已被前 15 组吃满（基线实测 >7900ms 才收口）——动画面只能用【同步】相位断言：
+        // changeIndex 走了 animate 路径的硬证据是同步相位的 animStart:1→2
+        //（NO_ANIMATION 若误伤 changeIndex，此处无 animStart）
+        ctrl16b.changeIndex(2);
+        check(L16b.log.includes('animStart:1→2') && L16b.log.includes('change:2'),
+          `NO_ANIMATION 不影响 changeIndex：同步相位 animStart:1→2（${L16b.log.slice(-4).join(' → ')}）`);
+      });
+
+      await group('G16c onContentWillChange 拦截', async () => {
+        // ① 返回 false：拒绝切换——index 不动、后续事件全不发（onTabBarClick 是点击事件
+        //   本身，先于切页发，照真机保留）
+        const calls16f = [];
+        const L16f = makeLog();
+        const t16f = buildTabs({}, () => {
+          L16f.attrs();
+          Tabs.onContentWillChange((/** @type {number} */ c, /** @type {number} */ k) => {
+            calls16f.push([c, k]);
+            return false;
+          });
+        }, ['F0', 'F1', 'F2']);
+        itemsOf(t16f)[1].click();
+        check(JSON.stringify(calls16f[0]) === JSON.stringify([0, 1]) && stateOf(t16f).index === 0,
+          `willChange 收 (currentIndex=0, comingIndex=1)，返回 false 拒绝（calls=${JSON.stringify(calls16f)}，index=${stateOf(t16f).index}）`);
+        check(JSON.stringify(L16f.log) === JSON.stringify(['click:1']),
+          `拒绝切换：只发 onTabBarClick，无 sel/unsel/动画对/onChange（${L16f.log.join(' → ')}）`);
+        check(cs(contentsOf(t16f)[0]).display === 'block' && cs(contentsOf(t16f)[1]).display === 'none',
+          '拒绝切换：可见性仍在页 0');
+        // ② 返回 true：允许切换（index 变化）。duration 压到 20：允许路径的入场动画会留下
+        //   收口定时器吃虚拟时钟预算（见本组头注释），收口 ≤100ms
+        const L16g = makeLog();
+        const t16g = buildTabs({}, () => {
+          Tabs.animationDuration(20);
+          L16g.attrs();
+          Tabs.onContentWillChange(() => true);
+        }, ['G0', 'G1']);
+        itemsOf(t16g)[1].click();
+        check(stateOf(t16g).index === 1 && L16g.log.includes('change:1'),
+          `willChange 返回 true 允许切换（index=${stateOf(t16g).index}，${L16g.log.join(' → ')}）`);
+        // ③ handler 抛错：fail-open（放行切换 + 记警告）——拦截器异常不卡死切页
+        const before16h = warns().length;
+        const L16h = makeLog();
+        const t16h = buildTabs({}, () => {
+          L16h.attrs();
+          Tabs.onContentWillChange(() => { throw new Error('boom'); });
+        }, ['H0', 'H1']);
+        itemsOf(t16h)[1].click();
+        check(stateOf(t16h).index === 1
+          && warns().slice(before16h).some((w) => w.includes('Tabs.onContentWillChange 抛错')),
+          `willChange 抛错 fail-open：切页照走 + 记警告（index=${stateOf(t16h).index}）`);
+        // ④ 非函数注册：告警 + 清槽（与 onGestureSwipe 同口径）
+        const before16i = warns().length;
+        const t16i = buildTabs({}, () => { Tabs.onContentWillChange(/** @type {any} */ (123)); }, ['I0', 'I1']);
+        check(warns().slice(before16i).some((w) => w.includes('Tabs.onContentWillChange 需要函数'))
+          && stateOf(t16i).contentWillChange === null,
+          'onContentWillChange 非函数：记警告 + 清槽');
+      });
+
+      await group('G16d onContentDidScroll 拖拽逐帧', async () => {
+        const frames16 = [];
+        const t16j = buildTabs({}, () => {
+          Tabs.onContentDidScroll((/** @type {number} */ sel, /** @type {number} */ idx,
+            /** @type {number} */ pos, /** @type {number} */ len) => {
+            frames16.push({ sel, idx, pos, len });
+          });
+        }, ['J0', 'J1']);
+        // 两次 move（raw −30 / −90）→ 两帧 × 每帧两页 = 4 次调用（拖拽派发纯同步，无需 tick）
+        const ce16 = contentElOf(t16j);
+        clock(true);
+        fakeNow = 100;
+        down(ce16, 360, 100);
+        fakeNow += 100;
+        move(ce16, 330, 100);          // raw −30
+        fakeNow += 100;
+        move(ce16, 270, 100);          // raw −90
+        clock(false);
+        // 不派发 up：松手回弹/翻页动画会吃掉 ~400ms 虚拟时钟预算（本组头注释），
+        // 逐帧断言在 move 期已收集完毕，拖拽舞台随页面结束丢弃即可
+        check(frames16.length === 4,
+          `两帧 × 每帧两页 = 4 次调用（实测 ${frames16.length}）`);
+        const f0 = frames16[0];
+        check(f0 && f0.sel === 0 && f0.idx === 0 && Math.abs(f0.pos - (-30 / 360)) < 1e-9
+          && f0.len === 360,
+          `帧形 (selectedIndex=0, index=0, position=−30/360, mainAxisLength=360)`
+          + `（实测 ${JSON.stringify(f0)}）`);
+        const f1 = frames16[1];
+        check(f1 && f1.sel === 0 && f1.idx === 1 && Math.abs(f1.pos - (1 - 30 / 360)) < 1e-9,
+          `邻页帧 (index=1, position=1−30/360，贴拖拽方向前方一整页)`
+          + `（实测 ${JSON.stringify(f1)}）`);
+        check(frames16[2] && Math.abs(frames16[2].pos - (-90 / 360)) < 1e-9
+          && Math.abs(frames16[3].pos - (1 - 90 / 360)) < 1e-9,
+          `第二帧随位移推进（position=−90/360 与 1−90/360）`);
+        // 界外拖拽（第 0 页往右拖）无邻页 → 每帧只当前页一帧
+        const frames16b = [];
+        const t16k = buildTabs({}, () => {
+          Tabs.onContentDidScroll((/** @type {number} */ sel, /** @type {number} */ idx,
+            /** @type {number} */ pos, /** @type {number} */ len) => {
+            frames16b.push({ sel, idx, pos, len });
+          });
+        }, ['K0', 'K1']);
+        const ce16b = contentElOf(t16k);
+        down(ce16b, 270, 100);
+        move(ce16b, 300, 100);          // raw +30：第 0 页往右=界外，邻页 -1 不存在（不派发 up，同上）
+        check(frames16b.length === 1 && frames16b[0].idx === 0
+          && Math.abs(frames16b[0].pos - (30 / 360)) < 1e-9 && frames16b[0].len === 360,
+          `界外拖拽无邻页：只发当前页一帧（实测 ${JSON.stringify(frames16b)}）`);
       });
     } catch (e) {
       allPass = false;

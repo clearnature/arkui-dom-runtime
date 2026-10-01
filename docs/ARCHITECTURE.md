@@ -1742,7 +1742,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   属性元数据总数       47（平均 0.3／组件，最多 FormComponent=9）
 
 == 运行时 API ==
-  global 导出        405 个
+  global 导出        408 个
   状态类            ObservedPropertySimplePU ObservedPropertyObjectPU SynchedPropertySimpleOneWayPU SynchedPropertySimpleTwoWayPU SynchedPropertyNesedObjectPU
   内置组件          Text Button Column Row Stack List ListItem If ForEach LazyForEach RelativeContainer Tabs TabContent Swiper Navigation NavDestination Progress Gauge DataPanel Rating
   内部钩子 __arkui_dom_*  32 个
@@ -1765,29 +1765,29 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   fixtures 转换产物  80 个：AlphabetIndexerDemo AnimDemo AnimatorDemo AsyncIO AttrHeavyDemo BatchFuncDemo BatchInputDemo BatchLayoutDemo BatchMediaDemo BatchVerifyDemo BuiltinDemo CalendarPickerDemo Callee CanvasDemo CjkDemo DatePickerDemo Detail DrawDemo GestureDemo GestureGroupDemo GridDemo GridRowDemo Home ImageDemo Index InputDemo Layout Lazy LazyVar ListGroupDemo MeasArea MeasImage MeasNotify Measure MediaDemo MotionDemo NavBarDemo NavDemo NavShimDemo NavTransDemo NetFile NotesDetail NotesHome Observe PanelDemo PerfBigDemo PerfDemo PickerDemo PopDemo PromptAct Provide QrDemo RefreshDemo RelDemo ResourceDemo Rich RichVideoDemo ScrollDemo ShapeDemo ShowDemo SideBarDemo SmallDemo SplitDemo StepDemo Stress10kDemo Stress1kDemo SwiperDemo TabsGrid TextDemo TextMeasure TextPickerDemo TextTimeDemo TimePickerDemo TransitionDemo UiContextDemo V2 WaterFlowDemo Widgets WindowDemo XCompDemo
 
 == 性能基线（Electron 实测）==
-  首渲染            32.2 ms（33 节点：Column+Button+Text+ForEach×30）
-  最小 rerender     3.7 ms（@State 计数脏区单 Text，rAF 口径）
-  rerender 管道     0.7 ms / 1 tick（setTimeout 轮询口径，R70）
+  首渲染            34.4 ms（33 节点：Column+Button+Text+ForEach×30）
+  最小 rerender     3.9 ms（@State 计数脏区单 Text，rAF 口径）
+  rerender 管道     0.9 ms / 1 tick（setTimeout 轮询口径，R70）
   微任务底噪        0.00 ms
   行数              31
-  剖面 R71          loadRoute 同步 4.9 ms（require 0.2）· raf1 0.5 / raf2 26.8 ms（offscreen 首帧）
-  脚本 eval         runtime 131.4 / generated 129.1 / shims 129.2 / module 128.3 ms（计时起点之前）
+  剖面 R71          loadRoute 同步 7.2 ms（require 0.3）· raf1 0.6 / raf2 26.6 ms（offscreen 首帧）
+  脚本 eval         runtime 152.1 / generated 149.8 / shims 147.4 / module 149.9 ms（计时起点之前）
   判定              框架同步构建 3.5ms 无大头；"首渲染"=脚本 eval + offscreen 首帧（非框架成本）
-  千节点 R79        首渲染同步 30.0 ms（350 节点/~3500 属性，亚线性）· 单点 flush 0.3 ms · 批量翻转 flush 3.4 ms
+  千节点 R79        首渲染同步 31.3 ms（350 节点/~3500 属性，亚线性）· 单点 flush 0.3 ms · 批量翻转 flush 2.9 ms
   规模曲线          203→4.8 / 304→11.2 / 1055→19.0 ms（创建路径亚线性）；行复用+守卫千节点级保持
-  万节点 R138       首渲染同步 131.6 ms（3300 节点/~33000 属性）· 批量翻转 poll 145.5 ms / flush 16.0 ms · 单点 flush 0.1 ms（R139 增量走查后）
+  万节点 R138       首渲染同步 131.6 ms（3300 节点/~33000 属性）· 批量翻转 poll 145.6 ms / flush 16.0 ms · 单点 flush 0.2 ms（R139 增量走查后）
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          9545.6 KB
-  runtime(src)     1579.3 KB
-  test             1661.2 KB
+  runtime          9557.1 KB
+  runtime(src)     1590.8 KB
+  test             1683.0 KB
   tools            287.2 KB
   electron(src)    84.0 KB
-  docs             903.8 KB
+  docs             905.5 KB
   fixtures         552.5 KB
 
 == 逐文件（文档"文件职责"表的来源）==
-  runtime/arkui-dom-runtime.js            1341648 B  1310.2 KB
+  runtime/arkui-dom-runtime.js            1353415 B  1321.7 KB
   runtime/generated-components.js          57617 B  56.3 KB
   runtime/ohos-shims.js                   114046 B  111.4 KB
   tools/extract.mjs                         6936 B  6.8 KB
@@ -1809,7 +1809,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   docs/ARCHITECTURE.md                    168659 B  164.7 KB
   docs/CAPABILITY.md                       68955 B  67.3 KB
   docs/DEVELOPING.md                       76775 B  75.0 KB
-  docs/ROADMAP.md                         268338 B  262.0 KB
+  docs/ROADMAP.md                         270125 B  263.8 KB
   docs/surface-measurement.md               6496 B  6.3 KB
   docs/SESSION-2026-09-20.md               12842 B  12.5 KB
   runtime/src/.mimosa                       4096 B  4.0 KB
@@ -1819,7 +1819,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   runtime/src/animation.js                 29910 B  29.2 KB
   runtime/src/animator.js                   6308 B  6.2 KB
   runtime/src/area.js                      49481 B  48.3 KB
-  runtime/src/batch-func.js                79805 B  77.9 KB
+  runtime/src/batch-func.js                82193 B  80.3 KB
   runtime/src/batch-input.js               37979 B  37.1 KB
   runtime/src/batch-layout.js              29614 B  28.9 KB
   runtime/src/batch-media.js               35046 B  34.2 KB
@@ -1843,7 +1843,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   runtime/src/incremental.js                3155 B  3.1 KB
   runtime/src/input.js                     11921 B  11.6 KB
   runtime/src/layout.js                    20292 B  19.8 KB
-  runtime/src/main.js                     195127 B  190.6 KB
+  runtime/src/main.js                     204506 B  199.7 KB
   runtime/src/nav.js                       57837 B  56.5 KB
   runtime/src/panel.js                      3360 B  3.3 KB
   runtime/src/popup.js                      5042 B  4.9 KB
@@ -1954,7 +1954,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   test/attrheavy.html                       4064 B  4.0 KB
   test/batch-verify.html                   29056 B  28.4 KB
   test/batchbehavior.html                   6098 B  6.0 KB
-  test/batchfunc.html                      34543 B  33.7 KB
+  test/batchfunc.html                      46109 B  45.0 KB
   test/batchinputdemo.html                  6064 B  5.9 KB
   test/batchlayout.html                     8996 B  8.8 KB
   test/batchmediademo.html                  6542 B  6.4 KB
@@ -2028,7 +2028,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   test/swiper.html                          9177 B  9.0 KB
   test/sysapi.html                          3814 B  3.7 KB
   test/sysresdemo.html                      7035 B  6.9 KB
-  test/tabanim.html                        44238 B  43.2 KB
+  test/tabanim.html                        54987 B  53.7 KB
   test/tabgrid.html                        10096 B  9.9 KB
   test/tablong.html                        11398 B  11.1 KB
   test/textdemo.html                        5921 B  5.8 KB
