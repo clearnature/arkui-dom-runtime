@@ -6364,11 +6364,15 @@
 
   // ────────────────── 纯绘制类：Progress / Gauge / DataPanel / Rating（R13）──────────────────
   //
-  // 产物形式（实测 fixtures/pages/DrawDemo.ts）：四个都是【create 选项】传数据 + 属性设样式。
-  //   Progress.create({ value, total, style: ProgressStyle.Linear });  Progress.width/height/id
-  //   Gauge.create({ value, min, max });  Gauge.startAngle/endAngle/strokeWidth/colors
-  //   DataPanel.create({ values, max, type: DataPanelType.Circle })
-  //   Rating.create({ rating, indicator });  Rating.stars/stepSize/starStyle/onChange
+ // 产物形式（实测 fixtures/pages/DrawDemo.ts）：四个都是【create 选项】传数据 + 属性设样式。
+ //   Progress.create({ value, total, style: ProgressStyle.Linear });  Progress.width/height/id
+ //   Gauge.create({ value, min, max });  Gauge.startAngle/endAngle/strokeWidth/colors
+ //     R157-B：indicator（指针：线段+三角头，icon 无资源管线记警告）、description（环底 builder/
+ //     文本，未设时 min/max 默认标注）、trackShadow（SVG drop-shadow）也已实现
+ //   DataPanel.create({ values, max, type: DataPanelType.Circle })
+ //     R157-B：strokeWidth（内孔径向蒙版，缺省 24）、trackShadow（CSS drop-shadow）、
+ //     closeEffect（阴影兜底开关）、trackBackgroundColor（轨道段色）也已实现
+ //   Rating.create({ rating, indicator });  Rating.stars/stepSize/starStyle/onChange
   // 注意：Gauge/DataPanel 的产物里有 pop() 配对，Progress/Rating 没有（不影响实现）。
   const ProgressStyle = { Linear: 'linear', Ring: 'ring', Eclipse: 'eclipse', ScaleRing: 'scaleRing', Capsule: 'capsule' };
   const ProgressType = ProgressStyle;                       // type 是老写法，语义同 style
@@ -6501,6 +6505,7 @@
   /** @param {any} opts */
   function buildGaugeNode(opts) {
     const o = opts && typeof opts === 'object' ? opts : {};
+    /** @type {any} */                                             // 挂运行时状态字段（词汇表之外的自有字段）
     const node = document.createElement('div');
     node.__arkuiComp = 'Gauge';
     node.__drawKind = 'Gauge';
@@ -6508,14 +6513,22 @@
     node.__drawOpts = o;
     node.__min = o.min === undefined ? 0 : Number(o.min);
     node.__max = o.max === undefined ? 100 : Number(o.max);
+    // R157-B：d.ts——description 未设置时，若 min/max 有设置则在环底部显示 min/max 文本
+    node.__hasMinMax = o.min !== undefined || o.max !== undefined;
     node.__startAngle = 0;                      // .d.ts：默认 0
     node.__endAngle = 360;                      // .d.ts：默认 360
     node.__strokeW = 4;
     node.__colors = null;
+    // R157-B：indicator（.d.ts 默认显示系统三角指针）/ description / trackShadow 初始未设置
+    node.__indicator = undefined;
+    node.__description = undefined;
+    node.__trackShadow = undefined;
+    node.style.position = 'relative';           // description / min-max 标注相对环底定位
     node.__svg = svgEl('svg', {});
     (/** @type {SVGElement} */ (node.__svg)).style.width = '100%';
     (/** @type {SVGElement} */ (node.__svg)).style.height = '100%';
     node.appendChild(/** @type {SVGElement} */ (node.__svg));
+    renderGaugeDescription(node);
     return node;
   }
 
@@ -6531,6 +6544,143 @@
     }
     // JSDoc：权重为 0 的色段不显示；全 0 则整环不显示
     return segs.filter((s) => s.weight > 0);
+  }
+
+  /** 环色：第一段色（d.ts：trackShadow 的阴影色与环色一致），无色段时退默认蓝 */
+  /** @param {any} node */
+  function gaugeRingColor(node) {
+    const s = gaugeSegments(node)[0];
+    return s && s.color !== null && s.color !== undefined ? colorOf(s.color) : '#007dff';
+  }
+
+  // MultiShadowOptions（common.d.ts）：radius 缺省 20（API11 起，≤0 回落）、offsetX/offsetY 缺省 5。
+  // DOM 近似：CSS drop-shadow(offsetX offsetY radius color)。
+  /** @param {any} opts @param {string} color @param {number} defRadius */
+  function dropShadowOf(opts, color, defRadius) {
+    const o = opts && typeof opts === 'object' ? opts : {};
+    const radius = Number(o.radius) > 0 ? Number(o.radius) : defRadius;
+    const ox = o.offsetX === undefined ? 5 : Number(o.offsetX) || 0;
+    const oy = o.offsetY === undefined ? 5 : Number(o.offsetY) || 0;
+    return `drop-shadow(${r2(ox)}px ${r2(oy)}px ${r2(radius)}px ${color})`;
+  }
+
+  /** 6 位 hex 才追加 88 透明度（颜色名/函数色原样透传） */
+  /** @param {string} c */
+  const withShadowAlpha = (c) => (/^#[0-9a-fA-F]{6}$/.test(c) ? `${c}88` : c);
+
+  // R157-B：Gauge.trackShadow → SVG 上的 CSS drop-shadow（阴影色=环色，d.ts 原话）。
+  // null=显式关闭；未设置=不加阴影（Gauge 的阴影只随 trackShadow 出现，没有 DataPanel 那种默认阴影）。
+  /** @param {any} node */
+  function applyGaugeShadow(node) {
+    const v = node.__trackShadow;
+    if (v === undefined) {
+      (/** @type {any} */ (node.__svg)).style.filter = '';
+      node.removeAttribute('data-arkui-gauge-track-shadow');
+      return;
+    }
+    if (v === null) {
+      (/** @type {any} */ (node.__svg)).style.filter = 'none';
+      node.setAttribute('data-arkui-gauge-track-shadow', 'off');
+      return;
+    }
+    (/** @type {any} */ (node.__svg)).style.filter = dropShadowOf(v, withShadowAlpha(gaugeRingColor(node)), 20);
+    node.setAttribute('data-arkui-gauge-track-shadow', 'drop-shadow');
+  }
+
+  // R157-B：Gauge description（CustomBuilder）+ 未设置时的 min/max 默认标注。
+  //   设了 description → 环底渲染 builder 产物（DOM 子集：绝对定位在环底、水平居中，d.ts
+  //   "0 vp away from the bottom of the ring and centered horizontally"）；
+  //   未设 description → min/max 有设置时在环底显示 min/max 文本（builder 函数返回值同理）；
+  //   显式 description(null) → 什么都不显示（d.ts：null 时不显示 description）。
+  /** @param {any} node */
+  function renderGaugeDescription(node) {
+    for (const sel of ['[data-arkui-gauge-description]', '[data-arkui-gauge-minmax]']) {
+      const old = node.querySelector(`:scope > ${sel}`);
+      if (old) old.remove();
+    }
+    const d = node.__description;
+    if (d === null) return;
+    if (d !== undefined) {
+      const box = document.createElement('div');
+      box.setAttribute('data-arkui-gauge-description', '');
+      box.style.position = 'absolute';
+      box.style.left = '0';
+      box.style.right = '0';
+      box.style.bottom = '0';
+      box.style.textAlign = 'center';
+      box.style.pointerEvents = 'none';
+      if (typeof d === 'function') {
+        // builder：推进视图栈再调用，里面的 Text.create 才挂进这个槽（同 ListItemGroup header 的展开方式）
+        ViewStackProcessor.push(box);
+        try { d(); } catch (e) { warnOnce(`Gauge.description builder 抛错：${e && e.message}`); }
+        ViewStackProcessor.pop();
+        if (!box.childNodes.length) {
+          warnOnce('Gauge.description builder 未产出内容（builder 需用 DSL 建子组件或返回文本）');
+        }
+      } else {
+        box.textContent = String(d);
+      }
+      node.appendChild(box);
+      return;
+    }
+    if (node.__hasMinMax) {
+      const row = document.createElement('div');
+      row.setAttribute('data-arkui-gauge-minmax', '');
+      row.style.position = 'absolute';
+      row.style.left = '0';
+      row.style.right = '0';
+      row.style.bottom = '2px';
+      row.style.display = 'flex';
+      row.style.justifyContent = 'space-between';
+      row.style.padding = '0 12%';
+      row.style.pointerEvents = 'none';
+      row.style.fontSize = '12px';
+      row.style.color = '#182431';
+      const lo = document.createElement('span');
+      lo.setAttribute('data-arkui-gauge-min', '');
+      lo.textContent = String(node.__min);
+      const hi = document.createElement('span');
+      hi.setAttribute('data-arkui-gauge-max', '');
+      hi.textContent = String(node.__max);
+      row.appendChild(lo);
+      row.appendChild(hi);
+      node.appendChild(row);
+    }
+  }
+
+  // R157-B：指针（indicator）。.d.ts 默认显示系统三角指针；icon 无图标资源管线 →
+  // 退化为「中心线段 + 三角头」近似（icon 警告在 DRAW_ATTRS 里记）。角度约定与弧一致：
+  // angle = startAngle + (value-min)/(max-min) × (endAngle-startAngle)，比值夹 [0,1]。
+  /** @param {any} node @param {number} ratio @param {number} cx @param {number} cy @param {number} r */
+  function drawGaugeIndicator(node, ratio, cx, cy, r) {
+    const svg = node.__svg;
+    const o = node.__indicator && typeof node.__indicator === 'object' ? node.__indicator : {};
+    // d.ts：space（指针尖端离环外缘的距离）缺省 8，<0 或 >半径 → 回落默认 8
+    let space = o.space === undefined ? 8 : Number(o.space);
+    if (!(space >= 0) || space > r) space = 8;
+    const lineW = Number(o.width) > 0 ? Number(o.width) : 2;
+    const tipR = Math.max(1, r - space);
+    const ang = node.__startAngle + ratio * (node.__endAngle - node.__startAngle);
+    const tip = polar(cx, cy, tipR, ang);
+    const shaft = svgEl('line', {
+      x1: r2(cx), y1: r2(cy), x2: r2(tip.x), y2: r2(tip.y),
+      stroke: '#182431', 'stroke-width': lineW, 'stroke-linecap': 'butt',
+    });
+    shaft.setAttribute('data-arkui-gauge-indicator', '');
+    shaft.setAttribute('data-arkui-gauge-indicator-angle', String(r2(ang)));
+    svg.appendChild(shaft);
+    // 三角头：近似真机默认的系统三角指针（尖端即指针端点）
+    const headLen = Math.min(10, tipR);
+    const headW = Math.min(8, tipR);
+    const base = polar(cx, cy, tipR - headLen, ang);
+    const rad = (ang * Math.PI) / 180;
+    const head = svgEl('polygon', {
+      points: `${r2(tip.x)},${r2(tip.y)} ${r2(base.x + (headW / 2) * Math.cos(rad))},${r2(base.y + (headW / 2) * Math.sin(rad))}`
+        + ` ${r2(base.x - (headW / 2) * Math.cos(rad))},${r2(base.y - (headW / 2) * Math.sin(rad))}`,
+      fill: '#182431',
+    });
+    head.setAttribute('data-arkui-gauge-indicator-head', '');
+    svg.appendChild(head);
   }
 
   /** @param {any} node */
@@ -6575,6 +6725,8 @@
     track.setAttribute('data-arkui-gauge-track', '');
     arcDash(track, (1 - ratio) * PATH_LEN, -ratio * PATH_LEN);
     svg.appendChild(track);
+    // R157-B：指针压在轨道之上（indicator(null) 时隐藏；其余形态都画，含默认三角指针）
+    if (node.__indicator !== null) drawGaugeIndicator(node, ratio, cx, cy, r);
   }
 
   // ── DataPanel ──
@@ -6582,6 +6734,7 @@
   /** @param {any} opts */
   function buildDataPanelNode(opts) {
     const o = opts && typeof opts === 'object' ? opts : {};
+    /** @type {any} */                                             // 挂运行时状态字段（词汇表之外的自有字段）
     const node = document.createElement('div');
     node.__arkuiComp = 'DataPanel';
     node.__drawKind = 'DataPanel';
@@ -6591,6 +6744,12 @@
     node.__panelMax = Number(o.max) || 100;
     node.__panelType = isCirclePanel(o.type) ? 'circle' : 'line';
     node.__panelColors = null;
+    // R157-B：strokeWidth（.d.ts 缺省 24，仅 Circle 生效）/ trackShadow / closeEffect（缺省 false=阴影开）/
+    // trackBackgroundColor（缺省 '#08182431'，本实现近似为渐变里的轨道段色）
+    node.__strokeW = null;
+    node.__trackShadow = undefined;
+    node.__closeEffect = false;
+    node.__trackBg = null;
     node.style.display = 'block';
     redrawDataPanel(node);
     return node;
@@ -6606,10 +6765,54 @@
     return { segs, stops };
   }
 
+  // R157-B：DataPanel 环的描边宽度。.d.ts：缺省 24；≤0 回落默认；超过半径 → 自动调成
+  // 半径的 12%（"thickness will automatically be adjusted to 12% of the ring's radius"）。
+  /** @param {any} node */
+  function panelStroke(node) {
+    const w = node.offsetWidth || 100, h = node.offsetHeight || 100;
+    const radius = Math.max(1, Math.min(w, h) / 2);
+    const raw = Number(node.__strokeW);
+    let stroke = raw > 0 ? raw : 24;
+    if (stroke > radius) stroke = r2(radius * 0.12);
+    return stroke;
+  }
+
+  // R157-B：环阴影。.d.ts 优先级：trackShadow 显式设置 → 以它为准（即使 closeEffect=true）；
+  // trackShadow=null → 阴影关；未设 trackShadow → closeEffect 兜底（缺省 false=开默认阴影，
+  // true=关闭旋转+阴影）。DOM 近似：CSS drop-shadow（多段阴影色取第一段，单色近似）。
+  /** @param {any} node */
+  function applyPanelShadow(node) {
+    const v = node.__trackShadow;
+    const firstColor = () => (node.__panelColors && node.__panelColors.length
+      ? node.__panelColors[0] : PANEL_PALETTE[0]);
+    let mode;
+    if (v === null) {
+      node.style.filter = 'none';
+      mode = 'off';
+    } else if (v !== undefined) {
+      const o = v && typeof v === 'object' ? v : {};
+      if (Array.isArray(o.colors) && o.colors.length > 1) {
+        warnOnce('DataPanel.trackShadow 的多段阴影色取第一段（CSS drop-shadow 单色近似）');
+      }
+      node.style.filter = dropShadowOf(o, withShadowAlpha(
+        Array.isArray(o.colors) && o.colors.length ? colorOf(o.colors[0]) : firstColor()), 20);
+      mode = 'options';
+    } else if (node.__closeEffect === true) {
+      node.style.filter = 'none';
+      mode = 'off';
+    } else {
+      node.style.filter = dropShadowOf({}, withShadowAlpha(firstColor()), 20);
+      mode = 'default';
+    }
+    node.setAttribute('data-arkui-datapanel-track-shadow', mode);
+    node.setAttribute('data-arkui-datapanel-close-effect', node.__closeEffect ? 'true' : 'false');
+  }
+
   /** @param {any} node */
   function redrawDataPanel(node) {
     const { segs } = panelGeometry(node);
     const colors = node.__panelColors || PANEL_PALETTE;
+    const trackBg = node.__trackBg || '#e5e5e5';
     if (node.__panelType === 'circle') {
       const parts = [];
       let from = 0;
@@ -6619,10 +6822,20 @@
         parts.push(`${colors[i % colors.length]} ${r2(from * 100)}% ${r2(to * 100)}%`);
         from = to;
       });
-      if (from < 1) parts.push(`#e5e5e5 ${r2(from * 100)}% 100%`);   // 余量走轨道色
+      if (from < 1) parts.push(`${trackBg} ${r2(from * 100)}% 100%`);   // 余量走轨道色
       node.style.borderRadius = '50%';
       node.style.backgroundImage = `conic-gradient(${parts.join(', ')})`;
+      // R157-B：strokeWidth → 内孔径向蒙版（conic-gradient 是满圆盘，环厚由蒙版抠出）
+      const stroke = panelStroke(node);
+      node.setAttribute('data-arkui-datapanel-stroke', String(stroke));
+      const hole = `radial-gradient(closest-side, transparent calc(100% - ${stroke}px), #000 calc(100% - ${stroke}px))`;
+      node.style.setProperty('-webkit-mask-image', hole);
+      node.style.setProperty('mask-image', hole);
     } else {
+      // .d.ts：strokeWidth 在 Line 型不生效（不落蒙版、不落 dataset）
+      node.style.removeProperty('-webkit-mask-image');
+      node.style.removeProperty('mask-image');
+      node.removeAttribute('data-arkui-datapanel-stroke');
       node.style.display = 'flex';
       node.style.flexDirection = 'row';
       node.style.overflow = 'hidden';
@@ -6644,10 +6857,11 @@
         rest.setAttribute('data-arkui-datapanel-track', '');
         rest.style.flex = '1 1 auto';
         rest.style.height = '100%';
-        rest.style.background = '#e5e5e5';
+        rest.style.background = trackBg;
         node.appendChild(rest);
       }
     }
+    applyPanelShadow(node);
   }
 
   // ── Rating ──
@@ -6748,6 +6962,7 @@
       for (const el of r0.querySelectorAll('*')) {
         if (el.__drawKind === 'Gauge') redrawGauge(el);
         else if (el.__drawKind === 'Progress' && el.__svg) drawProgressRing(el, el.__ratio || 0);
+        else if (el.__drawKind === 'DataPanel') redrawDataPanel(el);   // R157-B：strokeWidth 蒙版要真实尺寸
         else if (el.__arkuiQrPending) redrawQr(el);
       }
       return;
@@ -6755,6 +6970,7 @@
     for (const el of incSweep(drawReg)) {
       if (el.__drawKind === 'Gauge') redrawGauge(el);
       else if (el.__drawKind === 'Progress' && el.__svg) drawProgressRing(el, el.__ratio || 0);
+      else if (el.__drawKind === 'DataPanel') redrawDataPanel(el);     // R157-B：同上
       else if (el.__arkuiQrPending) redrawQr(el);
     }
   }
@@ -6779,9 +6995,19 @@
       endAngle: (node, v) => { node.__endAngle = Number(v) || 0; redrawGauge(node); },
       strokeWidth: (node, v) => { node.__strokeW = Number(resolveResource(v)) || 4; redrawGauge(node); },
       colors: (node, v) => { node.__colors = v; redrawGauge(node); },
-      trackShadow: () => warnOnce('Gauge.trackShadow 未实现（轨道阴影）'),
-      indicator: () => warnOnce('Gauge.indicator 未实现（指针/刻度）'),
-      description: () => warnOnce('Gauge.description 未实现（自定义说明 builder）'),
+      // R157-B：trackShadow → SVG 的 CSS drop-shadow（阴影色=环色；null=显式关闭）
+      trackShadow: (node, v) => { node.__trackShadow = v; applyGaugeShadow(node); },
+      // R157-B：indicator → 指针（icon 无资源管线记警告、退化为线段+三角头；null=隐藏指针）
+      indicator: (node, v) => {
+        node.__indicator = v;
+        const icon = typeof v === 'string' ? v : (v && typeof v === 'object' ? v.icon : null);
+        if (icon) {
+          warnOnce('Gauge.indicator 的 icon 无图标资源管线，已退化为默认三角指针（中心线段近似）');
+        }
+        redrawGauge(node);
+      },
+      // R157-B：description → 环底渲染 builder/文本；未设置时 min/max 有设置则显示 min/max
+      description: (node, v) => { node.__description = v; renderGaugeDescription(node); },
     },
     DataPanel: {
       valueColors: (node, v) => {
@@ -6789,13 +7015,14 @@
         node.__panelColors = list.map(colorOf);
         redrawDataPanel(node);
       },
-      trackBackgroundColor: (node, v) => {
-        node.style.setProperty('--datapanel-track', colorOf(v));
-        warnOnce('DataPanel.trackBackgroundColor 只记录了值，未接入绘制（本实现的轨道色是固定灰）');
-      },
-      strokeWidth: () => warnOnce('DataPanel.strokeWidth 未实现（环的描边宽度）'),
-      trackShadow: () => warnOnce('DataPanel.trackShadow 未实现（轨道阴影）'),
-      closeEffect: () => warnOnce('DataPanel.closeEffect 未实现（关闭动效）'),
+      // R157-B：trackBackgroundColor 接入绘制（渐变余量段 / Line 型的轨道段）
+      trackBackgroundColor: (node, v) => { node.__trackBg = colorOf(v); redrawDataPanel(node); },
+      // R157-B：strokeWidth → 环厚（内孔径向蒙版；缺省 24；仅 Circle 生效，Line 只记值）
+      strokeWidth: (node, v) => { node.__strokeW = resolveResource(v); redrawDataPanel(node); },
+      // R157-B：trackShadow → CSS drop-shadow（多段阴影色取第一段；null=关闭）
+      trackShadow: (node, v) => { node.__trackShadow = v; redrawDataPanel(node); },
+      // R157-B：closeEffect → 兜底阴影开关（缺省 false=默认阴影开；true=关；trackShadow 优先）
+      closeEffect: (node, v) => { node.__closeEffect = v === true || v === 'true'; redrawDataPanel(node); },
     },
     Rating: {
       stars: (node, v) => { node.__starCount = Number(v) || 5; redrawRating(node); },
@@ -6841,6 +7068,12 @@
   // 渲染后按【真实几何】派发 onAreaChange：只在面积真的变了（或首次）时触发
   /** @param {any} rootEl */
   function syncAreas(rootEl) {
+    // R157-A：链式排列（chainMode）在 alignRules 收敛之后、面积派发之前定案。
+    // flush 管线是 syncAlignRules（收敛迭代）→ syncDrawings → syncAreas → syncNavChrome：
+    // 链成员该方向的偏移由链接管（真机 CalcOffsetParam 的 offsetXCalculated 语义），
+    // 必须覆盖收敛迭代留下的位置；挂在 syncDrawings 之后无影响（它只按尺寸重画弧形，
+    // 不读链位置），挂在 onAreaChange 之前则保证回调看到的是最终几何。
+    syncChainLayout(rootEl);
     // R139：登记集驱动（原全树 querySelectorAll → 只遍历 onAreaChange 登记元素）。
     // 显式传 rootEl（非全量路径）时保留旧遍历，语义不变。
     if (rootEl && rootEl !== rootNode) {
@@ -7393,6 +7626,12 @@
     // R136（E1-6）：accessibility* 四件 → ARIA（a11y.js 的 a11yConsumeAttr；
     // 此前经通用兜底落 data-*，屏幕阅读器读不到——坑 86 同族的"拦截要在通用兜底前"）
     if (a11yConsumeAttr(node, prop, value)) return;
+    // R157-A：chainMode(direction, style) 是 RelativeContainer 子组件的【链头】标记
+    // （common.d.ts:20529；ChainStyle SPREAD=0/SPREAD_INSIDE=1/PACKED=2，见文件尾的
+    // global 挂载）。通用属性方法只透传 (args[0], args[1]) → (value, extra)，这里必须
+    // 抢在通用 on*/data-* 落点之前消费（坑 86 同族）；真正的成链与摆放每轮
+    // syncChainLayout 做（alignRules 收敛迭代之后，见 syncAreas 开头的集成点注释）。
+    if (prop === 'chainMode') { applyChainMode(node, value, extra); return; }
     if (typeof value === 'function') {          // 事件类（onClick/onChange…）
       const ev = prop.replace(/^on/, '').toLowerCase() || 'click';
       // 覆盖语义（R27 实测教训）：同一个属性重复注册【替换】上一个，而不是追加 ——
@@ -7461,6 +7700,276 @@
     try { node.dataset[prop] = JSON.stringify(value); }
     catch { node.dataset[prop] = String(value); }
   }
+
+  // ────────────── R157-A：RelativeContainer chainMode 链式排列 ──────────────
+  //
+  // 权威来源（common.d.ts + 真机 relative_container_layout_algorithm.cpp）：
+  //   · chainMode(direction: Axis, style: ChainStyle)（common.d.ts:20529）挂在
+  //     RelativeContainer 的【子组件】上，声明"我是链头"；ChainStyle（:4734）
+  //     SPREAD=0 / SPREAD_INSIDE=1 / PACKED=2。
+  //   · 成链（CheckHorizontalChain cpp:454 / CheckNodeInHorizontalChain :410）：
+  //     链头须有该方向两侧锚规则（水平 left/start+right/end、垂直 top+bottom）；
+  //     成员沿邻接图走 —— 当前节点尾侧规则锚指向下一兄弟且 align 为 START，
+  //     下一节点头侧规则锚指回当前节点且 align 为 END；成链须 ≥2 节点（:487）。
+  //     已被前一条链收编的节点不再作为链头（CheckChain :609 IsNodeInChain 守卫）。
+  //   · 摆放（CalcOffsetInChainGetStart cpp:768）：A=锚距、C=成员尺寸和、n=成员数——
+  //       SPREAD        space=(A−C)/(n+1)，起点=space（首尾外侧各有一份空隙）；
+  //       SPREAD_INSIDE space=(A−C)/(n−1)（n>1），起点=0（首尾贴锚）；
+  //       PACKED        space=0，起点=(A−C)×bias（链头 alignRules.bias 对应轴，
+  //                     默认 0.5 居中——common.d.ts:4731 `bias?: Bias`、真机
+  //                     BiasPair(0.5,0.5) cpp:466）。
+  //     溢出（A<C）：SPREAD/SPREAD_INSIDE 居中（space=0、起点=(A−C)/2，cpp:802-806），
+  //     PACKED 仍按 bias。顺序摆放 offset(i+1)=offset(i)+size(i)+space（RecordOffsetInChain :807）。
+  //   · 链成员该方向偏移完全由链接管（CalcOffsetParam 的 offsetXCalculated），
+  //     另一方向仍走 alignRules。
+  //   注：本版 SDK 没有 chainBias 属性（全 SDK grep 零命中）——链偏移权重就是链头
+  //   alignRules.bias；chainWeight（按权重重分配尺寸）未实现，检测到记警告不静默。
+
+  // ChainStyle 枚举挂 global：产物里 `ChainStyle.SPREAD` 是自由变量引用，不挂直接
+  // ReferenceError。值照 .d.ts 声明顺序（SPREAD=0/SPREAD_INSIDE=1/PACKED=2）。
+  // 刻意走 defineProperty 而非 main.js 的 Object.assign 块（同 batch 分片惯例）。
+  Object.defineProperty(global, 'ChainStyle', {
+    value: { SPREAD: 0, SPREAD_INSIDE: 1, PACKED: 2 },
+    writable: false, enumerable: true, configurable: false,
+  });
+
+  /** @type {Set<HTMLElement>} */
+  const chainReg = new Set();          // chainMode 登记过的元素（增量走查用）
+  // 自省：容器 → 最近一轮成链结果（测试页断言链成员/模式/间距用）
+  const chainInfoMeta = new WeakMap();
+
+  /** @param {any} el chainMode 登记上挂时 */
+  function incRegChain(el) { if (el) chainReg.add(el); }
+
+  /** @param {any} v ChainStyle 枚举值（0/1/2）或字符串（'spread' 等），非法返回 null */
+  const chainStyleName = (v) => {
+    if (v === 0 || v === '0') return 'spread';
+    if (v === 1 || v === '1') return 'spread_inside';
+    if (v === 2 || v === '2') return 'packed';
+    const s = String(v === undefined || v === null ? '' : v).toLowerCase();
+    return (s === 'spread' || s === 'spread_inside' || s === 'packed') ? s : null;
+  };
+
+  /**
+   * chainMode(direction, style) 登记：只记方向与模式，成链在 syncChainLayout。
+   * 同一组件可在两个方向各声明一次（水平/垂直链独立）。
+   * @param {any} node @param {any} direction @param {any} style
+   */
+  function applyChainMode(node, direction, style) {
+    // Axis 语义与 guideline 一致（layout.js：Vertical=0/'vertical'、Horizontal=1/'horizontal'）
+    const dir = isHorizontalAxis(direction) ? 'h'
+      : (direction === 'vertical' || direction === 0) ? 'v' : null;
+    if (!dir) {
+      warnOnce(`chainMode: 方向必须是 Axis.Horizontal/Axis.Vertical（收到 ${String(direction)}），已忽略`);
+      return;
+    }
+    const mode = chainStyleName(style);
+    if (!mode) {
+      warnOnce(`chainMode: 未知模式 ${String(style)}`
+        + '（ChainStyle 只有 SPREAD(0)/SPREAD_INSIDE(1)/PACKED(2)），该方向已忽略');
+      return;
+    }
+    if (!node.__chainMode) node.__chainMode = {};
+    node.__chainMode[dir] = mode;
+    incRegChain(node);
+  }
+
+  // 方向 → 该方向的键名与 START/END 词表。水平键有两套（left/right 老版 + start/end
+  // Localized，与 layout.js H_KEYS 同理）；垂直只有 top/bottom。align 值是小写字符串
+  // （HorizontalAlign/VerticalAlign 全局值的透传），isStart/isEnd 也认两套。
+  /** @type {Record<string, {headKeys: string[], tailKeys: string[], startAlign: string, endAlign: string}>} */
+  const CHAIN_AXIS_SPEC = {
+    h: { headKeys: ['left', 'start'], tailKeys: ['right', 'end'], startAlign: 'start', endAlign: 'end' },
+    v: { headKeys: ['top'], tailKeys: ['bottom'], startAlign: 'top', endAlign: 'bottom' },
+  };
+
+  /** @param {any} rules @param {string[]} keys 取该方向头/尾侧的第一条规则（两套键名任一） */
+  const chainRuleOf = (rules, keys) => {
+    for (const k of keys) { if (rules && rules[k]) return rules[k]; }
+    return null;
+  };
+
+  /**
+   * 锚点坐标（真机 GetHorizontalAnchorValueByAlignRule cpp:672 语义）：锚点参照边
+   * 的绝对坐标 —— 容器按 align 取 0/半宽/全宽；兄弟/GuideLine 取其盒再加 align 分数。
+   * 不可解析（锚不存在）返回 null。
+   * @param {any} parent @param {any} rule @param {string} key @param {number} pw @param {number} ph @param {boolean} horiz
+   */
+  function chainAnchorValue(parent, rule, key, pw, ph, horiz) {
+    const box = alignBoxOf(parent, rule.anchor, key, pw, ph);
+    if (!box) return null;
+    const frac = ALIGN_FRAC[rule.align] !== undefined ? ALIGN_FRAC[rule.align] : 0;
+    return horiz ? box.x + box.w * frac : box.y + box.h * frac;
+  }
+
+  /** @param {any} head 链偏移权重：链头 alignRules.bias 的对应轴（缺省 0.5，下界钳制同 applyBias） */
+  /** @param {any} head @param {boolean} horiz 链偏移权重：链头 alignRules.bias 的对应轴（缺省 0.5，下界钳制同 applyBias） */
+  function chainBiasOf(head, horiz) {
+    const b = head.__alignRules && head.__alignRules.bias;
+    const v = b && typeof b === 'object' ? (horiz ? b.horizontal : b.vertical) : undefined;
+    return v === undefined ? 0.5 : Math.max(0, Number(v) || 0);
+  }
+
+  /**
+   * 一条链的完整解析：成链（邻接图）→ 三分支布局 → 覆盖成员链方向位置。
+   * @param {any} parent @param {any} head @param {string} dir @param {number} pw @param {number} ph @param {Set<any>} claimed
+   */
+  function buildAndApplyChain(parent, head, dir, pw, ph, claimed) {
+    const spec = CHAIN_AXIS_SPEC[dir];
+    const horiz = dir === 'h';
+    const axisName = horiz ? 'left/start + right/end' : 'top + bottom';
+    const rules = head.__alignRules;
+    const headRule = chainRuleOf(rules, spec.headKeys);
+    let tailRule = chainRuleOf(rules, spec.tailKeys);
+    if (!headRule || !tailRule) {
+      warnOnce(`chainMode: 链头 '${head.id || '(无 id)'}' 缺该方向两侧锚规则（${axisName}），未成链`);
+      return;
+    }
+    // 沿邻接图收集成员（cpp:410 三条件）：当前尾侧 anchor 是容器内兄弟 id、当前尾侧
+    // align 是 START、下一节点头侧规则锚指回当前且 align 是 END。
+    const members = [head];
+    /** @type {Set<any>} */
+    const seen = new Set([head]);
+    let cur = head;
+    for (let hop = 0; hop < 64; hop++) {
+      if (!cur.id || tailRule.align !== spec.startAlign) break;
+      const nextAnchor = tailRule.anchor;
+      if (!nextAnchor || nextAnchor === '__container__') break;
+      const sel = (global.CSS && CSS.escape) ? CSS.escape(nextAnchor) : nextAnchor;
+      const next = /** @type {any} */ (parent.querySelector('#' + sel));
+      if (!next || seen.has(next) || next.parentElement !== parent) break;
+      const nHead = chainRuleOf(next.__alignRules, spec.headKeys);
+      const nTail = chainRuleOf(next.__alignRules, spec.tailKeys);
+      if (!nHead || !nTail) break;
+      if (nHead.anchor !== cur.id || nHead.align !== spec.endAlign) break;
+      members.push(next);
+      seen.add(next);
+      cur = next;
+      tailRule = nTail;
+    }
+    if (members.length < 2) {
+      warnOnce(`chainMode: 链头 '${head.id || '(无 id)'}' 未成链——没有邻接成员`
+        + '（须 ≥2 节点：我的尾侧锚指向它且它的头侧锚指回我），已忽略');
+      return;
+    }
+    // 锚合法性（cpp:487 IsAnchorLegal）：头/尾锚必须可解析（__container__/guideLine/兄弟 id）
+    const anchorKey = horiz ? 'left' : 'top';
+    const startV = chainAnchorValue(parent, headRule, anchorKey, pw, ph, horiz);
+    const endV = chainAnchorValue(parent, tailRule, anchorKey, pw, ph, horiz);
+    if (startV === null || endV === null) {
+      warnOnce(`chainMode: 链头 '${head.id || '(无 id)'}' 的锚不可解析`
+        + '（合法锚：__container__/guideLine/存在的兄弟 id），未成链');
+      return;
+    }
+    for (const m of members) {
+      if (m.dataset && m.dataset.chainWeight) {
+        warnOnce('chainWeight 未实现：链内按各成员自身尺寸摆放（真机按权重重分配尺寸）');
+        break;
+      }
+    }
+    claimed.add(head);
+    const mode = head.__chainMode[dir];
+    const n = members.length;
+    let contentSize = 0;
+    for (const m of members) contentSize += horiz ? m.offsetWidth : m.offsetHeight;
+    const anchorDistance = endV - startV;
+    let space = 0;
+    let start = 0;
+    if (anchorDistance >= contentSize) {
+      if (mode === 'spread') {
+        space = (anchorDistance - contentSize) / (n + 1);
+        start = space;
+      } else if (mode === 'spread_inside') {
+        space = (anchorDistance - contentSize) / (n - 1);   // n≥2（上面已保证）
+      } else {                                              // packed
+        start = (anchorDistance - contentSize) * chainBiasOf(head, horiz);
+      }
+    } else if (mode === 'packed') {
+      start = (anchorDistance - contentSize) * chainBiasOf(head, horiz);
+    } else {
+      start = (anchorDistance - contentSize) / 2;           // 溢出：居中（cpp:802-806）
+    }
+    // 顺序摆放并覆盖链方向位置；另一方向不动（仍由 alignRules 收敛结果决定）
+    let off = startV + start;
+    for (const m of members) {
+      m.style.position = 'absolute';
+      if (horiz) {
+        m.style.left = off + 'px';
+        m.style.right = 'auto';     // 两侧规则可能同时给了 right——auto 才不会把 auto 宽度拉撑
+      } else {
+        m.style.top = off + 'px';
+        m.style.bottom = 'auto';
+      }
+      // 修正 translate：侧锚规则会留下 translate(±100%)（left+End → -100%、right+Start →
+      // +100% 等，见 applyAlignRules 的 dx/dy）。链方向的位置已按 px 精确给出，把该轴的
+      // 百分比位移清零；非链方向的位移（如水平链成员垂直锚的 dy）原样保留。
+      const tf = /translate\((-?[\d.]+)%,\s*(-?[\d.]+)%\)/.exec(String(m.style.transform || ''));
+      let tdx = tf ? parseFloat(tf[1]) : 0;
+      let tdy = tf ? parseFloat(tf[2]) : 0;
+      if (horiz) tdx = 0; else tdy = 0;
+      m.style.transform = (tdx || tdy) ? `translate(${tdx}%, ${tdy}%)` : '';
+      off += (horiz ? m.offsetWidth : m.offsetHeight) + space;
+    }
+    /** @type {any} */ let info = chainInfoMeta.get(parent);
+    if (!info) { info = { h: [], v: [] }; chainInfoMeta.set(parent, info); }
+    (horiz ? info.h : info.v).push({
+      head: head.id || '',
+      ids: members.map((/** @type {any} */ m) => m.id || ''),
+      style: mode, bias: chainBiasOf(head, horiz),
+      anchorDistance, contentSize, space, start: startV + start,
+    });
+  }
+
+  /**
+   * 链同步（挂在 syncAreas 开头，见那里的管线注释）。收集 chainMode 登记元素 →
+   * 按 RelativeContainer 容器分组 → 每方向尝试成链（已收编的节点不再作链头）。
+   * @param {any=} [rootEl]
+   */
+  function syncChainLayout(rootEl) {
+    /** @type {any[]} */ let heads;
+    if (rootEl && rootEl !== rootNode) {
+      if (!rootEl || !rootEl.querySelectorAll) return;
+      heads = /** @type {any[]} */ ([...rootEl.querySelectorAll('*')]
+        .filter((/** @type {any} */ el) => el.__chainMode));
+    } else {
+      heads = /** @type {any[]} */ (incSweep(chainReg));
+    }
+    if (!heads.length) return;
+    /** @type {Map<any, any[]>} */
+    const byParent = new Map();
+    for (const h of heads) {
+      if (!h.isConnected) continue;
+      const p = h.parentElement;
+      if (!p) continue;
+      if (p.__arkuiComp !== 'RelativeContainer') {
+        warnOnce('chainMode 只在 RelativeContainer 内生效'
+          + '（common.d.ts：父容器不是 RelativeContainer 时不生效），已忽略');
+        continue;
+      }
+      if (!byParent.has(p)) byParent.set(p, []);
+      (/** @type {any[]} */ (byParent.get(p))).push(h);
+    }
+    for (const [p, hs] of byParent) {
+      applyGuideLines(p);                     // 幂等；guideline 锚点先就绪（同 applyAlignRules）
+      const pw = p.offsetWidth, ph = p.offsetHeight;
+      /** @type {any} */ let info = chainInfoMeta.get(p);
+      if (!info) { info = { h: [], v: [] }; chainInfoMeta.set(p, info); }
+      info.h.length = 0; info.v.length = 0;   // 每轮重算（重渲染后旧结果作废）
+      /** @type {Set<any>} */
+      const claimed = new Set();
+      for (const h of hs) {                   // 文档序：先声明的链头先成链
+        if (h.__chainMode.h && !claimed.has(h)) buildAndApplyChain(p, h, 'h', pw, ph, claimed);
+        if (h.__chainMode.v && !claimed.has(h)) buildAndApplyChain(p, h, 'v', pw, ph, claimed);
+      }
+    }
+  }
+
+  // 链自省：__arkui_dom_chains(containerEl) → { h: [...], v: [...] }（最近一轮成链结果）
+  Object.defineProperty(global, '__arkui_dom_chains', {
+    /** @param {any} el */
+    value: (el) => chainInfoMeta.get(el) || null,
+    writable: false, enumerable: true, configurable: true,
+  });
 
   // R128：媒体字节预热（resourceManager.getMediaByNameSync 是【同步】API——字节必须
   // 提前取好；双端同源 http（run.sh 起服务），fetch 相对路径即可；失败免疫（file:// 等场景

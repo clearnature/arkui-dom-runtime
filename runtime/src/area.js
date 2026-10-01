@@ -31,6 +31,12 @@
   // 渲染后按【真实几何】派发 onAreaChange：只在面积真的变了（或首次）时触发
   /** @param {any} rootEl */
   function syncAreas(rootEl) {
+    // R157-A：链式排列（chainMode）在 alignRules 收敛之后、面积派发之前定案。
+    // flush 管线是 syncAlignRules（收敛迭代）→ syncDrawings → syncAreas → syncNavChrome：
+    // 链成员该方向的偏移由链接管（真机 CalcOffsetParam 的 offsetXCalculated 语义），
+    // 必须覆盖收敛迭代留下的位置；挂在 syncDrawings 之后无影响（它只按尺寸重画弧形，
+    // 不读链位置），挂在 onAreaChange 之前则保证回调看到的是最终几何。
+    syncChainLayout(rootEl);
     // R139：登记集驱动（原全树 querySelectorAll → 只遍历 onAreaChange 登记元素）。
     // 显式传 rootEl（非全量路径）时保留旧遍历，语义不变。
     if (rootEl && rootEl !== rootNode) {
@@ -583,6 +589,12 @@
     // R136（E1-6）：accessibility* 四件 → ARIA（a11y.js 的 a11yConsumeAttr；
     // 此前经通用兜底落 data-*，屏幕阅读器读不到——坑 86 同族的"拦截要在通用兜底前"）
     if (a11yConsumeAttr(node, prop, value)) return;
+    // R157-A：chainMode(direction, style) 是 RelativeContainer 子组件的【链头】标记
+    // （common.d.ts:20529；ChainStyle SPREAD=0/SPREAD_INSIDE=1/PACKED=2，见文件尾的
+    // global 挂载）。通用属性方法只透传 (args[0], args[1]) → (value, extra)，这里必须
+    // 抢在通用 on*/data-* 落点之前消费（坑 86 同族）；真正的成链与摆放每轮
+    // syncChainLayout 做（alignRules 收敛迭代之后，见 syncAreas 开头的集成点注释）。
+    if (prop === 'chainMode') { applyChainMode(node, value, extra); return; }
     if (typeof value === 'function') {          // 事件类（onClick/onChange…）
       const ev = prop.replace(/^on/, '').toLowerCase() || 'click';
       // 覆盖语义（R27 实测教训）：同一个属性重复注册【替换】上一个，而不是追加 ——
@@ -651,3 +663,273 @@
     try { node.dataset[prop] = JSON.stringify(value); }
     catch { node.dataset[prop] = String(value); }
   }
+
+  // ────────────── R157-A：RelativeContainer chainMode 链式排列 ──────────────
+  //
+  // 权威来源（common.d.ts + 真机 relative_container_layout_algorithm.cpp）：
+  //   · chainMode(direction: Axis, style: ChainStyle)（common.d.ts:20529）挂在
+  //     RelativeContainer 的【子组件】上，声明"我是链头"；ChainStyle（:4734）
+  //     SPREAD=0 / SPREAD_INSIDE=1 / PACKED=2。
+  //   · 成链（CheckHorizontalChain cpp:454 / CheckNodeInHorizontalChain :410）：
+  //     链头须有该方向两侧锚规则（水平 left/start+right/end、垂直 top+bottom）；
+  //     成员沿邻接图走 —— 当前节点尾侧规则锚指向下一兄弟且 align 为 START，
+  //     下一节点头侧规则锚指回当前节点且 align 为 END；成链须 ≥2 节点（:487）。
+  //     已被前一条链收编的节点不再作为链头（CheckChain :609 IsNodeInChain 守卫）。
+  //   · 摆放（CalcOffsetInChainGetStart cpp:768）：A=锚距、C=成员尺寸和、n=成员数——
+  //       SPREAD        space=(A−C)/(n+1)，起点=space（首尾外侧各有一份空隙）；
+  //       SPREAD_INSIDE space=(A−C)/(n−1)（n>1），起点=0（首尾贴锚）；
+  //       PACKED        space=0，起点=(A−C)×bias（链头 alignRules.bias 对应轴，
+  //                     默认 0.5 居中——common.d.ts:4731 `bias?: Bias`、真机
+  //                     BiasPair(0.5,0.5) cpp:466）。
+  //     溢出（A<C）：SPREAD/SPREAD_INSIDE 居中（space=0、起点=(A−C)/2，cpp:802-806），
+  //     PACKED 仍按 bias。顺序摆放 offset(i+1)=offset(i)+size(i)+space（RecordOffsetInChain :807）。
+  //   · 链成员该方向偏移完全由链接管（CalcOffsetParam 的 offsetXCalculated），
+  //     另一方向仍走 alignRules。
+  //   注：本版 SDK 没有 chainBias 属性（全 SDK grep 零命中）——链偏移权重就是链头
+  //   alignRules.bias；chainWeight（按权重重分配尺寸）未实现，检测到记警告不静默。
+
+  // ChainStyle 枚举挂 global：产物里 `ChainStyle.SPREAD` 是自由变量引用，不挂直接
+  // ReferenceError。值照 .d.ts 声明顺序（SPREAD=0/SPREAD_INSIDE=1/PACKED=2）。
+  // 刻意走 defineProperty 而非 main.js 的 Object.assign 块（同 batch 分片惯例）。
+  Object.defineProperty(global, 'ChainStyle', {
+    value: { SPREAD: 0, SPREAD_INSIDE: 1, PACKED: 2 },
+    writable: false, enumerable: true, configurable: false,
+  });
+
+  /** @type {Set<HTMLElement>} */
+  const chainReg = new Set();          // chainMode 登记过的元素（增量走查用）
+  // 自省：容器 → 最近一轮成链结果（测试页断言链成员/模式/间距用）
+  const chainInfoMeta = new WeakMap();
+
+  /** @param {any} el chainMode 登记上挂时 */
+  function incRegChain(el) { if (el) chainReg.add(el); }
+
+  /** @param {any} v ChainStyle 枚举值（0/1/2）或字符串（'spread' 等），非法返回 null */
+  const chainStyleName = (v) => {
+    if (v === 0 || v === '0') return 'spread';
+    if (v === 1 || v === '1') return 'spread_inside';
+    if (v === 2 || v === '2') return 'packed';
+    const s = String(v === undefined || v === null ? '' : v).toLowerCase();
+    return (s === 'spread' || s === 'spread_inside' || s === 'packed') ? s : null;
+  };
+
+  /**
+   * chainMode(direction, style) 登记：只记方向与模式，成链在 syncChainLayout。
+   * 同一组件可在两个方向各声明一次（水平/垂直链独立）。
+   * @param {any} node @param {any} direction @param {any} style
+   */
+  function applyChainMode(node, direction, style) {
+    // Axis 语义与 guideline 一致（layout.js：Vertical=0/'vertical'、Horizontal=1/'horizontal'）
+    const dir = isHorizontalAxis(direction) ? 'h'
+      : (direction === 'vertical' || direction === 0) ? 'v' : null;
+    if (!dir) {
+      warnOnce(`chainMode: 方向必须是 Axis.Horizontal/Axis.Vertical（收到 ${String(direction)}），已忽略`);
+      return;
+    }
+    const mode = chainStyleName(style);
+    if (!mode) {
+      warnOnce(`chainMode: 未知模式 ${String(style)}`
+        + '（ChainStyle 只有 SPREAD(0)/SPREAD_INSIDE(1)/PACKED(2)），该方向已忽略');
+      return;
+    }
+    if (!node.__chainMode) node.__chainMode = {};
+    node.__chainMode[dir] = mode;
+    incRegChain(node);
+  }
+
+  // 方向 → 该方向的键名与 START/END 词表。水平键有两套（left/right 老版 + start/end
+  // Localized，与 layout.js H_KEYS 同理）；垂直只有 top/bottom。align 值是小写字符串
+  // （HorizontalAlign/VerticalAlign 全局值的透传），isStart/isEnd 也认两套。
+  /** @type {Record<string, {headKeys: string[], tailKeys: string[], startAlign: string, endAlign: string}>} */
+  const CHAIN_AXIS_SPEC = {
+    h: { headKeys: ['left', 'start'], tailKeys: ['right', 'end'], startAlign: 'start', endAlign: 'end' },
+    v: { headKeys: ['top'], tailKeys: ['bottom'], startAlign: 'top', endAlign: 'bottom' },
+  };
+
+  /** @param {any} rules @param {string[]} keys 取该方向头/尾侧的第一条规则（两套键名任一） */
+  const chainRuleOf = (rules, keys) => {
+    for (const k of keys) { if (rules && rules[k]) return rules[k]; }
+    return null;
+  };
+
+  /**
+   * 锚点坐标（真机 GetHorizontalAnchorValueByAlignRule cpp:672 语义）：锚点参照边
+   * 的绝对坐标 —— 容器按 align 取 0/半宽/全宽；兄弟/GuideLine 取其盒再加 align 分数。
+   * 不可解析（锚不存在）返回 null。
+   * @param {any} parent @param {any} rule @param {string} key @param {number} pw @param {number} ph @param {boolean} horiz
+   */
+  function chainAnchorValue(parent, rule, key, pw, ph, horiz) {
+    const box = alignBoxOf(parent, rule.anchor, key, pw, ph);
+    if (!box) return null;
+    const frac = ALIGN_FRAC[rule.align] !== undefined ? ALIGN_FRAC[rule.align] : 0;
+    return horiz ? box.x + box.w * frac : box.y + box.h * frac;
+  }
+
+  /** @param {any} head 链偏移权重：链头 alignRules.bias 的对应轴（缺省 0.5，下界钳制同 applyBias） */
+  /** @param {any} head @param {boolean} horiz 链偏移权重：链头 alignRules.bias 的对应轴（缺省 0.5，下界钳制同 applyBias） */
+  function chainBiasOf(head, horiz) {
+    const b = head.__alignRules && head.__alignRules.bias;
+    const v = b && typeof b === 'object' ? (horiz ? b.horizontal : b.vertical) : undefined;
+    return v === undefined ? 0.5 : Math.max(0, Number(v) || 0);
+  }
+
+  /**
+   * 一条链的完整解析：成链（邻接图）→ 三分支布局 → 覆盖成员链方向位置。
+   * @param {any} parent @param {any} head @param {string} dir @param {number} pw @param {number} ph @param {Set<any>} claimed
+   */
+  function buildAndApplyChain(parent, head, dir, pw, ph, claimed) {
+    const spec = CHAIN_AXIS_SPEC[dir];
+    const horiz = dir === 'h';
+    const axisName = horiz ? 'left/start + right/end' : 'top + bottom';
+    const rules = head.__alignRules;
+    const headRule = chainRuleOf(rules, spec.headKeys);
+    let tailRule = chainRuleOf(rules, spec.tailKeys);
+    if (!headRule || !tailRule) {
+      warnOnce(`chainMode: 链头 '${head.id || '(无 id)'}' 缺该方向两侧锚规则（${axisName}），未成链`);
+      return;
+    }
+    // 沿邻接图收集成员（cpp:410 三条件）：当前尾侧 anchor 是容器内兄弟 id、当前尾侧
+    // align 是 START、下一节点头侧规则锚指回当前且 align 是 END。
+    const members = [head];
+    /** @type {Set<any>} */
+    const seen = new Set([head]);
+    let cur = head;
+    for (let hop = 0; hop < 64; hop++) {
+      if (!cur.id || tailRule.align !== spec.startAlign) break;
+      const nextAnchor = tailRule.anchor;
+      if (!nextAnchor || nextAnchor === '__container__') break;
+      const sel = (global.CSS && CSS.escape) ? CSS.escape(nextAnchor) : nextAnchor;
+      const next = /** @type {any} */ (parent.querySelector('#' + sel));
+      if (!next || seen.has(next) || next.parentElement !== parent) break;
+      const nHead = chainRuleOf(next.__alignRules, spec.headKeys);
+      const nTail = chainRuleOf(next.__alignRules, spec.tailKeys);
+      if (!nHead || !nTail) break;
+      if (nHead.anchor !== cur.id || nHead.align !== spec.endAlign) break;
+      members.push(next);
+      seen.add(next);
+      cur = next;
+      tailRule = nTail;
+    }
+    if (members.length < 2) {
+      warnOnce(`chainMode: 链头 '${head.id || '(无 id)'}' 未成链——没有邻接成员`
+        + '（须 ≥2 节点：我的尾侧锚指向它且它的头侧锚指回我），已忽略');
+      return;
+    }
+    // 锚合法性（cpp:487 IsAnchorLegal）：头/尾锚必须可解析（__container__/guideLine/兄弟 id）
+    const anchorKey = horiz ? 'left' : 'top';
+    const startV = chainAnchorValue(parent, headRule, anchorKey, pw, ph, horiz);
+    const endV = chainAnchorValue(parent, tailRule, anchorKey, pw, ph, horiz);
+    if (startV === null || endV === null) {
+      warnOnce(`chainMode: 链头 '${head.id || '(无 id)'}' 的锚不可解析`
+        + '（合法锚：__container__/guideLine/存在的兄弟 id），未成链');
+      return;
+    }
+    for (const m of members) {
+      if (m.dataset && m.dataset.chainWeight) {
+        warnOnce('chainWeight 未实现：链内按各成员自身尺寸摆放（真机按权重重分配尺寸）');
+        break;
+      }
+    }
+    claimed.add(head);
+    const mode = head.__chainMode[dir];
+    const n = members.length;
+    let contentSize = 0;
+    for (const m of members) contentSize += horiz ? m.offsetWidth : m.offsetHeight;
+    const anchorDistance = endV - startV;
+    let space = 0;
+    let start = 0;
+    if (anchorDistance >= contentSize) {
+      if (mode === 'spread') {
+        space = (anchorDistance - contentSize) / (n + 1);
+        start = space;
+      } else if (mode === 'spread_inside') {
+        space = (anchorDistance - contentSize) / (n - 1);   // n≥2（上面已保证）
+      } else {                                              // packed
+        start = (anchorDistance - contentSize) * chainBiasOf(head, horiz);
+      }
+    } else if (mode === 'packed') {
+      start = (anchorDistance - contentSize) * chainBiasOf(head, horiz);
+    } else {
+      start = (anchorDistance - contentSize) / 2;           // 溢出：居中（cpp:802-806）
+    }
+    // 顺序摆放并覆盖链方向位置；另一方向不动（仍由 alignRules 收敛结果决定）
+    let off = startV + start;
+    for (const m of members) {
+      m.style.position = 'absolute';
+      if (horiz) {
+        m.style.left = off + 'px';
+        m.style.right = 'auto';     // 两侧规则可能同时给了 right——auto 才不会把 auto 宽度拉撑
+      } else {
+        m.style.top = off + 'px';
+        m.style.bottom = 'auto';
+      }
+      // 修正 translate：侧锚规则会留下 translate(±100%)（left+End → -100%、right+Start →
+      // +100% 等，见 applyAlignRules 的 dx/dy）。链方向的位置已按 px 精确给出，把该轴的
+      // 百分比位移清零；非链方向的位移（如水平链成员垂直锚的 dy）原样保留。
+      const tf = /translate\((-?[\d.]+)%,\s*(-?[\d.]+)%\)/.exec(String(m.style.transform || ''));
+      let tdx = tf ? parseFloat(tf[1]) : 0;
+      let tdy = tf ? parseFloat(tf[2]) : 0;
+      if (horiz) tdx = 0; else tdy = 0;
+      m.style.transform = (tdx || tdy) ? `translate(${tdx}%, ${tdy}%)` : '';
+      off += (horiz ? m.offsetWidth : m.offsetHeight) + space;
+    }
+    /** @type {any} */ let info = chainInfoMeta.get(parent);
+    if (!info) { info = { h: [], v: [] }; chainInfoMeta.set(parent, info); }
+    (horiz ? info.h : info.v).push({
+      head: head.id || '',
+      ids: members.map((/** @type {any} */ m) => m.id || ''),
+      style: mode, bias: chainBiasOf(head, horiz),
+      anchorDistance, contentSize, space, start: startV + start,
+    });
+  }
+
+  /**
+   * 链同步（挂在 syncAreas 开头，见那里的管线注释）。收集 chainMode 登记元素 →
+   * 按 RelativeContainer 容器分组 → 每方向尝试成链（已收编的节点不再作链头）。
+   * @param {any=} [rootEl]
+   */
+  function syncChainLayout(rootEl) {
+    /** @type {any[]} */ let heads;
+    if (rootEl && rootEl !== rootNode) {
+      if (!rootEl || !rootEl.querySelectorAll) return;
+      heads = /** @type {any[]} */ ([...rootEl.querySelectorAll('*')]
+        .filter((/** @type {any} */ el) => el.__chainMode));
+    } else {
+      heads = /** @type {any[]} */ (incSweep(chainReg));
+    }
+    if (!heads.length) return;
+    /** @type {Map<any, any[]>} */
+    const byParent = new Map();
+    for (const h of heads) {
+      if (!h.isConnected) continue;
+      const p = h.parentElement;
+      if (!p) continue;
+      if (p.__arkuiComp !== 'RelativeContainer') {
+        warnOnce('chainMode 只在 RelativeContainer 内生效'
+          + '（common.d.ts：父容器不是 RelativeContainer 时不生效），已忽略');
+        continue;
+      }
+      if (!byParent.has(p)) byParent.set(p, []);
+      (/** @type {any[]} */ (byParent.get(p))).push(h);
+    }
+    for (const [p, hs] of byParent) {
+      applyGuideLines(p);                     // 幂等；guideline 锚点先就绪（同 applyAlignRules）
+      const pw = p.offsetWidth, ph = p.offsetHeight;
+      /** @type {any} */ let info = chainInfoMeta.get(p);
+      if (!info) { info = { h: [], v: [] }; chainInfoMeta.set(p, info); }
+      info.h.length = 0; info.v.length = 0;   // 每轮重算（重渲染后旧结果作废）
+      /** @type {Set<any>} */
+      const claimed = new Set();
+      for (const h of hs) {                   // 文档序：先声明的链头先成链
+        if (h.__chainMode.h && !claimed.has(h)) buildAndApplyChain(p, h, 'h', pw, ph, claimed);
+        if (h.__chainMode.v && !claimed.has(h)) buildAndApplyChain(p, h, 'v', pw, ph, claimed);
+      }
+    }
+  }
+
+  // 链自省：__arkui_dom_chains(containerEl) → { h: [...], v: [...] }（最近一轮成链结果）
+  Object.defineProperty(global, '__arkui_dom_chains', {
+    /** @param {any} el */
+    value: (el) => chainInfoMeta.get(el) || null,
+    writable: false, enumerable: true, configurable: true,
+  });

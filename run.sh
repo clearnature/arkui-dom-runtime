@@ -411,6 +411,9 @@ case "${1:-index}" in
     echo
     run_one tabanim "$(src_of pages/Index.ts)" build/app.js test/tabanim.html || rc=1
     echo
+    # R157：Gauge/DataPanel 绘制深化
+    run_one gaugedemo "$(src_of pages/Index.ts)" build/app.js test/gaugedemo.html || rc=1
+    echo
     PERSIST_PROFILE="$HERE/build/chrome-profile-persist"
     rm -rf "$PERSIST_PROFILE"; mkdir -p "$PERSIST_PROFILE"   # 从干净状态开始，否则"持久化"可能是上次残留
     PERSIST_PORT="$(pick_free_port)" || { echo "  ❌ 找不到空闲端口"; rc=1; }
@@ -691,6 +694,9 @@ case "${1:-index}" in
   tabanim)
     # R152：Tabs 长尾第二片（onGestureSwipe / onAnimationStart·End / animationDuration）
     run_one tabanim "$(src_of pages/Index.ts)" build/app.js test/tabanim.html ;;
+  gaugedemo)
+    # R157：Gauge 指针/description + DataPanel trackShadow/closeEffect/strokeWidth
+    run_one gaugedemo "$(src_of pages/Index.ts)" build/app.js test/gaugedemo.html ;;
   funcbehavior)
     # R94：行为断言三批（func/motion/layout）
     run_one funcbehavior "$(src_of entryability/EntryAbility.ts)" build/funcbehavior-module.js test/funcbehavior.html \

@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R157-B：Gauge 指针/description/trackShadow + DataPanel strokeWidth/trackShadow/closeEffect</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 320px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R157-B：Gauge 指针（线段+三角头/icon 警告/null 隐藏）+ description（builder 与 min/max 默认标注）
+    + trackShadow；DataPanel strokeWidth（内孔蒙版）+ trackShadow（drop-shadow）+ closeEffect（阴影兜底开关）</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <!-- 路由注册：本页组件全部用【路由外 DSL】直建（同 qrdemo 的做法），
+       复用 DrawDemo 的固化产物只为拿到已注册路由来立根容器；DrawDemo 自身的回归在 drawdemo 用例 -->
+  <script src="../build/drawdemo.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const near = (a, b, tol) => Math.abs(a - b) <= (tol === undefined ? 0.7 : tol);
+    const el = (id) => root.querySelector('#' + id);
+    const cs = (e) => getComputedStyle(e);
+    // 指针线段的坐标（x1,y1,x2,y2 直接是 SVG 属性，跨实现可断言）
+    const linePt = (ln) => ({
+      x1: parseFloat(ln.getAttribute('x1')), y1: parseFloat(ln.getAttribute('y1')),
+      x2: parseFloat(ln.getAttribute('x2')), y2: parseFloat(ln.getAttribute('y2')),
+    });
+    const group = async (name, fn) => {
+      try { await fn(); } catch (e) {
+        allPass = false;
+        lines.push(`FAIL [${name}] 抛出异常：${e && e.stack ? String(e.stack).split('\n')[0] : e}`);
+      }
+    };
+
+    try {
+      __arkui_dom_loadRoute('pages/DrawDemo', root);   // 只为立根容器（DSL 挂载点），基线断言归 drawdemo
+      await tick(60);
+
+      // ══════════ 路由外 DSL：Gauge 指针/description/trackShadow ══════════
+      // g-ind：默认指针（不调 indicator，.d.ts 默认显示系统三角指针）
+      Gauge.create({ value: 50, min: 0, max: 100 });
+      Gauge.startAngle(0);
+      Gauge.endAngle(360);
+      Gauge.strokeWidth(10);
+      Gauge.width(140);
+      Gauge.height(140);
+      Gauge.id('g-ind');
+      Gauge.pop();
+      // g-ind2：带 icon 的 indicator（无资源管线 → 记警告、退化默认三角）+ space/width + 非 0 起始角
+      Gauge.create({ value: 75, min: 0, max: 100 });
+      Gauge.startAngle(90);
+      Gauge.endAngle(270);
+      Gauge.strokeWidth(8);
+      Gauge.indicator({ icon: 'missing.svg', width: 3, space: 20 });
+      Gauge.width(120);
+      Gauge.height(120);
+      Gauge.id('g-ind2');
+      Gauge.pop();
+      // g-null：indicator(null) → 指针隐藏（.d.ts：null 时不显示 indicator）
+      Gauge.create({ value: 60, min: 0, max: 100 });
+      Gauge.indicator(null);
+      Gauge.width(100);
+      Gauge.height(100);
+      Gauge.id('g-null');
+      Gauge.pop();
+      // g-desc：description 用 builder 渲染（builder 里 Text.create 挂进环底槽）；只传 value
+      // （min/max 都不设）→ 同时守"无 min/max 就没有默认标注"这条
+      Gauge.create({ value: 30 });
+      Gauge.description(() => { Text.create('KM/H'); Text.pop(); });
+      Gauge.width(120);
+      Gauge.height(120);
+      Gauge.id('g-desc');
+      Gauge.pop();
+      // g-null2：description(null) 显式关闭（连 min/max 默认标注一起关，.d.ts：null 时不显示）
+      Gauge.create({ value: 10, min: 0, max: 100 });
+      Gauge.description(null);
+      Gauge.width(100);
+      Gauge.height(100);
+      Gauge.id('g-null2');
+      Gauge.pop();
+      // g-sh：trackShadow（阴影色=环色，这里环是默认蓝）
+      Gauge.create({ value: 40, min: 0, max: 100 });
+      Gauge.trackShadow({ radius: 12, offsetX: 3, offsetY: 6 });
+      Gauge.width(100);
+      Gauge.height(100);
+      Gauge.id('g-sh');
+      Gauge.pop();
+
+      __arkui_dom_syncDrawings(root);        // DSL 建的元素不经过渲染管线，手动触发补画
+      await tick(60);
+
+      // ══════════ Gauge 断言 ══════════
+      await group('Gauge 指针', async () => {
+        // 默认指针：不调 indicator 也有（.d.ts 默认显示系统三角指针）
+        const g = el('g-ind');
+        const ln = g && g.querySelector('[data-arkui-gauge-indicator]');
+        check(!!ln, 'Gauge 默认显示指针（不调 indicator 也有 data-arkui-gauge-indicator 线段）');
+        // 角度 = startAngle + (value-min)/(max-min) × (endAngle-startAngle)：50∈[0,100] 过 0→360 → 180°
+        const ang = ln && parseFloat(ln.getAttribute('data-arkui-gauge-indicator-angle'));
+        check(ln && near(ang, 180, 0.01), `指针角度标记 = ${ang}（value 50 / [0,100] × 0→360，期望 180）`);
+        // 几何一致性：线段从圆心出发，尖端 = 圆心 + (r-space)·(sinA, -cosA)
+        const p = ln && linePt(ln);
+        check(ln && near(p.x1, 70, 0.7) && near(p.y1, 70, 0.7),
+          `线段起点在圆心 (${p && p.x1}, ${p && p.y1})，期望 (70, 70)`);
+        // r = 140/2 - 10/2 = 65，space 缺省 8 → 尖端半径 57；180° → (70, 70+57=127)（6 点钟方向）
+        check(ln && near(p.x2, 70, 0.7) && near(p.y2, 127, 0.7),
+          `尖端落在 6 点钟 (${p && p.x2}, ${p && p.y2})，期望 (70, 127)：r=65 − space 8 = 57`);
+        const head = g && g.querySelector('[data-arkui-gauge-indicator-head]');
+        check(!!head, '有三角头近似系统三角指针（data-arkui-gauge-indicator-head）');
+        // 改值 → 指针跟着走：value 25 → 角度 90（3 点钟）。
+        // 属性方法作用于栈顶（ViewStackProcessor.top()），已 pop 的节点要先压回去再调属性；
+        // redrawGauge 会重建 svg 子元素 → 断言前必须重新查询指针元素
+        ViewStackProcessor.push(el('g-ind'));
+        Gauge.value(25);
+        ViewStackProcessor.pop();
+        __arkui_dom_syncDrawings(root);
+        await tick(30);
+        const ln3 = el('g-ind') && el('g-ind').querySelector('[data-arkui-gauge-indicator]');
+        const ang2 = ln3 && parseFloat(ln3.getAttribute('data-arkui-gauge-indicator-angle'));
+        check(near(ang2, 90, 0.01), `Gauge.value(25) 后指针角度 = ${ang2}（期望 90，指针随值转动）`);
+      });
+
+      await group('Gauge indicator 选项', async () => {
+        const ln2 = el('g-ind2') && el('g-ind2').querySelector('[data-arkui-gauge-indicator]');
+        // 90 + 0.75 × (270−90) = 225
+        const ang = ln2 && parseFloat(ln2.getAttribute('data-arkui-gauge-indicator-angle'));
+        check(ln2 && near(ang, 225, 0.01), `indicator({icon}) 下指针角度 = ${ang}（value 75 × 90→270，期望 225）`);
+        check(ln2 && ln2.getAttribute('stroke-width') === '3',
+          `indicator 的 width=3 → 线宽 stroke-width=${ln2 && ln2.getAttribute('stroke-width')}`);
+        check(__arkui_dom_layout_warnings.some((w) => /Gauge\.indicator.*icon/.test(String(w))),
+          `icon 无图标资源管线已记警告：'${__arkui_dom_layout_warnings.find((w) => /Gauge\.indicator.*icon/.test(String(w)))}'`);
+        const none = el('g-null') && el('g-null').querySelectorAll('[data-arkui-gauge-indicator]').length;
+        check(none === 0, `indicator(null) → 指针隐藏（实际 ${none} 条）`);
+      });
+
+      await group('Gauge description', async () => {
+        const desc = el('g-desc') && el('g-desc').querySelector('[data-arkui-gauge-description]');
+        check(!!desc, 'description 属性 → 环底渲染出 data-arkui-gauge-description 容器');
+        check(desc && desc.textContent === 'KM/H',
+          `builder 里的 Text.create 挂进槽内（文本 '${desc && desc.textContent}'）`);
+        // 未设 description：DrawDemo 基线页的 g1 设了 min 20/max 60 → 底部默认标注
+        const g1 = el('g1');
+        const lo = g1 && g1.querySelector('[data-arkui-gauge-min]');
+        const hi = g1 && g1.querySelector('[data-arkui-gauge-max]');
+        check(!!lo && !!hi && lo.textContent === '20' && hi.textContent === '60',
+          `min/max 默认标注 = '${lo && lo.textContent}'/'${hi && hi.textContent}'（create {min:20, max:60}）`);
+        // g-desc 只传了 value（min/max 都未设）→ 只有 description 槽、没有 min/max 行
+        const gd = el('g-desc');
+        check(gd && !!gd.querySelector('[data-arkui-gauge-description]')
+          && !gd.querySelector('[data-arkui-gauge-minmax]'),
+          'min/max 未设置 → 无默认标注（g-desc 只有 description 槽）');
+        const nn = el('g-null2');
+        check(nn && !nn.querySelector('[data-arkui-gauge-description]') && !nn.querySelector('[data-arkui-gauge-minmax]'),
+          'description(null) 显式关闭：连 min/max 默认标注也不显示');
+      });
+
+      await group('Gauge trackShadow', async () => {
+        const gs = el('g-sh');
+        const svg = gs && gs.querySelector('svg');
+        check(gs && gs.getAttribute('data-arkui-gauge-track-shadow') === 'drop-shadow',
+          'trackShadow 已落 DOM 标记（data-arkui-gauge-track-shadow=drop-shadow）');
+        check(svg && /drop-shadow/.test(cs(svg).filter),
+          `SVG 上有 CSS filter（'${svg && cs(svg).filter.slice(0, 60)}…'）`);
+        const f = svg ? cs(svg).filter : '';
+        check(/3px/.test(f) && /6px/.test(f) && /12px/.test(f),
+          `offsetX/offsetY/radius 进了 drop-shadow（${f}）`);
+        // 阴影色 = 环色（.d.ts 原话）：g-sh 没设 colors → 默认蓝 007dff
+        check(/rgba?\(0,\s*125,\s*255/.test(f), `阴影色取环色（默认蓝，'${f.match(/rgba?\([^)]*\)/)}'）`);
+      });
+
+      // ══════════ 路由外 DSL：DataPanel strokeWidth/trackShadow/closeEffect ══════════
+      DataPanel.create({ values: [70], max: 100, type: DataPanelType.Circle });
+      DataPanel.width(100);
+      DataPanel.height(100);
+      DataPanel.strokeWidth(12);
+      DataPanel.id('d-stroke');
+      DataPanel.pop();
+      DataPanel.create({ values: [70], max: 100, type: DataPanelType.Circle });
+      DataPanel.width(100);
+      DataPanel.height(100);
+      DataPanel.id('d-def');
+      DataPanel.pop();
+      DataPanel.create({ values: [70], max: 100, type: DataPanelType.Circle });
+      DataPanel.width(100);
+      DataPanel.height(100);
+      DataPanel.strokeWidth(80);            // > 半径 50 → 自动调成半径的 12%（=6）
+      DataPanel.id('d-big');
+      DataPanel.pop();
+      DataPanel.create({ values: [70], max: 100, type: DataPanelType.Line });
+      DataPanel.width(200);
+      DataPanel.height(12);
+      DataPanel.strokeWidth(10);            // .d.ts：Line 型不生效
+      DataPanel.id('d-line');
+      DataPanel.pop();
+      DataPanel.create({ values: [40, 30], max: 100, type: DataPanelType.Circle });
+      DataPanel.width(100);
+      DataPanel.height(100);
+      DataPanel.trackShadow({ radius: 10, offsetX: 1, offsetY: 2, colors: ['#ff0000'] });
+      DataPanel.id('d-shadow');
+      DataPanel.pop();
+      DataPanel.create({ values: [40], max: 100, type: DataPanelType.Circle });
+      DataPanel.width(100);
+      DataPanel.height(100);
+      DataPanel.closeEffect(true);          // 关闭效果（未配 trackShadow → 兜底关阴影）
+      DataPanel.id('d-close');
+      DataPanel.pop();
+      DataPanel.create({ values: [60], max: 100, type: DataPanelType.Circle });
+      DataPanel.width(100);
+      DataPanel.height(100);
+      DataPanel.trackBackgroundColor('#00b34b');
+      DataPanel.id('d-track');
+      DataPanel.pop();
+
+      __arkui_dom_syncDrawings(root);
+      await tick(60);
+
+      // ══════════ DataPanel 断言 ══════════
+      await group('DataPanel strokeWidth', async () => {
+        const ds = el('d-stroke');
+        check(ds && ds.getAttribute('data-arkui-datapanel-stroke') === '12',
+          `strokeWidth(12) → dataset 标记 = '${ds && ds.getAttribute('data-arkui-datapanel-stroke')}'`);
+        const mask = ds ? (cs(ds).maskImage + ' ' + cs(ds).webkitMaskImage) : '';
+        check(/radial-gradient/.test(mask), `环厚用径向蒙版抠内孔（'${mask.slice(0, 58)}…'）`);
+        check(ds && mask.includes('100% - 12px'),
+          `蒙版孔径按 strokeWidth 12px 收口（含 '100% - 12px'）`);
+        const dd = el('d-def');
+        check(dd && dd.getAttribute('data-arkui-datapanel-stroke') === '24',
+          `未设 strokeWidth → 缺省 24（dataset '${dd && dd.getAttribute('data-arkui-datapanel-stroke')}'，.d.ts 默认值）`);
+        const db = el('d-big');
+        check(db && db.getAttribute('data-arkui-datapanel-stroke') === '6',
+          `strokeWidth(80) > 半径 50 → 自动调成半径的 12% = 6（dataset '${db && db.getAttribute('data-arkui-datapanel-stroke')}'）`);
+        const dl = el('d-line');
+        check(dl && dl.getAttribute('data-arkui-datapanel-stroke') === null
+          && !/radial-gradient/.test(cs(dl).maskImage),
+          'Line 型 strokeWidth 不生效（无 dataset 标记、无蒙版，.d.ts 原话）');
+      });
+
+      await group('DataPanel trackShadow/closeEffect', async () => {
+        const dsh = el('d-shadow');
+        const f1 = dsh ? cs(dsh).filter : '';
+        check(dsh && dsh.getAttribute('data-arkui-datapanel-track-shadow') === 'options'
+          && /drop-shadow/.test(f1),
+          `trackShadow 落 CSS drop-shadow（'${f1.slice(0, 60)}…'）`);
+        check(/255,\s*0,\s*0/.test(f1) && /1px/.test(f1) && /2px/.test(f1) && /10px/.test(f1),
+          `color/offsetX/offsetY/radius 全进阴影（${f1}）`);
+        const dc = el('d-close');
+        check(dc && dc.getAttribute('data-arkui-datapanel-close-effect') === 'true'
+          && cs(dc).filter === 'none',
+          `closeEffect(true) → dataset 标记 + 阴影关（filter='${dc && cs(dc).filter}'）`);
+        const dd = el('d-def');
+        check(dd && dd.getAttribute('data-arkui-datapanel-close-effect') === 'false'
+          && dd.getAttribute('data-arkui-datapanel-track-shadow') === 'default'
+          && /drop-shadow/.test(cs(dd).filter),
+          'closeEffect 缺省 false = 默认阴影开（dataset default + drop-shadow）');
+        const dt = el('d-track');
+        check(dt && /conic-gradient/.test(cs(dt).backgroundImage)
+          && /rgb\(0,\s*179,\s*75\)/.test(cs(dt).backgroundImage),
+          `trackBackgroundColor('#00b34b') 接入绘制：余量段走轨道色（'${dt && cs(dt).backgroundImage.slice(-46)}'）`);
+      });
+
+      lines.push(`ELMT ${__arkui_dom_elmtRecords.size}`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

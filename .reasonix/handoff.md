@@ -9,7 +9,22 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R155 Repeat onLazyLoading + edgeEffect 三态**（多智能体 A/B/C）——
+- 上次切片：**R156 Repeat onMoveThrough + @ohos:curves 垫片 + onTotalCount 登记**
+  （多智能体 A/B/C）——A=Repeat onMoveThrough 派发（两参裸 number/from 恒定/无防抖/
+  数据源不动——权威七步 pu_repeat_virtual_scroll_2_impl.ts:71-83）+ R153 键 diff
+  case#1 keptRec.moved 强制重放（through 改写"index 没变跳重放"基线——真 bug 级修复）
+  + builtin.js pointermove 越中线派发槽位 + ① 组 30→39、页总 62。B=@ohos:curves
+  垫片（ohos-shims.js curves 段：全导出面+deprecated 别名+ICurve {interpolate,
+  __curveString}+cubic-bezier 牛顿 8 次+二分 24 次+spring 三模型解析解+枚举映射
+  13 项+双形态解析）+ parseTabsAnimCurve ICurve 对象分支（__curveString 解析：
+  spring/interpolating-spring→kind='spring'/cubic-bezier→css 直通/steps→分段/
+  枚举→CSS 关键字）+ tabanim 66→81。C=onMoveThrough 触发细节（from 恒定/无防抖/
+  MoveData 即换位）+ Curve 枚举 13 项参数表（curves.cpp:22-40）+ __curveString
+  序列化格式。集成实锤：batchfunc 62 条声明同步（R153 行）、tabanim 声明 81
+  （R152 行）；VTBUDGET per-case 机制（builtindemo 虚拟预算 12000）；**pkill -f
+  自杀坑再现**（[x] 括号转义）。门禁 11 步全绿（5040733+452dae7，Mimosa 0 findings
+  seal sha256:c43ec83c…）；五端矩阵 84/97/84/84/84。
+  更早：**R155 Repeat onLazyLoading + edgeEffect 三态**（多智能体 A/B/C）——
   A=Repeat onLazyLoading 懒加载协议（R152 记档警告分支升级真实现；签名 `onLazyLoading(index)`
   绝对索引——C 纠偏任务书"差值"假设；单发防死循环/只写该索引 BusinessError 103804/
   min(arrLen,totalCount) 裁剪）+ __arkui_dom_repeatLazy 驱动钩子；① 组 23→30、页总 53。

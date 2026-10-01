@@ -1,10 +1,14 @@
   // ────────────────── 纯绘制类：Progress / Gauge / DataPanel / Rating（R13）──────────────────
   //
-  // 产物形式（实测 fixtures/pages/DrawDemo.ts）：四个都是【create 选项】传数据 + 属性设样式。
-  //   Progress.create({ value, total, style: ProgressStyle.Linear });  Progress.width/height/id
-  //   Gauge.create({ value, min, max });  Gauge.startAngle/endAngle/strokeWidth/colors
-  //   DataPanel.create({ values, max, type: DataPanelType.Circle })
-  //   Rating.create({ rating, indicator });  Rating.stars/stepSize/starStyle/onChange
+ // 产物形式（实测 fixtures/pages/DrawDemo.ts）：四个都是【create 选项】传数据 + 属性设样式。
+ //   Progress.create({ value, total, style: ProgressStyle.Linear });  Progress.width/height/id
+ //   Gauge.create({ value, min, max });  Gauge.startAngle/endAngle/strokeWidth/colors
+ //     R157-B：indicator（指针：线段+三角头，icon 无资源管线记警告）、description（环底 builder/
+ //     文本，未设时 min/max 默认标注）、trackShadow（SVG drop-shadow）也已实现
+ //   DataPanel.create({ values, max, type: DataPanelType.Circle })
+ //     R157-B：strokeWidth（内孔径向蒙版，缺省 24）、trackShadow（CSS drop-shadow）、
+ //     closeEffect（阴影兜底开关）、trackBackgroundColor（轨道段色）也已实现
+ //   Rating.create({ rating, indicator });  Rating.stars/stepSize/starStyle/onChange
   // 注意：Gauge/DataPanel 的产物里有 pop() 配对，Progress/Rating 没有（不影响实现）。
   const ProgressStyle = { Linear: 'linear', Ring: 'ring', Eclipse: 'eclipse', ScaleRing: 'scaleRing', Capsule: 'capsule' };
   const ProgressType = ProgressStyle;                       // type 是老写法，语义同 style
@@ -137,6 +141,7 @@
   /** @param {any} opts */
   function buildGaugeNode(opts) {
     const o = opts && typeof opts === 'object' ? opts : {};
+    /** @type {any} */                                             // 挂运行时状态字段（词汇表之外的自有字段）
     const node = document.createElement('div');
     node.__arkuiComp = 'Gauge';
     node.__drawKind = 'Gauge';
@@ -144,14 +149,22 @@
     node.__drawOpts = o;
     node.__min = o.min === undefined ? 0 : Number(o.min);
     node.__max = o.max === undefined ? 100 : Number(o.max);
+    // R157-B：d.ts——description 未设置时，若 min/max 有设置则在环底部显示 min/max 文本
+    node.__hasMinMax = o.min !== undefined || o.max !== undefined;
     node.__startAngle = 0;                      // .d.ts：默认 0
     node.__endAngle = 360;                      // .d.ts：默认 360
     node.__strokeW = 4;
     node.__colors = null;
+    // R157-B：indicator（.d.ts 默认显示系统三角指针）/ description / trackShadow 初始未设置
+    node.__indicator = undefined;
+    node.__description = undefined;
+    node.__trackShadow = undefined;
+    node.style.position = 'relative';           // description / min-max 标注相对环底定位
     node.__svg = svgEl('svg', {});
     (/** @type {SVGElement} */ (node.__svg)).style.width = '100%';
     (/** @type {SVGElement} */ (node.__svg)).style.height = '100%';
     node.appendChild(/** @type {SVGElement} */ (node.__svg));
+    renderGaugeDescription(node);
     return node;
   }
 
@@ -167,6 +180,143 @@
     }
     // JSDoc：权重为 0 的色段不显示；全 0 则整环不显示
     return segs.filter((s) => s.weight > 0);
+  }
+
+  /** 环色：第一段色（d.ts：trackShadow 的阴影色与环色一致），无色段时退默认蓝 */
+  /** @param {any} node */
+  function gaugeRingColor(node) {
+    const s = gaugeSegments(node)[0];
+    return s && s.color !== null && s.color !== undefined ? colorOf(s.color) : '#007dff';
+  }
+
+  // MultiShadowOptions（common.d.ts）：radius 缺省 20（API11 起，≤0 回落）、offsetX/offsetY 缺省 5。
+  // DOM 近似：CSS drop-shadow(offsetX offsetY radius color)。
+  /** @param {any} opts @param {string} color @param {number} defRadius */
+  function dropShadowOf(opts, color, defRadius) {
+    const o = opts && typeof opts === 'object' ? opts : {};
+    const radius = Number(o.radius) > 0 ? Number(o.radius) : defRadius;
+    const ox = o.offsetX === undefined ? 5 : Number(o.offsetX) || 0;
+    const oy = o.offsetY === undefined ? 5 : Number(o.offsetY) || 0;
+    return `drop-shadow(${r2(ox)}px ${r2(oy)}px ${r2(radius)}px ${color})`;
+  }
+
+  /** 6 位 hex 才追加 88 透明度（颜色名/函数色原样透传） */
+  /** @param {string} c */
+  const withShadowAlpha = (c) => (/^#[0-9a-fA-F]{6}$/.test(c) ? `${c}88` : c);
+
+  // R157-B：Gauge.trackShadow → SVG 上的 CSS drop-shadow（阴影色=环色，d.ts 原话）。
+  // null=显式关闭；未设置=不加阴影（Gauge 的阴影只随 trackShadow 出现，没有 DataPanel 那种默认阴影）。
+  /** @param {any} node */
+  function applyGaugeShadow(node) {
+    const v = node.__trackShadow;
+    if (v === undefined) {
+      (/** @type {any} */ (node.__svg)).style.filter = '';
+      node.removeAttribute('data-arkui-gauge-track-shadow');
+      return;
+    }
+    if (v === null) {
+      (/** @type {any} */ (node.__svg)).style.filter = 'none';
+      node.setAttribute('data-arkui-gauge-track-shadow', 'off');
+      return;
+    }
+    (/** @type {any} */ (node.__svg)).style.filter = dropShadowOf(v, withShadowAlpha(gaugeRingColor(node)), 20);
+    node.setAttribute('data-arkui-gauge-track-shadow', 'drop-shadow');
+  }
+
+  // R157-B：Gauge description（CustomBuilder）+ 未设置时的 min/max 默认标注。
+  //   设了 description → 环底渲染 builder 产物（DOM 子集：绝对定位在环底、水平居中，d.ts
+  //   "0 vp away from the bottom of the ring and centered horizontally"）；
+  //   未设 description → min/max 有设置时在环底显示 min/max 文本（builder 函数返回值同理）；
+  //   显式 description(null) → 什么都不显示（d.ts：null 时不显示 description）。
+  /** @param {any} node */
+  function renderGaugeDescription(node) {
+    for (const sel of ['[data-arkui-gauge-description]', '[data-arkui-gauge-minmax]']) {
+      const old = node.querySelector(`:scope > ${sel}`);
+      if (old) old.remove();
+    }
+    const d = node.__description;
+    if (d === null) return;
+    if (d !== undefined) {
+      const box = document.createElement('div');
+      box.setAttribute('data-arkui-gauge-description', '');
+      box.style.position = 'absolute';
+      box.style.left = '0';
+      box.style.right = '0';
+      box.style.bottom = '0';
+      box.style.textAlign = 'center';
+      box.style.pointerEvents = 'none';
+      if (typeof d === 'function') {
+        // builder：推进视图栈再调用，里面的 Text.create 才挂进这个槽（同 ListItemGroup header 的展开方式）
+        ViewStackProcessor.push(box);
+        try { d(); } catch (e) { warnOnce(`Gauge.description builder 抛错：${e && e.message}`); }
+        ViewStackProcessor.pop();
+        if (!box.childNodes.length) {
+          warnOnce('Gauge.description builder 未产出内容（builder 需用 DSL 建子组件或返回文本）');
+        }
+      } else {
+        box.textContent = String(d);
+      }
+      node.appendChild(box);
+      return;
+    }
+    if (node.__hasMinMax) {
+      const row = document.createElement('div');
+      row.setAttribute('data-arkui-gauge-minmax', '');
+      row.style.position = 'absolute';
+      row.style.left = '0';
+      row.style.right = '0';
+      row.style.bottom = '2px';
+      row.style.display = 'flex';
+      row.style.justifyContent = 'space-between';
+      row.style.padding = '0 12%';
+      row.style.pointerEvents = 'none';
+      row.style.fontSize = '12px';
+      row.style.color = '#182431';
+      const lo = document.createElement('span');
+      lo.setAttribute('data-arkui-gauge-min', '');
+      lo.textContent = String(node.__min);
+      const hi = document.createElement('span');
+      hi.setAttribute('data-arkui-gauge-max', '');
+      hi.textContent = String(node.__max);
+      row.appendChild(lo);
+      row.appendChild(hi);
+      node.appendChild(row);
+    }
+  }
+
+  // R157-B：指针（indicator）。.d.ts 默认显示系统三角指针；icon 无图标资源管线 →
+  // 退化为「中心线段 + 三角头」近似（icon 警告在 DRAW_ATTRS 里记）。角度约定与弧一致：
+  // angle = startAngle + (value-min)/(max-min) × (endAngle-startAngle)，比值夹 [0,1]。
+  /** @param {any} node @param {number} ratio @param {number} cx @param {number} cy @param {number} r */
+  function drawGaugeIndicator(node, ratio, cx, cy, r) {
+    const svg = node.__svg;
+    const o = node.__indicator && typeof node.__indicator === 'object' ? node.__indicator : {};
+    // d.ts：space（指针尖端离环外缘的距离）缺省 8，<0 或 >半径 → 回落默认 8
+    let space = o.space === undefined ? 8 : Number(o.space);
+    if (!(space >= 0) || space > r) space = 8;
+    const lineW = Number(o.width) > 0 ? Number(o.width) : 2;
+    const tipR = Math.max(1, r - space);
+    const ang = node.__startAngle + ratio * (node.__endAngle - node.__startAngle);
+    const tip = polar(cx, cy, tipR, ang);
+    const shaft = svgEl('line', {
+      x1: r2(cx), y1: r2(cy), x2: r2(tip.x), y2: r2(tip.y),
+      stroke: '#182431', 'stroke-width': lineW, 'stroke-linecap': 'butt',
+    });
+    shaft.setAttribute('data-arkui-gauge-indicator', '');
+    shaft.setAttribute('data-arkui-gauge-indicator-angle', String(r2(ang)));
+    svg.appendChild(shaft);
+    // 三角头：近似真机默认的系统三角指针（尖端即指针端点）
+    const headLen = Math.min(10, tipR);
+    const headW = Math.min(8, tipR);
+    const base = polar(cx, cy, tipR - headLen, ang);
+    const rad = (ang * Math.PI) / 180;
+    const head = svgEl('polygon', {
+      points: `${r2(tip.x)},${r2(tip.y)} ${r2(base.x + (headW / 2) * Math.cos(rad))},${r2(base.y + (headW / 2) * Math.sin(rad))}`
+        + ` ${r2(base.x - (headW / 2) * Math.cos(rad))},${r2(base.y - (headW / 2) * Math.sin(rad))}`,
+      fill: '#182431',
+    });
+    head.setAttribute('data-arkui-gauge-indicator-head', '');
+    svg.appendChild(head);
   }
 
   /** @param {any} node */
@@ -211,6 +361,8 @@
     track.setAttribute('data-arkui-gauge-track', '');
     arcDash(track, (1 - ratio) * PATH_LEN, -ratio * PATH_LEN);
     svg.appendChild(track);
+    // R157-B：指针压在轨道之上（indicator(null) 时隐藏；其余形态都画，含默认三角指针）
+    if (node.__indicator !== null) drawGaugeIndicator(node, ratio, cx, cy, r);
   }
 
   // ── DataPanel ──
@@ -218,6 +370,7 @@
   /** @param {any} opts */
   function buildDataPanelNode(opts) {
     const o = opts && typeof opts === 'object' ? opts : {};
+    /** @type {any} */                                             // 挂运行时状态字段（词汇表之外的自有字段）
     const node = document.createElement('div');
     node.__arkuiComp = 'DataPanel';
     node.__drawKind = 'DataPanel';
@@ -227,6 +380,12 @@
     node.__panelMax = Number(o.max) || 100;
     node.__panelType = isCirclePanel(o.type) ? 'circle' : 'line';
     node.__panelColors = null;
+    // R157-B：strokeWidth（.d.ts 缺省 24，仅 Circle 生效）/ trackShadow / closeEffect（缺省 false=阴影开）/
+    // trackBackgroundColor（缺省 '#08182431'，本实现近似为渐变里的轨道段色）
+    node.__strokeW = null;
+    node.__trackShadow = undefined;
+    node.__closeEffect = false;
+    node.__trackBg = null;
     node.style.display = 'block';
     redrawDataPanel(node);
     return node;
@@ -242,10 +401,54 @@
     return { segs, stops };
   }
 
+  // R157-B：DataPanel 环的描边宽度。.d.ts：缺省 24；≤0 回落默认；超过半径 → 自动调成
+  // 半径的 12%（"thickness will automatically be adjusted to 12% of the ring's radius"）。
+  /** @param {any} node */
+  function panelStroke(node) {
+    const w = node.offsetWidth || 100, h = node.offsetHeight || 100;
+    const radius = Math.max(1, Math.min(w, h) / 2);
+    const raw = Number(node.__strokeW);
+    let stroke = raw > 0 ? raw : 24;
+    if (stroke > radius) stroke = r2(radius * 0.12);
+    return stroke;
+  }
+
+  // R157-B：环阴影。.d.ts 优先级：trackShadow 显式设置 → 以它为准（即使 closeEffect=true）；
+  // trackShadow=null → 阴影关；未设 trackShadow → closeEffect 兜底（缺省 false=开默认阴影，
+  // true=关闭旋转+阴影）。DOM 近似：CSS drop-shadow（多段阴影色取第一段，单色近似）。
+  /** @param {any} node */
+  function applyPanelShadow(node) {
+    const v = node.__trackShadow;
+    const firstColor = () => (node.__panelColors && node.__panelColors.length
+      ? node.__panelColors[0] : PANEL_PALETTE[0]);
+    let mode;
+    if (v === null) {
+      node.style.filter = 'none';
+      mode = 'off';
+    } else if (v !== undefined) {
+      const o = v && typeof v === 'object' ? v : {};
+      if (Array.isArray(o.colors) && o.colors.length > 1) {
+        warnOnce('DataPanel.trackShadow 的多段阴影色取第一段（CSS drop-shadow 单色近似）');
+      }
+      node.style.filter = dropShadowOf(o, withShadowAlpha(
+        Array.isArray(o.colors) && o.colors.length ? colorOf(o.colors[0]) : firstColor()), 20);
+      mode = 'options';
+    } else if (node.__closeEffect === true) {
+      node.style.filter = 'none';
+      mode = 'off';
+    } else {
+      node.style.filter = dropShadowOf({}, withShadowAlpha(firstColor()), 20);
+      mode = 'default';
+    }
+    node.setAttribute('data-arkui-datapanel-track-shadow', mode);
+    node.setAttribute('data-arkui-datapanel-close-effect', node.__closeEffect ? 'true' : 'false');
+  }
+
   /** @param {any} node */
   function redrawDataPanel(node) {
     const { segs } = panelGeometry(node);
     const colors = node.__panelColors || PANEL_PALETTE;
+    const trackBg = node.__trackBg || '#e5e5e5';
     if (node.__panelType === 'circle') {
       const parts = [];
       let from = 0;
@@ -255,10 +458,20 @@
         parts.push(`${colors[i % colors.length]} ${r2(from * 100)}% ${r2(to * 100)}%`);
         from = to;
       });
-      if (from < 1) parts.push(`#e5e5e5 ${r2(from * 100)}% 100%`);   // 余量走轨道色
+      if (from < 1) parts.push(`${trackBg} ${r2(from * 100)}% 100%`);   // 余量走轨道色
       node.style.borderRadius = '50%';
       node.style.backgroundImage = `conic-gradient(${parts.join(', ')})`;
+      // R157-B：strokeWidth → 内孔径向蒙版（conic-gradient 是满圆盘，环厚由蒙版抠出）
+      const stroke = panelStroke(node);
+      node.setAttribute('data-arkui-datapanel-stroke', String(stroke));
+      const hole = `radial-gradient(closest-side, transparent calc(100% - ${stroke}px), #000 calc(100% - ${stroke}px))`;
+      node.style.setProperty('-webkit-mask-image', hole);
+      node.style.setProperty('mask-image', hole);
     } else {
+      // .d.ts：strokeWidth 在 Line 型不生效（不落蒙版、不落 dataset）
+      node.style.removeProperty('-webkit-mask-image');
+      node.style.removeProperty('mask-image');
+      node.removeAttribute('data-arkui-datapanel-stroke');
       node.style.display = 'flex';
       node.style.flexDirection = 'row';
       node.style.overflow = 'hidden';
@@ -280,10 +493,11 @@
         rest.setAttribute('data-arkui-datapanel-track', '');
         rest.style.flex = '1 1 auto';
         rest.style.height = '100%';
-        rest.style.background = '#e5e5e5';
+        rest.style.background = trackBg;
         node.appendChild(rest);
       }
     }
+    applyPanelShadow(node);
   }
 
   // ── Rating ──
@@ -384,6 +598,7 @@
       for (const el of r0.querySelectorAll('*')) {
         if (el.__drawKind === 'Gauge') redrawGauge(el);
         else if (el.__drawKind === 'Progress' && el.__svg) drawProgressRing(el, el.__ratio || 0);
+        else if (el.__drawKind === 'DataPanel') redrawDataPanel(el);   // R157-B：strokeWidth 蒙版要真实尺寸
         else if (el.__arkuiQrPending) redrawQr(el);
       }
       return;
@@ -391,6 +606,7 @@
     for (const el of incSweep(drawReg)) {
       if (el.__drawKind === 'Gauge') redrawGauge(el);
       else if (el.__drawKind === 'Progress' && el.__svg) drawProgressRing(el, el.__ratio || 0);
+      else if (el.__drawKind === 'DataPanel') redrawDataPanel(el);     // R157-B：同上
       else if (el.__arkuiQrPending) redrawQr(el);
     }
   }
@@ -415,9 +631,19 @@
       endAngle: (node, v) => { node.__endAngle = Number(v) || 0; redrawGauge(node); },
       strokeWidth: (node, v) => { node.__strokeW = Number(resolveResource(v)) || 4; redrawGauge(node); },
       colors: (node, v) => { node.__colors = v; redrawGauge(node); },
-      trackShadow: () => warnOnce('Gauge.trackShadow 未实现（轨道阴影）'),
-      indicator: () => warnOnce('Gauge.indicator 未实现（指针/刻度）'),
-      description: () => warnOnce('Gauge.description 未实现（自定义说明 builder）'),
+      // R157-B：trackShadow → SVG 的 CSS drop-shadow（阴影色=环色；null=显式关闭）
+      trackShadow: (node, v) => { node.__trackShadow = v; applyGaugeShadow(node); },
+      // R157-B：indicator → 指针（icon 无资源管线记警告、退化为线段+三角头；null=隐藏指针）
+      indicator: (node, v) => {
+        node.__indicator = v;
+        const icon = typeof v === 'string' ? v : (v && typeof v === 'object' ? v.icon : null);
+        if (icon) {
+          warnOnce('Gauge.indicator 的 icon 无图标资源管线，已退化为默认三角指针（中心线段近似）');
+        }
+        redrawGauge(node);
+      },
+      // R157-B：description → 环底渲染 builder/文本；未设置时 min/max 有设置则显示 min/max
+      description: (node, v) => { node.__description = v; renderGaugeDescription(node); },
     },
     DataPanel: {
       valueColors: (node, v) => {
@@ -425,13 +651,14 @@
         node.__panelColors = list.map(colorOf);
         redrawDataPanel(node);
       },
-      trackBackgroundColor: (node, v) => {
-        node.style.setProperty('--datapanel-track', colorOf(v));
-        warnOnce('DataPanel.trackBackgroundColor 只记录了值，未接入绘制（本实现的轨道色是固定灰）');
-      },
-      strokeWidth: () => warnOnce('DataPanel.strokeWidth 未实现（环的描边宽度）'),
-      trackShadow: () => warnOnce('DataPanel.trackShadow 未实现（轨道阴影）'),
-      closeEffect: () => warnOnce('DataPanel.closeEffect 未实现（关闭动效）'),
+      // R157-B：trackBackgroundColor 接入绘制（渐变余量段 / Line 型的轨道段）
+      trackBackgroundColor: (node, v) => { node.__trackBg = colorOf(v); redrawDataPanel(node); },
+      // R157-B：strokeWidth → 环厚（内孔径向蒙版；缺省 24；仅 Circle 生效，Line 只记值）
+      strokeWidth: (node, v) => { node.__strokeW = resolveResource(v); redrawDataPanel(node); },
+      // R157-B：trackShadow → CSS drop-shadow（多段阴影色取第一段；null=关闭）
+      trackShadow: (node, v) => { node.__trackShadow = v; redrawDataPanel(node); },
+      // R157-B：closeEffect → 兜底阴影开关（缺省 false=默认阴影开；true=关；trackShadow 优先）
+      closeEffect: (node, v) => { node.__closeEffect = v === true || v === 'true'; redrawDataPanel(node); },
     },
     Rating: {
       stars: (node, v) => { node.__starCount = Number(v) || 5; redrawRating(node); },
