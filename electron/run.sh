@@ -164,6 +164,16 @@ prepare() {
       "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/NotesDetail.ts" "$ROOT/build/notesdetail-module.js" --cjs --register NotesDetail >/dev/null || return 1
       "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/NotesHome.ts" "$ROOT/build/noteshome-module.js" --cjs --register NotesHome >/dev/null || return 1 ;;
     stepdemo) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/StepDemo.ts" "$ROOT/build/stepdemo-module.js" --cjs --register StepDemo >/dev/null || return 1 ;;
+    # R159.3：补齐 13 个 for-list 案例缺失的 prepare 规则（CI 全新环境无浏览器侧
+    # 陈货 build/*.js——八/十一跑实证 v2 路由未注册等；配方移植自 browser run.sh）
+    batchinputdemo) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/BatchInputDemo.ts" "$ROOT/build/batchinputdemo-module.js" --cjs --register BatchInputDemo >/dev/null || return 1 ;;
+    batchlayout) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/BatchLayoutDemo.ts" "$ROOT/build/batchlayout-module.js" --cjs --register BatchLayoutDemo >/dev/null || return 1 ;;
+    batchmediademo) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/BatchMediaDemo.ts" "$ROOT/build/batchmediademo-module.js" --cjs --register BatchMediaDemo >/dev/null || return 1 ;;
+    cjk) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/entryability/EntryAbility.ts" "$ROOT/build/cjk-module.js" --cjs --register EntryAbility >/dev/null || return 1 ;;
+    motiondemo) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/MotionDemo.ts" "$ROOT/build/motiondemo-module.js" --cjs --register MotionDemo >/dev/null || return 1 ;;
+    navshimdemo) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/NavShimDemo.ts" "$ROOT/build/navshimdemo-module.js" --cjs --register NavShimDemo >/dev/null || return 1 ;;
+    observe) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/Observe.ts" "$ROOT/build/observe.js" >/dev/null || return 1 ;;
+    v2) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/V2.ts" "$ROOT/build/v2.js" >/dev/null || return 1 ;;
   esac
   return 0
 }
@@ -237,6 +247,15 @@ case "${1:-layout}" in
     # （R145 补齐 a11ydemo/i18ndemo/rdbdemo/netadvdemo/leak——此前可单跑但不在 all，
     #   "双端通过"只靠各轮手工双跑；实测 electron 计数与浏览器端逐一相同后入列）
     for t in index rich layout widgets tabgrid swiper navdemo reldemo drawdemo textmeasure lazyvh measarea measimage measnotify promptaction realfs animdemo gesturedemo transitiondemo gesturegroupdemo builtindemo resourcedemo errbounddemo focusdemo sysresdemo navbardemo navtransdemo shapedemo inputdemo showdemo popdemo uictxdemo canvasedemo xcompdemo qrdemo textdemo mediademo smalldemo stepdemo imagedemo scrolldemo animatordemo listitemgroup refreshdemo datepickerdemo timepickerdemo waterflowdemo calendarpickerdemo textpickerdemo griddemo texttimedemo alphabetindexerdemo sidebardemo splitdemo paneldemo gridrowdemo richvideodemo batchverify perfdemo perfbig attrheavy stress1k windowdemo pickerdemo abilitydesktop sysapi batchbehavior batchfunc funcbehavior cjk cjkdemo notesdemo multiwindemo stress10k measure lazy provide v2 observe ability router async a11ydemo i18ndemo rdbdemo netadvdemo leak batchmediademo batchlayout navshimdemo batchinputdemo motiondemo v2sem tablong tabanim imageext chaindemo; do
+      # R159.3：仓颉运行时（31MB 华为 nightly 二进制）不再分发——CI runner 无
+      # CANGJIE_RT_LIB 时 cjk 系跳过留痕（权威=本地+鸿蒙模拟器端+打包态；
+      # 同 kernel-contract 的 SKIP 机制；ARKUI_NO_CANGJIE_RT=1 可强制跳过）
+      if { [ "$t" = cjk ] || [ "$t" = cjkdemo ]; } \
+         && { [ -z "${CANGJIE_RT_LIB:-}" ] || [ "${ARKUI_NO_CANGJIE_RT:-0}" = "1" ]; }; then
+        echo "  ⏭  $t 跳过（仓颉运行时不再分发——CANGJIE_RT_LIB 未设；权威=本地+模拟器端）"
+        echo
+        continue
+      fi
       run_one "$t" || rc=1
       echo
     done

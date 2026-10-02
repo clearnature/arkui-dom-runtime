@@ -82,12 +82,12 @@ jobs:
       # 绕过 24/26 矩阵、落到 runner 系统自带 node）；runner 预装 Google Chrome
       NODE: node
       CHROME: /usr/bin/google-chrome
-      # 真实解码页豁免（R159.3 八跑裁定）：imageext/measimage 的真图像解码完成
-      # 投递在 --virtual-time-budget + 负载下会无限迟（预算/轮询窗扩容均无效）——
-      # 虚拟时间 browser CI 腿跳过，权威=真实时钟端（Electron/firefox/webkit/
-      # android 腿与本地）。机理记档：ohos-shims.js 解码注释
+      # 虚拟时间豁免清单（R159.3 十一跑后裁定）：真实解码页（imageext/measimage——
+      # 解码回调不到）+ 真实时序页（builtindemo——动画收口/摩擦轮转 flake，预算
+      # 迭代降频未根除）在虚拟时间 browser CI 腿跳过；权威=真实时钟端
+      # （Electron CI 腿 ubuntu-electron.yml / firefox / webkit / android / 本地）
       ARKUI_CHROME_DEBUG: "0"
-      ARKUI_NO_VIRTUAL_DECODE: "1"
+      ARKUI_VIRTUAL_TIME_SKIP: "builtindemo imageext measimage"
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7

@@ -168,6 +168,17 @@ rc=0
 case "${1:-index}" in
   all)
     rc=0
+    # R159.3：虚拟时间豁免清单（空格分隔用例名）——真实解码/真实时序页在虚拟
+    # 时间 CI 腿（--virtual-time-budget + 2 核负载）上真异步无限迟/时序形状失真，
+    # 跳过并留痕；权威=真实时钟端（Electron CI 腿/firefox/webkit/android+本地）。
+    # 在列（十一跑后裁定）：imageext/measimage（真解码回调不到）、builtindemo
+    # （动画收口/摩擦时序轮转 flake——预算迭代降频未根除，用户裁定归 Electron）。
+    vt_skip() {
+      case " ${ARKUI_VIRTUAL_TIME_SKIP:-} " in *" $1 "*)
+        echo "  ⏭  $1 跳过（虚拟时间 CI 腿豁免清单 ARKUI_VIRTUAL_TIME_SKIP；权威=真实时钟端）"
+        return 0 ;; esac
+      return 1
+    }
     run_one index "$(src_of pages/Index.ts)"  build/app.js    test/index.html  || rc=1
     echo
     run_one rich  "$(src_of pages/Rich.ts)"   build/rich.js   test/rich.html   || rc=1
@@ -195,15 +206,18 @@ case "${1:-index}" in
     echo
     run_one measarea "$(src_of pages/MeasArea.ts)" build/measarea.js test/measarea.html || rc=1
     echo
-    # R159.3：真实解码页的虚拟时间豁免——ARKUI_NO_VIRTUAL_DECODE=1 时跳过。
+    # R159.3：真实解码页的虚拟时间豁免（ARKUI_VIRTUAL_TIME_SKIP 清单，见 all 块头）。
     #   依据：真图像解码的完成投递在 --virtual-time-budget + 负载下会无限迟
     #   （imageext CI 三跑挂、measimage mimeJpg 六/八跑跨腿游走；24000 预算+
     #   320×25 轮询窗扩容均无效——窗口再大，回调不到就是不到）。这两页的权威
     #   环境=真实时钟端（Electron/firefox/webkit/android 腿 + 本地）；虚拟时间
     #   browser CI 腿跳过。机理与教义记档：ohos-shims.js 解码注释 + docs。
-    if [ "${ARKUI_NO_VIRTUAL_DECODE:-0}" = "1" ]; then
-      echo "  ⏭  measimage 跳过（真实解码页 × 虚拟时间 CI 腿——权威=真实时钟端，ARKUI_NO_VIRTUAL_DECODE=1）"
-    else
+    #   依据：真图像解码的完成投递在 --virtual-time-budget + 负载下会无限迟
+    #   （imageext CI 三跑挂、measimage mimeJpg 六/八跑跨腿游走；24000 预算+
+    #   320×25 轮询窗扩容均无效——窗口再大，回调不到就是不到）。这两页的权威
+    #   环境=真实时钟端（Electron/firefox/webkit/android 腿 + 本地）；虚拟时间
+    #   browser CI 腿跳过。机理与教义记档：ohos-shims.js 解码注释 + docs。
+    if vt_skip measimage; then :; else
       # R159.3：VTBUDGET=24000——measimage 的 JPEG 真解码在负载下会迟于页面
       #   轮询窗落地，mimeJpg 出轮询即 ''（本地/真实时钟端仍全量跑）
       VTBUDGET=24000 \
@@ -238,10 +252,13 @@ case "${1:-index}" in
       "--cjs --register GestureGroupDemo" || rc=1
     echo
     # R125 收口：组件内置手势（R154：VTBUDGET=12000——弹簧解算器收口等待 tick(1200)
-    #   使全页虚拟耗时超默认 8000；R159.3 CI 负载迭代→20000——收口/摩擦收敛轮询扩容）
-    VTBUDGET=20000 \
-    run_one builtindemo "$(src_of pages/BuiltinDemo.ts)" build/builtindemo-module.js test/builtindemo.html \
-      "--cjs --register BuiltinDemo" || rc=1
+    #   使全页虚拟耗时超默认 8000；R159.3 CI 负载迭代→20000——收口/摩擦收敛轮询扩容；
+    #   十一跑后动画时序仍轮转 flake（用户裁定）→ 虚拟时间 CI 腿豁免、Electron 权威）
+    if vt_skip builtindemo; then :; else
+      VTBUDGET=20000 \
+      run_one builtindemo "$(src_of pages/BuiltinDemo.ts)" build/builtindemo-module.js test/builtindemo.html \
+        "--cjs --register BuiltinDemo" || rc=1
+    fi
     echo
     # R128 收口：真实资源解析
     run_one resourcedemo "$(src_of pages/ResourceDemo.ts)" build/resourcedemo-module.js test/resourcedemo.html \
@@ -465,9 +482,7 @@ case "${1:-index}" in
     echo
     # R159-C：@ohos.multimedia.image 扩展——真实解码页，虚拟时间 CI 腿跳过
     #   （依据与范围见上方 measimage 条注释；权威=真实时钟端）
-    if [ "${ARKUI_NO_VIRTUAL_DECODE:-0}" = "1" ]; then
-      echo "  ⏭  imageext 跳过（真实解码页 × 虚拟时间 CI 腿——ARKUI_NO_VIRTUAL_DECODE=1）"
-    else
+    if vt_skip imageext; then :; else
       run_one imageext "$(src_of pages/Index.ts)" build/app.js test/imageext.html || rc=1
     fi
     echo
