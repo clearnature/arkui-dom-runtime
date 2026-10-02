@@ -43,9 +43,11 @@ fi
 if [ "$only" = "all" ] || [ "$only" = "hs" ]; then
   if [ -d "$GHC_LIB" ]; then
     # R159.3：ghcup 布局下 RTS/base 的依赖（libffi 等）不在系统 ld 路径——
-    # 把 libdir 注入 LD_LIBRARY_PATH（本地 /usr/local/lib 已在路径中，幂等）
-    LD_LIBRARY_PATH="$GHC_LIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-      run "Haskell(ghc)" ./kernel/contract_common ghc kernel/hs/libkernel_hs.so "$GHC_LIB"
+    # 把 libdir 注入 LD_LIBRARY_PATH（本地 /usr/local/lib 已在路径中，幂等）；
+    # GHC_RTS_DIR 可选：rts 与包库分目录的布局（ghcup store）传独立目录
+    LD_LIBRARY_PATH="$GHC_LIB${GHC_RTS_DIR:+:$GHC_RTS_DIR}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+      run "Haskell(ghc)" ./kernel/contract_common ghc kernel/hs/libkernel_hs.so \
+        "$GHC_LIB" "${GHC_RTS_DIR:-$GHC_LIB}"
   else
     echo "SKIP Haskell（GHC_LIB_DIR=$GHC_LIB 不存在）"
   fi
