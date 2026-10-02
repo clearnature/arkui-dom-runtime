@@ -52,6 +52,12 @@ jobs:
         run: |
           cd electron
           npm install --no-save electron@44.2.0
+          # 首跑实证：runner npm 的 postinstall 未下载二进制（992ms 即完）——
+          # 显式回退手动触发 electron 的 install.js（下载 dist 到 node_modules）
+          if [ ! -x node_modules/electron/dist/electron ]; then
+            echo "postinstall 未产出二进制——手动触发 install.js"
+            node node_modules/electron/install.js
+          fi
           test -x node_modules/electron/dist/electron || { echo "❌ electron 二进制未就位"; exit 1; }
           ./node_modules/electron/dist/electron --version
       # 市场件（用户指定参考 GitHub Marketplace）：GabrielBB/xvfb-action——
