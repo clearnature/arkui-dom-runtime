@@ -23,9 +23,10 @@ import sys
 import threading
 import time
 
-ROOT = "/data/training/cli/arkui-dom-runtime"
-SERVE_PY = "/data/training/cli/arkui-dom-runtime/tools/serve.py"
-PLAN_JSONL = "/data/training/cli/arkui-dom-runtime/build/ff-plan.jsonl"
+import os
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SERVE_PY = os.path.join(ROOT, "tools", "serve.py")
+PLAN_JSONL = os.path.join(ROOT, "build", "ff-plan.jsonl")
 POLL0, POLL, CASE_TIMEOUT = 1.5, 0.4, 25
 
 sys.stdout = io.StringIO()   # 吞掉 serve.py 模块级回显；本脚本输出只走 os.write(1,...)

@@ -15,10 +15,17 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(dirname "$HERE")"
 cd "$ROOT"
 
-mkdir -p /data/tmp
-export TMPDIR=/data/tmp   # /tmp tmpfs inode 打满曾致门禁假红（R113），全仓库统一
+# R159.3：/data 不可写（CI runner）回退系统 mktemp（set -u 兜底，同 run.sh）
+if [ -z "${TMPDIR:-}" ]; then
+  if mkdir -p /data/tmp 2>/dev/null; then
+    export TMPDIR=/data/tmp
+  else
+    TMPDIR="$(mktemp -d)"
+    export TMPDIR
+  fi
+fi
 
-NODE=/data/training/cli/commandline-tools-linux-x64-26.0.0.821/command-line-tools/tool/node/bin/node
+NODE="${NODE:-/data/training/cli/commandline-tools-linux-x64-26.0.0.821/command-line-tools/tool/node/bin/node}"
 target="${1:-all}"
 
 WK_PY="${WK_PYTHON:-/data/tmp/wk-venv/bin/python}"

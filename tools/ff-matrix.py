@@ -29,9 +29,10 @@ import sys
 import threading
 import time
 
-ROOT = "/data/training/cli/arkui-dom-runtime"
-SERVE_PY = "/data/training/cli/arkui-dom-runtime/tools/serve.py"
-PLAN_JSONL = "/data/training/cli/arkui-dom-runtime/build/ff-plan.jsonl"
+import os
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SERVE_PY = os.path.join(ROOT, "tools", "serve.py")
+PLAN_JSONL = os.path.join(ROOT, "build", "ff-plan.jsonl")
 GD_HOST, GD_PORT = "127.0.0.1", 9555   # firefox/run.sh 保证该端口空闲且由它启动 geckodriver
 POLL0, POLL, CASE_TIMEOUT = 1.5, 0.4, 25
 ELEMENT_KEY = "element-6066-11e4-a52e-4f735466cecf"
