@@ -48,9 +48,14 @@ jobs:
         with:
           toolchain: stable
 
-      - uses: haskell-actions/setup@7fd2bb5ca789761088fbc831406b2910e47e56f1
+      # GHC 安装器=本地同款（/data/work/functional-programming/ghcup-setup 的
+      # haskell/ghcup-setup，GHCUP_INSTALL_BASE_PREFIX=/usr/local → 布局与本地
+      # /usr/local/lib/ghc-9.14.1 完全一致，run-contract.sh 默认路径直接命中）
+      - uses: haskell/ghcup-setup@d803e6bf19ae60755bc6ac073b6e3929dad3eac2
         with:
-          ghc-version: "9.14.1"
+          ghc: 9.14.1
+        env:
+          GHCUP_INSTALL_BASE_PREFIX: /usr/local
 
       - name: Setup Cangjie（nightly 1.3.0-alpha，与本地同版本号）
         uses: Zxilly/setup-cangjie@91463316b1c359f216c2ac49e35900f9341c1571
