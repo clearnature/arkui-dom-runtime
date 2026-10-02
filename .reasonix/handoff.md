@@ -9,7 +9,26 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R158 Tabs 长尾收官 + Repeat templateId 分桶深化**（多智能体 A/B 双线）——
+- 上次切片：**R159 chainMode 补验收口 + v2 容器代理收口 + image 扩展**（R159 三 agent 限额
+  中断后主会话接管收尾）——
+  A=chaindemo 测试页修复（kick 实例必须持住：`ViewPU.create` 不返回实例，裸 `kick` 被
+  id=kick 的 DOM 命名全局劫持→属性翻写静默无效→flush 管线整轮没跑→链完全不成；
+  +组内局部 warns 尾部引用 ReferenceError）+ **运行时真缺口**：syncChainLayout 容器锚距
+  从 offset*（边框盒）改 client*−padding（内容盒，与 applyAlignRules 同口径）——RC 带
+  1px 边框时锚距多 2px、链尾越过真实底边。
+  B=v2 W5 回归修复：v2NotifyPathMonitors fire 后重注册段 cell（真机 bindRun 每次重跑
+  analysisProp，v2_monitor.ts:520-531）——元素替换后尾段 cell 仍指旧元素，新元素字段写
+  （rep.name=x）无法唤醒；抽 v2RegisterMonitorSegs（bind 与 fire 后重走共用）。
+  C=image 段 data: URI 直解码（dataUriToBlob，绕 CSP connect-src——Electron 注入的
+  default-src 'self' 拦 fetch(data:)，浏览器无 CSP 端看不到此差异）。
+  集成另修：Electron all 块补收 chaindemo（R145/R154 漏收家族第 4 例）；builtindemo
+  收口断言容忍恰零末帧+改收敛轮询（负载/虚拟时钟竞态，第七跑 imageext running… 同族
+  ——真实图像解码吃墙钟、虚拟时钟帮不上，机器 15min 负载 51 时首现；qemu pkill 减压
+  复验即绿）。
+  验收：chaindemo 23 / v2sem 59 / imageext 19 条断言五端通过；
+  门禁 11 步全绿（b62f3b3，Mimosa 0 findings seal sha256:b48554dc…）；
+  五端矩阵 87/99/87/87/87。
+  更早：**R158 Tabs 长尾收官 + Repeat templateId 分桶深化**（多智能体 A/B 双线）——
   A=Tabs animationMode 三值（CONTENT_FIRST/ACTION_FIRST/NO_ANIMATION——NO_ANIMATION 仅
   点击路径禁动画 fromClick 判定、changeIndex/拖拽/spring 不受影响，与 duration=0 全局
   门控分家）+ onContentWillChange（(cur,coming)=>boolean false 拒绝切换——守卫在改 index
