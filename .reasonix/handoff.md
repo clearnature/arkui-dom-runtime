@@ -28,6 +28,13 @@
   验收：chaindemo 23 / v2sem 59 / imageext 19 条断言五端通过；
   门禁 11 步全绿（b62f3b3，Mimosa 0 findings seal sha256:b48554dc…）；
   五端矩阵 87/99/87/87/87。
+  **R159.2 鸿蒙官方模拟器通路实测全通（2026-10-02，用户纠偏触发）**——CLT 自带
+  Device Emulator 可用（≠Previewer，后者 Linux 被上游编译死）：hmtest_phone 起机→
+  hdc tconn（HDC_SERVER_PORT=5557）→装包（unsigned 可装）→aa start→hilog WMS 首帧→
+  截图实证 Index 渲染在真 ArkUI（emulator 7.0.0.106）。配方与四坑+第六端差分计划
+  立档 **docs/HARMONYOS-EMULATOR.md**（DEVELOPING §8.1 / DEVICE-DIFF 头注挂指针；
+  ROADMAP R159.2 行）。下一片候选=第六端差分（hvigorw→hdc 装包→逐页驱动→hilog
+  断言 vs 五端对拍）；2in1 镜像服务端有未下载。
   更早：**R158 Tabs 长尾收官 + Repeat templateId 分桶深化**（多智能体 A/B 双线）——
   A=Tabs animationMode 三值（CONTENT_FIRST/ACTION_FIRST/NO_ANIMATION——NO_ANIMATION 仅
   点击路径禁动画 fromClick 判定、changeIndex/拖拽/spring 不受影响，与 duration=0 全局

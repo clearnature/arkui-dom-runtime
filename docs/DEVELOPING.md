@@ -323,6 +323,13 @@ node tools/extract.mjs fixtures/pages/NewPage.ts build/newpage.js --cjs --regist
 
 > `fixtures/` 是**冻结的官方产物快照**。改它是重写测试的输入，等于把测试变成"验证我自己写的产物"——除非工具链升级，否则不要动。
 
+### 8.1 在鸿蒙官方模拟器上跑 HAP（官方 oracle，2026-10-02 实测全通）
+
+CLT 自带 Device Emulator（`emulator/Emulator`，与 Previewer 无关——预览器在 Linux
+被上游编译死，别再试）。起机→hdc（`HDC_SERVER_PORT=5557`）→`hdc install -r`（unsigned
+可装）→`aa start`→hilog 看 WMS 首帧。**完整六步配方与四个坑（imageRoot 传父目录/
+截图目录须存在等）见 `docs/HARMONYOS-EMULATOR.md`**——本文不重复。
+
 ---
 
 ## 9. 调试手段
