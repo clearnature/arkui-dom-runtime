@@ -92,6 +92,12 @@ jobs:
           test -x "$CHROME" || { echo "❌ 未找到 $CHROME——ubuntu runner 应预装 Google Chrome"; exit 1; }
           "$CHROME" --version
           node --version
+      - name: 安装字体（CI 二跑实测：runner 缺 Noto Sans CJK，textmeasure 的
+          换行/行高断言按本地字体度量冻结——字体环境必须对齐，否则假红）
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq fonts-noto-cjk fonts-dejavu-core
+          fc-match sans-serif
       - name: run.sh all（85 用例 + 断言计数守门）
         run: bash run.sh all
       - name: 失败留档（截图 + 计数表）
