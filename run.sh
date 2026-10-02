@@ -14,9 +14,16 @@ cd "$HERE"
 # R113：临时区 /tmp → /data/tmp（/tmp tmpfs inode 100% 打满曾致门禁三步假红；
 # Chrome profile 海量小文件是元凶）。mktemp 与探针目录全部尊重 TMPDIR。
 # R159.3：三处本地路径全部可被环境变量覆盖（CI runner 无 CLT/本机 Chrome——
-# setup-node 的 node 在 PATH、ubuntu runner 的 Chrome 在 /usr/bin/google-chrome）
+# setup-node 的 node 在 PATH、ubuntu runner 的 Chrome 在 /usr/bin/google-chrome）；
+# /data 不可写的机器（CI runner）回退系统 mktemp，且必须兜底赋值——set -u 下
+# 未设 TMPDIR 会让后面的 mktemp -d "$TMPDIR/..." 直接 unbound 红掉（首跑实测）
 if [ -z "${TMPDIR:-}" ]; then
-  mkdir -p /data/tmp 2>/dev/null && export TMPDIR=/data/tmp
+  if mkdir -p /data/tmp 2>/dev/null; then
+    export TMPDIR=/data/tmp
+  else
+    TMPDIR="$(mktemp -d)"
+    export TMPDIR
+  fi
 fi
 NODE="${NODE:-/data/training/cli/commandline-tools-linux-x64-26.0.0.821/command-line-tools/tool/node/bin/node}"
 CHROME="${CHROME:-/opt/google/chrome/chrome}"

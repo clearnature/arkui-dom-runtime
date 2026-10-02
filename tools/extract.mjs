@@ -18,10 +18,13 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const HERE = path.dirname(path.dirname(new URL(import.meta.url).pathname));   // 仓库根
-const CLT = '/data/training/cli/commandline-tools-linux-x64-26.0.0.821/command-line-tools';
-const TS_PATH = path.join(
-  CLT, 'sdk/default/openharmony/ets/build-tools/ets-loader/node_modules/typescript'
-);
+// TypeScript（4.9.5-r4，华为补丁版）解析顺序：
+//   ① env TS_PATH（应急覆盖）
+//   ② test/vendor/ 入库副本（R159.3：CI 上没有本地 CLT——vendor 与 CLT 副本逐字节
+//     相同，转译输出一致已验证；.cjs 后缀因仓库 "type":"module"，.js 会被当 ESM）
+// 入库出处与许可见 THIRD-PARTY-NOTICES.md §3b（Apache-2.0，逐字节复制零修改）
+const TS_PATH = process.env.TS_PATH
+  || path.join(HERE, 'test/vendor/typescript-4.9.5-r4.lib.cjs');
 
 const DEFAULT_SRC =
   path.join(HERE, 'harmony-proj/entry/build/default/cache/default/default@CompileArkTS/esmodule/debug/',
