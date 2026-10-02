@@ -1,22 +1,25 @@
-# CI（R159.3 起）—— 方法与目录结构参考：
+# ubuntu · Node.js V8 环境 CI（R159.3 起）—— 方法与目录结构参考：
 #   · /home/yanli/work/DeepSeek-Reasonix/.github/workflows/ci.yml
 #     （.node-version 钉默认版本 / setup-node@v7 / permissions+concurrency 块 /
 #      矩阵腿命名「job (os)」/ 失败留档注释文化）
-#   · /data/training/cli/codex/.github/workflows/（workflow 按域拆分多文件）
-#   · GitHub 官方 starter：Node.js — Build and test a Node.js project with npm
+#   · /data/training/cli/codex/.github/workflows/（workflow 按域拆分多文件，
+#     文件名自述环境——本项目沿用：每个 CI 环境一个文件，Actions 后台按
+#     下面的 name: 分条显示，一眼看出跑的是哪套环境测试）
 #
-# 分期（与 ROADMAP 对齐）：
-#   一期（本文件）：ubuntu-latest × Node 24/26 —— V8 双环境：
-#     · toolchain：Node 工具链（拼接产物逐字节一致 + fixtures 抽取冒烟）
-#     · browser  ：Chrome headless 全矩阵（run.sh all，85 用例 + 断言计数守门）
-#   二期（未开）：windows-latest（Chrome/Firefox/Electron 冒烟先行）
-#   三期（未开）：macos-latest（Safari/safaridriver 第六端）
+# 本项目 workflow 命名约定（后续很多 CI 都要写，命名必须自述环境）：
+#   .github/workflows/ubuntu-nodejs.yml   = 本文件：ubuntu · Node.js 24/26 · V8
+#   .github/workflows/windows-browser.yml = 二期：windows · Chrome/Firefox/Electron
+#   .github/workflows/macos-safari.yml    = 三期：macos · Safari（safaridriver 第六端）
+#
+# 本文件范围（一期）：ubuntu-latest × Node 24/26 —— V8 双环境：
+#   · toolchain：Node 工具链（拼接产物逐字节一致 + fixtures 抽取冒烟）
+#   · browser  ：Chrome headless 全矩阵（run.sh all，85 用例 + 断言计数守门）
 #
 # CI 上明确跳过的本地专属步（缺席显式跳过，同 webkit 6c 先例）：
 #   gen-components --check（需本地 SDK 路径）/ typecheck（TS 4.9.5 硬编码路径）/
 #   stats 性能基线（权威=本地 Electron）/ Android 端（模拟器不上 CI）/ 鸿蒙模拟器。
 
-name: CI
+name: "ubuntu · Node.js 24/26 · V8（toolchain + Chrome 浏览器矩阵）"
 
 on:
   push:
@@ -29,7 +32,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # 必须带 workflow 前缀（多 workflow 共存后，全局组会跨文件互相取消）
+  group: ubuntu-nodejs-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
