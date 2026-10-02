@@ -1,0 +1,80 @@
+# kernel · 五语言编译器 CI（R159.3 起）——源码 → .so → 统一契约 5/5
+#
+# 定位（用户裁定）：kernel-contract.yml 验证的是【入仓冻结 .so】的运行时契约；
+# 本 workflow 验证【五语言编译器现在还能从源码编出内核】——与 ArkTS AOT 检查
+# 同一哲学：编译链的可用性本身是被守卫的对象。
+#
+# 五工具链与钉定（2026-10-02 核实，SHA 钉死=供应链纪律）：
+#   C       gcc（runner 预装）
+#   Go      actions/setup-go@40f1582b…（v5），go 1.26（本机 1.27.1，c-shared 语义无版本敏感）
+#   Rust    dtolnay/rust-toolchain@7e38f4b4…（master=stable 通道），rustc ≥1.75（本机 1.93.1）
+#   Haskell haskell-actions/setup@7fd2bb5c…（v2），GHC 9.14.1（与本地同版；-dynamic 链需要 RTS 共享包）
+#   仓颉    Zxilly/setup-cangjie@91463316…（v3，★11 活跃维护），nightly
+#           1.3.0-alpha.20260919003053（与本地 nightly 同版本号）
+#
+# 编译后跑 kernel/run-contract.sh all —— CI 上 cangjie/hs 的运行时由本 job 安装，
+# CANGJIE_RT_LIB / GHC_LIB_DIR 动态发现注入 → 契约 5/5（kernel-contract.yml 的
+# CI 版是 c/go/rs 3 内核 + cangjie/hs SKIP 留痕，两 workflow 互补）。
+
+name: "kernel · 五语言编译器（源码 → .so → 统一契约 5/5）"
+
+on:
+  push:
+    branches: [main, ci]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kernel-compilers-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compilers:
+    name: gcc / go1.26 / rust-stable / ghc-9.14.1 / cjc-nightly
+    runs-on: ubuntu-24.04   # 钉 24.04（同家族理由：ubuntu-latest 10-19 起迁 26）
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: "1.26"
+
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067
+        with:
+          toolchain: stable
+
+      - uses: haskell-actions/setup@7fd2bb5ca789761088fbc831406b2910e47e56f1
+        with:
+          ghc-version: "9.14.1"
+
+      - name: Setup Cangjie（nightly 1.3.0-alpha，与本地同版本号）
+        uses: Zxilly/setup-cangjie@91463316b1c359f216c2ac49e35900f9341c1571
+        with:
+          channel: nightly
+          version: 1.3.0-alpha.20260919003053
+
+      - name: 运行时库路径发现（契约 cangjie/hs 腿的 CANGJIE_RT_LIB / GHC_LIB_DIR）
+        run: |
+          CJ_RT="$(find "$HOME" /opt /usr/local -type d -name 'linux_x86_64_cjnative' 2>/dev/null | head -1)"
+          test -n "$CJ_RT" || { echo "❌ 未找到仓颉运行时目录（linux_x86_64_cjnative）"; exit 1; }
+          echo "CANGJIE_RT_LIB=$CJ_RT" >> "$GITHUB_ENV"
+          echo "CANGJIE_RT_LIB=$CJ_RT"
+          GHC_LIB="$(ghc --print-libdir)"
+          echo "GHC_LIB_DIR=$GHC_LIB" >> "$GITHUB_ENV"
+          echo "GHC_LIB_DIR=$GHC_LIB"
+
+      - name: 五语言编译（源码 → .so，任一失败即红）
+        run: |
+          bash kernel/c-sample/build.sh
+          bash kernel/go/build.sh
+          bash kernel/rust/build.sh
+          bash kernel/hs/build.sh
+          bash kernel/cangjie/build.sh
+
+      - name: 统一契约（41 断言 × 5 = 5/5，退出码=守门）
+        run: bash kernel/run-contract.sh all
