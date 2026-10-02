@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R159-A：RelativeContainer chainMode 链式排列（SPREAD / SPREAD_INSIDE / PACKED×bias / 双链共存）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #root { width: 320px; }
+  #root [data-arkui-comp="RelativeContainer"] { border: 1px solid #ddd; margin-bottom: 6px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R159-A：chainMode 链式排列（R157-A 实现的补验）——链头=两侧锚规则+chainMode，
+    成员沿邻接图遍历；SPREAD 首尾外留隙 / SPREAD_INSIDE 贴锚 / PACKED 按 bias；
+    公式（area.js:672-685）：A=锚距、C=成员尺寸和、n=成员数</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <!-- 路由注册兜底：本页断言是【纯 runtime 级 DSL 直建】（同 v2sem 的做法），
+       build/app.js 只提供 pages/Index 路由来立根容器（loadRoute 后栈空，DSL 直挂根下）；
+       Index 自身的基线断言归 index 用例 -->
+  <script src="../build/app.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const root = document.getElementById('root');
+    const near = (a, b, tol) => Math.abs(a - b) <= (tol === undefined ? 0.7 : tol);
+    const el = (id) => root.querySelector('#' + id);
+    const y = (id) => el(id) ? el(id).offsetTop : NaN;      // 链方向断言读 offsetTop（布局位置，
+    const x = (id) => el(id) ? el(id).offsetLeft : NaN;     // 同 reldemo：不读 getBoundingClientRect——
+                                                            // End/Bottom 对齐的 translate 会污染 rect）
+    const group = async (name, fn) => {
+      try { await fn(); } catch (e) {
+        allPass = false;
+        lines.push(`FAIL [${name}] 抛出异常：${e && e.stack ? String(e.stack).split('\n')[0] : e}`);
+      }
+    };
+
+    try {
+      const D = __arkui_dom_decorators;
+      const ViewPU = Object.getPrototypeOf(D.ViewV2);        // static 原型链（v2sem 同款）
+      const C = '__container__';
+      __arkui_dom_loadRoute('pages/Index', root);            // 只为立根容器 + 基线冒烟
+      await tick(60);
+      check((root.textContent || '').indexOf('Hello World') >= 0, 'Index 基线已渲染（立根容器）');
+
+      // ── DSL 直建辅助 ──
+      // 垂直链成员 i 的 alignRules：头=top{容器}+bottom{next,top}（尾侧 align=START 是成链条件）、
+      // 中间=top{prev,bottom}+bottom{next,top}、尾=top{prev,bottom}+bottom{容器}；
+      // 每个成员再补一条单侧 left（链只接管链方向，另一轴仍走 alignRules）。
+      const vMember = (ids, i, bias) => {
+        const rules = {
+          top: i === 0 ? { anchor: C, align: VerticalAlign.Top }
+                       : { anchor: ids[i - 1], align: VerticalAlign.Bottom },
+          bottom: i === ids.length - 1 ? { anchor: C, align: VerticalAlign.Bottom }
+                       : { anchor: ids[i + 1], align: VerticalAlign.Top },
+          left: { anchor: C, align: HorizontalAlign.Start },
+        };
+        if (i === 0 && bias) rules.bias = bias;
+        return rules;
+      };
+      /** @param {string} rcId @param {any} mode ChainStyle 值或字符串 @param {string[]} ids @param {any=} [bias] */
+      const buildVChain = (rcId, mode, ids, bias) => {
+        RelativeContainer.create();
+        RelativeContainer.width(300);
+        RelativeContainer.height(400);
+        RelativeContainer.id(rcId);
+        for (let i = 0; i < ids.length; i++) {
+          Text.create(ids[i]);
+          Text.id(ids[i]);
+          Text.width(50);
+          Text.height(40);
+          Text.fontSize(12);
+          Text.backgroundColor('#dbe9f9');
+          Text.alignRules(vMember(ids, i, bias));
+          if (i === 0) Text.chainMode(Axis.Vertical, mode);   // 只有链头登记 chainMode
+          Text.pop();
+        }
+        RelativeContainer.pop();
+      };
+
+      // ══════════ A 组：垂直 SPREAD（rc1，容器 400 高、3×40 项）══════════
+      // space=(400−120)/4=70 → tops 70/180/290（首尾外侧各留 1 份空隙）
+      buildVChain('rc1', ChainStyle.SPREAD, ['a1', 'a2', 'a3']);
+      // 断言 ⑥ 的对照：无 chainMode 的兄弟照常走 alignRules，不参与链
+      Text.create('s1');
+      Text.id('s1');
+      Text.width(30);
+      Text.height(20);
+      Text.fontSize(12);
+      Text.backgroundColor('#f0e6d2');
+      Text.alignRules({ top: { anchor: C, align: VerticalAlign.Top }, left: { anchor: C, align: HorizontalAlign.Start } });
+      Text.pop();
+
+      // ══════════ B 组：垂直 SPREAD_INSIDE（rc2）══════════
+      // space=(400−120)/2=140、起点 0 → tops 0/180/360（首尾贴锚）
+      buildVChain('rc2', ChainStyle.SPREAD_INSIDE, ['b1', 'b2', 'b3']);
+
+      // ══════════ C 组：垂直 PACKED + 默认 bias 0.5（rc3）══════════
+      // space=0、起点=(400−120)×0.5=140 → tops 140/180/220（整链居中、无间隙）
+      buildVChain('rc3', ChainStyle.PACKED, ['c1', 'c2', 'c3']);
+
+      // ══════════ D 组：垂直 PACKED + bias 0（rc4，字符串 'packed'）══════════
+      // space=0、起点=(400−120)×0=0 → tops 0/40/80（链头贴顶）；
+      // mode 刻意传字符串——chainStyleName 认枚举也认 'spread'/'spread_inside'/'packed'
+      buildVChain('rc4', 'packed', ['d1', 'd2', 'd3'], { vertical: 0 });
+
+      // ══════════ E 组：垂直+水平双链共存（rc5）══════════
+      // 水平链 SPREAD_INSIDE：h1→h2→h3（3×40），A=300、C=120 → space=90，lefts 0/130/260；
+      // 垂直链 PACKED：链头 h2 + v2（2×40），A=400、C=80、bias 0.5 → tops 160/200。
+      // h2 一节点同时在两链：水平链【成员】+ 垂直链【链头】（已收编的链头不作另一方向链头，
+      // 成员不占 claimed——与真机 IsNodeInChain 守卫一致的实现口径）。
+      RelativeContainer.create();
+      RelativeContainer.width(300);
+      RelativeContainer.height(400);
+      RelativeContainer.id('rc5');
+      Text.create('h1');
+      Text.id('h1');
+      Text.width(40);
+      Text.height(40);
+      Text.fontSize(12);
+      Text.backgroundColor('#dbe9f9');
+      Text.alignRules({
+        left: { anchor: C, align: HorizontalAlign.Start },
+        right: { anchor: 'h2', align: HorizontalAlign.Start },   // 尾侧 align=START（成链条件）
+        top: { anchor: C, align: VerticalAlign.Top },
+      });
+      Text.chainMode(Axis.Horizontal, ChainStyle.SPREAD_INSIDE);
+      Text.pop();
+      Text.create('h2');
+      Text.id('h2');
+      Text.width(40);
+      Text.height(40);
+      Text.fontSize(12);
+      Text.backgroundColor('#d8e8d8');
+      Text.alignRules({
+        left: { anchor: 'h1', align: HorizontalAlign.End },      // 头侧锚指回前节点 align=END
+        right: { anchor: 'h3', align: HorizontalAlign.Start },
+        top: { anchor: C, align: VerticalAlign.Top },            // 兼垂直链链头：两侧锚规则
+        bottom: { anchor: 'v2', align: VerticalAlign.Top },
+      });
+      Text.chainMode(Axis.Vertical, ChainStyle.PACKED);
+      Text.pop();
+      Text.create('h3');
+      Text.id('h3');
+      Text.width(40);
+      Text.height(40);
+      Text.fontSize(12);
+      Text.backgroundColor('#dbe9f9');
+      Text.alignRules({
+        left: { anchor: 'h2', align: HorizontalAlign.End },
+        right: { anchor: C, align: HorizontalAlign.End },
+        top: { anchor: C, align: VerticalAlign.Top },
+      });
+      Text.pop();
+      Text.create('v2');
+      Text.id('v2');
+      Text.width(40);
+      Text.height(40);
+      Text.fontSize(12);
+      Text.backgroundColor('#d8e8d8');
+      Text.alignRules({
+        top: { anchor: 'h2', align: VerticalAlign.Bottom },
+        bottom: { anchor: C, align: VerticalAlign.Bottom },
+        left: { anchor: C, align: HorizontalAlign.Start },
+      });
+      Text.pop();
+      RelativeContainer.pop();
+
+      // ══════════ F 组：枚举与不静默（rc6）══════════
+      RelativeContainer.create();
+      RelativeContainer.width(300);
+      RelativeContainer.height(80);
+      RelativeContainer.id('rc6');
+      Text.create('f1');
+      Text.id('f1');
+      Text.width(30);
+      Text.height(20);
+      Text.chainMode(Axis.Vertical, 99);       // 非法模式 → 必须留痕（不静默）
+      Text.pop();
+      Text.create('f2');
+      Text.id('f2');
+      Text.width(30);
+      Text.height(20);
+      Text.chainMode('diagonal', ChainStyle.SPREAD);   // 非法方向 → 必须留痕
+      Text.pop();
+      RelativeContainer.pop();
+
+      // ── 触发渲染管线 ──
+      // 链式排列挂在 syncAreas 开头（flush 管线 syncAlignRules→syncDrawings→syncAreas），
+      // DSL 建的树不经过渲染管线 → 用一个 @Local 状态翻写逼一次 flush（v2sem 同款 kick）。
+      // 翻两次：第一轮链覆盖 alignRules 收敛位置，第二轮验证幂等（结果不再漂移）。
+      class Kick extends D.ViewV2 {
+        constructor(parent, params, ls, elmtId = -1, paramsLambda, extraInfo) {
+          super(parent, elmtId, extraInfo);
+          this.initParam('n', 0);
+          this.finalizeConstruction();
+        }
+        initialRender() {
+          this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create('kick=' + this.n);
+            if (isInitialRender) { Text.id('kick'); Text.fontSize(10); }
+          }, Text);
+          Text.pop();
+        }
+        rerender() {}
+      }
+      D.Local(Kick.prototype, 'n');
+      // ViewPU.create 不返回实例；裸标识符 kick 还会被【id=kick 的 DOM 命名全局】劫持
+      // （kick.n 落在 div 上、永不 markDirty——probe 实测链完全不成的根因），必须持有实例
+      const kick = new Kick(undefined, {}, undefined, 990001, () => ({}), {});
+      ViewPU.create(kick);
+      kick.n += 1;
+      await tick(60);
+      kick.n += 1;
+      await tick(80);
+
+      // 断言前快照：两轮 flush 后几何应已稳定（第二轮与第一轮全同才断言，否则是管线竞态）
+      const snap = () => ['a1','a2','a3','b1','b2','b3','c1','c2','c3','d1','d2','d3','h1','h2','h3','v2']
+        .map((id) => y(id) + ',' + x(id)).join('|');
+      const s1st = snap();
+      kick.n += 1;
+      await tick(60);
+      check(snap() === s1st, '链几何幂等：第三轮 flush 后所有成员位置不再漂移');
+
+      // ══════════ A 组断言：SPREAD ══════════
+      await group('SPREAD', async () => {
+        const info = __arkui_dom_chains(el('rc1'));
+        check(!!info && info.v.length === 1 && info.v[0].ids.join(',') === 'a1,a2,a3'
+            && info.v[0].style === 'spread',
+          `链自省：ids=[a1,a2,a3] style='spread'（实际 ${info && info.v[0] && info.v[0].ids.join(',')} `
+            + `'${info && info.v[0] && info.v[0].style}'）`);
+        check(!!info && near(info.v[0].anchorDistance, 400) && near(info.v[0].contentSize, 120)
+            && near(info.v[0].space, 70),
+          `链自省：A=400 C=120 space=(400−120)/4=70（实际 A=${info && info.v[0].anchorDistance} `
+            + `C=${info && info.v[0].contentSize} space=${info && info.v[0].space}）`);
+        check(near(y('a2') - (y('a1') + 40), 70),
+          `SPREAD 相邻间距① a2.top−(a1.top+40)=${y('a2') - (y('a1') + 40)}（期望 70）`);
+        check(near(y('a3') - (y('a2') + 40), 70),
+          `SPREAD 相邻间距② a3.top−(a2.top+40)=${y('a3') - (y('a2') + 40)}（期望 70）`);
+        check(y('a1') > 0 && near(y('a1'), 70) && near(400 - (y('a3') + 40), 70),
+          `SPREAD 首尾外侧留空隙：首项 top=${y('a1')}（>0，期望 70）、尾项底边距=${400 - (y('a3') + 40)}（期望 70）`);
+        check(near(x('s1'), 0) && near(y('s1'), 0),
+          `无 chainMode 的兄弟不参与链、照常走 alignRules：s1=(${x('s1')},${y('s1')})（期望 (0,0)）`);
+      });
+
+      // ══════════ B 组断言：SPREAD_INSIDE ══════════
+      await group('SPREAD_INSIDE', async () => {
+        check(near(y('b1'), 0), `首项贴容器顶：b1.top=${y('b1')}（期望 0）`);
+        check(near(y('b2') - (y('b1') + 40), 140) && near(y('b3') - (y('b2') + 40), 140),
+          `间距=(容器高−3×项高)/2=(400−120)/2=140（实际 ${y('b2') - (y('b1') + 40)}/${y('b3') - (y('b2') + 40)}）`);
+        check(near(y('b3') + 40, 400), `尾项贴容器底：b3 底边=${y('b3') + 40}（期望 400）`);
+      });
+
+      // ══════════ C 组断言：PACKED + bias 0.5 ══════════
+      await group('PACKED 居中', async () => {
+        check(near(y('c1'), 140), `整链居中：c1.top=(400−120)/2=${y('c1')}（期望 140）`);
+        check(near(y('c2') - (y('c1') + 40), 0) && near(y('c3') - (y('c2') + 40), 0),
+          `PACKED 无间隙：c2−(c1+40)=${y('c2') - (y('c1') + 40)}、c3−(c2+40)=${y('c3') - (y('c2') + 40)}（期望 0/0）`);
+        check(near(y('c3') + 40, 260), `链底=链顶+链高：c3 底边=${y('c3') + 40}（期望 140+120=260）`);
+      });
+
+      // ══════════ D 组断言：PACKED + bias 0（字符串模式）══════════
+      await group('PACKED 贴顶', async () => {
+        check(near(y('d1'), 0), `bias 0 → 链头贴顶：d1.top=${y('d1')}（期望 0；且字符串 'packed' 被接受）`);
+        check(near(y('d2'), 40) && near(y('d3'), 80),
+          `顺序摆放 space=0：d2=${y('d2')} d3=${y('d3')}（期望 40/80）`);
+      });
+
+      // ══════════ E 组断言：双链共存 ══════════
+      await group('双链共存', async () => {
+        check(near(x('h1'), 0) && near(x('h2'), 130) && near(x('h3'), 260),
+          `水平链 SPREAD_INSIDE：lefts=${x('h1')}/${x('h2')}/${x('h3')}（期望 0/130/260，space=(300−120)/2=90）`);
+        check(near(y('h2'), 160) && near(y('v2'), 200),
+          `垂直链 PACKED：h2.top=${y('h2')} v2.top=${y('v2')}（期望 160/200，起点=(400−80)×0.5=160）`);
+        check(near(x('h2'), 130) && near(y('h2'), 160),
+          `h2 一节点双链坐标：(${x('h2')},${y('h2')})（期望 (130,160)——水平链接管 x、垂直链接管 y）`);
+      });
+
+      // ══════════ F 组断言：枚举 + 不静默 ══════════
+      await group('枚举与不静默', async () => {
+        check(ChainStyle.SPREAD === 0 && ChainStyle.SPREAD_INSIDE === 1 && ChainStyle.PACKED === 2,
+          `ChainStyle 枚举值 SPREAD=${ChainStyle.SPREAD} SPREAD_INSIDE=${ChainStyle.SPREAD_INSIDE} `
+            + `PACKED=${ChainStyle.PACKED}（.d.ts 声明顺序 0/1/2）`);
+        const warns = __arkui_dom_layout_warnings || [];
+        const badMode = warns.filter((w) => w.indexOf('chainMode') >= 0 && w.indexOf('99') >= 0);
+        check(badMode.length > 0, `非法模式 99 → 布局告警（'${badMode[0] || '无'}'）`);
+        const badDir = warns.filter((w) => w.indexOf('chainMode') >= 0 && w.indexOf('diagonal') >= 0);
+        check(badDir.length > 0, `非法方向 'diagonal' → 布局告警（'${badDir[0] || '无'}'）`);
+        const ci = __arkui_dom_chains(el('rc6'));
+        check(!ci || (ci.v.length === 0 && ci.h.length === 0),
+          `非法登记不成链：rc6 链信息为空（实际 v=${ci && ci.v.length} h=${ci && ci.h.length}）`);
+      });
+
+      lines.push(`WARNINGS=${(__arkui_dom_layout_warnings || []).length}`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

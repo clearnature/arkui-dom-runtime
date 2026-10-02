@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R159-C：image.getImageProperty / createPixelMap（真像素读取）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  #result { margin-top: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+  .pass { color: #2e7d32; } .fail { color: #c62828; }
+</style>
+</head>
+<body>
+  <h3>R159-C：ImageSource.getImageProperty（EXIF 面）+ createPixelMap（OffscreenCanvas 真像素）
+    + image.createPixelMap（色值数组/ArrayBuffer）+ PixelMap.readPixelsToBuffer</h3>
+  <div id="root"></div>
+  <div id="result">running…</div>
+
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <!-- 路由注册：本页断言全部直打 shim（无 ArkTS 页面），
+       复用 DrawDemo 的固化产物只为拿到已注册路由来立根容器（gaugedemo 同做法）；
+       DrawDemo 自身的回归在 drawdemo 用例 -->
+  <script src="../build/drawdemo.js"></script>
+  <script>
+  (async function () {
+    const lines = [];
+    let allPass = true;
+    const check = (c, m) => { if (!c) allPass = false; lines.push((c ? 'PASS' : 'FAIL') + ' ' + m); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const group = async (name, fn) => {
+      try { await fn(); } catch (e) {
+        allPass = false;
+        lines.push(`FAIL [${name}] 抛出异常：${e && e.stack ? String(e.stack).split('\n')[0] : e}`);
+      }
+    };
+    const bytesOf = (ab) => Array.from(new Uint8Array(ab));
+
+    try {
+      __arkui_dom_loadRoute('pages/DrawDemo', document.getElementById('root'));   // 只为立根容器
+      await tick(30);
+      const image = __arkui_dom_require('multimedia.image');
+
+      // ══ 页内自造数据（gaugedemo/v2sem 先例）：canvas → toDataURL 产真 PNG 字节，像素完全可控 ══
+      const makePng = (w, h, draw) => {
+        const cv = document.createElement('canvas');
+        cv.width = w; cv.height = h;
+        draw(cv.getContext('2d'));
+        return cv.toDataURL('image/png');          // data:image/png;base64,…（fetch 可直接吃）
+      };
+      // 4×2：上整行纯红、下整行纯蓝（RGBA 布局验证的已知答案）
+      const MIX_PNG = makePng(4, 2, (ctx) => {
+        ctx.fillStyle = 'rgb(255,0,0)'; ctx.fillRect(0, 0, 4, 1);
+        ctx.fillStyle = 'rgb(0,0,255)'; ctx.fillRect(0, 1, 4, 1);
+      });
+      // 4×4 全 (34,58,120)：中心像素断言的已知答案
+      const SOLID_PNG = makePng(4, 4, (ctx) => {
+        ctx.fillStyle = 'rgb(34,58,120)'; ctx.fillRect(0, 0, 4, 4);
+      });
+
+      // ══════════ ① getImageProperty：EXIF 面，宽高来自真解码 ══════════
+      await group('getImageProperty', async () => {
+        const src = image.createImageSource(MIX_PNG);
+        const info = await src.getImageInfo();
+        const propW = await src.getImageProperty('ImageWidth');
+        const propH = await src.getImageProperty('ImageHeight');
+        check(propW === String(info.size.width),
+          `getImageProperty('ImageWidth') = ${propW} 与 getImageInfo().size.width = ${info.size.width} 一致（真解码宽）`);
+        check(propW === '4' && propH === '2',
+          `MIX_PNG(4×2) → ImageWidth='${propW}' ImageHeight='${propH}'（期望 '4'/'2'，不是写死的）`);
+        check(await src.getImageProperty('ImageLength') === '2',
+          `ImageLength（d.ts 枚举里"高"的真名）= '2'`);
+        const warnBefore = globalThis.__arkui_dom_layout_warnings.length;
+        const unknown = await src.getImageProperty('Orientation');
+        const warned = globalThis.__arkui_dom_layout_warnings
+          .slice(warnBefore).some((w) => String(w).includes("'Orientation'"));
+        check(unknown === '' && warned,
+          `未知属性 'Orientation' → 返回 ''（'${unknown}'）且记警告（${warned ? '已记' : '未记'}——不静默编值）`);
+      });
+
+      // ══════════ ② ImageSource.createPixelMap：OffscreenCanvas 真像素 ══════════
+      await group('ImageSource.createPixelMap', async () => {
+        const src = image.createImageSource(MIX_PNG);
+        const pm = await src.createPixelMap();
+        const pmi = await pm.getImageInfo();
+        check(pmi.size.width === 4 && pmi.size.height === 2 && pmi.pixelFormat === image.PixelMapFormat.RGBA_8888,
+          `PixelMap.getImageInfo → ${pmi.size.width}×${pmi.size.height} pixelFormat=${pmi.pixelFormat}（期望 4×2 / RGBA_8888=3）`);
+        check(pm.getPixelBytesNumber() === 32 && pm.getBytesNumberPerRow() === 16,
+          `getPixelBytesNumber=${pm.getPixelBytesNumber()}（4×2×4）/ getBytesNumberPerRow=${pm.getBytesNumberPerRow()}`);
+        const ab = new ArrayBuffer(pm.getPixelBytesNumber());
+        await pm.readPixelsToBuffer(ab);
+        const px = bytesOf(ab);
+        const nonzero = px.some((v) => v !== 0);
+        check(nonzero, `readPixelsToBuffer 读回 ${px.length} 字节非全零（真像素，不是空 buffer）`);
+        check(px[0] === 255 && px[1] === 0 && px[2] === 0 && px[3] === 255,
+          `像素(0,0) RGB=${px[0]},${px[1]},${px[2]} A=${px[3]}（期望 255,0,0 / 255 —— R 在第 0 字节，RGBA 布局）`);
+        check(px[28] === 0 && px[29] === 0 && px[30] === 255 && px[31] === 255,
+          `像素(3,1) RGB=${px[28]},${px[29]},${px[30]} A=${px[31]}（期望 0,0,255 / 255 —— 下整行纯蓝）`);
+        // 双 Promise 风格：callback 变体（照 getImageInfo 先例，成功 err.code === 0）
+        const cbPm = await new Promise((res, rej) =>
+          src.createPixelMap({ desiredPixelFormat: image.PixelMapFormat.BGRA_8888 }, (err, v) =>
+            err && err.code ? rej(new Error(err.message)) : res(v)));
+        check(!!cbPm && cbPm.getImageInfoSync().pixelFormat === image.PixelMapFormat.BGRA_8888,
+          `callback 风格 + desiredPixelFormat=BGRA_8888 → pixelFormat=${cbPm.getImageInfoSync().pixelFormat}（期望 4）`);
+        const ab2 = new ArrayBuffer(cbPm.getPixelBytesNumber());
+        await cbPm.readPixelsToBuffer(ab2);
+        const px2 = bytesOf(ab2);
+        check(px2[0] === 0 && px2[2] === 255,
+          `BGRA_8888 下像素(0,0) 字节序 = ${px2[0]},${px2[1]},${px2[2]}（B 在第 0 字节：0,?,255）`);
+      });
+
+      // ══════════ ③ 已知纯色 PNG：中心像素 RGB 断言 ══════════
+      await group('纯色 PNG 中心像素', async () => {
+        const pm = await image.createImageSource(SOLID_PNG).createPixelMap();
+        const ab = new ArrayBuffer(pm.getPixelBytesNumber());
+        await pm.readPixelsToBuffer(ab);
+        const px = bytesOf(ab);
+        const c = (1 * 4 + 2) * 4;      // 中心像素 (2,1) 的字节偏移
+        check(px[c] === 34 && px[c + 1] === 58 && px[c + 2] === 120 && px[c + 3] === 255,
+          `中心像素(2,1) RGB=${px[c]},${px[c + 1]},${px[c + 2]} A=${px[c + 3]}（期望 34,58,120 / 255）`);
+        check(px[0] === 34 && px[62] === 120, `首/尾像素同色（${px[0]}…${px[62]}，全图纯色）`);
+      });
+
+      // ══════════ ④ image.createPixelMap：色值数组 / ArrayBuffer ══════════
+      await group('image.createPixelMap', async () => {
+        // 旧 API 形状：Array<number>，每项一个像素，0xRRGGBBAA（低 8 位 alpha）
+        const colors = [0xff0000ff, 0x00ff00ff, 0x0000ffff, 0xffffffff];   // 红/绿/蓝/白
+        const pm = await image.createPixelMap(colors, { size: { width: 2, height: 2 } });
+        const ab = new ArrayBuffer(pm.getPixelBytesNumber());
+        await pm.readPixelsToBuffer(ab);
+        check(JSON.stringify(bytesOf(ab)) === JSON.stringify([255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255]),
+          `色值数组（0xRRGGBBAA）→ 读回 RGBA 字节逐个匹配（${bytesOf(ab).join(',')}）`);
+        // 现行 d.ts 形状：ArrayBuffer + srcPixelFormat=BGRA_8888（默认）→ PixelMap RGBA_8888（默认）
+        const bgra = new Uint8Array([0x44, 0x33, 0x22, 0xff]);   // B=0x44 G=0x33 R=0x22 A=0xff
+        const pm2 = await image.createPixelMap(bgra.buffer, { size: { width: 1, height: 1 } });
+        const ab2 = new ArrayBuffer(pm2.getPixelBytesNumber());
+        await pm2.readPixelsToBuffer(ab2);
+        check(bytesOf(ab2)[0] === 0x22 && bytesOf(ab2)[1] === 0x33 && bytesOf(ab2)[2] === 0x44,
+          `ArrayBuffer(BGRA 输入 44,33,22) → PixelMap RGBA 输出 22,33,44（srcPixelFormat 语义）`);
+        // callback 风格
+        const cbVal = await new Promise((res, rej) =>
+          image.createPixelMap(colors, { size: { width: 2, height: 2 } }, (err, v) =>
+            err && err.code ? rej(new Error(err.message)) : res(v)));
+        check(!!cbVal && cbVal.getPixelBytesNumber() === 16, `callback 风格 → PixelMap(${cbVal.getPixelBytesNumber()} 字节)`);
+        // 有牙齿：dst 太小必须拒绝（7600206），不是静默截断
+        let smallErr = null;
+        try { await pm.readPixelsToBuffer(new ArrayBuffer(8)); } catch (e) { smallErr = e; }
+        check(smallErr && smallErr.code === 7600206,
+          `dst 太小（8 < 16 字节）→ 抛 7600206（${smallErr ? 'code=' + smallErr.code : '没抛'}）`);
+        // release 后拒绝（7600105）
+        await pm.release();
+        let relErr = null;
+        try { await pm.readPixelsToBuffer(new ArrayBuffer(16)); } catch (e) { relErr = e; }
+        check(relErr && relErr.code === 7600105,
+          `release() 后 readPixelsToBuffer → 抛 7600105（${relErr ? 'code=' + relErr.code : '没抛'}）`);
+      });
+
+      // ══════════ ⑤ 像素字节与 getImageInfo 的互证 ══════════
+      await group('互证', async () => {
+        const src = image.createImageSource(SOLID_PNG);
+        await src.getImageInfo();
+        const pm = await src.createPixelMap();
+        check(pm.getImageInfoSync().size.width === src.getImageInfoSync().size.width
+          && pm.getImageInfoSync().size.height === src.getImageInfoSync().size.height,
+          `PixelMap 与 ImageSource 的 getImageInfoSync 同源（${pm.getImageInfoSync().size.width}×${pm.getImageInfoSync().size.height}）`);
+      });
+
+      lines.push(`WARN ${globalThis.__arkui_dom_layout_warnings.filter((w) => String(w).includes('getImageProperty')).length} 条 property 警告`);
+    } catch (e) {
+      allPass = false;
+      lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));
+    }
+
+    lines.unshift(allPass ? '=== ALL PASS ===' : '=== HAS FAILURE ===');
+    const out = document.getElementById('result');
+    out.textContent = lines.join('\n');
+    out.className = allPass ? 'pass' : 'fail';
+    document.title = allPass ? 'PASS' : 'FAIL';
+  })();
+  </script>
+</body>
+</html>

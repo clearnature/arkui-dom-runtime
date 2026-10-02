@@ -9,7 +9,19 @@
 
 - 目标：**ArkTS（ArkUI 声明式）应用跑在 Electron / 浏览器**——复用官方 `ets-loader` 做
   ArkTS→JS 转换，自研 JS 侧 DOM 运行时；不需要 Rosen / ark_js_vm / 宿主 ArkUI / RichPreviewer
-- 上次切片：**R157 chainMode 链式排列 + Gauge/DataPanel 绘制深化**（多智能体 A/B/C；
+- 上次切片：**R158 Tabs 长尾收官 + Repeat templateId 分桶深化**（多智能体 A/B 双线）——
+  A=Tabs animationMode 三值（CONTENT_FIRST/ACTION_FIRST/NO_ANIMATION——NO_ANIMATION 仅
+  点击路径禁动画 fromClick 判定、changeIndex/拖拽/spring 不受影响，与 duration=0 全局
+  门控分家）+ onContentWillChange（(cur,coming)=>boolean false 拒绝切换——守卫在改 index
+  之前、拒绝时 sel/unsel/动画对/onChange 全不发、抛错 fail-open）+ onContentDidScroll
+  （拖拽逐帧四参 sel/idx/pos/len 与 onGestureSwipe 同帧同期）+ customContentTransition
+  留警告；**TABS_UNSUPPORTED 收敛至仅 customContentTransition**；tabanim 81→99。
+  B=Repeat templateId 分桶深化——st.pool 单池升级 `Map<tplKey, Array>`（同模板桶 LIFO/
+  跨模板桶不取/桶上限 16/桶）、case#1 tplKey 守卫（同键换模板转新建）、删除旧跨模板
+  复用回退；batchfunc ① 组 39→49、页总 62→72。
+  门禁 11 步全绿（41a3f4c，Mimosa 0 findings seal sha256:1f817ebd…）；
+  五端矩阵 84/98/84/84/84。
+  更早：**R157 chainMode 链式排列 + Gauge/DataPanel 绘制深化**（多智能体 A/B/C；
   A 因限额中断由主会话补完收尾）——A=RelativeContainer chainMode（SPREAD/SPREAD_INSIDE/
   PACKED 三分支+溢出居中+GONE 跳过+双链共存 bias 失效——真机 cpp:768-830 逐式对齐；
   **链识别无显式分组**：链头=双锚规则+chainMode 标记、成员沿邻接图遍历；**chainBias 不存在**

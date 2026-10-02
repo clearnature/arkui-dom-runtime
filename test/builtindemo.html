@@ -95,8 +95,11 @@
         check(atRelease !== '' && mid !== '' && mid !== atRelease,
           `回弹是欠阻尼弹簧（R126）：释放后 80ms 仍在动（'${atRelease}' → '${mid}'）`);
         await tick(settleMs());           // 弹簧收口（精度触发，非固定时长；R154 宿主分端窗）
-        check(pageOf(0).style.transform === '',
-          `弹簧回弹收口后 transform 清空（实测 '${pageOf(0).style.transform}'）`);
+        // 收口判定容忍恰落在零位的最后一帧：解算器精度触发后清 transform 与"末帧=0px"
+        // 是竞态边界（第三跑实测 translateX(0px)）——语义上两者都是"回到静止"
+        const settledTf = pageOf(0).style.transform;
+        check(settledTf === '' || settledTf === 'translateX(0px)',
+          `弹簧回弹收口后 transform 清空（实测 '${settledTf}'）`);
         check(pageOf(0).style.position === '' && pageOf(1).style.display === 'none',
           '拖拽舞台已还原（P0 回流、P1 影藏）');
       });
@@ -108,12 +111,22 @@
         // slog 在组件状态里，直接读 ObservedProperty 的 DOM 不可见——改读 __swiperState 旁证：
         // 用事件计数代替：翻页后 P1 可见即证 commit
         dragClock(el('sw'), 80, 40, [[-20, 30], [-95, 30], [-96, 5]], 7);   // 位移 -96 > 半页 80
-        await tick(900);                  // 全矩阵负载下收口（timeout 200ms + rAF 波动）要给足
+        // 收口等待（原 tick(900) 定额在负载/虚拟时钟抖动下踩过"末帧未清"的竞态——
+        // 第五跑实测）——轮询等舞台还原，上限 4s 兜底
+        const settled = async () => {
+          for (let i = 0; i < 80; i++) {
+            const a = pageOf(0).style.transform, b = pageOf(1).style.transform;
+            if ((a === '' || a === 'translateX(0px)') && (b === '' || b === 'translateX(0px)')) return true;
+            await tick(50);
+          }
+          return false;
+        };
+        const didSettle = await settled();
         check(st().index === 1, `拖过半页（-96 > -80）→ 翻到 P1（实际 index=${st().index}）`);
         check(pageOf(1).style.display !== 'none' && pageOf(0).style.display === 'none',
           'commit 后 P1 可见 P0 隐藏');
-        check(pageOf(0).style.transform === '' && pageOf(1).style.transform === '',
-          '动画收口后 transform 清空（舞台还原）');
+        check(didSettle,
+          '动画收口后 transform 清空（舞台还原；容忍恰零末帧 translateX(0px)）');
       });
 
       // ══════════ ③ 速度翻页（快扫小位移）+ 边界摩擦 ══════════

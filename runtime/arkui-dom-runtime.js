@@ -8062,7 +8062,12 @@
     }
     for (const [p, hs] of byParent) {
       applyGuideLines(p);                     // 幂等；guideline 锚点先就绪（同 applyAlignRules）
-      const pw = p.offsetWidth, ph = p.offsetHeight;
+      // 容器锚距必须量【内容盒】——成员 style.top/left 落在 padding 盒坐标系上，与
+      // applyAlignRules 的口径一致（clientSize − padding）；用 offset* 会把边框也算进
+      // 锚距（测试页 RC 带 1px 边框时锚距多 2px，链尾越过真实底边——chaindemo 实测）
+      const pcs = getComputedStyle(p);
+      const pw = p.clientWidth - (parseFloat(pcs.paddingLeft) || 0) - (parseFloat(pcs.paddingRight) || 0);
+      const ph = p.clientHeight - (parseFloat(pcs.paddingTop) || 0) - (parseFloat(pcs.paddingBottom) || 0);
       /** @type {any} */ let info = chainInfoMeta.get(p);
       if (!info) { info = { h: [], v: [] }; chainInfoMeta.set(p, info); }
       info.h.length = 0; info.v.length = 0;   // 每轮重算（重渲染后旧结果作废）
@@ -18160,8 +18165,9 @@
   // 本实现：bind 在 finalizeConstruction（首建）/ resetMonitorsOnReuse（复用）时做——沿声明路径
   // 逐段 v2Cell(obj, seg) 注册监视器（首段=视图字段、尾段=@Trace 字段，写入都经过 v2.js 的
   // 访问器 set，正好是通知点）；set() 里 v2NotifyPathMonitors(cell) 重评估并聚合回调。
-  // 简化（与真机的差异）：数组【元素替换】arr[0]=x 不经过任何访问器，感知不到；元素【字段】
-  // 写入（arr[0].name=x）走 @Trace 访问器，正常感知。真机靠容器代理连元素替换也观测。
+  // 简化（与真机的差异）：数组【元素替换】arr[0]=x 不经过任何访问器——已由下方 W5 的
+  // @Trace 数组容器代理补齐（通知点与字段写入相同）；元素【字段】写入（arr[0].name=x）
+  // 走 @Trace 访问器，正常感知。真机靠容器代理连元素替换也观测。
   const v2CellPathMonitors = new WeakMap();   // 依赖 cell -> Set<mr>
   const v2InstPathMonitors = new WeakMap();   // inst -> Set<mr>（解绑用）
 
@@ -18185,6 +18191,25 @@
     return { ok: true, value: obj };
   }
 
+  // 沿声明路径逐段注册监视 cell（bind 与每次 fire 后重走共用）。真机每次 bindRun 都重跑
+  // analysisProp 重登记依赖（v2_monitor.ts:520-531）——元素替换后若不重登记，尾段 cell 就永远
+  // 落在旧元素上，新元素的 @Trace 字段写入无法唤醒本监视器（v2sem W5 回归案）。
+  /** @param {any} mr @returns {{ok: boolean, value: any}} value=走读终点（断链时 undefined） */
+  function v2RegisterMonitorSegs(mr) {
+    for (const cell of mr.cells) { const s = v2CellPathMonitors.get(cell); if (s) s.delete(mr); }
+    mr.cells.length = 0;
+    let obj = mr.inst;
+    let ok = true;
+    for (let i = 0; i < mr.segs.length; i++) {
+      const seg = mr.segs[i];
+      if (obj === null || obj === undefined ||
+          (typeof obj !== 'object' && typeof obj !== 'function') || !Reflect.has(obj, seg)) { ok = false; break; }
+      v2AddCellPathMonitor(v2Cell(obj, seg), mr);   // 每一段的写入都要能唤醒本监视器
+      obj = obj[seg];
+    }
+    return { ok, value: ok ? obj : undefined };
+  }
+
   // 绑定（或复用时重绑）inst 上声明的全部点分路径：逐段注册 + 走读快照
   /** @param {any} inst */
   function v2BindMonitorPaths(inst) {
@@ -18201,17 +18226,9 @@
       const savedElmt = currentNodeElmtId;
       currentNodeElmtId = null;              // 路径走读不记 elmtId 依赖（真机 start/stopRecordDependencies 隔离）
       try {
-        let obj = inst;
-        let ok = true;
-        for (let i = 0; i < mr.segs.length; i++) {
-          const seg = mr.segs[i];
-          if (obj === null || obj === undefined ||
-              (typeof obj !== 'object' && typeof obj !== 'function') || !Reflect.has(obj, seg)) { ok = false; break; }
-          v2AddCellPathMonitor(v2Cell(obj, seg), mr);   // 每一段的写入都要能唤醒本监视器
-          obj = obj[seg];
-        }
-        mr.valid = ok;
-        mr.last = ok ? obj : undefined;        // initRun：before=now，不标脏（真机 setValue(true,·)，:104-112）
+        const r = v2RegisterMonitorSegs(mr);
+        mr.valid = r.ok;
+        mr.last = r.value;                     // initRun：before=now，不标脏（真机 setValue(true,·)，:104-112）
       } finally { currentNodeElmtId = savedElmt; }
       mrs.add(mr);
     }
@@ -18248,6 +18265,8 @@
         entry = { path: mr.path, before: mr.valid ? mr.last : undefined, now: r.value, dirty };
         mr.last = r.value;
         mr.valid = r.ok;                       // 回调后 before=now（真机 resetMonitor，:495-497）
+        v2RegisterMonitorSegs(mr);             // fire 后重登记段 cell（真机 bindRun 重跑 analysisProp）——
+                                               // 元素替换后尾段随路径落到新元素，后续字段写才能继续唤醒
       } finally { currentNodeElmtId = savedElmt; }
       if (!entry.dirty) continue;
       let f = fires.get(mr.method);
@@ -18255,6 +18274,91 @@
       f.entries.push(entry);
     }
     for (const [method, f] of fires) v2FirePathMonitor(f.inst, method, f.entries);
+  }
+
+  // ── W5：@Trace 数组容器代理（元素替换 arr[0]=x / 变异方法感知，R159-B）──
+  // 补齐上方 W3 块注释里的已知简化。真机权威语义（v2_observed_proxy.ts 的 ArrayProxyHandler）：
+  //   · 整数索引写入 set()：target[key]===value 跳过；否则 fireChange(target, key)——监视器靠
+  //     MonitorV2.OB_ANY（v2_change_observation.ts:697 命中汇入）醒来 → bindRun 重走路径比对，
+  //     路径值【没变就不发】（push 后 items.0.name 不误发、splice 挪位后变化会发）。
+  //   · 长度变异方法 push/pop/shift/splice/unshift 与原位变异 copyWithin/fill/reverse/sort：
+  //     get() 里包一层，调完 fireChange(OB_LENGTH) 一次性通知（真机 arrayLengthChangingFunctions/
+  //     arrayMutatingFunctions 两张表；shrinkTo/extendTo 是 collection.Array API，_plain Array 无），
+  //     调用直接打在 target 上——内部逐索引写【不再】二次进 set 拦截，一次方法调用恰好一条通知。
+  //   · 代理在集合首次被读取时创建并【写回 target[key]】缓存（autoProxyObject，防双包）。
+  // DOM 运行时没有真机的 SYMBOL_REFS 依赖登记面，两路变更统一收敛到【与字段写入相同的通知点】
+  //（通知字段 cell：markDependentsDirty → v2InvalidateComputeds → v2NotifyPathMonitors）：
+  //   · 渲染依赖记在 items 字段 cell 上（installV2Accessor get 的 recordDep），通知它恰好覆盖
+  //     全部读方；@Computed 依赖同样登记在该 cell。
+  //   · 点分路径监视器（W3）逐段注册时首段就是字段 cell，通知它即重走全路径 + 比对——精确
+  //     dirty 判定由既有 v2NotifyPathMonitors 给出，索引 cell（v2Cell(代理,'0')）无人依赖，不通知。
+  const V2_ARRAY_MUTATING_FNS = new Set(['copyWithin', 'fill', 'reverse', 'sort']);
+  const V2_ARRAY_LEN_CHANGING_FNS = new Set(['push', 'pop', 'shift', 'splice', 'unshift']);
+  const v2ArrayProxies = new WeakMap();        // 原始数组 -> {proxy, owners:[{inst,key}]}
+  // 性能取舍：代理【惰性且缓存】——只在 @Trace 字段 get 到数组时包一次，按原始数组存 WeakMap
+  // 复用同一代理（身份稳定：=== / instanceof / Map 键不受影响；真机同样只在读取时包）。
+  // 非数组字段与非 @Trace 字段零开销；已包过的数组再读只是一次 WeakMap 查找。
+  /** @param {any} raw @param {any} inst @param {string} key */
+  function v2ArrayProxyOf(raw, inst, key) {
+    let e = v2ArrayProxies.get(raw);
+    if (!e) v2ArrayProxies.set(raw, (e = { proxy: null, owners: [] }));
+    if (!e.owners.some((/** @type {any} */ o) => o.inst === inst && o.key === key)) {
+      e.owners.push({ inst, key });            // 同一数组被多个 @Trace 字段引用时逐一通知（幂等登记）
+    }
+    if (e.proxy) return e.proxy;
+    const notify = () => {
+      for (const o of e.owners) {
+        const cell = v2Cell(o.inst, o.key);
+        markDependentsDirty(cell);
+        v2InvalidateComputeds(cell);
+        v2NotifyPathMonitors(cell);
+      }
+    };
+    e.proxy = new Proxy(raw, {
+      /** @param {any} target @param {string|symbol} prop @param {any} v @param {any} receiver */
+      set(target, prop, v, receiver) {
+        if (prop === 'length') {
+          const before = target.length;
+          const ok = Reflect.set(target, prop, v, receiver);
+          if (ok && target.length !== before) notify();   // 长度收缩在此一次性通知（元素级删除不逐个发）
+          return ok;
+        }
+        const before = target[/** @type {string} */ (prop)];
+        const ok = Reflect.set(target, prop, v, receiver);
+        if (ok && !Object.is(before, v) && typeof prop === 'string' && /^(0|[1-9]\d*)$/.test(prop)) notify();
+        return ok;
+      },
+      /** @param {any} target @param {string|symbol} prop */
+      deleteProperty(target, prop) {
+        const ok = Reflect.deleteProperty(target, prop);
+        // 真机无 delete 拦截（语义超集记档）：delete arr[0] 也感知
+        if (ok && typeof prop === 'string' && /^(0|[1-9]\d*)$/.test(prop)) notify();
+        return ok;
+      },
+      /** @param {any} target @param {string|symbol} prop @param {any} receiver */
+      get(target, prop, receiver) {
+        const v = Reflect.get(target, prop, receiver);
+        if (typeof v !== 'function') return v;   // 元素/length 透传：返回【原始元素引用】，元素上的
+                                                 // @ObservedV2/@Trace 访问器原样生效（arr[0].name=x 回归保障）
+        const k = /** @type {string} */ (prop);
+        if (V2_ARRAY_MUTATING_FNS.has(k)) {
+          return (/** @param {...any} args */ function (...args) {   // 真机返回 receiver：链式调用继续落在代理上
+            const r = v.apply(target, args);
+            notify();
+            return receiver;
+          });
+        }
+        if (V2_ARRAY_LEN_CHANGING_FNS.has(k)) {
+          return (/** @param {...any} args */ function (...args) {
+            const r = v.apply(target, args);
+            notify();
+            return r;
+          });
+        }
+        return v;                                // 其余方法原样返回：以代理为 this 调用时内部索引写仍走 set 拦截
+      },
+    });
+    return e.proxy;
   }
 
   /** @param {any} inst @param {string} method @param {any[]} entries */
@@ -18362,7 +18466,12 @@
         // 对齐真机 startRecordDependencies(computedId) 的隔离（v2_computed.ts:106）。
         if (v2ComputedRecording) v2AddComputedDep(v2ComputedRecording, cell);
         else if (kind !== 'event') recordDep(cell);
-        return this[v2Slot(key)];
+        const slot = this[v2Slot(key)];
+        // W5：@Trace 数组读路径包容器代理（元素替换/变异方法感知，见 W5 块注释）。
+        // 仅 @Trace 深度观测开启：@Local/@Param 等维持原样（真机 autoProxyObject 对全部 V2
+        // 集合都包，这里是收敛到任务范围的子集——边界记档，见 R159-B 报告）。
+        if (kind === 'trace' && Array.isArray(slot)) return v2ArrayProxyOf(slot, this, key);
+        return slot;
       },
       set(v) {
         const bind = this.__v2consumerBind && this.__v2consumerBind.get(key);

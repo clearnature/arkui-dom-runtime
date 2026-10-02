@@ -94,6 +94,7 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 | **`Guideline` 虚拟参考线**：`{id, direction, position:{start\|end}}`；竖线锚水平、横线锚垂直；**错轴值恒为 0**；支持 `'30%'` 这类 Dimension 字符串 | ✅ | reldemo（30%→90、end:30→270、错轴→0） |
 | **`bias` 居中偏置**：同轴两侧都锚定时按比例定位，**默认 0.5**（权威 `@default`） | ✅ | reldemo（0.2→56、0.8→224、不写→140） |
 | **`alignRules` 两套键名**：`left/middle/right` 与本地化的 `start/end/middle`（`middle` 是水平、`center` 是垂直） | ✅ | reldemo + measure |
+| **`chainMode` 链式排列**（R157 实装、R159 补验收口）：子组件 `chainMode(direction, style)` 链头标记（无显式分组——链头=双锚规则+chainMode、成员沿邻接图遍历）；SPREAD（n+1 份含首尾外空隙）/SPREAD_INSIDE（n−1 份仅中间）/PACKED（无间隙按 alignRules.bias，**chainBias 不存在**）；链成员该方向偏移接管 alignRules、双链共存（一节点可同时为水平链成员+垂直链链头）；容器锚距量内容盒（client*−padding，与 alignRules 同口径） | ✅ | `bash run.sh chaindemo`（23 条断言，五端通过：自省/三分支几何/幂等/非法枚举出声） |
 | **`Progress` 线性/胶囊**：`--progress` 自定义属性 = 百分比、填充宽度、`role=progressbar` + `aria-valuenow/min/max` | ✅ | drawdemo（50/100 → 50%、填充 100px） |
 | **`Progress` 环形**：SVG 圆 + `pathLength=100` 归一化的 dasharray | ✅ | drawdemo（25/100 → dash 25） |
 | **`Gauge`**：`Gauge({value,min,max})` + `startAngle`/`endAngle`（0 点 = 0°、顺时针）、整圆拆两段、`colors` 分段（权重归一 + 权重 0 不画）、`strokeWidth`、未填充轨道 | ✅ | drawdemo（180°→底部、0°→顶部、默认 0→360 整圆、40∈[20,60]→未填充 50%） |
@@ -132,6 +133,7 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 | **`TextPicker`**（R56，R58 补齐多列/级联/弹层）：文本选择器——`create({range, selected})`；**range 三态**：string[] 单列 / string[][] 多列独立滚轮 / 级联 children 联动（父变 → 子列重置重排，colCount 按链深动态）；**onChange(value,index) 联合类型签名**（string\|string[]，窄签名被 ArkTS 10605999 拒——参数逆变）；`selectedIndex` 属性覆盖 create selected（重定位不发事件）；`defaultPickerItemHeight` 行高（缺省 40）；滚轮同步单步（R51/R52 同族时序，真机 FireChangeEvent:803）；边界不动不发；**`TextPickerDialog.show`**（OK/Cancel → onAccept/onCancel 走 TextPickerResult，onChange 逐次回调；fixed 居中面板，DOM 无弹簧动画标注） | ✅ | `bash run.sh textpickerdemo`（19 条断言：单列 10/多列 3/级联 3/弹层 3；破坏 1 红）；Mimosa deep 审计 0 findings（seal sha256:bf59cd02…，R58 重跑） |
 | **图像信息 `@ohos.multimedia.image`**：`createImageSource(uri)` + `getImageInfo()`（Promise/回调）/`getImageInfoSync()` + `release`；`ImageInfo.size` 来自**真实解码**（`createImageBitmap`） | ✅ | measimage（已知尺寸 PNG 7×3 / 13×5） |
 | **`mimeType` = 解码后的真实格式**（嗅探字节魔数，不是响应头）：PNG 字节 + `.jpg` 扩展名的伪装文件也报 `image/png` | ✅ | measimage（真 JPEG → `image/jpeg`；伪装 → `image/png`） |
+| **图像扩展 `@ohos.multimedia.image`**（R159-C）：`getImageProperty(name)`（EXIF/尺寸属性读取）/`createPixelMap` + `PixelMap` 像素面（readPixelsToBuffer 等） | ✅ | `bash run.sh imageext`（19 条断言，五端通过） |
 | **通知 `@ohos.notificationManager`**：`publish`（Promise 与**回调**两种重载）/`cancel`/`cancelAll`/`isNotificationEnabled`；`content` 按 `normal`→`longText`→`multiLine` 取文本；空 `content` 响亮失败 | ✅ | measnotify（四条 Promise 链路 + 回调重载成功/失败） |
 | **通知投递路径如实自报**：每条记录带 `via`（`host-Notification`/`record-only`）+ `hostPermission` + `reason`；**只有 `permission='granted'` + 走了宿主 API 才算确证送达**，其余必须写出原因 | ✅ | measnotify（浏览器 `permission=default` → 有原因；Electron `granted` → 确证送达） |
 | **通知降级告警的边界**：浏览器没有系统通知是**预期**降级（只记日志）；Electron（注入了 Node fs）里"没送达"进 `layout_warnings` | ✅ | measnotify（同一条断言两端期望不同：浏览器 0 条 / Electron 1 条） |
@@ -257,8 +259,9 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
   页面边界识别不出来 → 会记警告（请把 `ForEach` 移到 `Swiper` 之外或用 `@Builder` 展开）。
   **R154 indicator 三态 + 拖拽释放弹簧曲线槽位**（见上 `indicator` 条）：
   `bash run.sh builtindemo`（48 条断言，五端通过；R125 首版 29 条 + 曲线槽位 8 + indicator 真语义 11）。
-- **布局仍不是约束求解器**：`alignRules` 现在支持多层链（不动点迭代）、`Guideline`、`bias` 与两套键名，
-  但 **`chainMode`（链式排列）未实现**；环状锚定不会报错，而是迭代到上限后记一条 warning。
+- **布局仍不是约束求解器**：`alignRules` 现在支持多层链（不动点迭代）、`Guideline`、`bias` 与两套键名；
+  **`chainMode`（链式排列）已实现**（R157 实装/R159 补验收口，见上表）——环状锚定（非链成员）不会报错，
+  而是迭代到上限后记一条 warning。
   `Guideline` 的位置字段只有 `start`/`end`（旧 API 的 `percent` 会被忽略并记警告）。
   另外 `alignRules` 的解析被**推迟到渲染后**（首渲染 + 每次重渲染各一遍），
   所以渲染中途读取几何会看到未应用相对定位的临时状态。
@@ -327,11 +330,12 @@ node tools/gen-components.mjs --check   # 只校验生成物与生成器是否�
 ## 未实现的框架语义
 - `Repeat`、`@LocalBuilder`——状态管理 v2 的**核心**已实现（见上表）；`@Reusable` 已于 R151 落地（见 v2 `@Reusable` 复用池行）
 - v2 的已知简化（R151 后）：`@Monitor` 一次赋值仍只产生一条 dirty（点分路径已实现，见上）；数组**元素替换** `arr[0]=x`
-  不经访问器、点分路径监视器感知不到（元素**字段**写入正常——与真机差异已注释）；@Reusable 池为 V2 系，V1（ViewPU）复用未挂点
+  与变异方法（push/splice）已经由容器代理感知（R159-B）、元素**字段**写入在元素替换后仍触发（R159.1 修——监视器
+  fire 后重注册段 cell，对齐真机 bindRun 重跑 analysisProp）；@Reusable 池为 V2 系，V1（ViewPU）复用未挂点
 - v1 深度观测的已知边界：`@Observed` 只观测该类的**自身字段**，嵌套的非 `@Observed` 对象内部变更不触发
   （与真机一致，有负向断言守着）；`@Observed` 经 Proxy 实现，**未验证**对 `instanceof`、序列化、
   展开运算符、`for...in` 之外的反射行为有无边界差异
-- `chainMode`（相对布局的链式排列）；**组件内置手势已落地（R125）**：`List`/`Scroll` 拖拽滚动+惯性、
+- `chainMode`（相对布局的链式排列）已实现（R157/R159，见上表）；**组件内置手势已落地（R125）**：`List`/`Scroll` 拖拽滚动+惯性、
   `Swiper` 拖拽翻页、`Tabs` 内容区滑动（见 Swiper 限制节）；`Refresh` R50 已实现（见上表）。
   另：`tabBar` 的自定义 builder、`onGestureJudgeBegin`/`shouldBuiltInRecognizerParallelWith` 这类**手势判定回调**未实现
   （**显式绑定的手势**已完整：`Gesture`/`XxxGesture`/`GestureGroup`/`priorityGesture`/`parallelGesture`/`GestureMask`，见上表 R23 与 R23 收口）

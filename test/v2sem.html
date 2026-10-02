@@ -299,6 +299,115 @@
       // 无额外告警（只允许 W2 只读测试故意造的那一条）
       const warns = (__arkui_dom_layout_warnings || []).filter((w) => w.indexOf("@Computed 'doubled'") < 0);
       check(warns.length === 0, `无其它 v2 相关告警（${warns.length}${warns.length ? ': ' + warns[0] : ''}）`);
+
+      // ════════════════ W5：@Trace 数组容器代理（R159-B：元素替换/变异方法）════════════════
+      // @ObservedV2 模型类上的 @Trace 数组：读路径包 Proxy（v2.js W5 块）——
+      // arr[0]=x 整元素替换与 push/splice 变异都收敛到字段 cell 通知（markDependentsDirty →
+      // v2InvalidateComputeds → v2NotifyPathMonitors），点分路径监视器重走路径精确判 dirty。
+      const warnLenW5 = warns.length;                          // 本组收尾再核一次无新告警
+      class TaskList {
+        constructor(items) { this.items = items; }
+      }
+      D.ObservedV2(TaskList);                                  // @ObservedV2 类装饰器
+      D.Trace(TaskList.prototype, 'items');                    // @Trace 数组字段（容器代理挂载面）
+
+      class TraceArrCard extends D.ViewV2 {
+        constructor(parent, params, ls, elmtId = -1, paramsLambda, extraInfo) {
+          super(parent, elmtId, extraInfo);
+          this.initParam('list', (params && 'list' in params) ? params.list : new TaskList([new Task(0, 'a'), new Task(1, 'b')]));
+          this.hit = 0; this.dirtyLog = ''; this.beforeLog = ''; this.nowLog = ''; this.lenComputes = 0;
+          this.finalizeConstruction();
+        }
+        onItemName(m) {
+          this.hit += 1; this.dirtyLog = m.dirty.join('|');
+          const mv = m.value('list.items.0.name');
+          this.beforeLog = String(mv && mv.before); this.nowLog = String(mv && mv.now);
+        }
+        get lenTag() { this.lenComputes += 1; return this.list.items.length + ':' + this.list.items[0].name; }
+        initialRender() {
+          this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create('ta=' + this.list.items[0].name);
+            if (isInitialRender) { Text.id('sem-ta'); Text.fontSize(12); }
+          }, Text);
+          Text.pop();
+        }
+        rerender() {}
+      }
+      D.Local(TraceArrCard.prototype, 'list');
+      installMonitor(TraceArrCard.prototype, 'onItemName', 'list.items.0.name');
+      installComputed(TraceArrCard.prototype, 'lenTag');
+
+      const t = new TraceArrCard(undefined, { list: new TaskList([new Task(0, 'a'), new Task(1, 'b')]) },
+        undefined, ++elmtSeq, () => ({}), {});
+      const elem0 = t.list.items[0];                           // 首读：拿到的是【原始元素引用】
+      check(Array.isArray(t.list.items) && elem0 instanceof Task && elem0 === t.list.items[0] && elem0.name === 'a',
+        'W5 代理透明：Array.isArray/instanceof/重复读取 === 均通过（原始引用不被换壳）');
+      check(t.lenTag === '2:a' && t.lenComputes === 1, `W5 @Computed 初读 1 次（'${t.lenTag}'）`);
+      mount(t);
+      check(t.hit === 0 && val('sem-ta') === 'ta=a', `W5 初态不触发、渲染正确：'${val('sem-ta')}'`);
+
+      t.list.items[0] = new Task(9, 'rep');                    // 整元素替换（旧实现感知不到的写入形态）
+      check(t.hit === 1 && t.dirtyLog === 'list.items.0.name',
+        `W5 arr[0]=x 元素替换触发 @Monitor（${t.hit} 次，dirty='${t.dirtyLog}'）`);
+      check(t.beforeLog === 'a' && t.nowLog === 'rep', `W5 value() 读回 before=${t.beforeLog}/now=${t.nowLog}`);
+      check(t.lenTag === '2:rep' && t.lenComputes === 2, `W5 依赖该数组的 @Computed 立即重算（'${t.lenTag}'，${t.lenComputes} 次）`);
+      await until(() => val('sem-ta') === 'ta=rep', 40);
+      check(val('sem-ta') === 'ta=rep', `W5 元素替换 → 读该数组的 elmtId 自动重渲染：'${val('sem-ta')}'`);
+
+      const rep = t.list.items[0];
+      t.list.items[0] = rep;                                   // 同值替换（Object.is 相等）
+      check(t.hit === 1 && t.lenComputes === 2, 'W5 同值替换不触发（监视器/计算零误发）');
+
+      rep.name = 'z2';                                         // 回归：元素【字段】写入仍走 @Trace 访问器
+      check(t.hit === 2 && t.nowLog === 'z2' && t.lenTag === '2:z2' && t.lenComputes === 3,
+        `W5 回归：arr[0].name=x 元素字段写正常触发（${t.hit} 次，now='${t.nowLog}'，computed='${t.lenTag}' @Computed 记了元素读依赖也重算）`);
+
+      t.list.items.push(new Task(2, 'c'));                     // 变异方法：路径值不变 → 只发依赖不发监视器
+      check(t.hit === 2 && t.lenTag === '3:z2' && t.lenComputes === 4,
+        `W5 push 触发依赖重算（'${t.lenTag}'）但路径值没变不误发 @Monitor（仍 ${t.hit} 次）`);
+      t.list.items.splice(0, 1);                               // 挪位：items.0 换人 → 路径值变了要发
+      check(t.hit === 3 && t.nowLog === 'b' && t.lenTag === '2:b' && t.lenComputes === 5,
+        `W5 splice 挪位后 items.0.name 变化触发（now='${t.nowLog}'，computed='${t.lenTag}'）`);
+
+      // W1×W5：@Reusable 复用池与容器代理共存（R151 池路径不因代理而炸）
+      class ReuseTraceCard extends D.ViewV2 {
+        constructor(parent, params, ls, elmtId = -1, paramsLambda, extraInfo) {
+          super(parent, elmtId, extraInfo);
+          this.initParam('list', (params && 'list' in params) ? params.list : new TaskList([new Task(0, 'a')]));
+          this.hit = 0; this.reuseCalls = 0;
+          this.finalizeConstruction();
+        }
+        aboutToReuse() { this.reuseCalls += 1; }
+        onItemName() { this.hit += 1; }
+        initialRender() {
+          this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create('rt=' + this.list.items[0].name);
+            if (isInitialRender) { Text.id('sem-rt'); Text.fontSize(12); }
+          }, Text);
+          Text.pop();
+        }
+        rerender() {}
+      }
+      D.Local(ReuseTraceCard.prototype, 'list');
+      installMonitor(ReuseTraceCard.prototype, 'onItemName', 'list.items.0.name');
+      D.ReusableV2(ReuseTraceCard);
+      const rt1 = new ReuseTraceCard(undefined, { list: new TaskList([new Task(0, 'a')]) },
+        undefined, ++elmtSeq, () => ({}), {});
+      mount(rt1);
+      unmount(rt1);                                            // 入池（W1 挂点）
+      const rt2 = new ReuseTraceCard(undefined, { list: new TaskList([new Task(0, 'fresh')]) },
+        undefined, ++elmtSeq, () => ({}), {});
+      check(rt2 === rt1 && rt2.hit === 0 && rt2.reuseCalls === 1,
+        `W1×W5 出池复用同一实例且重绑快照后不误触发（hit=${rt2.hit}，aboutToReuse=${rt2.reuseCalls} 次）`);
+      mount(rt2);
+      rt2.list.items[0] = new Task(1, 'rep2');
+      check(rt2.hit === 1, `W1×W5 复用后元素替换仍触发（池路径与代理共存，${rt2.hit} 次）`);
+      await until(() => val('sem-rt') === 'rt=rep2', 40);
+      check(val('sem-rt') === 'rt=rep2', `W1×W5 复用后替换驱动重渲染：'${val('sem-rt')}'`);
+
+      const warnsW5 = (__arkui_dom_layout_warnings || []).filter((w) => w.indexOf("@Computed 'doubled'") < 0);
+      check(warnsW5.length === warnLenW5, `W5 无新告警（${warnsW5.length === warnLenW5 ? 0 : warnsW5.length - warnLenW5} 条新增）`);
+
     } catch (e) {
       allPass = false;
       lines.push('FAIL 抛出异常: ' + (e && e.stack ? e.stack : e));

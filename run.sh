@@ -414,6 +414,12 @@ case "${1:-index}" in
     # R157：Gauge/DataPanel 绘制深化
     run_one gaugedemo "$(src_of pages/Index.ts)" build/app.js test/gaugedemo.html || rc=1
     echo
+    # R157-A：chainMode 链式排列（SPREAD/SPREAD_INSIDE/PACKED）
+    run_one chaindemo "$(src_of pages/Index.ts)" build/app.js test/chaindemo.html || rc=1
+    echo
+    # R159-C：@ohos.multimedia.image 扩展（getImageProperty/createPixelMap 像素读取）
+    run_one imageext "$(src_of pages/Index.ts)" build/app.js test/imageext.html || rc=1
+    echo
     PERSIST_PROFILE="$HERE/build/chrome-profile-persist"
     rm -rf "$PERSIST_PROFILE"; mkdir -p "$PERSIST_PROFILE"   # 从干净状态开始，否则"持久化"可能是上次残留
     PERSIST_PORT="$(pick_free_port)" || { echo "  ❌ 找不到空闲端口"; rc=1; }
@@ -433,6 +439,9 @@ case "${1:-index}" in
   navdemo) run_one navdemo "$(src_of pages/NavDemo.ts)" build/navdemo.js test/navdemo.html ;;
   reldemo) run_one reldemo "$(src_of pages/RelDemo.ts)" build/reldemo.js test/reldemo.html ;;
   drawdemo) run_one drawdemo "$(src_of pages/DrawDemo.ts)" build/drawdemo.js test/drawdemo.html ;;
+  imageext)
+    # R159-C：@ohos.multimedia.image 扩展（getImageProperty/createPixelMap 像素读取）
+    run_one imageext "$(src_of pages/Index.ts)" build/app.js test/imageext.html ;;
   textmeasure) run_one textmeasure "$(src_of pages/TextMeasure.ts)" build/textmeasure-module.js test/textmeasure.html \
       "--cjs --register TextMeasure" ;;
   lazyvh) run_one lazyvh "$(src_of pages/LazyVar.ts)" build/lazyvar.js test/lazyvar.html ;;
@@ -697,6 +706,9 @@ case "${1:-index}" in
   gaugedemo)
     # R157：Gauge 指针/description + DataPanel trackShadow/closeEffect/strokeWidth
     run_one gaugedemo "$(src_of pages/Index.ts)" build/app.js test/gaugedemo.html ;;
+  chaindemo)
+    # R157-A：RelativeContainer chainMode 链式排列（SPREAD/SPREAD_INSIDE/PACKED）
+    run_one chaindemo "$(src_of pages/Index.ts)" build/app.js test/chaindemo.html ;;
   funcbehavior)
     # R94：行为断言三批（func/motion/layout）
     run_one funcbehavior "$(src_of entryability/EntryAbility.ts)" build/funcbehavior-module.js test/funcbehavior.html \

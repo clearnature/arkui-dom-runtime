@@ -914,7 +914,12 @@
     }
     for (const [p, hs] of byParent) {
       applyGuideLines(p);                     // 幂等；guideline 锚点先就绪（同 applyAlignRules）
-      const pw = p.offsetWidth, ph = p.offsetHeight;
+      // 容器锚距必须量【内容盒】——成员 style.top/left 落在 padding 盒坐标系上，与
+      // applyAlignRules 的口径一致（clientSize − padding）；用 offset* 会把边框也算进
+      // 锚距（测试页 RC 带 1px 边框时锚距多 2px，链尾越过真实底边——chaindemo 实测）
+      const pcs = getComputedStyle(p);
+      const pw = p.clientWidth - (parseFloat(pcs.paddingLeft) || 0) - (parseFloat(pcs.paddingRight) || 0);
+      const ph = p.clientHeight - (parseFloat(pcs.paddingTop) || 0) - (parseFloat(pcs.paddingBottom) || 0);
       /** @type {any} */ let info = chainInfoMeta.get(p);
       if (!info) { info = { h: [], v: [] }; chainInfoMeta.set(p, info); }
       info.h.length = 0; info.v.length = 0;   // 每轮重算（重渲染后旧结果作废）

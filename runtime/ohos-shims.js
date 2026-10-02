@@ -911,15 +911,29 @@
   };
   define('measure', MeasureText);
 
-  // ── @ohos.multimedia.image —— 图像信息（R18） ──
+  // ── @ohos.multimedia.image —— 图像信息（R18）+ 像素读取（R159-C） ──
   //
   // 权威来源 `@ohos.multimedia.image.d.ts`：
   //   createImageSource(uri: string): ImageSource
   //   ImageSource.getImageInfo(): Promise<ImageInfo> / getImageInfo(cb) / getImageInfoSync(): ImageInfo
+  //   ImageSource.getImageProperty(key: PropertyKey, options?): Promise<string> / (key, cb) / (key, options, cb)
+  //   ImageSource.createPixelMap(options?: DecodingOptions): Promise<PixelMap> / (cb) / (options, cb)
+  //   image.createPixelMap(colors: ArrayBuffer, options: InitializationOptions): Promise<PixelMap> / (+cb)
+  //     —— 旧 API（≤11）形状是 Array<number>（每项一个像素），两种都收（见 createPixelMapFromColors）
+  //   PixelMap.getImageInfo() / getImageInfoSync() / getPixelBytesNumber() / getBytesNumberPerRow()
+  //          / readPixelsToBuffer(dst): Promise<void> / (dst, cb) / readPixelsToBufferSync(dst)
   //   ImageInfo { size: Size, density, stride, pixelFormat, alphaType, mimeType, isHdr }；Size { width, height }
   //
   // 实现取向与 R15 的文本测量一致：**让浏览器真解码**（fetch + createImageBitmap），
   // 而不是自己解析 PNG/JPEG 头 —— 宽高来自真实解码器，mimeType 来自真实响应的 Content-Type。
+  //
+  // R159-C 像素语义（写透，防后人误改）：
+  //   · 解码缓存：createImageBitmap 后再画到 OffscreenCanvas，getImageData 产出 Uint8ClampedArray。
+  //     TypedArray 的字节序固定为 [R,G,B,A]（视图字节序与平台端序无关）——所以"真像素、端无关"。
+  //   · PixelMap 按其声明的 pixelFormat 存字节：RGBA_8888 原生；BGRA_8888 在构造时换 R、B。
+  //     readPixelsToBuffer 按 d.ts 语义"按 PixelMap 的像素格式写入 dst"＝原样拷贝缓存字节。
+  //   · 格式取舍：Canvas 只出 RGBA/BGRA。desiredPixelFormat=RGB_565 不支持 → 记警告退回 RGBA_8888
+  //     （不静默——否则调用方拿到的字节布局和它以为的不一致）。
   const resolveImageUrl = (uri) => {
     const s = String(uri);
     if (/^[a-z][a-z0-9+.-]*:/i.test(s)) return s;                 // http(s):/data:/file: 等绝对形式
@@ -943,40 +957,99 @@
     if (head.startsWith('<?xml') || head.startsWith('<svg')) return 'image/svg+xml';
     return '';
   };
+  // image 段内共享：BusinessError 成功形状 + 警告通道（与 R18 段 dedupe 规则一致）
+  const imgOk = () => ({ code: 0, message: '' });
+  const imgWarn = (msg) => {
+    const w0 = global.__arkui_dom_layout_warnings;
+    if (w0 && !w0.includes(msg)) w0.push(msg);
+  };
+  // 交换每像素的 R、B 字节（RGBA↔BGRA 是同一个操作：交换是自逆的）
+  const swizzleRB = (src) => {
+    const out = new Uint8Array(src.length);
+    for (let i = 0; i + 3 < src.length; i += 4) {
+      out[i] = src[i + 2]; out[i + 1] = src[i + 1]; out[i + 2] = src[i]; out[i + 3] = src[i + 3];
+    }
+    return out;
+  };
+  // data:[mediatype][;base64],payload → Blob（不走 fetch：CSP connect-src 面零依赖，见
+  // _ensureDecoded 内注释）。meta=base64 与 URL 编码两种载荷都支持。
+  // mediatype 缺省时按魔数嗅探（与 mimeType 权威口径同源）；仍认不出才落 image/png 兜底
+  // ——Blob 无类型会让 createImageBitmap 拒解。
+  const dataUriToBlob = (url) => {
+    const m = url.match(/^data:([^,]*),(.*)$/s);
+    if (!m) throw fsErr(62980103, `无法解析的 data: URI：${url.slice(0, 64)}…`);
+    const meta = m[1];
+    let payload = m[2].replace(/\s/g, '');
+    let bytes;
+    if (/(^|;)base64$/i.test(meta)) {
+      const bin = atob(payload);
+      bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    } else {
+      payload = decodeURIComponent(payload);
+      bytes = new Uint8Array(payload.length);
+      for (let i = 0; i < payload.length; i++) bytes[i] = payload.charCodeAt(i) & 0xff;
+    }
+    let mime = meta.split(';')[0].trim();
+    if (!mime) mime = sniffImageFormat(bytes) || 'image/png';
+    return new Blob([bytes], { type: mime });
+  };
+  // 输入按 RGBA 顺序 → 输出按 format 排列（拷贝，不改输入）
+  const rgbaToFormat = (rgba, format) =>
+    format === 4 /* BGRA_8888 */ ? swizzleRB(rgba) : new Uint8Array(rgba);
   class ImageSource {
     constructor(uri) {
       this.uri = String(uri);
       this._info = null;
       this._pending = null;
+      this._pixels = null;   // R159-C：解码结果的 RGBA 像素缓存（Uint8ClampedArray），OffscreenCanvas 不可用时为 null
     }
-    getImageInfo(cb) {
+    _ensureDecoded() {
       if (!this._pending) {
         this._pending = (async () => {
           const url = resolveImageUrl(this.uri);
-          let res;
-          try {
-            res = await fetch(url);
-          } catch (e) {
-            throw fsErr(62980103, `读取图像失败（网络错误）：${url} —— ${e && e.message}`);
+          let blob;
+          if (url.startsWith('data:')) {
+            // data: URI 直接解码、不走 fetch——Electron 注入的 CSP 没有 connect-src，
+            // fetch(data:) 被 default-src 'self' 拦下（浏览器无 CSP 的端看不到这个差异，
+            // electron imageext 首跑抓出）。meta=base64 与 URL 编码两种载荷都支持。
+            blob = dataUriToBlob(url);
+          } else {
+            let res;
+            try {
+              res = await fetch(url);
+            } catch (e) {
+              throw fsErr(62980103, `读取图像失败（网络错误）：${url} —— ${e && e.message}`);
+            }
+            if (!res.ok) {
+              throw fsErr(62980103, `读取图像失败：HTTP ${res.status} ${res.statusText}（${url}）`);
+            }
+            blob = await res.blob();
           }
-          if (!res.ok) {
-            throw fsErr(62980103, `读取图像失败：HTTP ${res.status} ${res.statusText}（${url}）`);
-          }
-          const blob = await res.blob();
           if (typeof global.createImageBitmap !== 'function') {
             throw fsErr(62980103, `本环境没有 createImageBitmap，无法解码图像（${url}）`);
           }
           const buf = new Uint8Array(await blob.arrayBuffer());
           const bmp = await global.createImageBitmap(blob);        // ← 真实解码
           const w = bmp.width, h = bmp.height;
+          // R159-C：栅格化缓存真像素（供 createPixelMap）。getImageInfo 的对外行为不变。
+          if (typeof global.OffscreenCanvas === 'function') {
+            try {
+              const oc = new global.OffscreenCanvas(w, h);
+              const ctx = oc.getContext('2d');
+              ctx.drawImage(bmp, 0, 0);
+              this._pixels = ctx.getImageData(0, 0, w, h).data;    // RGBA 顺序，端无关（见段首说明）
+            } catch (e) {
+              this._pixels = null;
+              imgWarn(`image: OffscreenCanvas 栅格化失败（${url}）：${e && e.message} —— createPixelMap 将不可用`);
+            }
+          }
           if (typeof bmp.close === 'function') bmp.close();
           let mimeType = sniffImageFormat(buf);
           if (!mimeType) {
             // 认不出来就退回响应头 —— 但要出声（否则会把"没识别"伪装成"识别对了"）
             mimeType = blob.type || '';
-            const w0 = global.__arkui_dom_layout_warnings;
-            const msg = `image.getImageInfo: 未能从字节识别图像格式（${url}），已退回响应头 '${mimeType}'`;
-            if (w0 && !w0.includes(msg)) w0.push(msg);
+            imgWarn(`image.getImageInfo: 未能从字节识别图像格式（${url}），已退回响应头 '${mimeType}'`);
           }
           this._info = {
             size: { width: w, height: h },
@@ -990,12 +1063,16 @@
           return this._info;
         })();
       }
+      return this._pending;
+    }
+    getImageInfo(cb) {
+      const p = this._ensureDecoded();
       if (typeof cb === 'function') {
         // 成功时也要传 BusinessError 形状的对象（code: 0）—— 产物里是 `if (err.code)`，传 null 会 TypeError
-        this._pending.then((v) => cb({ code: 0, message: '' }, v), (e) => cb(e));
+        p.then((v) => cb(imgOk(), v), (e) => cb(e));
         return undefined;
       }
-      return this._pending;
+      return p;
     }
     getImageInfoSync() {
       if (this._info) return this._info;
@@ -1003,17 +1080,194 @@
       throw fsErr(62980103,
         `getImageInfoSync 无法同步解码（${this.uri}）：本实现只回【已解码】的缓存，请先 await getImageInfo()`);
     }
+    // R159-C：EXIF 属性面。d.ts PropertyKey 的值域是字符串（'ImageWidth'/'ImageLength'/…），
+    // 现行签名 getImageProperty(key): Promise<string>（旧版还有 (key, cb)/(key, options, cb)）。
+    getImageProperty(key, options, cb) {
+      // 重载归一：getImageProperty(key, cb) / (key, options, cb)
+      if (typeof options === 'function') { cb = options; options = undefined; }
+      const k = String(key);
+      const p = this._ensureDecoded().then((info) => {
+        if (k === 'ImageWidth') return String(info.size.width);
+        // 'ImageLength' 是 d.ts 枚举里"高"的真名（EXIF 语义）；'ImageHeight' 不在枚举里，
+        // 但任务面要求它可用 —— 作为宽容别名一并支持，注释在此声明这不是枚举值。
+        if (k === 'ImageLength' || k === 'ImageHeight') return String(info.size.height);
+        // 其余 EXIF 属性（Orientation/GPS*/ExposureTime/…）：DOM 侧没有 EXIF 解码能力，
+        // 出声记警告 + 返回 ''（绝不编一个看似合法的值）。
+        imgWarn(`image.getImageProperty: 属性 '${k}' 在 DOM 运行时不可得（无 EXIF 读取能力），返回 ''`);
+        return '';
+      });
+      if (typeof cb === 'function') { p.then((v) => cb(imgOk(), v), (e) => cb(e)); return undefined; }
+      return p;
+    }
+    // R159-C：解码为像素数据。options.desiredPixelFormat 默认 RGBA_8888（Canvas 原生）。
+    createPixelMap(options, cb) {
+      // 重载归一：createPixelMap(cb) / (options) / (options, cb)
+      if (typeof options === 'function') { cb = options; options = undefined; }
+      const pf = options && options.desiredPixelFormat !== undefined
+        ? Number(options.desiredPixelFormat) : 3 /* RGBA_8888 */;
+      const p = this._ensureDecoded().then((info) => {
+        if (!this._pixels) {
+          throw fsErr(62980103,
+            `createPixelMap 无法取像素（${this.uri}）：本环境没有可用的 OffscreenCanvas/getImageData`);
+        }
+        if (pf !== 3 && pf !== 4) {
+          imgWarn(`image.ImageSource.createPixelMap: desiredPixelFormat=${pf} 不支持（Canvas 只出 RGBA_8888/BGRA_8888），已退回 RGBA_8888`);
+        }
+        const fmt = pf === 4 ? 4 : 3;
+        return new PixelMap(rgbaToFormat(this._pixels, fmt), info.size.width, info.size.height, fmt);
+      });
+      if (typeof cb === 'function') { p.then((v) => cb(imgOk(), v), (e) => cb(e)); return undefined; }
+      return p;
+    }
     release() {
       this._info = null;
       this._pending = null;
+      this._pixels = null;
       return Promise.resolve();
     }
   }
+  // R159-C：PixelMap —— 已解码像素的句柄。字节按构造时声明的 format 排列，
+  // readPixelsToBuffer 原样拷贝（d.ts："based on the PixelMap's pixel format"）。
+  class PixelMap {
+    constructor(bytes, w, h, format) {
+      this._bytes = bytes;
+      this._info = {
+        size: { width: w, height: h },
+        density: 0,
+        stride: w * 4,
+        pixelFormat: format,
+        alphaType: 0,
+        mimeType: '',
+        isHdr: false,
+      };
+    }
+    getImageInfo(cb) {
+      const p = Promise.resolve(this._info);
+      if (typeof cb === 'function') { p.then((v) => cb(imgOk(), v), (e) => cb(e)); return undefined; }
+      return p;
+    }
+    getImageInfoSync() { return this._info; }
+    getBytesNumberPerRow() { return this._info.stride; }
+    getPixelBytesNumber() { return this._bytes ? this._bytes.byteLength : 0; }
+    getDensity() { return this._info.density; }
+    _readToBuffer(dst) {
+      return Promise.resolve().then(() => {
+        if (!this._bytes) throw fsErr(7600105, 'readPixelsToBuffer：PixelMap 已 release，无法再读像素');
+        if (!(dst instanceof ArrayBuffer)) {
+          throw fsErr(401, `readPixelsToBuffer 的 dst 必须是 ArrayBuffer（得到 ${
+            dst === null ? 'null' : typeof dst === 'object' ? (dst.constructor && dst.constructor.name) || 'object' : typeof dst}）`);
+        }
+        if (dst.byteLength < this._bytes.byteLength) {
+          throw fsErr(7600206,
+            `readPixelsToBuffer 的 dst 太小：需要 ${this._bytes.byteLength} 字节，得到 ${dst.byteLength}（用 getPixelBytesNumber() 取正确大小）`);
+        }
+        new Uint8Array(dst, 0, this._bytes.byteLength).set(this._bytes);
+      });
+    }
+    readPixelsToBuffer(dst, cb) {
+      const p = this._readToBuffer(dst);
+      if (typeof cb === 'function') { p.then(() => cb(imgOk()), (e) => cb(e)); return undefined; }
+      return p;
+    }
+    readPixelsToBufferSync(dst) {
+      if (!this._bytes) throw fsErr(7600105, 'readPixelsToBufferSync：PixelMap 已 release，无法再读像素');
+      if (!(dst instanceof ArrayBuffer)) throw fsErr(401, 'readPixelsToBufferSync 的 dst 必须是 ArrayBuffer');
+      if (dst.byteLength < this._bytes.byteLength) {
+        throw fsErr(7600206,
+          `readPixelsToBufferSync 的 dst 太小：需要 ${this._bytes.byteLength} 字节，得到 ${dst.byteLength}`);
+      }
+      new Uint8Array(dst, 0, this._bytes.byteLength).set(this._bytes);
+    }
+    release() { this._bytes = null; return Promise.resolve(); }
+  }
+  // image.createPixelMap(colors, options)：现行 d.ts 的 colors 是 ArrayBuffer
+  // （字节按 options.srcPixelFormat，默认 BGRA_8888）；旧 API（≤11）形状是 Array<number>
+  // （每项一个像素，0xRRGGBBAA —— 低 8 位 alpha）。两种都收；产出 PixelMap 的格式取
+  // options.pixelFormat（默认 RGBA_8888）。纯 JS 填 buffer，端无关（字节布局手工固定）。
+  const createPixelMapFromColors = (colors, options) => (async () => {
+    const size = options && options.size;
+    const w = size && Math.floor(Number(size.width));
+    const h = size && Math.floor(Number(size.height));
+    if (!(w > 0) || !(h > 0)) {
+      throw fsErr(401, `createPixelMap 需要 options.size = { width > 0, height > 0 }（得到 ${JSON.stringify(size)}）`);
+    }
+    const count = w * h;
+    const srcFormat = options && options.srcPixelFormat !== undefined ? Number(options.srcPixelFormat) : 4;
+    const dstFormat = options && options.pixelFormat !== undefined ? Number(options.pixelFormat) : 3;
+    if (dstFormat !== 3 && dstFormat !== 4) {
+      imgWarn(`image.createPixelMap: pixelFormat=${dstFormat} 不支持（只出 RGBA_8888/BGRA_8888），已退回 RGBA_8888`);
+    }
+    let rgba;
+    if (colors instanceof ArrayBuffer) {
+      if (srcFormat !== 3 && srcFormat !== 4) {
+        throw fsErr(401, `createPixelMap 的 srcPixelFormat=${srcFormat} 不支持（支持 RGBA_8888/BGRA_8888）`);
+      }
+      if (colors.byteLength < count * 4) {
+        throw fsErr(401, `createPixelMap 的 colors 太小：需要 ${count * 4} 字节（${w}×${h}×4），得到 ${colors.byteLength}`);
+      }
+      const src = new Uint8Array(colors, 0, count * 4);
+      rgba = srcFormat === 4 ? swizzleRB(src) : new Uint8Array(src);
+    } else if (Array.isArray(colors)) {
+      if (colors.length < count) {
+        throw fsErr(401, `createPixelMap 的 colors 元素不足：需要 ${count} 个（每项一个像素），得到 ${colors.length}`);
+      }
+      rgba = new Uint8Array(count * 4);
+      for (let i = 0; i < count; i++) {
+        const c = Number(colors[i]) >>> 0;
+        rgba[i * 4] = (c >>> 24) & 0xff;      // R
+        rgba[i * 4 + 1] = (c >>> 16) & 0xff;  // G
+        rgba[i * 4 + 2] = (c >>> 8) & 0xff;   // B
+        rgba[i * 4 + 3] = c & 0xff;           // A（旧 API 文档语义 0xRRGGBBAA）
+      }
+    } else {
+      throw fsErr(401, 'createPixelMap 的 colors 必须是 ArrayBuffer（现行 d.ts）或 Array<number>（旧 API 形状）');
+    }
+    return new PixelMap(rgbaToFormat(rgba, dstFormat), w, h, dstFormat);
+  })();
   define('multimedia.image', {
     createImageSource: (uri) => new ImageSource(uri),
+    // 双 Promise 风格：createPixelMap(colors, options) / (colors, options, cb)
+    createPixelMap: (colors, options, cb) => {
+      if (typeof cb !== 'function' && typeof options === 'function') { cb = options; options = undefined; }
+      const p = createPixelMapFromColors(colors, options);
+      if (typeof cb === 'function') { p.then((v) => cb(imgOk(), v), (e) => cb(e)); return undefined; }
+      return p;
+    },
     ImageSource,
+    PixelMap,
     AlphaType: { UNKNOWN: 0, OPAQUE: 1, PREMUL: 2, UNPREMUL: 3 },
     PixelMapFormat: { UNKNOWN: 0, RGB_565: 2, RGBA_8888: 3, BGRA_8888: 4, RGB_888: 5 },
+    // PropertyKey：EXIF 属性名值域（现行 d.ts 枚举；值是字符串）。列常用项，
+    // 全量枚举见 @ohos.multimedia.image.d.ts 的 enum PropertyKey。
+    PropertyKey: {
+      BITS_PER_SAMPLE: 'BitsPerSample',
+      ORIENTATION: 'Orientation',
+      IMAGE_LENGTH: 'ImageLength',
+      IMAGE_WIDTH: 'ImageWidth',
+      GPS_LATITUDE: 'GPSLatitude',
+      GPS_LONGITUDE: 'GPSLongitude',
+      GPS_LATITUDE_REF: 'GPSLatitudeRef',
+      GPS_LONGITUDE_REF: 'GPSLongitudeRef',
+      DATE_TIME_ORIGINAL: 'DateTimeOriginal',
+      EXPOSURE_TIME: 'ExposureTime',
+      SCENE_TYPE: 'SceneType',
+      ISO_SPEED_RATINGS: 'ISOSpeedRatings',
+      F_NUMBER: 'FNumber',
+      DATE_TIME: 'DateTime',
+      IMAGE_DESCRIPTION: 'ImageDescription',
+      MAKE: 'Make',
+      MODEL: 'Model',
+      APERTURE_VALUE: 'ApertureValue',
+      EXPOSURE_BIAS_VALUE: 'ExposureBiasValue',
+      METERING_MODE: 'MeteringMode',
+      LIGHT_SOURCE: 'LightSource',
+      FLASH: 'Flash',
+      FOCAL_LENGTH: 'FocalLength',
+      USER_COMMENT: 'UserComment',
+      PIXEL_X_DIMENSION: 'PixelXDimension',
+      PIXEL_Y_DIMENSION: 'PixelYDimension',
+      WHITE_BALANCE: 'WhiteBalance',
+    },
   });
 
   // ── @ohos:router ──
