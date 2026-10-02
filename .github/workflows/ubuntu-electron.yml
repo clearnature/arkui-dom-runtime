@@ -59,7 +59,8 @@ jobs:
             node node_modules/electron/install.js
           fi
           test -x node_modules/electron/dist/electron || { echo "❌ electron 二进制未就位"; exit 1; }
-          ./node_modules/electron/dist/electron --version
+          # --no-sandbox 必带：runner 上 chrome-sandbox 非 root:4755 会 FATAL（run.sh 同款）
+          ./node_modules/electron/dist/electron --version --no-sandbox
       # 市场件（用户指定参考 GitHub Marketplace）：GabrielBB/xvfb-action——
       # Electron 无头测试的标准 xvfb 包装；SHA 钉死（供应链纪律同指纹步）
       - name: electron/run.sh all（97 用例 + 断言计数守门，xvfb 真实时钟）
