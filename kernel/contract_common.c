@@ -19,11 +19,40 @@
  * 运行：见 kernel/run-contract.sh
  */
 #define _GNU_SOURCE
+#include <dirent.h>
 #include <dlfcn.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+
+/* R159.3：HS 包库【双目录 × 前缀扫描】——ghcup 各发行布局的包库 ABI tag 不同
+ * （本地 bindist=-inplace-，CI ghcup=-e31e-），固定命名不可行。按前缀扫目录，
+ * 命中 libHS<prefix>*.so 首个即 dlopen（RTLD_NOW|GLOBAL），先到先得。 */
+static void *try_hs_lib2(const char *d1, const char *d2, const char *prefix) {
+    const char *dirs[2] = { d1, d2 };
+    for (int j = 0; j < 2; j++) {
+        const char *d = dirs[j];
+        if (!d || !*d) continue;
+        DIR *dp = opendir(d);
+        if (!dp) continue;
+        struct dirent *e;
+        size_t plen = strlen(prefix);
+        void *h = NULL;
+        while ((e = readdir(dp)) != NULL) {
+            if (strncmp(e->d_name, prefix, plen) != 0) continue;
+            size_t len = strlen(e->d_name);
+            if (len < 3 || strcmp(e->d_name + len - 3, ".so") != 0) continue;
+            char q[1024];
+            snprintf(q, sizeof(q), "%s/%s", d, e->d_name);
+            h = dlopen(q, RTLD_NOW | RTLD_GLOBAL);
+            if (h) break;
+        }
+        closedir(dp);
+        if (h) return h;
+    }
+    return NULL;
+}
 
 typedef int (*i_cstr_fn)(const char *);
 typedef int (*v_fn)(void);
@@ -114,25 +143,6 @@ static void expect_err_shape(const char *method, const char *params, const char 
     if (r && Kfree) Kfree(r);
 }
 
-
-/* R159.3：HS 包库双目录双命名探测——本地 bindist 全库同目录且带 -inplace-；
- * ghcup store 布局可能分目录（rts 与包库分离）且不带 inplace（CI 十二/十三跑）。
- * 顺序：d1-inplace → d1 → d2-inplace → d2，先到先得。 */
-static void *try_hs_lib2(const char *d1, const char *d2, const char *base) {
-    char q[1024];
-    const char *dirs[2] = { d1, d2 };
-    for (int j = 0; j < 2; j++) {
-        const char *d = dirs[j];
-        if (!d || !*d) continue;
-        snprintf(q, sizeof(q), "%s/%s-inplace-ghc9.14.1.so", d, base);
-        void *h = dlopen(q, RTLD_NOW | RTLD_GLOBAL);
-        if (h) return h;
-        snprintf(q, sizeof(q), "%s/%s-ghc9.14.1.so", d, base);
-        h = dlopen(q, RTLD_NOW | RTLD_GLOBAL);
-        if (h) return h;
-    }
-    return NULL;
-}
 
 int main(int argc, char *argv[]) {
     const char *mode = (argc > 1) ? argv[1] : "direct";
