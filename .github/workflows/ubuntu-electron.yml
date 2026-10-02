@@ -65,13 +65,14 @@ jobs:
           ./node_modules/electron/dist/electron --version --no-sandbox
       # 市场件（用户指定参考 GitHub Marketplace）：GabrielBB/xvfb-action——
       # Electron 无头测试的标准 xvfb 包装；SHA 钉死（供应链纪律同指纹步）。
-      # 两个实测约束（九/十跑）：run 输入只取第一行、无 shell 引号解析——
-      # 必须单行复合命令（重定向会被当参数）；options 放大屏幕给 fullscreen 语义
+      # 三个实测约束（九/十/十一跑）：run 只取首行、无引号解析、复合命令的
+      # &/&& 落在显示上下文之外——编排挪进 .github/scripts/electron-xvfb-run.sh
+      # 作为【单一客户端命令】在 xvfb 内执行（openbox 窗管先起、run.sh all 随后）
       - name: electron/run.sh all（97 用例 + 断言计数守门，xvfb + openbox 真实时钟）
         uses: GabrielBB/xvfb-action@86d97bde4a65fe9b290c0b3fb92c2c4ed0e5302d
         with:
           options: "-screen 0 1920x1080x24"
-          run: openbox & sleep 1.5 && bash electron/run.sh all
+          run: bash .github/scripts/electron-xvfb-run.sh
       - name: 失败留档（截图 + 计数表）
         if: failure()
         uses: actions/upload-artifact@v4
