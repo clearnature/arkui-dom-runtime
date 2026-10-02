@@ -229,8 +229,8 @@ case "${1:-index}" in
       "--cjs --register GestureGroupDemo" || rc=1
     echo
     # R125 收口：组件内置手势（R154：VTBUDGET=12000——弹簧解算器收口等待 tick(1200)
-    #   使全页虚拟耗时超默认 8000，长等待页用例自行声明更大预算）
-    VTBUDGET=12000 \
+    #   使全页虚拟耗时超默认 8000；R159.3 CI 负载迭代→20000——收口/摩擦收敛轮询扩容）
+    VTBUDGET=20000 \
     run_one builtindemo "$(src_of pages/BuiltinDemo.ts)" build/builtindemo-module.js test/builtindemo.html \
       "--cjs --register BuiltinDemo" || rc=1
     echo
@@ -529,7 +529,8 @@ case "${1:-index}" in
   builtindemo)
     # R125 收口：组件内置手势（Swiper 拖拽翻页 / Tabs 滑动切换 / Scroll+List 拖拽滚动）
     # R154：弹簧解算器收口等待 tick(1200) 使全页虚拟耗时超 8s → 本用例扩容虚拟预算
-    VTBUDGET=12000 \
+    # R159.3：CI 负载迭代 12000→20000（收口/摩擦收敛轮询扩容）
+    VTBUDGET=20000 \
     run_one builtindemo "$(src_of pages/BuiltinDemo.ts)" build/builtindemo-module.js test/builtindemo.html \
       "--cjs --register BuiltinDemo" ;;
   resourcedemo)
