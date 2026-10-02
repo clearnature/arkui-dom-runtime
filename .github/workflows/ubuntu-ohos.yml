@@ -1,0 +1,107 @@
+# ubuntu · HarmonyOS CLT 26.0.0.821 —— hvigorw 编译 + fixtures 漂移守门（R159.3 起）
+#
+# 版本策略（2026-10-02 与用户对齐）：**全线锁 26.0.0.821**——与本地 CLT
+# （/data/training/cli/commandline-tools-linux-x64-26.0.0.821）逐版本一致，
+# fixtures 漂移守门（重编译 vs 冻结件逐字节 diff）才有意义。
+#   · ErBWs/setup-ohos@v2：镜像 ErBWs/ohos-sdk 里 26.0.0 线实有 821（四平台
+#     linux-amd64/mac-amd64/mac-arm64/windows-amd64 + sha256，2026-10-02 核实）。
+#   · wm-develop/setup-ohos@v3 名义支持 26.0.0，实测其镜像只有 621——排除
+#     （621 会引入比本地还旧的版本倒退）。
+#   · 官网 26.0.0.851（2026/09/23，五平台）直链在开发者站背后、两镜像均未收录
+#     ——升级走独立切片：本地先升 851 + 重冻结全部 fixtures + 全门禁重验，
+#     CI 再同步换版本（可给 ErBWs/ohos-sdk 提 PR 贡献 851 包）。
+#
+# arkts-shim 说明（/data/training/cli/arkts-shim，本机路径、不在仓库里）：
+#   它补的两个库（libhilog 命名修复 + libshared_libz 合并垫片）只服务【原生 ELF
+#   工具】（ark_aot_compiler / previewer 那批）；hvigorw/ets-loader 构建链是纯
+#   JS/Node——本机从未用 shim 构建，干净环境 hvigorw -v 实测正常。所以本 job
+#   【不需要 shim】。未来若加 AOT 编译检查（ark_aot_compiler），在 runner 上
+#   就地重建 shim，零华为二进制再分发：
+#     1. libhilog.so：cp "$CLT/sdk/default/hms/toolchains/lib/libhilog_linux.so" \
+#          "$CLT/sdk/default/openharmony/previewer/common/bin/libhilog.so"   # 命名修复
+#        （或 DevEco 包内官方同名件，见 arkts-shim/README.md 的来源考证）
+#     2. libshared_libz.so：gcc -shared -fPIC shim.c -l:libz.so.1 -l:libminizip.so.1
+#        （shim.c 源码 vendor 进仓库即可，需 apt install libminizip1）
+#
+# 与本地门禁的分工：本地 11 步门禁的 gen-components --check / typecheck 依赖
+# 本地 CLT 路径——本 job 让 gen-components --check 首次在 CI 可跑；typecheck
+# 仍本地专属（TS 4.9.5 路径硬编码，见 workflow 家族头注）。
+
+name: "ubuntu · HarmonyOS CLT 26.0.0.821（hvigorw 编译 + fixtures 漂移守门）"
+
+on:
+  push:
+    branches: [main, ci]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}        # 手动按钮（Actions 后台按本名分条显示）
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ubuntu-ohos-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ohos-toolchain:
+    name: ohos-toolchain (CLT 26.0.0.821)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup HarmonyOS NEXT CLI tools（锁 26.0.0.821=本地同版本）
+        uses: ErBWs/setup-ohos@v2
+        with:
+          version: 26.0.0.821
+          cache: true              # SDK ~GB 级，缓存后非首跑零下载
+
+      - name: 安装 Linux 依赖（libGL1，纹理压缩；setup-ohos 官方要求）
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libgl1-mesa-dev
+
+      - name: CLT 就位确认
+        run: |
+          echo "HOS_SDK_HOME=$HOS_SDK_HOME"
+          hvigorw -v
+          # HOS_SDK_HOME=…/ohos-sdk/command-line-tools/sdk → CLT 根=它的上一级
+          echo "CLT_ROOT=$(dirname "$HOS_SDK_HOME")" >> "$GITHUB_ENV"
+
+      - name: hvigorw 全量编译冒烟（BUILD SUCCESSFUL 判定）
+        run: |
+          export DEVECO_CLI_CLT_PATH="$CLT_ROOT"
+          unset DEVECO_NODE_HOME          # 必须空着才会用 CLT 自带的 node（本地配方同款）
+          (cd harmony-proj && "$DEVECO_CLI_CLT_PATH/bin/hvigorw" --no-daemon assembleHap)
+
+      # ── fixtures 漂移守门：本地已知坑的首个守卫（多代理并行期间 fixtures 会与
+      # .ets 源漂移——测试读旧冻结件全 null，此前无任何守卫）。
+      # 首期【只报告不拦截】：同版本同输入理应逐字节一致，但 runner 环境差异
+      # （node 版本/文件序）未验证，先观察一轮基线，确认零 diff 后转 exit 1 硬拦截。
+      - name: fixtures 漂移检查（首期只报告，转硬拦截见注释）
+        run: |
+          export DEVECO_CLI_CLT_PATH="$CLT_ROOT"
+          CACHE="harmony-proj/entry/build/default/cache/default/default@CompileArkTS/esmodule/debug/entry/src/main/ets"
+          fail=0
+          for f in fixtures/pages/*.ts; do
+            rel="pages/$(basename "$f")"
+            if ! diff -u "$CACHE/$rel" "$f" > /tmp/driftpatch.txt 2>&1; then
+              echo "❌ 漂移：$rel"; head -20 /tmp/driftpatch.txt; fail=1
+            fi
+          done
+          for f in fixtures/entryability/*.ts; do
+            rel="entryability/$(basename "$f")"
+            if ! diff -u "$CACHE/$rel" "$f" > /tmp/driftpatch.txt 2>&1; then
+              echo "❌ 漂移：$rel"; head -20 /tmp/driftpatch.txt; fail=1
+            fi
+          done
+          # 转硬拦截时：去掉下一行的注释、删除上面的 fail 旁路
+          # exit $fail
+          [ "$fail" = 1 ] && echo "⚠️ 发现漂移（首期只报告；基线确认后转硬拦截）" || echo "✅ fixtures 与重编译产物逐字节一致"
+          exit 0
+
+      - name: gen-components --check（149 组件骨架生成一致性——CI 首次可跑）
+        env:
+          DEVECO_CLI_CLT_PATH: ${{ env.CLT_ROOT }}   # gen-components.mjs 读此变量定位 SDK
+        run: node tools/gen-components.mjs --check
