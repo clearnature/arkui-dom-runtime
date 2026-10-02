@@ -45,7 +45,7 @@ class Index extends ViewPU {
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Text.create(this.message);
             Text.id('HelloWorld');
-            Text.fontSize({ "id": 16777224, "type": 10002, params: [], "bundleName": "com.example.hmtest", "moduleName": "entry" });
+            Text.fontSize({ "id": 16777224, "type": 10002, params: [], "bundleName": "com.example.arkuidomprobe", "moduleName": "entry" });
             Text.fontWeight(FontWeight.Bold);
             Text.alignRules({
                 center: { anchor: '__container__', align: VerticalAlign.Center },
@@ -67,4 +67,4 @@ class Index extends ViewPU {
         return "Index";
     }
 }
-registerNamedRoute(() => new Index(undefined, {}), "", { bundleName: "com.example.hmtest", moduleName: "entry", pagePath: "pages/Index", pageFullPath: "entry/src/main/ets/pages/Index", integratedHsp: "false", moduleType: "followWithHap" });
+registerNamedRoute(() => new Index(undefined, {}), "", { bundleName: "com.example.arkuidomprobe", moduleName: "entry", pagePath: "pages/Index", pageFullPath: "entry/src/main/ets/pages/Index", integratedHsp: "false", moduleType: "followWithHap" });

@@ -103,6 +103,12 @@ jobs:
       - name: fixtures 漂移检查（首期只报告，转硬拦截见注释）
         run: |
           export DEVECO_CLI_CLT_PATH="$CLT_ROOT"
+          # 取证：CI 侧 ids_map 全文进日志（本地 17 项 0x01000000 顺序连续；CI 首跑
+          # 把 page_text_font_size 排到了 0x0100000C——资源 id 分配顺序跨机不同，
+          # 需要这份表定位差异源）
+          echo "── CI ids_map ──"
+          cat "$CLT_ROOT/../entry" 2>/dev/null || true
+          find harmony-proj/entry/build -name "id_defined.json" -exec cat {} \;
           CACHE="harmony-proj/entry/build/default/cache/default/default@CompileArkTS/esmodule/debug/entry/src/main/ets"
           fail=0
           for f in fixtures/pages/*.ts; do
