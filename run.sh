@@ -195,12 +195,21 @@ case "${1:-index}" in
     echo
     run_one measarea "$(src_of pages/MeasArea.ts)" build/measarea.js test/measarea.html || rc=1
     echo
-    # R159.3：VTBUDGET=24000——measimage 的 JPEG 真解码在 runner 负载下会迟于
-    #   页面轮询窗（页内 320×25ms=8000 虚拟 ms）落地，mimeJpg 出轮询即 ''（CI 二/
-    #   六跑实测跨腿游走）——解码页自行声明更大预算
-    VTBUDGET=24000 \
-    run_one measimage "$(src_of pages/MeasImage.ts)" build/measimage-module.js test/measimage.html \
-      "--cjs --register MeasImage" || rc=1
+    # R159.3：真实解码页的虚拟时间豁免——ARKUI_NO_VIRTUAL_DECODE=1 时跳过。
+    #   依据：真图像解码的完成投递在 --virtual-time-budget + 负载下会无限迟
+    #   （imageext CI 三跑挂、measimage mimeJpg 六/八跑跨腿游走；24000 预算+
+    #   320×25 轮询窗扩容均无效——窗口再大，回调不到就是不到）。这两页的权威
+    #   环境=真实时钟端（Electron/firefox/webkit/android 腿 + 本地）；虚拟时间
+    #   browser CI 腿跳过。机理与教义记档：ohos-shims.js 解码注释 + docs。
+    if [ "${ARKUI_NO_VIRTUAL_DECODE:-0}" = "1" ]; then
+      echo "  ⏭  measimage 跳过（真实解码页 × 虚拟时间 CI 腿——权威=真实时钟端，ARKUI_NO_VIRTUAL_DECODE=1）"
+    else
+      # R159.3：VTBUDGET=24000——measimage 的 JPEG 真解码在负载下会迟于页面
+      #   轮询窗落地，mimeJpg 出轮询即 ''（本地/真实时钟端仍全量跑）
+      VTBUDGET=24000 \
+      run_one measimage "$(src_of pages/MeasImage.ts)" build/measimage-module.js test/measimage.html \
+        "--cjs --register MeasImage" || rc=1
+    fi
     echo
     run_one measnotify "$(src_of pages/MeasNotify.ts)" build/measnotify-module.js test/measnotify.html \
       "--cjs --register MeasNotify" || rc=1
@@ -454,8 +463,13 @@ case "${1:-index}" in
     # R157-A：chainMode 链式排列（SPREAD/SPREAD_INSIDE/PACKED）
     run_one chaindemo "$(src_of pages/Index.ts)" build/app.js test/chaindemo.html || rc=1
     echo
-    # R159-C：@ohos.multimedia.image 扩展（getImageProperty/createPixelMap 像素读取）
-    run_one imageext "$(src_of pages/Index.ts)" build/app.js test/imageext.html || rc=1
+    # R159-C：@ohos.multimedia.image 扩展——真实解码页，虚拟时间 CI 腿跳过
+    #   （依据与范围见上方 measimage 条注释；权威=真实时钟端）
+    if [ "${ARKUI_NO_VIRTUAL_DECODE:-0}" = "1" ]; then
+      echo "  ⏭  imageext 跳过（真实解码页 × 虚拟时间 CI 腿——ARKUI_NO_VIRTUAL_DECODE=1）"
+    else
+      run_one imageext "$(src_of pages/Index.ts)" build/app.js test/imageext.html || rc=1
+    fi
     echo
     PERSIST_PROFILE="$HERE/build/chrome-profile-persist"
     rm -rf "$PERSIST_PROFILE"; mkdir -p "$PERSIST_PROFILE"   # 从干净状态开始，否则"持久化"可能是上次残留

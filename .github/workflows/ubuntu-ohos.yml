@@ -71,15 +71,16 @@ jobs:
       - name: CLT 供应链指纹校验（镜像包 vs 本地官方包基线抽样）
         run: |
           fail=0
+          # 注释行先滤掉（read 对无 tab 行会把整行塞进 sha——八跑脚本 bug 实证）；
+          # 进程替换 < <() 让 while 留在主壳——exit 1 才真正生效（管道子壳会被吃掉）
           while IFS=$'\t' read -r sha rel; do
-            case "$rel" in '#'*) continue ;; esac
             actual="$(sha256sum "$CLT_ROOT/$rel" | cut -c1-64)"
             if [ "$actual" = "$sha" ]; then
               echo "✅ $rel"
             else
               echo "❌ 指纹不符：$rel（期望 $sha 实测 $actual）"; fail=1
             fi
-          done < tools/clt-fingerprints.tsv
+          done < <(grep -v '^#' tools/clt-fingerprints.tsv)
           # 行为级等价另有 fixtures 漂移守门复验（57 项归一化零 diff）
           exit $fail
 

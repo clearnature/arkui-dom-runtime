@@ -82,9 +82,12 @@ jobs:
       # 绕过 24/26 矩阵、落到 runner 系统自带 node）；runner 预装 Google Chrome
       NODE: node
       CHROME: /usr/bin/google-chrome
-      # 四跑后仍在的 imageext/measimage 红点需要一手证据（console/崩溃信号）——
-      # 透出 Chrome stderr；定位后关闭
-      ARKUI_CHROME_DEBUG: "1"
+      # 真实解码页豁免（R159.3 八跑裁定）：imageext/measimage 的真图像解码完成
+      # 投递在 --virtual-time-budget + 负载下会无限迟（预算/轮询窗扩容均无效）——
+      # 虚拟时间 browser CI 腿跳过，权威=真实时钟端（Electron/firefox/webkit/
+      # android 腿与本地）。机理记档：ohos-shims.js 解码注释
+      ARKUI_CHROME_DEBUG: "0"
+      ARKUI_NO_VIRTUAL_DECODE: "1"
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
