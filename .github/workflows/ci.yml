@@ -1,0 +1,102 @@
+# CI（R159.3 起）—— 方法与目录结构参考：
+#   · /home/yanli/work/DeepSeek-Reasonix/.github/workflows/ci.yml
+#     （.node-version 钉默认版本 / setup-node@v7 / permissions+concurrency 块 /
+#      矩阵腿命名「job (os)」/ 失败留档注释文化）
+#   · /data/training/cli/codex/.github/workflows/（workflow 按域拆分多文件）
+#   · GitHub 官方 starter：Node.js — Build and test a Node.js project with npm
+#
+# 分期（与 ROADMAP 对齐）：
+#   一期（本文件）：ubuntu-latest × Node 24/26 —— V8 双环境：
+#     · toolchain：Node 工具链（拼接产物逐字节一致 + fixtures 抽取冒烟）
+#     · browser  ：Chrome headless 全矩阵（run.sh all，85 用例 + 断言计数守门）
+#   二期（未开）：windows-latest（Chrome/Firefox/Electron 冒烟先行）
+#   三期（未开）：macos-latest（Safari/safaridriver 第六端）
+#
+# CI 上明确跳过的本地专属步（缺席显式跳过，同 webkit 6c 先例）：
+#   gen-components --check（需本地 SDK 路径）/ typecheck（TS 4.9.5 硬编码路径）/
+#   stats 性能基线（权威=本地 Electron）/ Android 端（模拟器不上 CI）/ 鸿蒙模拟器。
+
+name: CI
+
+on:
+  push:
+    branches: [main, ci]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}        # 手动按钮：GitHub 页面 Actions → CI → Run workflow
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Node 工具链（V8 双版本：24/26）──
+  # 测的是「构建/抽取工具链在新 Node 上行为一致」：拼接产物必须逐字节一致
+  # （build-runtime --check），任何一版 Node 上产物漂移都是真问题。
+  toolchain:
+    name: toolchain (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["24", "26"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Node 版本
+        run: node --version
+      - name: build-runtime --check（拼接产物逐字节一致）
+        run: node tools/build-runtime.mjs --check
+      - name: extract 冒烟（Index → build/app.js）
+        run: |
+          mkdir -p build
+          node tools/extract.mjs fixtures/pages/Index.ts build/app.js
+          # 类型残留由 extract.mjs 自检（run_one 每例都打印「类型残留: ✅ 无」），
+          # 这里不再另写正则——对象字面量 key: value 会误报
+
+  # ── browser 端全矩阵（Chrome headless = V8 环境）──
+  # run.sh all：85 用例 + 退出时断言计数守门（文档「（N 条断言）」vs 实测逐条比对，
+  # 与本地门禁同一套守卫）。Node 版本只影响工具链（抽取/守门），浏览器渲染用
+  # Chrome 自带 V8——双版本跑同一矩阵是为了一并守住工具链确定性。
+  browser:
+    name: browser (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["24", "26"]
+    env:
+      # run.sh 三处本地路径的 CI 覆盖（R159.3 参数化）：
+      # NODE 用 PATH 解析——指向 setup-node 装的矩阵版本（写死 /usr/bin/node 会
+      # 绕过 24/26 矩阵、落到 runner 系统自带 node）；runner 预装 Google Chrome
+      NODE: node
+      CHROME: /usr/bin/google-chrome
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Chrome 就位确认（runner 预装，缺席即刻显式失败）
+        run: |
+          test -x "$CHROME" || { echo "❌ 未找到 $CHROME——ubuntu runner 应预装 Google Chrome"; exit 1; }
+          "$CHROME" --version
+          node --version
+      - name: run.sh all（85 用例 + 断言计数守门）
+        run: bash run.sh all
+      - name: 失败留档（截图 + 计数表）
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-logs-node${{ matrix.node }}
+          path: |
+            build/*.png
+            build/assert-counts-browser.tsv
+          if-no-files-found: ignore
+          retention-days: 7
