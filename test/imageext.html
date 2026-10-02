@@ -19,9 +19,10 @@
   <script src="../runtime/arkui-dom-runtime.js"></script>
   <script src="../runtime/ohos-shims.js"></script>
   <!-- 路由注册：本页断言全部直打 shim（无 ArkTS 页面），
-       复用 DrawDemo 的固化产物只为拿到已注册路由来立根容器（gaugedemo 同做法）；
+       loadRoute('pages/Index') 只为立根容器（chaindemo/v2sem 同做法——原用
+       DrawDemo 但 CI electron 上卡死其注册链，十二跑 STAGE 实证）；
        DrawDemo 自身的回归在 drawdemo 用例 -->
-  <script src="../build/drawdemo.js"></script>
+  <script src="../build/app.js"></script>
   <script>
   (async function () {
     const lines = [];
@@ -36,17 +37,10 @@
     };
     const bytesOf = (ab) => Array.from(new Uint8Array(ab));
 
-    // STAGE 直写：本页曾出现 0 条 running…（CI 三跑+本地偶发）——把推进阶段直接写进
-    // #result，挂在哪个 await，dump 里就看到哪个阶段（最终结果会整体覆写这一行）
-    const resultEl = document.getElementById('result');
-    const stage = (m) => { resultEl.textContent = 'STAGE ' + m; };
-
     try {
-      stage('boot:loadRoute');
-      __arkui_dom_loadRoute('pages/DrawDemo', document.getElementById('root'));   // 只为立根容器
+      __arkui_dom_loadRoute('pages/Index', document.getElementById('root'));   // 只为立根容器
       await tick(30);
       const image = __arkui_dom_require('multimedia.image');
-      stage('boot:require-image ✅');
 
       // ══ 页内自造数据（gaugedemo/v2sem 先例）：canvas → toDataURL 产真 PNG 字节，像素完全可控 ══
       const makePng = (w, h, draw) => {
@@ -66,7 +60,6 @@
       });
 
       // ══════════ ① getImageProperty：EXIF 面，宽高来自真解码 ══════════
-      stage('group:getImageProperty begin');
       await group('getImageProperty', async () => {
         const src = image.createImageSource(MIX_PNG);
         const info = await src.getImageInfo();
@@ -87,7 +80,6 @@
       });
 
       // ══════════ ② ImageSource.createPixelMap：OffscreenCanvas 真像素 ══════════
-      stage('group:ImageSource.createPixelMap begin');
       await group('ImageSource.createPixelMap', async () => {
         const src = image.createImageSource(MIX_PNG);
         const pm = await src.createPixelMap();
@@ -119,7 +111,6 @@
       });
 
       // ══════════ ③ 已知纯色 PNG：中心像素 RGB 断言 ══════════
-      stage('group:纯色 PNG 中心像素 begin');
       await group('纯色 PNG 中心像素', async () => {
         const pm = await image.createImageSource(SOLID_PNG).createPixelMap();
         const ab = new ArrayBuffer(pm.getPixelBytesNumber());
@@ -132,7 +123,6 @@
       });
 
       // ══════════ ④ image.createPixelMap：色值数组 / ArrayBuffer ══════════
-      stage('group:image.createPixelMap begin');
       await group('image.createPixelMap', async () => {
         // 旧 API 形状：Array<number>，每项一个像素，0xRRGGBBAA（低 8 位 alpha）
         const colors = [0xff0000ff, 0x00ff00ff, 0x0000ffff, 0xffffffff];   // 红/绿/蓝/白
@@ -167,7 +157,6 @@
       });
 
       // ══════════ ⑤ 像素字节与 getImageInfo 的互证 ══════════
-      stage('group:互证 begin');
       await group('互证', async () => {
         const src = image.createImageSource(SOLID_PNG);
         await src.getImageInfo();
