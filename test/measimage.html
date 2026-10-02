@@ -39,8 +39,10 @@
     try {
       __arkui_dom_requireModule('MeasImage');
       __arkui_dom_loadRoute('pages/MeasImage', root);
-      // 解码是异步的（真 fetch + 真解码）→ 轮询而不是固定等待
-      for (let k = 0; k < 60; k++) {
+      // 解码是异步的（真 fetch + 真解码）→ 轮询而不是固定等待。
+      // 320×25ms=8000 虚拟 ms（R159.3：60 次在 runner 负载下不够——mimeJpg 出轮询
+      // 即 ''；配合 run.sh 的 per-case VTBUDGET=24000 给解码留足虚拟窗口）
+      for (let k = 0; k < 320; k++) {
         if (val('w1') === '7' && val('w2') === '13' && val('mimeMis').startsWith('image/') && val('missErr') !== '' && val('mimeJpg') === 'image/jpeg') break;   // mimeJpg 必须在列——漏掉它则 jpg 解码未完即出轮询（全矩阵 flake 根因）
         await tick(25);
       }

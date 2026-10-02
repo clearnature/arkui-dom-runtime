@@ -195,6 +195,10 @@ case "${1:-index}" in
     echo
     run_one measarea "$(src_of pages/MeasArea.ts)" build/measarea.js test/measarea.html || rc=1
     echo
+    # R159.3：VTBUDGET=24000——measimage 的 JPEG 真解码在 runner 负载下会迟于
+    #   页面轮询窗（页内 320×25ms=8000 虚拟 ms）落地，mimeJpg 出轮询即 ''（CI 二/
+    #   六跑实测跨腿游走）——解码页自行声明更大预算
+    VTBUDGET=24000 \
     run_one measimage "$(src_of pages/MeasImage.ts)" build/measimage-module.js test/measimage.html \
       "--cjs --register MeasImage" || rc=1
     echo
@@ -479,7 +483,7 @@ case "${1:-index}" in
       "--cjs --register TextMeasure" ;;
   lazyvh) run_one lazyvh "$(src_of pages/LazyVar.ts)" build/lazyvar.js test/lazyvar.html ;;
   measarea) run_one measarea "$(src_of pages/MeasArea.ts)" build/measarea.js test/measarea.html ;;
-  measimage) run_one measimage "$(src_of pages/MeasImage.ts)" build/measimage-module.js test/measimage.html \
+  measimage) VTBUDGET=24000 run_one measimage "$(src_of pages/MeasImage.ts)" build/measimage-module.js test/measimage.html \
       "--cjs --register MeasImage" ;;
   measnotify) run_one measnotify "$(src_of pages/MeasNotify.ts)" build/measnotify-module.js test/measnotify.html \
       "--cjs --register MeasNotify" ;;
