@@ -115,19 +115,35 @@ run_one() {
     chrome_debug_flags=(--enable-logging=stderr --v=0)
     chrome_err_redirect="/dev/stderr"
   fi
-  dom="$(timeout 60 "$CHROME" --headless --disable-gpu --no-sandbox \
-    --user-data-dir="$profdir" \
-    "${chrome_debug_flags[@]}" \
-    --virtual-time-budget="$vtb" --dump-dom "http://127.0.0.1:$port/$page$query" 2>"$chrome_err_redirect")"
+  dom=""
+  result=""
+  # R159.3 瞬态吸收层：页面停在 running…（0 PASS 且无 FAIL）= 真实异步任务（图像
+  # 解码/重负载调度）没赶在虚拟时间窗口内完成——这是负载型瞬态而非断言失败
+  # （imageext 本地 ~1/6、CI 重负载下更高），自动重跑一次，失败率 1/6→1/36。
+  # 挂点语义见 ohos-shims.js 解码注释；上限一次，防止把真挂死放大成双倍时长。
+  local attempt
+  for attempt in 1 2; do
+    dom="$(timeout 60 "$CHROME" --headless --disable-gpu --no-sandbox \
+      --user-data-dir="$profdir" \
+      "${chrome_debug_flags[@]}" \
+      --virtual-time-budget="$vtb" --dump-dom "http://127.0.0.1:$port/$page$query" 2>"$chrome_err_redirect")"
 
-  # 只解析 #result 节点文本再判定：整页 DOM 里含脚本源码（'=== ALL PASS ===' 字面量），
-  # 直接对 DOM grep 会永远"通过"——这个假阳性陷阱必须避免。
-  result="$(printf '%s' "$dom" | python3 -c "
+    # 只解析 #result 节点文本再判定：整页 DOM 里含脚本源码（'=== ALL PASS ===' 字面量），
+    # 直接对 DOM grep 会永远"通过"——这个假阳性陷阱必须避免。
+    result="$(printf '%s' "$dom" | python3 -c "
 import sys, re, html
 d = sys.stdin.read()
 m = re.search(r'<div id=\"result\"[^>]*>(.*?)</div>', d, re.S)
 print(html.unescape(m.group(1)) if m else '（未取到 result 节点）')
 ")"
+    if ! printf '%s' "$result" | grep -q 'running…' \
+       && printf '%s' "$result" | grep -qE 'ALL PASS|FAIL '; then break; fi
+    # 未完成签名：既无 ALL PASS 也无 FAIL（页面挂起/中断；running… 或 STAGE 直写
+    # 都会落在这档）——真实异步未赶完虚拟窗口，属瞬态而非断言失败
+    if [ "$attempt" = 1 ]; then
+      echo "  ⏳ 页面未完成（真实异步未赶完虚拟窗口，$(printf '%s' "$result" | head -c 60)…）——重跑一次（瞬态吸收层）"
+    fi
+  done
   echo "$result" | sed 's/^/  /'
   # 记下本用例实测 emit 的 PASS 条数（断言计数守门的输入；退出时统一比对，见文件头 finalize_counts）
   printf '%s\t%s\n' "$name" "$(printf '%s\n' "$result" | grep -cE '^[[:space:]]*PASS ')" >> "$RUN_COUNTS"

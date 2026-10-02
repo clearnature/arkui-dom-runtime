@@ -994,15 +994,6 @@
     if (!mime) mime = sniffImageFormat(bytes) || 'image/png';
     return new Blob([bytes], { type: mime });
   };
-  // 经典解码回退：Blob → objectURL → <img> onload（width/height=natural，drawImage 直吃）
-  // ——无解码服务依赖，createImageBitmap 看门狗超时后的备用通路（见 _ensureDecoded 内注释）
-  const decodeViaImgElement = (blob) => new Promise((resolve, reject) => {
-    const objUrl = URL.createObjectURL(blob);
-    const im = new Image();
-    im.onload = () => { URL.revokeObjectURL(objUrl); resolve(im); };
-    im.onerror = () => { URL.revokeObjectURL(objUrl); reject(fsErr(62980103, '<img> 回退解码失败（字节非可解码图像？）')); };
-    im.src = objUrl;
-  });
   // 输入按 RGBA 顺序 → 输出按 format 排列（拷贝，不改输入）
   const rgbaToFormat = (rgba, format) =>
     format === 4 /* BGRA_8888 */ ? swizzleRB(rgba) : new Uint8Array(rgba);
@@ -1039,18 +1030,15 @@
             throw fsErr(62980103, `本环境没有 createImageBitmap，无法解码图像（${url}）`);
           }
           const buf = new Uint8Array(await blob.arrayBuffer());
-          // createImageBitmap 带 3s 看门狗：GitHub runner 的 headless Chrome 实测过
-          // 该调用永不 resolve（imageext CI 三跑双腿 0 条 running…，本地 154 同版
-          // 正常）——超时回退 <img> + 常规 canvas 解码（经典通路，无解码服务依赖）。
-          // 回退不改变对外行为：宽高/像素语义一致，只多一条 imgWarn 留痕（不静默）。
-          const bmp = await Promise.race([
-            global.createImageBitmap(blob),
-            new Promise((res) => setTimeout(res, 3000, null)),
-          ]).then((b) => {
-            if (b) return b;
-            imgWarn(`image: createImageBitmap 3s 未返回（疑似无头环境解码服务缺位，${url}）——回退 <img> 解码`);
-            return decodeViaImgElement(blob);
-          });
+          // 解码完成检测的两条路都试过并记档（R159.3 五跑）：
+          //   · <img> 事件/轮询制——无头+虚拟时间下解码任务【从不执行】（挂合成器帧，
+          //     rAF 不派发=坑⑧家族；轮询 8/8 全挂实证）→ 不可用
+          //   · createImageBitmap（任务制解码）——常态可用，但完成投递在【负载下】
+          //     会迟/丢（CI 全矩阵 3/3 挂、本地单独跑 ~5/6）→ 现行选择 + 已知限制：
+          //     imageext 在重负载 browser CI 腿上不稳定，图像解码权威=Electron 腿
+          //     （真实时钟+真解码服务）；后续如需 browser 端稳定，候选=页内自产 PNG
+          //     的最小解码器（DecompressionStream inflate + unfilter，零外部依赖）
+          const bmp = await global.createImageBitmap(blob);        // ← 真实解码
           const w = bmp.width, h = bmp.height;
           // R159-C：栅格化缓存真像素（供 createPixelMap）。getImageInfo 的对外行为不变。
           if (typeof global.OffscreenCanvas === 'function') {
