@@ -1,0 +1,49 @@
+# kernel · 五语言内核统一契约 CI（R159.3 起）
+#
+# 价值：R119 的「五语言契约等价性」（同一份 41 条断言 × 5 内核全绿）从本地证据
+# 升级为 CI 常驻守卫——仓颉（生产）/纯 C/Go/Haskell/Rust 任一内核的 ABI/FSM/
+# 作业面回归当场红。
+#
+# 成本≈0 的原因：五个 libkernel*.so **已入仓**（kernel/{c-sample,cangjie,go,hs,rust}/），
+# runner 只需 Node 驱动 + LD_LIBRARY_PATH——无需任何语言工具链（仓颉 nightly/
+# GHC/Go/Rust 的构建链留本地，产物冻结同 fixtures 哲学）。
+# 方法参考：Reasonix ci.yml（permissions/concurrency/矩阵）× 本项目 kernel/run-contract.sh。
+
+name: "kernel · 五语言内核统一契约（仓颉/C/Go/Haskell/Rust × 41 断言）"
+
+on:
+  push:
+    branches: [main, ci]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kernel-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: contract (node ${{ matrix.node }})
+    runs-on: ubuntu-24.04   # 钉 24.04：ubuntu-latest 2026-10-19 起迁 Ubuntu 26——适配另做验证切片
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["24", "26"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+      - name: 内核 .so 在位确认（5 内核全量）
+        run: |
+          for k in c-sample/libkernel_c.so cangjie/libkernel.so go/libkernel_go.so hs/libkernel_hs.so rust/libkernel_rs.so; do
+            test -s "kernel/$k" || { echo "❌ 缺 kernel/$k"; exit 1; }
+          done
+          echo "✅ 5 内核 .so 齐备"
+      - name: 五内核统一契约（41 断言 × 5，退出码=守门）
+        run: bash kernel/run-contract.sh

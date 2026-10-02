@@ -1,0 +1,72 @@
+# ubuntu · Electron 44 CI（R159.3 起）——真实时钟权威端
+#
+# 定位：**真实时钟**（无 --virtual-time-budget）——V8 浏览器腿上时序敏感的页
+# （builtindemo 动画收口/边界摩擦、imageext/measimage 真图像解码）在本端是
+# 权威验证（教义「性能/时序权威在 Electron」，R159.3 八跑后裁定落地）。
+#
+# 版本：Electron 44.2.0（与本地 electron/runtime/ 解包版一致）；
+# Node 24/26 矩阵只影响 harness 工具链（extract/守门），Electron 自带
+# 独立 Node 运行主进程。
+#
+# 显示：runner 无 X——xvfb-run 提供 X11（run.sh 的 --ozone-platform=x11 需要），
+# ARKUI_OFFSCREEN=1（脚本默认）用 paint 帧截图，不依赖合成器产帧。
+
+name: "ubuntu · Electron 44（真实时钟 · 97 用例 + 断言计数守门）"
+
+on:
+  push:
+    branches: [main, ci]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ubuntu-electron-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  electron:
+    name: electron (node ${{ matrix.node }})
+    runs-on: ubuntu-24.04   # 钉 24.04：ubuntu-latest 2026-10-19 起迁 Ubuntu 26——适配另做验证切片
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["24", "26"]
+    env:
+      NODE: node
+      ELECTRON: ${{ github.workspace }}/electron/node_modules/electron/dist/electron
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+      - name: 系统依赖（Electron 运行库防御性补装；xvfb 由市场 action 自理）
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libnss3 libasound2t64 libgbm1
+      - name: 安装 Electron 44.2.0（与本地 electron/runtime/ 同版本）
+        run: |
+          cd electron
+          npm install --no-save electron@44.2.0
+          test -x node_modules/electron/dist/electron || { echo "❌ electron 二进制未就位"; exit 1; }
+          ./node_modules/electron/dist/electron --version
+      # 市场件（用户指定参考 GitHub Marketplace）：GabrielBB/xvfb-action——
+      # Electron 无头测试的标准 xvfb 包装；SHA 钉死（供应链纪律同指纹步）
+      - name: electron/run.sh all（97 用例 + 断言计数守门，xvfb 真实时钟）
+        uses: GabrielBB/xvfb-action@86d97bde4a65fe9b290c0b3fb92c2c4ed0e5302d
+        with:
+          run: bash electron/run.sh all
+      - name: 失败留档（截图 + 计数表）
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: electron-logs-node${{ matrix.node }}
+          path: |
+            build/electron-*.png
+            build/assert-counts-electron.tsv
+          if-no-files-found: ignore
+          retention-days: 7

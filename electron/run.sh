@@ -8,20 +8,30 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(dirname "$HERE")"
-ELECTRON="$HERE/runtime/electron"
+# R159.3：双路径可被环境变量覆盖（CI：npm install electron@44.2.0 后指向
+# node_modules/electron/dist/electron；node 用 setup-node 注入 PATH 的）
+ELECTRON="${ELECTRON:-$HERE/runtime/electron}"
 
 # R113：临时区 /tmp → /data/tmp（/tmp tmpfs inode 100% 打满曾致门禁三步假红；
 # /data 为真实磁盘无 inode 限制）。mktemp 全部尊重 TMPDIR。
-mkdir -p /data/tmp
-export TMPDIR=/data/tmp
+# R159.3：/data 不可写的机器（CI runner）回退系统 mktemp（set -u 兜底，同 run.sh）
+if [ -z "${TMPDIR:-}" ]; then
+  if mkdir -p /data/tmp 2>/dev/null; then
+    export TMPDIR=/data/tmp
+  else
+    TMPDIR="$(mktemp -d)"
+    export TMPDIR
+  fi
+fi
 
 if [ ! -x "$ELECTRON" ]; then
   echo "找不到 Electron：$ELECTRON"
-  echo "（从 ~/.cache/electron/ 里的 zip 解包到 electron/runtime/ 即可）"
+  echo "（本地：从 ~/.cache/electron/ 里的 zip 解包到 electron/runtime/ 即可；"
+  echo "  CI：npm install --no-save electron@44.2.0 → node_modules/electron/dist/electron）"
   exit 2
 fi
 
-NODE=/data/training/cli/commandline-tools-linux-x64-26.0.0.821/command-line-tools/tool/node/bin/node
+NODE="${NODE:-/data/training/cli/commandline-tools-linux-x64-26.0.0.821/command-line-tools/tool/node/bin/node}"
 FIXTURES="$ROOT/fixtures"
 
 # R98：仓颉 SDK 探测（cjk 用例跑真内核的前提）。已显式设置则尊重现值；
