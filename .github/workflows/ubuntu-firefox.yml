@@ -54,7 +54,8 @@ jobs:
       - name: firefox/run.sh all（87 用例 + 断言计数守门，overrides 分端差异）
         env:
           FF_FIREFOX: /usr/bin/firefox
-          FF_GECKODRIVER: /usr/local/bin/geckodriver
+          # FF_GECKODRIVER 不强制：交给 PATH 解析（十六跑实证——强制 /usr/local/bin
+          # 会覆盖 runner 预装的 geckodriver 路径且下载步被跳过时 404）
         run: bash firefox/run.sh all
       - name: 失败留档（计数表 + 矩阵日志）
         if: failure()
