@@ -136,16 +136,26 @@ int main(int argc, char *argv[]) {
         printf("MOUNT cangjie: InitCJRuntime ok\n");
     } else if (strcmp(mode, "ghc") == 0) {
         char p[1024];
+        /* R159.3：双命名兼容——本地 bindist 的包库带 -inplace-（x86_64-linux-
+         * ghc-x.y.z-inplace 目录），ghcup store 布局的不带（-3203 变体目录，
+         * CI 十二跑实证）。每个库先试 inplace 名、回退非 inplace 名。 */
         snprintf(p, sizeof(p), "%s/libHSrts-1.0.3-ghc9.14.1.so", rtsdir);
         void *rts = dlopen(p, RTLD_LAZY | RTLD_GLOBAL);
         if (!rts) { printf("FAIL dlopen rts: %s\n", dlerror()); return 1; }
-        snprintf(p, sizeof(p), "%s/libHSghc-internal-9.1401.0-inplace-ghc9.14.1.so", rtsdir);
-        void *gi = dlopen(p, RTLD_NOW | RTLD_GLOBAL);
+        void *try_hs_lib(const char *name) {
+            char q[1024];
+            snprintf(q, sizeof(q), "%s/%s-inplace-ghc9.14.1.so", rtsdir, name);
+            void *h = dlopen(q, RTLD_NOW | RTLD_GLOBAL);
+            if (!h) {
+                snprintf(q, sizeof(q), "%s/%s-ghc9.14.1.so", rtsdir, name);
+                h = dlopen(q, RTLD_NOW | RTLD_GLOBAL);
+            }
+            return h;
+        }
+        void *gi = try_hs_lib("libHSghc-internal-9.1401.0");
         if (!gi) { printf("FAIL dlopen ghc-internal: %s\n", dlerror()); return 1; }
-        snprintf(p, sizeof(p), "%s/libHSghc-prim-0.13.1-inplace-ghc9.14.1.so", rtsdir);
-        dlopen(p, RTLD_NOW | RTLD_GLOBAL);
-        snprintf(p, sizeof(p), "%s/libHSbase-4.22.0.0-inplace-ghc9.14.1.so", rtsdir);
-        dlopen(p, RTLD_NOW | RTLD_GLOBAL);
+        try_hs_lib("libHSghc-prim-0.13.1");
+        try_hs_lib("libHSbase-4.22.0.0");
         void *hsi = dlsym(RTLD_DEFAULT, "hs_init");
         if (!hsi) { printf("FAIL hs_init\n"); return 1; }
         ((void (*)(int *, char ***))hsi)(NULL, NULL);
