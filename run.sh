@@ -108,9 +108,17 @@ run_one() {
   # 虚拟时钟预算：默认 8000ms；用例可经 VTBUDGET 覆盖（R154：builtindemo 的弹簧解算器
   # 收口等待 tick(1200) 使全页虚拟耗时超 8s——长等待页用例自行声明更大预算）
   local vtb="${VTBUDGET:-8000}"
+  # ARKUI_CHROME_DEBUG=1：透出 Chrome stderr（console 消息/渲染进程崩溃信号）——
+  # CI 排障杠杆（R159.3 四跑：imageext 双解码通路 + measimage 空字节，需要一手证据）
+  local chrome_debug_flags=() chrome_err_redirect="/dev/null"
+  if [ "${ARKUI_CHROME_DEBUG:-0}" = "1" ]; then
+    chrome_debug_flags=(--enable-logging=stderr --v=0)
+    chrome_err_redirect="/dev/stderr"
+  fi
   dom="$(timeout 60 "$CHROME" --headless --disable-gpu --no-sandbox \
     --user-data-dir="$profdir" \
-    --virtual-time-budget="$vtb" --dump-dom "http://127.0.0.1:$port/$page$query" 2>/dev/null)"
+    "${chrome_debug_flags[@]}" \
+    --virtual-time-budget="$vtb" --dump-dom "http://127.0.0.1:$port/$page$query" 2>"$chrome_err_redirect")"
 
   # 只解析 #result 节点文本再判定：整页 DOM 里含脚本源码（'=== ALL PASS ===' 字面量），
   # 直接对 DOM grep 会永远"通过"——这个假阳性陷阱必须避免。

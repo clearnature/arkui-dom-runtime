@@ -82,6 +82,9 @@ jobs:
       # 绕过 24/26 矩阵、落到 runner 系统自带 node）；runner 预装 Google Chrome
       NODE: node
       CHROME: /usr/bin/google-chrome
+      # 四跑后仍在的 imageext/measimage 红点需要一手证据（console/崩溃信号）——
+      # 透出 Chrome stderr；定位后关闭
+      ARKUI_CHROME_DEBUG: "1"
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
