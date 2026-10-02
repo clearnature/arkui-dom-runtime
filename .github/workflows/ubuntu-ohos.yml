@@ -97,36 +97,36 @@ jobs:
           echo "✅ AOT 静态编译：modules.abc（$(du -h "$RUNNER_TEMP/hap/ets/modules.abc" | cut -f1)）→ $(du -h "$RUNNER_TEMP/out.an" | cut -f1) 原生码 ELF"
 
       # ── fixtures 漂移守门：本地已知坑的首个守卫（多代理并行期间 fixtures 会与
-      # .ets 源漂移——测试读旧冻结件全 null，此前无任何守卫）。
-      # 首期【只报告不拦截】：同版本同输入理应逐字节一致，但 runner 环境差异
-      # （node 版本/文件序）未验证，先观察一轮基线，确认零 diff 后转 exit 1 硬拦截。
-      - name: fixtures 漂移检查（首期只报告，转硬拦截见注释）
+      # .ets 源漂移——测试读旧冻结件全 null）。归一化规则【不静默】：
+      #   · app 资源 id（16777216=0x01000000 域）归一化——hvigor 的 id 分配顺序
+      #     跨机不同（六跑实证：page_text_font_size 本地 0x01000008 / CI 0x0100000C，
+      #     res_hello 本地 0x0100000D / CI 0x01000008），id 数值的正确性由
+      #     generated-app-resources --check（对本地 ids_map）守卫，不属本守门目标；
+      #   · bundleName 已随重冻结一致（首跑抓出 hmtest→arkuidomprobe 陈旧冻结）。
+      - name: fixtures 漂移检查（app 资源 id 归一化后逐字节 diff，硬拦截）
         run: |
           export DEVECO_CLI_CLT_PATH="$CLT_ROOT"
-          # 取证：CI 侧 ids_map 全文进日志（本地 17 项 0x01000000 顺序连续；CI 首跑
-          # 把 page_text_font_size 排到了 0x0100000C——资源 id 分配顺序跨机不同，
-          # 需要这份表定位差异源）
-          echo "── CI ids_map ──"
-          cat "$CLT_ROOT/../entry" 2>/dev/null || true
-          find harmony-proj/entry/build -name "id_defined.json" -exec cat {} \;
           CACHE="harmony-proj/entry/build/default/cache/default/default@CompileArkTS/esmodule/debug/entry/src/main/ets"
-          fail=0
-          for f in fixtures/pages/*.ts; do
-            rel="pages/$(basename "$f")"
-            if ! diff -u "$CACHE/$rel" "$f" > /tmp/driftpatch.txt 2>&1; then
-              echo "❌ 漂移：$rel"; head -20 /tmp/driftpatch.txt; fail=1
+          # 归一化：app 资源 id 域（十进制 16777xxx）→ 占位符；其余字节原样比对。
+          # 【范围=main_pages.json 登记页】：hvigor 只编译登记页（本地 clean 构建
+          # 实证 cache .ts 数=登记数 55），fixtures 里另外 25 个是 runtime 级测试页
+          # （harness 直吃冻结件、不经 HAP 编译）——不在本守门范围。
+          # 【id 归一化理由】：hvigor 的 app 资源 id 分配顺序跨机不同（六跑实证：
+          # page_text_font_size 本地 0x01000008 / CI 0x0100000C）；id 数值正确性由
+          # generated-app-resources --check（对本地 ids_map）守卫，不属本守门目标。
+          norm() { sed -E 's/"id": ?16777[0-9]{3}/"id": _APP_RES_ID_/g' "$1"; }
+          fail=0; drifted=0; checked=0
+          while IFS= read -r rel; do
+            f="fixtures/$rel"
+            [ -f "$f" ] || continue
+            checked=$((checked+1))
+            if ! diff -u <(norm "$CACHE/$rel") <(norm "$f") > /tmp/driftpatch.txt 2>&1; then
+              echo "❌ 漂移：$rel"; head -20 /tmp/driftpatch.txt; fail=1; drifted=$((drifted+1))
             fi
-          done
-          for f in fixtures/entryability/*.ts; do
-            rel="entryability/$(basename "$f")"
-            if ! diff -u "$CACHE/$rel" "$f" > /tmp/driftpatch.txt 2>&1; then
-              echo "❌ 漂移：$rel"; head -20 /tmp/driftpatch.txt; fail=1
-            fi
-          done
-          # 转硬拦截时：去掉下一行的注释、删除上面的 fail 旁路
-          # exit $fail
-          [ "$fail" = 1 ] && echo "⚠️ 发现漂移（首期只报告；基线确认后转硬拦截）" || echo "✅ fixtures 与重编译产物逐字节一致"
-          exit 0
+          done < <(python3 -c "import json,glob; pages=json.load(open('harmony-proj/entry/src/main/resources/base/profile/main_pages.json'))['src']; [print('pages/'+p.split('/')[-1]+'.ts') for p in pages]; [print('entryability/'+a.split('/')[-1]) for a in sorted(glob.glob('fixtures/entryability/*.ts'))]")
+          echo "── 检查 $checked 个登记产物，漂移 $drifted ──"
+          # 基线已确认（六跑：未登记页误报 25 + hmtest 时代 4 已由重冻结清除）
+          exit $fail
 
       - name: gen-components --check（149 组件骨架生成一致性——CI 首次可跑）
         env:
