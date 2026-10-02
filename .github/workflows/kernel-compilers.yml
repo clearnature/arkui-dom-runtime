@@ -69,17 +69,20 @@ jobs:
           test -n "$CJ_RT" || { echo "❌ 未找到仓颉运行时目录（linux_x86_64_cjnative）"; exit 1; }
           echo "CANGJIE_RT_LIB=$CJ_RT" >> "$GITHUB_ENV"
           echo "CANGJIE_RT_LIB=$CJ_RT"
-          # GHC_LIB_DIR 必须是【libHSrts-1.0.3-ghc9.14.1.so 所在目录】（ghcup 布局
-          # 与 --print-libdir 有差异——十二跑实证 dlopen No such file），并把该目录
-          # 注入 LD_LIBRARY_PATH（RTS/base 的 libffi 等依赖不在系统 ld 路径）
-          GHC_PRINT="$(ghc --print-libdir)"
-          RTS_FILE="$(find "$GHC_PRINT" -name 'libHSrts-1.0.3-ghc9.14.1.so' 2>/dev/null | head -1)"
-          test -n "$RTS_FILE" || RTS_FILE="$(find /usr/local/.ghcup "$HOME/.ghcup" -name 'libHSrts-1.0.3-ghc9.14.1.so' 2>/dev/null | head -1)"
-          test -n "$RTS_FILE" || { echo "❌ 未找到 libHSrts-1.0.3-ghc9.14.1.so"; exit 1; }
-          GHC_LIB="$(dirname "$RTS_FILE")"
-          echo "GHC_LIB_DIR=$GHC_LIB" >> "$GITHUB_ENV"
-          echo "LD_LIBRARY_PATH=$GHC_LIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
-          echo "GHC_LIB_DIR=$GHC_LIB"
+          # GHC_LIB_DIR 必须是【libHSrts-1.0.3-ghc9.14.1.so 所在目录】。优先
+          # ghcup 装到 /usr/local 前缀后的系统库目录（与本地完全一致、契约默认
+          # 路径直接命中）；store 布局（-3203 变体目录）只作回退。
+          GHC_LIB_DIR="/usr/local/lib/ghc-9.14.1/lib/x86_64-linux-ghc-9.14.1-inplace"
+          if [ ! -f "$GHC_LIB_DIR/libHSrts-1.0.3-ghc9.14.1.so" ]; then
+            GHC_PRINT="$(ghc --print-libdir)"
+            RTS_FILE="$(find "$GHC_PRINT" -name 'libHSrts-1.0.3-ghc9.14.1.so' 2>/dev/null | head -1)"
+            test -n "$RTS_FILE" || RTS_FILE="$(find /usr/local/.ghcup "$HOME/.ghcup" -name 'libHSrts-1.0.3-ghc9.14.1.so' 2>/dev/null | head -1)"
+            test -n "$RTS_FILE" || { echo "❌ 未找到 libHSrts-1.0.3-ghc9.14.1.so"; exit 1; }
+            GHC_LIB_DIR="$(dirname "$RTS_FILE")"
+          fi
+          echo "GHC_LIB_DIR=$GHC_LIB_DIR" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=$GHC_LIB_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+          echo "GHC_LIB_DIR=$GHC_LIB_DIR"
 
       - name: 五语言编译（源码 → .so，任一失败即红）
         run: |
