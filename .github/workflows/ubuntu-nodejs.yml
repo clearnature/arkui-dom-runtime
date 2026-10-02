@@ -42,7 +42,7 @@ jobs:
   # （build-runtime --check），任何一版 Node 上产物漂移都是真问题。
   toolchain:
     name: toolchain (node ${{ matrix.node }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04   # 钉 24.04：ubuntu-latest 2026-10-19 起迁 Ubuntu 26（runner-images#14748）——迁移适配另做验证切片
     timeout-minutes: 10
     strategy:
       fail-fast: false
@@ -70,7 +70,7 @@ jobs:
   # Chrome 自带 V8——双版本跑同一矩阵是为了一并守住工具链确定性。
   browser:
     name: browser (node ${{ matrix.node }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04   # 钉 24.04：ubuntu-latest 2026-10-19 起迁 Ubuntu 26（runner-images#14748）——迁移适配另做验证切片
     timeout-minutes: 60
     strategy:
       fail-fast: false

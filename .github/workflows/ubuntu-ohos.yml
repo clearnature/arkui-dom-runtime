@@ -44,17 +44,29 @@ concurrency:
 jobs:
   ohos-toolchain:
     name: ohos-toolchain (CLT 26.0.0.821)
-    runs-on: ubuntu-latest
+    # 钉 24.04（2026-10-02 实测校准的镜像）：ubuntu-latest 将于 2026-10-19 起
+    # 迁移 Ubuntu 26（runner-images#14748）——迁移日的包名/预装变化不应在
+    # 无人值守时打红门禁；26 的适配作为独立验证切片再做
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
+
+      # SDK 缓存自管（actions/cache@v5，Node 24 目标）——不用 setup-ohos 的
+      # cache: true：其内部 actions/cache@v4 目标 Node 20 已废弃（八跑 warning
+      # 实证，GitHub 强制跑在 24 上），换自管缓存消警且键控自主
+      - name: SDK 缓存恢复
+        uses: actions/cache@v5
+        with:
+          path: /home/runner/ohos-sdk
+          key: ohos-sdk-26.0.0.821-linux-amd64-v1
 
       - name: Setup HarmonyOS NEXT CLI tools（锁 26.0.0.821=本地同版本）
         # @v2 tag 钉到 commit SHA（供应链纪律：防 tag 被改指向；SHA=2026-10-02 的 v2）
         uses: ErBWs/setup-ohos@4dbb63025116eb6165ceac58a4bf47cbdc5ac721
         with:
           version: 26.0.0.821
-          cache: true              # SDK ~GB 级，缓存后非首跑零下载
+          cache: false             # 缓存由上一步 actions/cache@v5 自管
 
       - name: 安装 Linux 依赖（libGL1 纹理压缩 + minizip/unzip 供 AOT 步）
         run: |
