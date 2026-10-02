@@ -50,7 +50,8 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Setup HarmonyOS NEXT CLI tools（锁 26.0.0.821=本地同版本）
-        uses: ErBWs/setup-ohos@v2
+        # @v2 tag 钉到 commit SHA（供应链纪律：防 tag 被改指向；SHA=2026-10-02 的 v2）
+        uses: ErBWs/setup-ohos@4dbb63025116eb6165ceac58a4bf47cbdc5ac721
         with:
           version: 26.0.0.821
           cache: true              # SDK ~GB 级，缓存后非首跑零下载
@@ -66,6 +67,21 @@ jobs:
           hvigorw -v
           # HOS_SDK_HOME=…/ohos-sdk/command-line-tools/sdk → CLT 根=它的上一级
           echo "CLT_ROOT=$(dirname "$HOS_SDK_HOME")" >> "$GITHUB_ENV"
+
+      - name: CLT 供应链指纹校验（镜像包 vs 本地官方包基线抽样）
+        run: |
+          fail=0
+          while IFS=$'\t' read -r sha rel; do
+            case "$rel" in '#'*) continue ;; esac
+            actual="$(sha256sum "$CLT_ROOT/$rel" | cut -c1-64)"
+            if [ "$actual" = "$sha" ]; then
+              echo "✅ $rel"
+            else
+              echo "❌ 指纹不符：$rel（期望 $sha 实测 $actual）"; fail=1
+            fi
+          done < tools/clt-fingerprints.tsv
+          # 行为级等价另有 fixtures 漂移守门复验（57 项归一化零 diff）
+          exit $fail
 
       - name: hvigorw 全量编译冒烟（BUILD SUCCESSFUL 判定）
         run: |
