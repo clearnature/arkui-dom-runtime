@@ -69,20 +69,21 @@ jobs:
           test -n "$CJ_RT" || { echo "❌ 未找到仓颉运行时目录（linux_x86_64_cjnative）"; exit 1; }
           echo "CANGJIE_RT_LIB=$CJ_RT" >> "$GITHUB_ENV"
           echo "CANGJIE_RT_LIB=$CJ_RT"
-          # GHC 双目录（十三跑实证 ghcup store 布局：包库/rts 各自分散，命名
-          # inplace 与非 inplace 并存）——按【库文件名】各自发现所在目录：
-          LIBDIR="$(ghc --print-libdir)"
-          PKG_DIR="$(dirname "$(find "$LIBDIR" -name 'libHSghc-internal-9.1401.0-ghc9.14.1.so' 2>/dev/null | head -1)")"
-          if [ -z "$PKG_DIR" ]; then
-            PKG_DIR="$(dirname "$(find "$LIBDIR" -name 'libHSghc-internal-9.1401.0-inplace-ghc9.14.1.so' 2>/dev/null | head -1)")"
-          fi
-          test -n "$PKG_DIR" || { echo "❌ 未找到 ghc-internal 包库"; exit 1; }
-          RTS_DIR="$(dirname "$(find "$LIBDIR" -name 'libHSrts-1.0.3-ghc9.14.1.so' 2>/dev/null | head -1)")"
-          test -n "$RTS_DIR" || RTS_DIR="$PKG_DIR"
-          echo "GHC_LIB_DIR=$PKG_DIR" >> "$GITHUB_ENV"
-          echo "GHC_RTS_DIR=$RTS_DIR" >> "$GITHUB_ENV"
-          echo "LD_LIBRARY_PATH=$RTS_DIR:$PKG_DIR:$LIBDIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
-          echo "PKG=$PKG_DIR | RTS=$RTS_DIR"
+          # GHC 双库按【文件名】全根搜索（十四跑：目录猜测对 runner 态敏感）——
+          # 调试信息无条件回显（which ghc/print-libdir/命中路径），红跑也带全证据
+          echo "which ghc: $(which ghc 2>/dev/null) | readlink: $(readlink -f "$(which ghc 2>/dev/null)" 2>/dev/null)"
+          echo "ghc --print-libdir: $(ghc --print-libdir 2>/dev/null)"
+          ROOTS="/usr/local/.ghcup $HOME/.ghcup /opt/hostedtoolcache /usr/local/lib"
+          RTS_FILE="$(find $ROOTS -name 'libHSrts-1.0.3-ghc9.14.1.so' 2>/dev/null | head -1)"
+          INT_FILE="$(find $ROOTS -name 'libHSghc-internal-9.1401.0-*.so' 2>/dev/null | grep -v _p- | head -1)"
+          echo "RTS_FILE=$RTS_FILE"
+          echo "INT_FILE=$INT_FILE"
+          test -n "$RTS_FILE" || { echo "❌ 未找到 libHSrts"; exit 1; }
+          test -n "$INT_FILE" || { echo "❌ 未找到 libHSghc-internal"; exit 1; }
+          echo "GHC_RTS_DIR=$(dirname "$RTS_FILE")" >> "$GITHUB_ENV"
+          echo "GHC_LIB_DIR=$(dirname "$INT_FILE")" >> "$GITHUB_ENV"
+          GHCL="$(dirname "$RTS_FILE")"; GHPL="$(dirname "$INT_FILE")"
+          echo "LD_LIBRARY_PATH=$GHCL:$GHPL${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
 
       - name: 五语言编译（源码 → .so，任一失败即红）
         run: |
