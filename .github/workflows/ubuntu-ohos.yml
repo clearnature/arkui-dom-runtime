@@ -11,17 +11,15 @@
 #     ——升级走独立切片：本地先升 851 + 重冻结全部 fixtures + 全门禁重验，
 #     CI 再同步换版本（可给 ErBWs/ohos-sdk 提 PR 贡献 851 包）。
 #
-# arkts-shim 说明（/data/training/cli/arkts-shim，本机路径、不在仓库里）：
-#   它补的两个库（libhilog 命名修复 + libshared_libz 合并垫片）只服务【原生 ELF
-#   工具】（ark_aot_compiler / previewer 那批）；hvigorw/ets-loader 构建链是纯
-#   JS/Node——本机从未用 shim 构建，干净环境 hvigorw -v 实测正常。所以本 job
-#   【不需要 shim】。未来若加 AOT 编译检查（ark_aot_compiler），在 runner 上
-#   就地重建 shim，零华为二进制再分发：
-#     1. libhilog.so：cp "$CLT/sdk/default/hms/toolchains/lib/libhilog_linux.so" \
-#          "$CLT/sdk/default/openharmony/previewer/common/bin/libhilog.so"   # 命名修复
-#        （或 DevEco 包内官方同名件，见 arkts-shim/README.md 的来源考证）
-#     2. libshared_libz.so：gcc -shared -fPIC shim.c -l:libz.so.1 -l:libminizip.so.1
-#        （shim.c 源码 vendor 进仓库即可，需 apt install libminizip1）
+# arkts-shim 说明（vendor 于 tools/arkts-shim/shim.c，本项目自有代码）：
+#   CLT 26.0.0.821 在 Linux 缺两个库——libhilog（命名问题：SDK 自带 libhilog_linux.so，
+#   符号齐）+ libshared_libz（不存在，实为 zlib+minizip 合并库）。hvigorw/ets-loader
+#   纯 JS 构建链【不需要】shim；但 **AOT 静态编译器 ark_aot_compiler 需要**——
+#   本 job 含 AOT 检查步：runner 上就地重建 shim（零华为二进制再分发——libhilog
+#   从下载好的 SDK 改名副本、libshared_libz 用仓库内 shim.c 现编），
+#   然后把 hvigorw 产物的 modules.abc 静态编译为 .an 原生码并核验 ELF。
+#   本地端到端验证（2026-10-02）：587KB modules.abc → 5.5MB out.an ✅
+#   （build/aot-local-verify.sh；shim 详细考证见 /data/training/cli/arkts-shim/README.md）
 #
 # 与本地门禁的分工：本地 11 步门禁的 gen-components --check / typecheck 依赖
 # 本地 CLT 路径——本 job 让 gen-components --check 首次在 CI 可跑；typecheck
@@ -57,10 +55,10 @@ jobs:
           version: 26.0.0.821
           cache: true              # SDK ~GB 级，缓存后非首跑零下载
 
-      - name: 安装 Linux 依赖（libGL1，纹理压缩；setup-ohos 官方要求）
+      - name: 安装 Linux 依赖（libGL1 纹理压缩 + minizip/unzip 供 AOT 步）
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq libgl1-mesa-dev
+          sudo apt-get install -y -qq libgl1-mesa-dev libminizip1 unzip
 
       - name: CLT 就位确认
         run: |
@@ -74,6 +72,29 @@ jobs:
           export DEVECO_CLI_CLT_PATH="$CLT_ROOT"
           unset DEVECO_NODE_HOME          # 必须空着才会用 CLT 自带的 node（本地配方同款）
           (cd harmony-proj && "$DEVECO_CLI_CLT_PATH/bin/hvigorw" --no-daemon assembleHap)
+
+      # ── AOT 静态编译检查：ArkTS=TS 超集，静态编译是这条工具链独有的能力——
+      # 云端能「真编译」的证据链 = hvigorw 出 .abc + ark_aot_compiler 出 .an 原生码。
+      # 配方=build/aot-local-verify.sh 的 CI 版（2026-10-02 本地端到端验证 ✅）。
+      - name: AOT 静态编译检查（arkts-shim 就地重建：modules.abc → .an 原生码）
+        run: |
+          ARKBIN="$CLT_ROOT/sdk/default/openharmony/ets/build-tools/ets-loader/bin/ark/build/bin"
+          SHIM="$RUNNER_TEMP/arkts-shim"
+          mkdir -p "$SHIM"
+          # ① libhilog 命名修复：SDK 自带 libhilog_linux.so 的改名副本（不再分发华为二进制）
+          cp "$ARKBIN/libhilog_linux.so" "$SHIM/libhilog.so"
+          # ② libshared_libz：仓库内 shim.c 现编（zlib+minizip 合并垫片，3 个转发符号）
+          gcc -shared -fPIC -o "$SHIM/libshared_libz.so" tools/arkts-shim/shim.c \
+            -Wl,--no-as-needed -l:libz.so.1 -l:libminizip.so.1
+          # ③ hvigorw 产物里的 modules.abc → .an/.ai
+          unzip -o -q harmony-proj/entry/build/default/outputs/default/entry-default-unsigned.hap \
+            'ets/modules.abc' -d "$RUNNER_TEMP/hap"
+          export LD_LIBRARY_PATH="$SHIM:$ARKBIN${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          "$ARKBIN/ark_aot_compiler" --aot-file="$RUNNER_TEMP/out" "$RUNNER_TEMP/hap/ets/modules.abc"
+          # ④ 产物核验：.an 必须是非空 ELF
+          test -s "$RUNNER_TEMP/out.an"
+          file "$RUNNER_TEMP/out.an" | grep -q ELF
+          echo "✅ AOT 静态编译：modules.abc（$(du -h "$RUNNER_TEMP/hap/ets/modules.abc" | cut -f1)）→ $(du -h "$RUNNER_TEMP/out.an" | cut -f1) 原生码 ELF"
 
       # ── fixtures 漂移守门：本地已知坑的首个守卫（多代理并行期间 fixtures 会与
       # .ets 源漂移——测试读旧冻结件全 null，此前无任何守卫）。
