@@ -1,5 +1,7 @@
 # package · 打包 CI（R159.3 起）——治理链「测试 → 打包」的打包段
 #
+# 依赖：CI · 治理链（多引擎矩阵）成功后才触发（workflow_run 链式依赖——
+#   测试矩阵全绿是打包的前置条件，Copilot PR 审查意见落实）。
 # 产物：Electron 目录分发 tar.gz（102 测试页 + 90 模块 + cjk/hs 内核分发集）
 # + 包内冒烟（perfdemo ELECTRON_RESULT 必须 PASS——packager 自带冒烟）。
 #
@@ -8,12 +10,14 @@
 #     （packager hasZip 直用，免 --download.mirror 镜像下载）
 #   · cjk 分发集：CI 无仓颉运行时 → 脚本自带降级留痕（权威=本地打包）
 #   · hs 分发集：patchelf 装了就有闭包（kernel-compilers 的 ghcup 布局亦可）
-# 触发：push main（测试矩阵全绿后的合并面）+ 手动。ci 分支不跑（省额度）。
+# 触发：CI 成功后（workflow_run 链式依赖）+ 手动。ci 分支不跑（省额度）。
 
 name: "package · 打包（Electron 目录分发 tar.gz + 包内冒烟）"
 
 on:
-  push:
+  workflow_run:
+    workflows: ["CI · 治理链（多引擎矩阵）"]
+    types: [completed]
     branches: [main]
   workflow_dispatch: {}
 
@@ -26,20 +30,25 @@ concurrency:
 
 jobs:
   package:
+    # 只在触发 workflow（CI 矩阵）成功后才打包
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == github.event.workflow_run.head_branch)
     name: 打包 + 包内冒烟（Electron 44.2.0）
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
       NODE: node
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: "24"
-      - name: 系统依赖（xvfb 供包内冒烟 + Electron 运行库 + 字体）
+      - name: 系统依赖（xvfb 供包内冒烟 + Electron 运行库 + 字体 + patchelf 供 hs 闭包）
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq xvfb libnss3 libasound2t64 libgbm1 fonts-noto-cjk fonts-dejavu-core
+          sudo apt-get install -y -qq xvfb libnss3 libasound2t64 libgbm1 fonts-noto-cjk fonts-dejavu-core patchelf
       - name: 预热 Electron zip（~/.cache/electron——packager hasZip 直用）
         run: |
           cd electron
