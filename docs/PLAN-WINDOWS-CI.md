@@ -71,6 +71,15 @@ Node 工具链（extract/assert-counts/stats 全跨平台）、零依赖纪律�
 
 - kernel-contract / kernel-compilers 的 Windows 化：C addon `dlopen(.so)` → `LoadLibrary(.dll)`
   是移植工程；GHC/仓颉 Windows 运行时闭包形态完全不同。投入产出最差，除非出现真需求。
+- **Reasonix 参照裁定（2026-10-03，用户比对 /home/yanli/work/DeepSeek-Reasonix 后）**：
+  该项目「一套源码多平台无 DLL」靠的是 **Go + CGO_ENABLED=0 全静态单文件**（`make cross`
+  六平台纯交叉编译）+ `//go:build` 编译期分支 + per-GOOS lint 纪律 + 全部产物在
+  ubuntu runner 交叉编译（Windows runner 只做 Certum 两段签名冒烟）。我们的内核是
+  **运行期 dlopen 插件架构**（多内核槽/换内核/契约 41×5 独立验证）——静态并入会杀死
+  这套架构，且 GHC/仓颉静态链不可行。**学得走的两件**：① Windows 上五内核照
+  kernel-contract 对 cangjie/hs 的既有 SKIP 留痕机制处理；② W2-4 package-windows
+  产物清单抄其 dist/ 形态（`-windows-amd64.zip` / `-installer.exe` / SHA256SUMS /
+  artifacts.json / 签名冒烟流水线）。
 
 ## 编队与轮次预算
 
