@@ -6,8 +6,8 @@
 # + 包内冒烟（perfdemo ELECTRON_RESULT 必须 PASS——packager 自带冒烟）。
 #
 # 工具：tools/package-app.mjs（R81 固化、R88/R109/R127/R134 历代增强）——
-#   · Electron zip 预热：npm install electron 会把 zip 缓存到 ~/.cache/electron
-#     （packager hasZip 直用，免 --download.mirror 镜像下载）
+#   · Electron zip 预热：官方 Releases 直下到 ~/.cache/electron
+#     （packager hasZip 直用；npm install 的缓存位置在 runner 上不可靠）
 #   · cjk 分发集：CI 无仓颉运行时 → 脚本自带降级留痕（权威=本地打包）
 #   · hs 分发集：patchelf 装了就有闭包（kernel-compilers 的 ghcup 布局亦可）
 # 触发：CI 成功后（workflow_run 链式依赖）+ 手动。ci 分支不跑（省额度）。
@@ -49,11 +49,14 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq xvfb libnss3 libasound2t64 libgbm1 fonts-noto-cjk fonts-dejavu-core patchelf
+      # @electron/get 在 runner 上的缓存位置不可靠（实测 npm install 后
+      # ~/.cache/electron 不存在）——改从官方 Releases 直接下载 zip（确定性路径）。
       - name: 预热 Electron zip（~/.cache/electron——packager hasZip 直用）
         run: |
-          cd electron
-          npm install --no-save electron@44.2.0
-          ls "$HOME/.cache/electron/" | grep electron-v44.2.0 || { echo "❌ zip 缓存未就位"; exit 1; }
+          mkdir -p "$HOME/.cache/electron"
+          curl -fsSL --retry 3 -o "$HOME/.cache/electron/electron-v44.2.0-linux-x64.zip" \
+            https://github.com/electron/electron/releases/download/v44.2.0/electron-v44.2.0-linux-x64.zip
+          ls -lh "$HOME/.cache/electron/electron-v44.2.0-linux-x64.zip"
       - name: 产物抽取（ARKUI_EXTRACT_ONLY 全量趟）
         env:
           NODE: node
