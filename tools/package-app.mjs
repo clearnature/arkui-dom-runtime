@@ -257,7 +257,12 @@ try {
 
 console.log(result.split('\n').filter((l) => /PASS|FAIL|ELECTRON_RESULT/.test(l)).slice(-6).join('\n'));
 const ok = /ELECTRON_RESULT: PASS/.test(result);
-if (!ok) { console.error('❌ 冒烟未通过'); process.exit(1); }
+if (!ok) {
+  // 失败时全量输出（页面断言输出 + 渲染进程报错都在 stdout——只打过滤行会把根因吞掉）
+  console.error('──── 冒烟失败：全量输出 ────\n' + result);
+  console.error('❌ 冒烟未通过');
+  process.exit(1);
+}
 const passLine = (result.match(/=== ALL PASS \((\d+)\) ===/) || [])[1];
 console.log(`✅ 打包+冒烟通过：${bin}`);
 console.log(`   （${passLine ? passLine + ' 断言' : 'PASS'}；运行：cd ${path.dirname(bin)} && ${path.basename(bin)}` +
