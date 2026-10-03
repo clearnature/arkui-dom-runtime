@@ -27,7 +27,7 @@ concurrency:
 jobs:
   pr-body:
     name: PR 声明三要素（变更说明/风险/验证）
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04   # U26 迁移（探针+六腿验证 run 37136198612 全绿）
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
@@ -51,7 +51,7 @@ jobs:
 
   fast:
     name: 快检 (node 24)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04   # U26 迁移（探针+六腿验证 run 37136198612 全绿）
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7

@@ -36,7 +36,7 @@ jobs:
       (github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.head_branch == github.event.workflow_run.head_branch)
     name: 打包 + 包内冒烟（Electron 44.2.0）
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04   # U26 迁移（探针+六腿验证 run 37136198612 全绿）
     timeout-minutes: 45
     env:
       NODE: node

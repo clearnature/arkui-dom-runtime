@@ -51,7 +51,7 @@ jobs:
     # 钉 24.04（2026-10-02 实测校准的镜像）：ubuntu-latest 将于 2026-10-19 起
     # 迁移 Ubuntu 26（runner-images#14748）——迁移日的包名/预装变化不应在
     # 无人值守时打红门禁；26 的适配作为独立验证切片再做
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04   # U26 迁移（探针+六腿验证 run 37136198612 全绿）
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
