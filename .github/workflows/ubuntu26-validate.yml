@@ -1,0 +1,76 @@
+# ubuntu26 验证 · 六腿在 26.04 全量真跑（U26 迁移判定数据）
+#
+# 背景：ubuntu-latest 2026-10-19 起迁 Ubuntu 26（探针 ubuntu26-probe.yml 已确认
+# 26.04 标签上线且环境面健康）。本工作流经治理仓 runner input（PR#5，aab1bd5）
+# 把六条 Linux 腿原样放到 ubuntu-26.04 上跑全量——绿了才有迁移依据。
+#
+# 只手动触发（workflow_dispatch）：验证数据采集，不随 push 烧分钟。
+# 全部单 node 24（判定的是镜像兼容性，不是 node 矩阵）。
+# 判定后动作：ci.yml 各腿显式加 runner: ubuntu-26.04（caller 侧显式迁移、可逐腿回退），
+# 治理仓默认保持 24.04 不动。
+
+name: "ubuntu26 验证 · 六腿 26.04 全量（迁移判定）"
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ubuntu26-validate
+  cancel-in-progress: true
+
+jobs:
+  browser:
+    name: browser@26.04
+    uses: clearnature/arkui-ci/.github/workflows/browser.yml@aab1bd5041c8fdd37526b62a869e37b9d8965add
+    with:
+      runner: ubuntu-26.04
+      node-version: "24"
+      test-command: ARKUI_VIRTUAL_TIME_SKIP="builtindemo imageext measimage" bash run.sh all
+      artifact-path: |
+        build/*.png
+        build/assert-counts-browser.tsv
+
+  firefox:
+    name: firefox@26.04
+    uses: clearnature/arkui-ci/.github/workflows/firefox.yml@aab1bd5041c8fdd37526b62a869e37b9d8965add
+    with:
+      runner: ubuntu-26.04
+      node-version: "24"
+      test-command: bash firefox/run.sh all
+      artifact-path: |
+        build/assert-counts-firefox.tsv
+        build/ff-matrix.log
+
+  webkit:
+    name: webkit@26.04
+    uses: clearnature/arkui-ci/.github/workflows/webkit.yml@aab1bd5041c8fdd37526b62a869e37b9d8965add
+    with:
+      runner: ubuntu-26.04
+      node-version: "24"
+      test-command: bash webkit/run.sh all
+      artifact-path: |
+        build/assert-counts-webkit.tsv
+        build/wk-matrix.log
+
+  electron:
+    name: electron@26.04
+    uses: clearnature/arkui-ci/.github/workflows/electron-realtime.yml@aab1bd5041c8fdd37526b62a869e37b9d8965add
+    with:
+      runner: ubuntu-26.04
+      node-version: "24"
+
+  kernel-contract:
+    name: kernel-contract@26.04
+    uses: clearnature/arkui-ci/.github/workflows/kernel-contract.yml@aab1bd5041c8fdd37526b62a869e37b9d8965add
+    with:
+      runner: ubuntu-26.04
+      node-version: "24"
+
+  kernel-compilers:
+    name: kernel-compilers@26.04
+    uses: clearnature/arkui-ci/.github/workflows/kernel-compilers.yml@aab1bd5041c8fdd37526b62a869e37b9d8965add
+    with:
+      runner: ubuntu-26.04
