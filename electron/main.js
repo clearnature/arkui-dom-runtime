@@ -654,6 +654,15 @@ try {
     if (pageUrl) await win.loadURL(pageUrl);
     else await win.loadFile(pagePath);
 
+    // 取证陷阱：unhandledrejection/window.onerror 不一定走 console-message——
+    // 页面驱动脚本若在 await 链上炸掉，这里兜住栈（R130 教训：CSP 类静默死
+    // console 无报错；本陷阱是「页面到底跑没跑、死在哪」的直接证据）
+    await win.webContents.executeJavaScript(
+      "window.__ur=[];" +
+      "window.addEventListener('unhandledrejection',function(e){window.__ur.push('rej: '+String(e.reason&&e.reason.stack||e.reason))});" +
+      "window.addEventListener('error',function(e){window.__ur.push('err: '+String(e.error&&e.error.stack||e.message))});''"
+    ).catch(() => {});
+
     const deadline = Date.now() + WAIT_MS;
     let result = '';
     let probeTick = 0;
@@ -682,6 +691,18 @@ try {
 
     console.log('──── 渲染进程内的断言输出（与浏览器同一份页面）────');
     console.log(result || '（空）');
+    // 页面状态快照：脚本加载件数（resource 条目）、路由渲染长度、陷阱捕获——
+    // 「卡 running…」时区分【脚本根本没跑】与【跑了但死在 await 链上】
+    try {
+      const state = await win.webContents.executeJavaScript(
+        "JSON.stringify({ur:(window.__ur||[]).length," +
+        " rootLen:(document.getElementById('root')||{innerHTML:''}).innerHTML.length," +
+        " res:performance.getEntriesByType('resource').length})"
+      );
+      console.log('[页面状态] ' + state);
+      const ur0 = await win.webContents.executeJavaScript("(window.__ur||[])[0]||''");
+      if (ur0) console.log('──── 陷阱捕获 ────\n' + ur0);
+    } catch { /* 诊断失败不影响判定 */ }
     if (errors.length) console.log('──── 页面报错 ────\n' + errors.join('\n'));
 
     // 隐藏窗口下 capturePage 可能永不 resolve（合成器不产帧）→ 必须设超时，否则整轮卡死
