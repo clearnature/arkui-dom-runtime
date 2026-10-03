@@ -37,7 +37,7 @@ const APP_NAME = 'arkui-dom-electron';
 const PRODUCT = 'arkui-dom-desktop';
 
 // R113：临时区 /data/tmp（/tmp tmpfs inode 打满曾致门禁假红）
-const TMP = '/data/tmp';
+const TMP = process.env.ARKUI_PKG_TMP || '/data/tmp';   // R159.3：CI runner /data 不可写→env 覆盖
 
 const step = (m) => console.log('══ ' + m);
 

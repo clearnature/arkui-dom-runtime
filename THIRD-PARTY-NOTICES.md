@@ -145,6 +145,20 @@ cp "$B/jsqr@1.4.0@@@1/LICENSE" test/vendor/jsqr-1.4.0.LICENSE
 
 ---
 
+### 3b.4 TypeScript 4.9.5-r4（华为补丁版；R159.3 起，`tools/extract.mjs` 的剥类型引擎）
+
+| 入库文件 | 出处 | 许可 | 用途 |
+|---|---|---|---|
+| `test/vendor/typescript-4.9.5-r4.lib.cjs`（8.0MB）+ `typescript-4.9.5-r4.LICENSE` | CLT 26.0.0.821 内 `sdk/default/openharmony/ets/build-tools/ets-loader/node_modules/typescript/lib/typescript.js` **逐字节复制零修改**（copyFileSync；module README.OpenSource 自证 Apache-2.0 / Microsoft TypeScript 4.9.5 华为 -r4 补丁版） | **Apache-2.0**（原文：`test/vendor/typescript-4.9.5-r4.LICENSE`） | `extract.mjs` 的 `transpileModule` 剥类型引擎（fixtures→build/*.js 的唯一转换步）——**CI 与本地同源**：runner 无本地 CLT，此前 extract 硬编码 CLT 路径导致 CI 必红；.cjs 后缀因仓库 `"type":"module"`（.js 会被当 ESM 加载） |
+
+- **字节一致性验证**：2026-10-02 对 Index/BatchFuncDemo(--cjs)/RelDemo/TabsGrid 四页
+  `transpileModule` 输出与 CLT 原件逐字节 diff 相等（`build/ts-equality-check.mjs`，临时脚本）。
+- **为什么必须 vendor 而不是 npm `typescript@4.9.5`**：-r4 是华为补丁版，与官方版转译
+  字节可能有差——fixtures 冻结件全部由 -r4 产出，换官方版有行为漂移风险。
+- **解析顺序**（extract.mjs）：env `TS_PATH`（应急覆盖）→ vendor 副本。CLT 路径硬编码已移除。
+
+---
+
 ## 4. 仅作参考阅读的上游（**开源**，可放心引用其接口形状）
 
 | 来源 | 许可 | 我们如何使用 |

@@ -19,11 +19,40 @@
  * 运行：见 kernel/run-contract.sh
  */
 #define _GNU_SOURCE
+#include <dirent.h>
 #include <dlfcn.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+
+/* R159.3：HS 包库【双目录 × 前缀扫描】——ghcup 各发行布局的包库 ABI tag 不同
+ * （本地 bindist=-inplace-，CI ghcup=-e31e-），固定命名不可行。按前缀扫目录，
+ * 命中 libHS<prefix>*.so 首个即 dlopen（RTLD_NOW|GLOBAL），先到先得。 */
+static void *try_hs_lib2(const char *d1, const char *d2, const char *prefix) {
+    const char *dirs[2] = { d1, d2 };
+    for (int j = 0; j < 2; j++) {
+        const char *d = dirs[j];
+        if (!d || !*d) continue;
+        DIR *dp = opendir(d);
+        if (!dp) continue;
+        struct dirent *e;
+        size_t plen = strlen(prefix);
+        void *h = NULL;
+        while ((e = readdir(dp)) != NULL) {
+            if (strncmp(e->d_name, prefix, plen) != 0) continue;
+            size_t len = strlen(e->d_name);
+            if (len < 3 || strcmp(e->d_name + len - 3, ".so") != 0) continue;
+            char q[1024];
+            snprintf(q, sizeof(q), "%s/%s", d, e->d_name);
+            h = dlopen(q, RTLD_NOW | RTLD_GLOBAL);
+            if (h) break;
+        }
+        closedir(dp);
+        if (h) return h;
+    }
+    return NULL;
+}
 
 typedef int (*i_cstr_fn)(const char *);
 typedef int (*v_fn)(void);
@@ -136,16 +165,18 @@ int main(int argc, char *argv[]) {
         printf("MOUNT cangjie: InitCJRuntime ok\n");
     } else if (strcmp(mode, "ghc") == 0) {
         char p[1024];
+        /* R159.3：双目录双命名兼容——argv: <kernel.so> <pkgdir> [rtsdir]。
+         * 本地 bindist 全库同目录（inplace 命名）；ghcup store 布局 rts 与包库
+         * 可能分目录且不带 inplace（CI 十二/十三跑实证）。try_hs_lib2 双目录
+         * × 双命名各试一遍，先到先得；rts 只从 rtsdir 取。 */
+        const char *pkgdir = (argc > 4) ? argv[4] : rtsdir;
         snprintf(p, sizeof(p), "%s/libHSrts-1.0.3-ghc9.14.1.so", rtsdir);
         void *rts = dlopen(p, RTLD_LAZY | RTLD_GLOBAL);
         if (!rts) { printf("FAIL dlopen rts: %s\n", dlerror()); return 1; }
-        snprintf(p, sizeof(p), "%s/libHSghc-internal-9.1401.0-inplace-ghc9.14.1.so", rtsdir);
-        void *gi = dlopen(p, RTLD_NOW | RTLD_GLOBAL);
+        void *gi = try_hs_lib2(pkgdir, rtsdir, "libHSghc-internal-9.1401.0");
         if (!gi) { printf("FAIL dlopen ghc-internal: %s\n", dlerror()); return 1; }
-        snprintf(p, sizeof(p), "%s/libHSghc-prim-0.13.1-inplace-ghc9.14.1.so", rtsdir);
-        dlopen(p, RTLD_NOW | RTLD_GLOBAL);
-        snprintf(p, sizeof(p), "%s/libHSbase-4.22.0.0-inplace-ghc9.14.1.so", rtsdir);
-        dlopen(p, RTLD_NOW | RTLD_GLOBAL);
+        try_hs_lib2(pkgdir, rtsdir, "libHSghc-prim-0.13.1");
+        try_hs_lib2(pkgdir, rtsdir, "libHSbase-4.22.0.0");
         void *hsi = dlsym(RTLD_DEFAULT, "hs_init");
         if (!hsi) { printf("FAIL hs_init\n"); return 1; }
         ((void (*)(int *, char ***))hsi)(NULL, NULL);

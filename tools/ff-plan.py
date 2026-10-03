@@ -15,7 +15,8 @@ import re
 import shlex
 import sys
 
-RUN_SH = "/data/training/cli/arkui-dom-runtime/run.sh"
+import os
+RUN_SH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "run.sh")
 
 
 def main():

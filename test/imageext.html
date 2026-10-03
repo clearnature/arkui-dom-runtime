@@ -19,9 +19,10 @@
   <script src="../runtime/arkui-dom-runtime.js"></script>
   <script src="../runtime/ohos-shims.js"></script>
   <!-- 路由注册：本页断言全部直打 shim（无 ArkTS 页面），
-       复用 DrawDemo 的固化产物只为拿到已注册路由来立根容器（gaugedemo 同做法）；
+       loadRoute('pages/Index') 只为立根容器（chaindemo/v2sem 同做法——原用
+       DrawDemo 但 CI electron 上卡死其注册链，十二跑 STAGE 实证）；
        DrawDemo 自身的回归在 drawdemo 用例 -->
-  <script src="../build/drawdemo.js"></script>
+  <script src="../build/app.js"></script>
   <script>
   (async function () {
     const lines = [];
@@ -37,7 +38,7 @@
     const bytesOf = (ab) => Array.from(new Uint8Array(ab));
 
     try {
-      __arkui_dom_loadRoute('pages/DrawDemo', document.getElementById('root'));   // 只为立根容器
+      __arkui_dom_loadRoute('pages/Index', document.getElementById('root'));   // 只为立根容器
       await tick(30);
       const image = __arkui_dom_require('multimedia.image');
 

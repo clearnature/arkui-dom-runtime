@@ -15,10 +15,17 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(dirname "$HERE")"
 cd "$ROOT"
 
-mkdir -p /data/tmp
-export TMPDIR=/data/tmp   # /tmp tmpfs inode 打满曾致门禁假红（R113），全仓库统一
+# R159.3：/data 不可写（CI runner）回退系统 mktemp（set -u 兜底，同 run.sh）
+if [ -z "${TMPDIR:-}" ]; then
+  if mkdir -p /data/tmp 2>/dev/null; then
+    export TMPDIR=/data/tmp
+  else
+    TMPDIR="$(mktemp -d)"
+    export TMPDIR
+  fi
+fi
 
-NODE=/data/training/cli/commandline-tools-linux-x64-26.0.0.821/command-line-tools/tool/node/bin/node
+NODE="${NODE:-/data/training/cli/commandline-tools-linux-x64-26.0.0.821/command-line-tools/tool/node/bin/node}"
 target="${1:-all}"
 
 WK_PY="${WK_PYTHON:-/data/tmp/wk-venv/bin/python}"
@@ -43,6 +50,12 @@ if [ "$plan_n" -ne "$raw_n" ]; then
   printf '  ❌ 计划用例数(%d) ≠ all 块 run_one 行数(%d)——ff-plan 解析漂移\n' "$plan_n" "$raw_n"
   exit 1
 fi
+
+# ── 前置产物趟（R159.3）：同 firefox/run.sh——驱动不自带抽取，复用 run.sh
+#    的用例表与抽取配方（单一事实来源），仅抽取不跑浏览器。 ──
+ARKUI_EXTRACT_ONLY=1 bash run.sh all >build/extract.log 2>&1 || {
+  echo "  ❌ 产物抽取趟失败（尾部 20 行）："; tail -20 build/extract.log; exit 1
+}
 
 # ── 跑矩阵 ──
 if [ "$target" = "all" ]; then

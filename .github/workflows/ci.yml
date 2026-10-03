@@ -1,0 +1,77 @@
+# CI 治理入口（R159.3 起）——编排逻辑全部在治理仓 arkui-ci（SHA 钉死）。
+# 本文件只做【引擎 × 命令】的装配：项目适配（抽取趟/字体/geckodriver/虚构时间
+# 豁免清单）全部内联在 setup/test-command 里，任何引擎的执行器都是治理仓的
+# 通用 reusable。
+#
+# 跳过清单（CI 上不跑的本地专属步）：gen-components --check（本地 SDK 路径）/
+# typecheck（TS 硬编码路径）/ stats 性能基线（权威=本地 Electron）/ Android 端
+# （模拟器）/ 鸿蒙模拟器 / builtindemo+imageext+measimage（虚拟时间+负载下
+# 时序与解码投递不稳——权威=electron 真实时钟腿与本地）。
+
+name: "CI · 治理链（多引擎矩阵）"
+
+on:
+  push:
+    branches: [main, ci]
+  pull_request:
+    types: [labeled]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  browser:
+    if: github.event_name != 'pull_request' || github.event.label.name == 'ci/full'
+    name: browser (node ${{ matrix.node }})
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["24", "26"]
+    uses: clearnature/arkui-ci/.github/workflows/browser.yml@8692818a36934feb97e63359574d725a7adf4183
+    with:
+      node-version: ${{ matrix.node }}
+      # 虚拟时间豁免清单内联在 test-command 里（caller job 不允许 env:——schema 只允许 with/secrets）
+      test-command: ARKUI_VIRTUAL_TIME_SKIP="builtindemo imageext measimage" bash run.sh all
+      artifact-path: |
+        build/*.png
+        build/assert-counts-browser.tsv
+
+  firefox:
+    if: github.event_name != 'pull_request' || github.event.label.name == 'ci/full'
+    name: firefox (node ${{ matrix.node }})
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["24", "26"]
+    uses: clearnature/arkui-ci/.github/workflows/firefox.yml@8692818a36934feb97e63359574d725a7adf4183
+    with:
+      node-version: ${{ matrix.node }}
+      test-command: bash firefox/run.sh all
+      artifact-path: |
+        build/assert-counts-firefox.tsv
+        build/ff-matrix.log
+
+  webkit:
+    if: github.event_name != 'pull_request' || github.event.label.name == 'ci/full'
+    name: webkit (node ${{ matrix.node }})
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["24", "26"]
+    uses: clearnature/arkui-ci/.github/workflows/webkit.yml@8692818a36934feb97e63359574d725a7adf4183
+    with:
+      node-version: ${{ matrix.node }}
+      test-command: bash webkit/run.sh all
+      artifact-path: |
+        build/assert-counts-webkit.tsv
+        build/wk-matrix.log
+
+  kernel-compilers:
+    if: github.event_name != 'pull_request' || github.event.label.name == 'ci/full'
+    name: kernel-compilers
+    uses: clearnature/arkui-ci/.github/workflows/kernel-compilers.yml@8692818a36934feb97e63359574d725a7adf4183

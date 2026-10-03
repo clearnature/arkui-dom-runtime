@@ -172,6 +172,15 @@ app.commandLine.appendSwitch('disable-software-rasterizer-fallback');
 // R35：媒体垫片的 audio.play() 走 muted 降级，Electron 仍可能因 autoplay 政策拒——
 // 测试页面（无真实手势）显式放行
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+// R159.3：渲染进程任务队列节流三件套——show:false + offscreen 的窗口会被
+// Chromium 判为隐藏/遮挡，timer 与解码回调的投递被无限迟（实测：夜间锁屏后
+// 本地全矩阵的红、CI electron 的 imageext 挂/measimage 迟/builtindemo 收口
+// 轮转 flake，全部同源；backgroundThrottling:false 不覆盖遮挡跟踪路径）。
+// 这是 Electron 无头测试的标准配方。
+app.commandLine.appendSwitch('disable-renderer-backgrounding');
+app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
+app.commandLine.appendSwitch('disable-background-timer-throttling');
+app.commandLine.appendSwitch('disable-features', 'IntensiveWakeUpThrottling,CalculateNativeWinOcclusion');
 app.disableHardwareAcceleration();
 
 app.whenReady().then(async () => {

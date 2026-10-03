@@ -1,0 +1,9 @@
+# CLT 26.0.0.821 关键文件指纹（本地官方包基线）
+# 来源：华为官方 zip（sha256 58da7359019e9360a8bb82da0cd1d3b3b26fedc338379f257849f2162e3ac1fc，
+# /data2/download/commandline-tools-linux-x64-26.0.0.821.zip，2026-09-17 官网下载）解包树。
+# 用途：CI 从 ErBWs/ohos-sdk 社区镜像下载的 CLT 逐文件比对——镜像维护者重新打包过
+# 容器（官方 zip ≠ 镜像 tar.gz，容器指纹不同无法直比），关键二进制的内容指纹是
+# 「镜像=官方」的抽样证明；配套行为级验证 = fixtures 漂移守门（57 项归一化零 diff）。
+# 格式：<sha256>\t<相对 command-line-tools 根的路径>
+31fc01ad4b0bace37a97f25e1b242bb6d2179b777fb0c3a5ea9d1e5081dafb78	bin/hvigorw
+bb1577a26b533b3c333d40fddc614ab93a36a3fe1eee9bbc521f7332486d46e2	sdk/default/openharmony/ets/build-tools/ets-loader/bin/ark/build/bin/ark_aot_compiler

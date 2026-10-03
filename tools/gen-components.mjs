@@ -14,7 +14,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const CLT = '/data/training/cli/commandline-tools-linux-x64-26.0.0.821/command-line-tools';
+// CLT 根目录解析：env DEVECO_CLI_CLT_PATH（DEVELOPING §8 的官方配方变量）>
+// 本机默认（R159.3 起 CI 可跑——setup-ohos 布局下导出 CLT_ROOT 即可）
+const CLT = process.env.DEVECO_CLI_CLT_PATH
+  || '/data/training/cli/commandline-tools-linux-x64-26.0.0.821/command-line-tools';
 const SRC_DIR = path.join(CLT, 'sdk/default/openharmony/ets/build-tools/ets-loader/components');
 const OUT = path.resolve('runtime/generated-components.js');
 

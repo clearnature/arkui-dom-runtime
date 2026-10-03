@@ -13,11 +13,20 @@ cd "$HERE"
 
 # R113：临时区 /tmp → /data/tmp（/tmp tmpfs inode 100% 打满曾致门禁三步假红；
 # Chrome profile 海量小文件是元凶）。mktemp 与探针目录全部尊重 TMPDIR。
-mkdir -p /data/tmp
-export TMPDIR=/data/tmp
-
-NODE=/data/training/cli/commandline-tools-linux-x64-26.0.0.821/command-line-tools/tool/node/bin/node
-CHROME=/opt/google/chrome/chrome
+# R159.3：三处本地路径全部可被环境变量覆盖（CI runner 无 CLT/本机 Chrome——
+# setup-node 的 node 在 PATH、ubuntu runner 的 Chrome 在 /usr/bin/google-chrome）；
+# /data 不可写的机器（CI runner）回退系统 mktemp，且必须兜底赋值——set -u 下
+# 未设 TMPDIR 会让后面的 mktemp -d "$TMPDIR/..." 直接 unbound 红掉（首跑实测）
+if [ -z "${TMPDIR:-}" ]; then
+  if mkdir -p /data/tmp 2>/dev/null; then
+    export TMPDIR=/data/tmp
+  else
+    TMPDIR="$(mktemp -d)"
+    export TMPDIR
+  fi
+fi
+NODE="${NODE:-/data/training/cli/commandline-tools-linux-x64-26.0.0.821/command-line-tools/tool/node/bin/node}"
+CHROME="${CHROME:-/opt/google/chrome/chrome}"
 CACHE="$HERE/harmony-proj/entry/build/default/cache/default/default@CompileArkTS/esmodule/debug/entry/src/main/ets"
 FIXTURES="$HERE/fixtures"
 
@@ -80,6 +89,13 @@ run_one() {
     return 2
   fi
   "$NODE" tools/extract.mjs "$src" "$out" $extra || return 1
+  # R159.3：抽取-only 模式——firefox/webkit 驱动的前置产物趟（它们不自带抽取，
+  # 曾假设 build/ 已由浏览器侧跑过=本地陈货依赖，CI 全新树上全 404 实证）。
+  # 用法：ARKUI_EXTRACT_ONLY=1 bash run.sh all（87 例仅抽取，不启服务不跑浏览器）
+  if [ "${ARKUI_EXTRACT_ONLY:-0}" = "1" ]; then
+    printf '  ⚙  [extract-only] %s → %s\n' "$name" "$out"
+    return 0
+  fi
 
   logf="$(mktemp)"
   # fixed_port 非空时用指定端口：localStorage 按 origin 隔离，而 origin 含端口，
@@ -99,18 +115,42 @@ run_one() {
   # 虚拟时钟预算：默认 8000ms；用例可经 VTBUDGET 覆盖（R154：builtindemo 的弹簧解算器
   # 收口等待 tick(1200) 使全页虚拟耗时超 8s——长等待页用例自行声明更大预算）
   local vtb="${VTBUDGET:-8000}"
-  dom="$(timeout 60 "$CHROME" --headless --disable-gpu --no-sandbox \
-    --user-data-dir="$profdir" \
-    --virtual-time-budget="$vtb" --dump-dom "http://127.0.0.1:$port/$page$query" 2>/dev/null)"
+  # ARKUI_CHROME_DEBUG=1：透出 Chrome stderr（console 消息/渲染进程崩溃信号）——
+  # CI 排障杠杆（R159.3 四跑：imageext 双解码通路 + measimage 空字节，需要一手证据）
+  local chrome_debug_flags=() chrome_err_redirect="/dev/null"
+  if [ "${ARKUI_CHROME_DEBUG:-0}" = "1" ]; then
+    chrome_debug_flags=(--enable-logging=stderr --v=0)
+    chrome_err_redirect="/dev/stderr"
+  fi
+  dom=""
+  result=""
+  # R159.3 瞬态吸收层：页面停在 running…（0 PASS 且无 FAIL）= 真实异步任务（图像
+  # 解码/重负载调度）没赶在虚拟时间窗口内完成——这是负载型瞬态而非断言失败
+  # （imageext 本地 ~1/6、CI 重负载下更高），自动重跑一次，失败率 1/6→1/36。
+  # 挂点语义见 ohos-shims.js 解码注释；上限一次，防止把真挂死放大成双倍时长。
+  local attempt
+  for attempt in 1 2; do
+    dom="$(timeout 60 "$CHROME" --headless --disable-gpu --no-sandbox \
+      --user-data-dir="$profdir" \
+      "${chrome_debug_flags[@]}" \
+      --virtual-time-budget="$vtb" --dump-dom "http://127.0.0.1:$port/$page$query" 2>"$chrome_err_redirect")"
 
-  # 只解析 #result 节点文本再判定：整页 DOM 里含脚本源码（'=== ALL PASS ===' 字面量），
-  # 直接对 DOM grep 会永远"通过"——这个假阳性陷阱必须避免。
-  result="$(printf '%s' "$dom" | python3 -c "
+    # 只解析 #result 节点文本再判定：整页 DOM 里含脚本源码（'=== ALL PASS ===' 字面量），
+    # 直接对 DOM grep 会永远"通过"——这个假阳性陷阱必须避免。
+    result="$(printf '%s' "$dom" | python3 -c "
 import sys, re, html
 d = sys.stdin.read()
 m = re.search(r'<div id=\"result\"[^>]*>(.*?)</div>', d, re.S)
 print(html.unescape(m.group(1)) if m else '（未取到 result 节点）')
 ")"
+    if ! printf '%s' "$result" | grep -q 'running…' \
+       && printf '%s' "$result" | grep -qE 'ALL PASS|FAIL '; then break; fi
+    # 未完成签名：既无 ALL PASS 也无 FAIL（页面挂起/中断；running… 或 STAGE 直写
+    # 都会落在这档）——真实异步未赶完虚拟窗口，属瞬态而非断言失败
+    if [ "$attempt" = 1 ]; then
+      echo "  ⏳ 页面未完成（真实异步未赶完虚拟窗口，$(printf '%s' "$result" | head -c 60)…）——重跑一次（瞬态吸收层）"
+    fi
+  done
   echo "$result" | sed 's/^/  /'
   # 记下本用例实测 emit 的 PASS 条数（断言计数守门的输入；退出时统一比对，见文件头 finalize_counts）
   printf '%s\t%s\n' "$name" "$(printf '%s\n' "$result" | grep -cE '^[[:space:]]*PASS ')" >> "$RUN_COUNTS"
@@ -135,6 +175,17 @@ rc=0
 case "${1:-index}" in
   all)
     rc=0
+    # R159.3：虚拟时间豁免清单（空格分隔用例名）——真实解码/真实时序页在虚拟
+    # 时间 CI 腿（--virtual-time-budget + 2 核负载）上真异步无限迟/时序形状失真，
+    # 跳过并留痕；权威=真实时钟端（Electron CI 腿/firefox/webkit/android+本地）。
+    # 在列（十一跑后裁定）：imageext/measimage（真解码回调不到）、builtindemo
+    # （动画收口/摩擦时序轮转 flake——预算迭代降频未根除，用户裁定归 Electron）。
+    vt_skip() {
+      case " ${ARKUI_VIRTUAL_TIME_SKIP:-} " in *" $1 "*)
+        echo "  ⏭  $1 跳过（虚拟时间 CI 腿豁免清单 ARKUI_VIRTUAL_TIME_SKIP；权威=真实时钟端）"
+        return 0 ;; esac
+      return 1
+    }
     run_one index "$(src_of pages/Index.ts)"  build/app.js    test/index.html  || rc=1
     echo
     run_one rich  "$(src_of pages/Rich.ts)"   build/rich.js   test/rich.html   || rc=1
@@ -162,8 +213,24 @@ case "${1:-index}" in
     echo
     run_one measarea "$(src_of pages/MeasArea.ts)" build/measarea.js test/measarea.html || rc=1
     echo
-    run_one measimage "$(src_of pages/MeasImage.ts)" build/measimage-module.js test/measimage.html \
-      "--cjs --register MeasImage" || rc=1
+    # R159.3：真实解码页的虚拟时间豁免（ARKUI_VIRTUAL_TIME_SKIP 清单，见 all 块头）。
+    #   依据：真图像解码的完成投递在 --virtual-time-budget + 负载下会无限迟
+    #   （imageext CI 三跑挂、measimage mimeJpg 六/八跑跨腿游走；24000 预算+
+    #   320×25 轮询窗扩容均无效——窗口再大，回调不到就是不到）。这两页的权威
+    #   环境=真实时钟端（Electron/firefox/webkit/android 腿 + 本地）；虚拟时间
+    #   browser CI 腿跳过。机理与教义记档：ohos-shims.js 解码注释 + docs。
+    #   依据：真图像解码的完成投递在 --virtual-time-budget + 负载下会无限迟
+    #   （imageext CI 三跑挂、measimage mimeJpg 六/八跑跨腿游走；24000 预算+
+    #   320×25 轮询窗扩容均无效——窗口再大，回调不到就是不到）。这两页的权威
+    #   环境=真实时钟端（Electron/firefox/webkit/android 腿 + 本地）；虚拟时间
+    #   browser CI 腿跳过。机理与教义记档：ohos-shims.js 解码注释 + docs。
+    if vt_skip measimage; then :; else
+      # R159.3：VTBUDGET=24000——measimage 的 JPEG 真解码在负载下会迟于页面
+      #   轮询窗落地，mimeJpg 出轮询即 ''（本地/真实时钟端仍全量跑）
+      VTBUDGET=24000 \
+      run_one measimage "$(src_of pages/MeasImage.ts)" build/measimage-module.js test/measimage.html \
+        "--cjs --register MeasImage" || rc=1
+    fi
     echo
     run_one measnotify "$(src_of pages/MeasNotify.ts)" build/measnotify-module.js test/measnotify.html \
       "--cjs --register MeasNotify" || rc=1
@@ -192,10 +259,13 @@ case "${1:-index}" in
       "--cjs --register GestureGroupDemo" || rc=1
     echo
     # R125 收口：组件内置手势（R154：VTBUDGET=12000——弹簧解算器收口等待 tick(1200)
-    #   使全页虚拟耗时超默认 8000，长等待页用例自行声明更大预算）
-    VTBUDGET=12000 \
-    run_one builtindemo "$(src_of pages/BuiltinDemo.ts)" build/builtindemo-module.js test/builtindemo.html \
-      "--cjs --register BuiltinDemo" || rc=1
+    #   使全页虚拟耗时超默认 8000；R159.3 CI 负载迭代→20000——收口/摩擦收敛轮询扩容；
+    #   十一跑后动画时序仍轮转 flake（用户裁定）→ 虚拟时间 CI 腿豁免、Electron 权威）
+    if vt_skip builtindemo; then :; else
+      VTBUDGET=20000 \
+      run_one builtindemo "$(src_of pages/BuiltinDemo.ts)" build/builtindemo-module.js test/builtindemo.html \
+        "--cjs --register BuiltinDemo" || rc=1
+    fi
     echo
     # R128 收口：真实资源解析
     run_one resourcedemo "$(src_of pages/ResourceDemo.ts)" build/resourcedemo-module.js test/resourcedemo.html \
@@ -417,8 +487,11 @@ case "${1:-index}" in
     # R157-A：chainMode 链式排列（SPREAD/SPREAD_INSIDE/PACKED）
     run_one chaindemo "$(src_of pages/Index.ts)" build/app.js test/chaindemo.html || rc=1
     echo
-    # R159-C：@ohos.multimedia.image 扩展（getImageProperty/createPixelMap 像素读取）
-    run_one imageext "$(src_of pages/Index.ts)" build/app.js test/imageext.html || rc=1
+    # R159-C：@ohos.multimedia.image 扩展——真实解码页，虚拟时间 CI 腿跳过
+    #   （依据与范围见上方 measimage 条注释；权威=真实时钟端）
+    if vt_skip imageext; then :; else
+      run_one imageext "$(src_of pages/Index.ts)" build/app.js test/imageext.html || rc=1
+    fi
     echo
     PERSIST_PROFILE="$HERE/build/chrome-profile-persist"
     rm -rf "$PERSIST_PROFILE"; mkdir -p "$PERSIST_PROFILE"   # 从干净状态开始，否则"持久化"可能是上次残留
@@ -446,7 +519,7 @@ case "${1:-index}" in
       "--cjs --register TextMeasure" ;;
   lazyvh) run_one lazyvh "$(src_of pages/LazyVar.ts)" build/lazyvar.js test/lazyvar.html ;;
   measarea) run_one measarea "$(src_of pages/MeasArea.ts)" build/measarea.js test/measarea.html ;;
-  measimage) run_one measimage "$(src_of pages/MeasImage.ts)" build/measimage-module.js test/measimage.html \
+  measimage) VTBUDGET=24000 run_one measimage "$(src_of pages/MeasImage.ts)" build/measimage-module.js test/measimage.html \
       "--cjs --register MeasImage" ;;
   measnotify) run_one measnotify "$(src_of pages/MeasNotify.ts)" build/measnotify-module.js test/measnotify.html \
       "--cjs --register MeasNotify" ;;
@@ -492,7 +565,8 @@ case "${1:-index}" in
   builtindemo)
     # R125 收口：组件内置手势（Swiper 拖拽翻页 / Tabs 滑动切换 / Scroll+List 拖拽滚动）
     # R154：弹簧解算器收口等待 tick(1200) 使全页虚拟耗时超 8s → 本用例扩容虚拟预算
-    VTBUDGET=12000 \
+    # R159.3：CI 负载迭代 12000→20000（收口/摩擦收敛轮询扩容）
+    VTBUDGET=20000 \
     run_one builtindemo "$(src_of pages/BuiltinDemo.ts)" build/builtindemo-module.js test/builtindemo.html \
       "--cjs --register BuiltinDemo" ;;
   resourcedemo)

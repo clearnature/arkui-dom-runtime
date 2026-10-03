@@ -1030,6 +1030,14 @@
             throw fsErr(62980103, `本环境没有 createImageBitmap，无法解码图像（${url}）`);
           }
           const buf = new Uint8Array(await blob.arrayBuffer());
+          // 解码完成检测的两条路都试过并记档（R159.3 五跑）：
+          //   · <img> 事件/轮询制——无头+虚拟时间下解码任务【从不执行】（挂合成器帧，
+          //     rAF 不派发=坑⑧家族；轮询 8/8 全挂实证）→ 不可用
+          //   · createImageBitmap（任务制解码）——常态可用，但完成投递在【负载下】
+          //     会迟/丢（CI 全矩阵 3/3 挂、本地单独跑 ~5/6）→ 现行选择 + 已知限制：
+          //     imageext 在重负载 browser CI 腿上不稳定，图像解码权威=Electron 腿
+          //     （真实时钟+真解码服务）；后续如需 browser 端稳定，候选=页内自产 PNG
+          //     的最小解码器（DecompressionStream inflate + unfilter，零外部依赖）
           const bmp = await global.createImageBitmap(blob);        // ← 真实解码
           const w = bmp.width, h = bmp.height;
           // R159-C：栅格化缓存真像素（供 createPixelMap）。getImageInfo 的对外行为不变。

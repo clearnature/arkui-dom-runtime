@@ -114,7 +114,7 @@
         // 收口等待（原 tick(900) 定额在负载/虚拟时钟抖动下踩过"末帧未清"的竞态——
         // 第五跑实测）——轮询等舞台还原，上限 4s 兜底
         const settled = async () => {
-          for (let i = 0; i < 80; i++) {
+          for (let i = 0; i < 160; i++) {   // 160×50=8000 虚拟 ms（R159.3：4000 在 runner 负载下收口不落地；VTBUDGET 已同步 20000）
             const a = pageOf(0).style.transform, b = pageOf(1).style.transform;
             if ((a === '' || a === 'translateX(0px)') && (b === '' || b === 'translateX(0px)')) return true;
             await tick(50);
@@ -139,11 +139,16 @@
         // P2（末页，loop=false）继续往左拖 = 朝界外 → 摩擦：显示偏移 < raw
         down(el('sw'), 80, 40);
         move(el('sw'), 70, 40);           // raw -10（朝界外，γ=10/360）
-        await tick(5);
-        const tf = pageOf(2).style.transform || '';
-        const m = /translateX\((-?[\d.]+)px\)/.exec(tf);
-        const shown = m ? Math.abs(Number(m[1])) : -1;
-        check(m && shown > 0 && shown < 30,
+        // 摩擦偏移落地收敛轮询（R159.3：固定 tick(5) 在 runner 负载下读到 |0|——
+        // 偏移经延迟任务应用，轮转 flake）；等到非零再断言 <30
+        let shown = -1;
+        for (let k = 0; k < 120 && !(shown > 0); k++) {
+          await tick(25);
+          const tf2 = pageOf(2).style.transform || '';
+          const m2 = /translateX\((-?[\d.]+)px\)/.exec(tf2);
+          shown = m2 ? Math.abs(Number(m2[1])) : -1;
+        }
+        check(shown > 0 && shown < 30,
           `边界摩擦：显示偏移 |${shown}| < 输入 30（f(γ)=0.72·fx/γ 原文）`);
         up(el('sw'), 70, 40);
         await tick(500);

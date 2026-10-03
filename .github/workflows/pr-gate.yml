@@ -1,0 +1,72 @@
+# pr-gate · PR 前置轻 CI（R159.3，参考 Reasonix 前置 CI 模型）
+#
+# 治理定位（流量保护）：PR 免审自动跑的只有本前置门——轻、快、省额度；
+# 六条重矩阵（browser/electron/firefox/webkit/ohos/kernel-compilers）已撤
+# PR 直触发，仅在 push main/ci 与手动时全量。审核后要跑全量：
+#   gh workflow run <重workflow> --ref <PR 分支>
+#
+# 检查两件（秒级到分钟级）：
+#   ① PR body 三要素声明（变更说明/风险与影响面/验证）——缺任一即红：
+#      「分析风险、决定方向」是跑重 CI 的前置输入，声明是治理的最小载体。
+#   ② 快检：build-runtime 产物一致性 + 内核 .so 在位 + Index 抽取冒烟
+#      （全部分钟级，单腿 node24，无矩阵无浏览器）。
+
+name: "pr-gate · PR 前置轻 CI（声明检查 + 快检）"
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  pr-body:
+    name: PR 声明三要素（变更说明/风险/验证）
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: 检查 PR body 携带三要素声明
+        env:
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          miss=""
+          for k in 变更说明 风险 验证; do
+            case "$BODY" in *"$k"*) ;; *) miss="$miss $k" ;; esac
+          done
+          if [ -n "$miss" ]; then
+            echo "❌ PR body 缺少声明要素：$miss"
+            echo "   模板（三节标题缺一不可，内容自拟）："
+            echo "   ## 变更说明 —— 改了什么"
+            echo "   ## 风险与影响面 —— 可能破坏什么"
+            echo "   ## 验证 —— 怎么证明没破坏（本地命令+结果）"
+            exit 1
+          fi
+          echo "✅ 三要素声明齐备"
+
+  fast:
+    name: 快检 (node 24)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - name: build-runtime 产物一致性
+        run: node tools/build-runtime.mjs --check
+      - name: 内核 .so 在位确认（5 内核全量）
+        run: |
+          for k in c-sample/libkernel_c.so cangjie/libkernel.so go/libkernel_go.so hs/libkernel_hs.so rust/libkernel_rs.so; do
+            test -s "kernel/$k" || { echo "❌ 缺 kernel/$k"; exit 1; }
+          done
+          echo "✅ 5 内核 .so 齐备"
+      - name: Index 抽取冒烟
+        run: |
+          mkdir -p build
+          node tools/extract.mjs fixtures/pages/Index.ts build/app.js
