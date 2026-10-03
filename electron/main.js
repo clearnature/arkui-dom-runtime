@@ -661,6 +661,10 @@ try {
         "(() => { const e = document.getElementById('result'); return e ? e.textContent : ''; })()"
       ).catch((e) => '读取失败: ' + e.message);
       if (result && !result.includes('running')) break;
+      // OSR（offscreen）下部分环境（无 GPU 的 CI runner）合成器不自发产帧——
+      // 页面 await raf() 永不 resolve、#result 停在 running… 直到超时（本地 Xvfb
+      // 正常、同码在 runner 卡死实测）。invalidate 强制产一帧，驱动 rAF 前进。
+      if (useOffscreen) win.webContents.invalidate();
       await new Promise((r) => setTimeout(r, 200));
     }
 
