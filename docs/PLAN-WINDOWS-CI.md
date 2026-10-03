@@ -106,6 +106,24 @@ Node 工具链（extract/assert-counts/stats 全跨平台）、零依赖纪律�
   覆盖不与 Linux WebKitGTK 划等号，记档先行。
 - **W2-4 package-windows**：win-unpacked 便携 zip 或 NSIS；AppImage 是 Linux-only 格式不适用。
 
+## W3 实录（2026-10-03 收口：package-windows 全链绿）
+
+- package-app.mjs 跨平台化：`--platform win|linux`（默认按宿主 OS）、packager
+  `--platform=win32`、findBin 尾缀 `-win32-x64`/`electron.exe`、ozone x11 仅 Linux、
+  **cjk/hs 内核分发集 win 包 SKIP 留痕**（ELF .so + dlopen 架构，Windows 化=三期裁定；
+  包内 cjk 系用例经 run.sh 既有 SKIP 机制自动降级——与 CI kernel-contract 同口径）、
+  zip 走 PowerShell Compress-Archive（软链在 win 要特权）。
+- 产物清单固化（Reasonix dist/ 形态）：`arkui-dom-desktop-windows-x64.zip` +
+  **SHA256SUMS + artifacts.json**（文件/字节/SHA256/内核集口径一处可查）。
+- 首跑一炸点：CI 无 electron/runtime 解包也无 npm install——前提检查即 exit 2；
+  修=win 包就地预热（官方 Releases 直下 zip 到 ~/.cache/electron，与 Linux
+  package.yml 同源）。
+- **验收（run 37134366350）**：staged 102 pages/85 modules → win-unpacked 冒烟
+  perfdemo 3/3 PASS → zip **159.6MB** + SHA256SUMS/artifacts.json 上传 artifact
+  `arkui-dom-desktop-windows-x64`。Linux 打包+冒烟+清单全链零回归（本地 tar.gz
+  141.7MB，sha256sum -c OK）。
+- 触发：Linux package 成功后 workflow_run 链式 + 手动；单 node 24（计费 2×）。
+
 ## 三期（建议进「明确不做」或远期池）
 
 - kernel-contract / kernel-compilers 的 Windows 化：C addon `dlopen(.so)` → `LoadLibrary(.dll)`
