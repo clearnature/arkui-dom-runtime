@@ -235,7 +235,9 @@ if (KERNEL === 'hs') {
 }
 
 const isAppImage = bin.endsWith('.AppImage');
-const runArgs = (isAppImage ? '--appimage-extract-and-run ' : '') + '--no-sandbox --disable-gpu';
+// --ozone-platform=x11：与 run.sh 矩阵同开关（矩阵在 runner 上绿、裸调用红——
+// ozone auto 在无桌面会话变量的 runner 上探测不可靠）
+const runArgs = (isAppImage ? '--appimage-extract-and-run ' : '') + '--no-sandbox --disable-gpu --ozone-platform=x11';
 const cwd = isAppImage ? path.dirname(bin) : path.dirname(bin);
 // R109 零依赖冒烟：清空仓颉环境（CANGJIE_RT_LIB/ARKUI_KERNEL_LIB/LD_LIBRARY_PATH），
 // 模拟无 SDK 机器——cjk 用例必须靠包内 data/kernel/（内核 RPATH=$ORIGIN）通过

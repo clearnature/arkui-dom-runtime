@@ -656,11 +656,24 @@ try {
 
     const deadline = Date.now() + WAIT_MS;
     let result = '';
+    let probeTick = 0;
     while (Date.now() < deadline) {
       result = await win.webContents.executeJavaScript(
         "(() => { const e = document.getElementById('result'); return e ? e.textContent : ''; })()"
       ).catch((e) => '读取失败: ' + e.message);
       if (result && !result.includes('running')) break;
+      // 取证探针（每 ~2s 一次）：页面 rAF 是否在走、可见性状态——OSR 无帧疑难的
+      // 关键证据（本地无法复现的 runner 卡死，靠它区分「rAF 停摆」与「页面卡他处」）
+      if (useOffscreen && (++probeTick % 10 === 0)) {
+        const probe = await win.webContents.executeJavaScript(
+          "new Promise((res) => { const t0 = performance.now();" +
+          " const done = (raf) => res('raf=' + raf + ' vis=' + document.visibilityState +" +
+          " hidden=' + document.hidden + ' ms=' + (performance.now() - t0).toFixed(0));" +
+          " const timer = setTimeout(() => done('stalled'), 1500);" +
+          " requestAnimationFrame(() => { clearTimeout(timer); done((performance.now() - t0).toFixed(1)); }); })"
+        ).catch((e) => 'probe 失败: ' + e.message);
+        console.log('[probe] ' + probe);
+      }
       // OSR（offscreen）下部分环境（无 GPU 的 CI runner）合成器不自发产帧——
       // 页面 await raf() 永不 resolve、#result 停在 running… 直到超时（本地 Xvfb
       // 正常、同码在 runner 卡死实测）。invalidate 强制产一帧，驱动 rAF 前进。
