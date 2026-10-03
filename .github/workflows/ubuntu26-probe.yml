@@ -1,0 +1,91 @@
+# ubuntu26 探针 · runner 镜像迁移扫描（PLAN-WINDOWS-CI.md U26 切片，2026-10-19
+# ubuntu-latest 起迁 Ubuntu 26 的前置验证）。
+#
+# 目的：在 24.04 镜像退役前，把 CI 各腿对 runner 环境的全部依赖点在 26 镜像上
+# 实测一遍。扫描面 = 我们工作流里显式依赖的每一样：
+#   · 工具链：python3/pip3/node/gcc/g++/patchelf/curl/git/bash/tar（TIMEOUT_BIN
+#     垫层依赖 GNU coreutils timeout）
+#   · 浏览器：google-chrome（browser.yml 钉 /usr/bin/google-chrome）、chromium、
+#     firefox（firefox.yml 钉 /usr/bin/firefox）、geckodriver（Linux 腿 GitHub
+#     Releases 直下，预装与否只影响本地）
+#   · apt 包：xvfb/metacity（electron 窗管）、libnss3/libasound2t64/libgbm1
+#     （Electron 运行库——t64 是 24.04 过渡名，26 可能改名/回归）、字体两件、
+#     patchelf（hs 闭包）；apt-get -s 模拟安装不落盘
+#   · Python：PEP 668 externally-managed 标记（webkit 腿 --break-system-packages
+#     的前提）、stdlib 面（serve.py/http.server）、ff-plan.py 真解析
+#   · ghc/cabal：预期缺（ghcup-setup 动作装）——只记录，真验证在 kernel-compilers
+# 触发：仅手动（runner 标签经 input 传，默认 ubuntu-26.04——标签未上线时 job
+# 会一直排队，此刻改跑 latest 档即可）。
+
+name: "ubuntu26 探针 · runner 镜像迁移扫描"
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: "runner 镜像标签（ubuntu-26.04 / ubuntu-latest / ubuntu-24.04）"
+        type: string
+        default: "ubuntu-26.04"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ubuntu26-probe-${{ github.event.inputs.runner }}
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    name: 环境扫描（${{ inputs.runner }}）
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: 系统与工具链
+        run: |
+          echo "── OS ──"
+          head -3 /etc/os-release
+          echo "── 工具链 ──"
+          for c in python3 pip3 node gcc g++ patchelf curl git bash tar timeout; do
+            if command -v "$c" >/dev/null 2>&1; then
+              printf '%-10s %s | %s\n' "$c" "$(command -v "$c")" "$("$c" --version 2>&1 | head -1)"
+            else
+              printf '%-10s 缺\n' "$c"
+            fi
+          done
+          for c in rustc go ghc cabal geckodriver; do
+            printf '%-10s %s\n' "$c" "$(command -v "$c" >/dev/null 2>&1 && echo 在 || echo '缺（预期，动作装）')"
+          done
+      - name: 浏览器预装
+        run: |
+          echo "── 浏览器 ──"
+          for c in google-chrome chrome chromium chromium-browser firefox; do
+            if command -v "$c" >/dev/null 2>&1; then
+              printf '%-20s %s | %s\n' "$c" "$(command -v "$c")" "$("$c" --version 2>&1 | head -1 || echo '（--version 无输出）')"
+            else
+              printf '%-20s 缺\n' "$c"
+            fi
+          done
+          for p in /opt/google/chrome/chrome /usr/bin/google-chrome /usr/bin/firefox; do
+            test -e "$p" && echo "在  $p" || echo "缺  $p"
+          done
+      - name: apt 包可用性（-s 模拟，不落盘）
+        run: |
+          sudo apt-get update -qq || echo "⚠️ apt update rc=$?"
+          echo "── apt 包 ──"
+          for p in xvfb metacity libnss3 libasound2t64 libasound2 libgbm1 fonts-noto-cjk fonts-dejavu-core patchelf; do
+            if apt-get install -s -qq "$p" >/dev/null 2>&1; then echo "OK   $p"; else echo "MISS $p"; fi
+          done
+      - name: Python 环境（PEP 668 / stdlib / ff-plan 真解析）
+        run: |
+          python3 -c "import http.server, json, socket; print('stdlib OK')"
+          if ls /usr/lib/python3*/EXTERNALLY-MANAGED >/dev/null 2>&1; then
+            echo "PEP668 标记：在（--break-system-packages 需要）"
+          else
+            echo "PEP668 标记：无"
+          fi
+          echo "── ff-plan.py 解析 run.sh ──"
+          python3 tools/ff-plan.py | head -2
+      - name: 结论摘要
+        run: |
+          echo "探针完成：$(head -1 /etc/os-release | cut -d'"' -f2)"
