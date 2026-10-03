@@ -32,7 +32,7 @@ jobs:
       fail-fast: false
       matrix:
         node: ["24", "26"]
-    uses: clearnature/arkui-ci/.github/workflows/browser.yml@15c140c90d240abe434517c85b81454d34d7421e
+    uses: clearnature/arkui-ci/.github/workflows/browser.yml@764061ed06ebef506be208ee4a54b615a101d308
     with:
       node-version: ${{ matrix.node }}
       # 虚拟时间豁免清单内联在 test-command 里（caller job 不允许 env:——schema 只允许 with/secrets）
@@ -44,7 +44,7 @@ jobs:
   browser-windows:
     if: github.event_name != 'pull_request' || github.event.label.name == 'ci/full'
     name: browser-windows (node 26)
-    uses: clearnature/arkui-ci/.github/workflows/browser-windows.yml@15c140c90d240abe434517c85b81454d34d7421e
+    uses: clearnature/arkui-ci/.github/workflows/browser-windows.yml@764061ed06ebef506be208ee4a54b615a101d308
     with:
       # Windows runner 计费 2×：先单 node 版本（Windows 特有差异与 node 无关）
       node-version: "26"
@@ -62,7 +62,7 @@ jobs:
       fail-fast: false
       matrix:
         node: ["24", "26"]
-    uses: clearnature/arkui-ci/.github/workflows/electron-realtime.yml@15c140c90d240abe434517c85b81454d34d7421e
+    uses: clearnature/arkui-ci/.github/workflows/electron-realtime.yml@764061ed06ebef506be208ee4a54b615a101d308
     with:
       node-version: ${{ matrix.node }}
 
@@ -73,13 +73,49 @@ jobs:
       fail-fast: false
       matrix:
         node: ["24", "26"]
-    uses: clearnature/arkui-ci/.github/workflows/firefox.yml@15c140c90d240abe434517c85b81454d34d7421e
+    uses: clearnature/arkui-ci/.github/workflows/firefox.yml@764061ed06ebef506be208ee4a54b615a101d308
     with:
       node-version: ${{ matrix.node }}
       test-command: bash firefox/run.sh all
       artifact-path: |
         build/assert-counts-firefox.tsv
         build/ff-matrix.log
+
+  # Windows 二期三腿（W2-1/W2-2/W2-3，PLAN-WINDOWS-CI.md）：单 node 26——
+  # Windows runner 计费 2×；webkit-windows 口径=Win32 口味 WebKit（第三种
+  # WebKit，与 WebKitGTK 不互推）。首跑按 T3 纪律：目标是诊断透出。
+  electron-windows:
+    if: github.event_name != 'pull_request' || github.event.label.name == 'ci/full'
+    name: electron-windows (node 26)
+    uses: clearnature/arkui-ci/.github/workflows/electron-windows.yml@764061ed06ebef506be208ee4a54b615a101d308
+    with:
+      node-version: "26"
+      test-command: bash electron/run.sh all
+      artifact-path: |
+        build/*.png
+        build/assert-counts-electron.tsv
+
+  firefox-windows:
+    if: github.event_name != 'pull_request' || github.event.label.name == 'ci/full'
+    name: firefox-windows (node 26)
+    uses: clearnature/arkui-ci/.github/workflows/firefox-windows.yml@764061ed06ebef506be208ee4a54b615a101d308
+    with:
+      node-version: "26"
+      test-command: bash firefox/run.sh all
+      artifact-path: |
+        build/assert-counts-firefox.tsv
+        build/ff-matrix.log
+
+  webkit-windows:
+    if: github.event_name != 'pull_request' || github.event.label.name == 'ci/full'
+    name: webkit-windows (node 26)
+    uses: clearnature/arkui-ci/.github/workflows/webkit-windows.yml@764061ed06ebef506be208ee4a54b615a101d308
+    with:
+      node-version: "26"
+      test-command: bash webkit/run.sh all
+      artifact-path: |
+        build/assert-counts-webkit.tsv
+        build/wk-matrix.log
 
   webkit:
     if: github.event_name != 'pull_request' || github.event.label.name == 'ci/full'
@@ -88,7 +124,7 @@ jobs:
       fail-fast: false
       matrix:
         node: ["24", "26"]
-    uses: clearnature/arkui-ci/.github/workflows/webkit.yml@15c140c90d240abe434517c85b81454d34d7421e
+    uses: clearnature/arkui-ci/.github/workflows/webkit.yml@764061ed06ebef506be208ee4a54b615a101d308
     with:
       node-version: ${{ matrix.node }}
       test-command: bash webkit/run.sh all
@@ -99,9 +135,9 @@ jobs:
   kernel-contract:
     if: github.event_name != 'pull_request' || github.event.label.name == 'ci/full'
     name: kernel-contract
-    uses: clearnature/arkui-ci/.github/workflows/kernel-contract.yml@15c140c90d240abe434517c85b81454d34d7421e
+    uses: clearnature/arkui-ci/.github/workflows/kernel-contract.yml@764061ed06ebef506be208ee4a54b615a101d308
 
   kernel-compilers:
     if: github.event_name != 'pull_request' || github.event.label.name == 'ci/full'
     name: kernel-compilers
-    uses: clearnature/arkui-ci/.github/workflows/kernel-compilers.yml@15c140c90d240abe434517c85b81454d34d7421e
+    uses: clearnature/arkui-ci/.github/workflows/kernel-compilers.yml@764061ed06ebef506be208ee4a54b615a101d308
