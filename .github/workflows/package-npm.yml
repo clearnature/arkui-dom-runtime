@@ -43,8 +43,12 @@ jobs:
         with:
           node-version: "24"
       - name: 打包
+        env:
+          ARKUI_PKG_TMP: ${{ runner.temp }}
         run: node tools/npm-pack.mjs
       - name: 消费者端到端冒烟（安装→编译→渲染）
+        env:
+          ARKUI_PKG_TMP: ${{ runner.temp }}
         run: node tools/npm-smoke.mjs
       - name: 上传 tgz（artifact 留档）
         uses: actions/upload-artifact@v5
