@@ -26,7 +26,38 @@ if [ -z "${TMPDIR:-}" ]; then
   fi
 fi
 NODE="${NODE:-/data/training/cli/commandline-tools-linux-x64-26.0.0.821/command-line-tools/tool/node/bin/node}"
-CHROME="${CHROME:-/opt/google/chrome/chrome}"
+# PYTHON：Windows runner 的 Git Bash 里未必叫 python3（可能只有 python / py -3），
+# 可经环境变量覆盖；三处调用点（端口探针 / serve.py / 结果解析）统一走它。
+PYTHON="${PYTHON:-python3}"
+# CHROME：env 未设时依次探测，取第一个存在的——Linux CI 的 chrome 在 PATH
+# （google-chrome），Windows Git Bash runner 预装在 Program Files；都不在则兜底
+# 旧硬编码路径，保持本机语义（找不到时运行期报错，与现状一致）。.exe 用 -f 判
+# 存在而非 -x：Git Bash 下 Windows 可执行文件的 -x 可能为假。
+if [ -z "${CHROME:-}" ]; then
+  if command -v google-chrome >/dev/null 2>&1; then
+    CHROME="$(command -v google-chrome)"
+  elif command -v chrome >/dev/null 2>&1; then
+    CHROME="$(command -v chrome)"
+  elif [ -f "/c/Program Files/Google/Chrome/Application/chrome.exe" ]; then
+    CHROME="/c/Program Files/Google/Chrome/Application/chrome.exe"
+  else
+    CHROME="/opt/google/chrome/chrome"
+  fi
+fi
+# TIMEOUT_BIN：Git Bash 下裸 timeout 可能解析到 Windows System32 的 timeout.exe
+# （参数语义完全不同，经典劫持坑）。判据：GNU coreutils timeout 支持 --version
+# 且退出 0；System32 timeout.exe 不支持。Linux 上探测必成功（coreutils 自带），
+# 解析到的是同一个 timeout，行为零变化。
+TIMEOUT_BIN="${TIMEOUT_BIN:-}"
+if [ -z "$TIMEOUT_BIN" ]; then
+  if command -v timeout >/dev/null 2>&1 && timeout --version >/dev/null 2>&1; then
+    TIMEOUT_BIN="$(command -v timeout)"
+  else
+    echo "❌ 找不到 GNU coreutils timeout（Windows Git Bash 会命中 System32 timeout.exe 劫持坑）" >&2
+    echo "   请设 TIMEOUT_BIN=/usr/bin/timeout（Git Bash 自带 coreutils）" >&2
+    exit 2
+  fi
+fi
 CACHE="$HERE/harmony-proj/entry/build/default/cache/default/default@CompileArkTS/esmodule/debug/entry/src/main/ets"
 FIXTURES="$HERE/fixtures"
 
@@ -59,7 +90,7 @@ src_of() {
 pick_free_port() {
   local p
   for p in 41789 41790 41791 41792 41793; do
-    if python3 -c "
+    if "$PYTHON" -c "
 import socket, sys
 s = socket.socket()
 s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -100,7 +131,7 @@ run_one() {
   logf="$(mktemp)"
   # fixed_port 非空时用指定端口：localStorage 按 origin 隔离，而 origin 含端口，
   # 所以"跨进程持久化"用例必须让两次运行落在同一端口上（否则是两个不同 origin）。
-  python3 tools/serve.py "${fixed_port:-0}" >"$logf" 2>&1 &
+  "$PYTHON" tools/serve.py "${fixed_port:-0}" >"$logf" 2>&1 &
   server_pid=$!
   port=""
   for _ in $(seq 1 25); do
@@ -130,14 +161,14 @@ run_one() {
   # 挂点语义见 ohos-shims.js 解码注释；上限一次，防止把真挂死放大成双倍时长。
   local attempt
   for attempt in 1 2; do
-    dom="$(timeout 60 "$CHROME" --headless --disable-gpu --no-sandbox \
+    dom="$("$TIMEOUT_BIN" 60 "$CHROME" --headless --disable-gpu --no-sandbox \
       --user-data-dir="$profdir" \
       "${chrome_debug_flags[@]}" \
       --virtual-time-budget="$vtb" --dump-dom "http://127.0.0.1:$port/$page$query" 2>"$chrome_err_redirect")"
 
     # 只解析 #result 节点文本再判定：整页 DOM 里含脚本源码（'=== ALL PASS ===' 字面量），
     # 直接对 DOM grep 会永远"通过"——这个假阳性陷阱必须避免。
-    result="$(printf '%s' "$dom" | python3 -c "
+    result="$(printf '%s' "$dom" | "$PYTHON" -c "
 import sys, re, html
 d = sys.stdin.read()
 m = re.search(r'<div id=\"result\"[^>]*>(.*?)</div>', d, re.S)
@@ -156,7 +187,7 @@ print(html.unescape(m.group(1)) if m else '（未取到 result 节点）')
   printf '%s\t%s\n' "$name" "$(printf '%s\n' "$result" | grep -cE '^[[:space:]]*PASS ')" >> "$RUN_COUNTS"
 
   mkdir -p build
-  timeout 60 "$CHROME" --headless --disable-gpu --no-sandbox \
+  "$TIMEOUT_BIN" 60 "$CHROME" --headless --disable-gpu --no-sandbox \
     --user-data-dir="$profdir" \
     --window-size=440,340 --virtual-time-budget="$vtb" \
     --screenshot="$HERE/build/$name.png" "http://127.0.0.1:$port/$page$query" 2>/dev/null
