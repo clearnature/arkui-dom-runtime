@@ -126,18 +126,26 @@
 
       // ══════════ ④ showToast：DOM 出现、duration 夹取、到期消失 ══════════
       await group('showToast', async () => {
+        // R161.1 结构加固：fixture 首发的三条（1500/1500/10000ms）在负载下会于组①②③
+        // 执行期间到期（CI browser-windows 实测 3→1）——组④改【自触发】同参数三条再读：
+        // fixture 触发路径由下方 val('toast') 日志断言守；自省数组读末三条（slice(-3)）
+        const p = __arkui_dom_require('@ohos:promptAction');       // API 本体（触发）
+        const insp = __arkui_dom_prompt();                          // 自省（openToasts/lastToast）
+        p.showToast({ message: '提示甲', duration: 1500 });
+        p.showToast({ message: '提示乙', duration: 100 });
+        p.showToast({ message: '提示丙', duration: 999999 });
         const texts = toastTexts();
-        check(texts.length === 3, `3 条 toast 都在 DOM 里（${JSON.stringify(texts)}）`);
+        check(['提示甲', '提示乙', '提示丙'].every((m) => texts.includes(m)),
+          `3 条 toast 都在 DOM 里（fixture 首发若未到期会与自触发共存，${JSON.stringify(texts)}）`);
         check(texts.join(',').includes('提示甲') && texts.join(',').includes('提示丙'),
           'toast 文本来自 message');
-        const p = __arkui_dom_prompt();
-        const ds = p.openToasts.map((t) => t.effectiveDuration);
+        const ds = insp.openToasts.slice(-3).map((t) => t.effectiveDuration);
         // .d.ts：默认 1500；[1500,10000]；<1500 用默认，>10000 取上限
         check(ds.join(',') === '1500,1500,10000',
           `duration 夹取符合声明（100→1500、1500→1500、999999→10000）：'${ds.join(',')}'`);
-        check(typeof p.lastToast === 'object' && p.lastToast.durationRaw === 999999
-          && p.lastToast.effectiveDuration === 10000,
-          `自省同时留下原始值与生效值：raw=${p.lastToast && p.lastToast.durationRaw} → ${p.lastToast && p.lastToast.effectiveDuration}`);
+        check(typeof insp.lastToast === 'object' && insp.lastToast.durationRaw === 999999
+          && insp.lastToast.effectiveDuration === 10000,
+          `自省同时留下原始值与生效值：raw=${insp.lastToast && insp.lastToast.durationRaw} → ${insp.lastToast && insp.lastToast.effectiveDuration}`);
         // void API 的 @throws 契约：缺 message 必须【同步抛】（fixture 用 try/catch 接的）
         check(val('toast').startsWith('toast3;') && val('toasterr').startsWith('throw:')
           && /message/.test(val('toasterr')),

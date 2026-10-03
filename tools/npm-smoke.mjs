@@ -31,10 +31,17 @@ if (!CHROME) {
 }
 if (!CHROME) CHROME = '/opt/google/chrome/chrome';
 if (!fs.existsSync(CHROME)) { console.error(`❌ 找不到 Chrome（${CHROME}）`); process.exit(2); }
-// TIMEOUT_BIN 垫层（System32 timeout.exe 劫持坑——同 run.sh）
+// TIMEOUT_BIN 垫层（System32 timeout.exe 劫持坑——同 run.sh）。
+// 探测失败【硬失败】而非裸 'timeout' 兜底：Git Bash 下裸 timeout 正中劫持坑
+// （参数语义完全不同，会静默跑错）——同 run.sh 的显式报错纪律。
 let TIMEOUT_BIN = process.env.TIMEOUT_BIN || '';
 if (!TIMEOUT_BIN) {
   try { execSync('timeout --version >/dev/null 2>&1'); TIMEOUT_BIN = execSync('command -v timeout', { encoding: 'utf8' }).trim(); } catch {}
+}
+if (!TIMEOUT_BIN) {
+  console.error('❌ 找不到 GNU coreutils timeout（Windows Git Bash 会命中 System32 劫持坑）');
+  console.error('   请设 TIMEOUT_BIN=/usr/bin/timeout 后重跑');
+  process.exit(2);
 }
 
 step(`消费者安装（${tgz}）`);

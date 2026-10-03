@@ -121,7 +121,7 @@ def run_case(c):
 def main():
     os.chdir(ROOT)
     flt = sys.argv[1] if len(sys.argv) > 1 else None
-    with open(PLAN_JSONL) as f:
+    with open(PLAN_JSONL, encoding="utf-8") as f:
         plan = [json.loads(l) for l in f if l.startswith("{")]
     if flt:
         plan = [c for c in plan if flt in c["name"]]

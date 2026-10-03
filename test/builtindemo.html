@@ -112,9 +112,11 @@
         // 用事件计数代替：翻页后 P1 可见即证 commit
         dragClock(el('sw'), 80, 40, [[-20, 30], [-95, 30], [-96, 5]], 7);   // 位移 -96 > 半页 80
         // 收口等待（原 tick(900) 定额在负载/虚拟时钟抖动下踩过"末帧未清"的竞态——
-        // 第五跑实测）——轮询等舞台还原，上限 4s 兜底
+        // 第五跑实测）——轮询等舞台还原，上限 16s 兜底（R161.1：8000 在 firefox 真实时钟
+        // 腿十四腿并发挤兑下耗尽实测；虚拟时钟腿 320×50=16000 虚拟 ms 仍在 VTBUDGET=20000 内；
+        // 真实时钟腿只在慢时多等，不影响快路径）
         const settled = async () => {
-          for (let i = 0; i < 160; i++) {   // 160×50=8000 虚拟 ms（R159.3：4000 在 runner 负载下收口不落地；VTBUDGET 已同步 20000）
+          for (let i = 0; i < 320; i++) {   // 320×50=16000
             const a = pageOf(0).style.transform, b = pageOf(1).style.transform;
             if ((a === '' || a === 'translateX(0px)') && (b === '' || b === 'translateX(0px)')) return true;
             await tick(50);
