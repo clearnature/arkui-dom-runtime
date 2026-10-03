@@ -33,3 +33,4 @@ kernel/contract_common
 
 # python 字节码（ff-matrix 内嵌 serve.py 时产生）
 __pycache__/
+dist-npm/

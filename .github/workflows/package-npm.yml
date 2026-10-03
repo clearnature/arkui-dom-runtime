@@ -1,0 +1,82 @@
+# package-npm · 运行时 npm 发行（R160.4）
+#
+# 包：@clearnature/arkui-dom-runtime（GitHub Packages 源）——
+#   · runtime 三件产物 + arkui-extract CLI + vendor TS（1.8MB tgz，零依赖）
+#   · 消费者端到端冒烟（tools/npm-smoke.mjs）：npm install tgz → 手写 ViewPU 页
+#     → 包内 CLI 编译 → headless Chrome 渲染断言——验证的是【包的对外契约】
+# 触发：手动（pack+smoke，每次 push 后可手动复验）；tag push（1.* 形态）= pack
+#   + smoke + 发布（版本取 tag 名）。
+# 发布：GitHub Packages（npm.pkg.github.com，GITHUB_TOKEN packages:write 免配密钥）。
+#   注意：GPR 包默认 private——首次发布后在 repo Packages 设置里一次性切 Public，
+#   之后匿名可装（文档 docs/NPM-DISTRIBUTION.md）。npmjs.org 源等用户给 NPM_TOKEN
+#   secret 后加条件步即可。
+# runner：ubuntu-26.04（U26 迁移后全仓基准）。
+
+name: "package-npm · npm 发行（@clearnature/arkui-dom-runtime）"
+
+on:
+  workflow_dispatch: {}
+  push:
+    tags: ["*.*.*"]
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: package-npm-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  pack-smoke:
+    name: npm pack + 消费者冒烟
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    env:
+      NODE: node
+      CHROME: /usr/bin/google-chrome
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # git describe 取版本 tag
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: 打包
+        run: node tools/npm-pack.mjs
+      - name: 消费者端到端冒烟（安装→编译→渲染）
+        run: node tools/npm-smoke.mjs
+      - name: 上传 tgz（artifact 留档）
+        uses: actions/upload-artifact@v5
+        with:
+          name: npm-tgz
+          path: |
+            dist-npm/*.tgz
+            dist-npm/CONTENTS.txt
+          retention-days: 14
+
+  publish:
+    name: 发布（GitHub Packages）
+    if: github.event_name == 'push' && startsWith(github.ref_name, '1.')
+    needs: pack-smoke
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          registry-url: https://npm.pkg.github.com
+      - name: 下载 tgz artifact
+        uses: actions/download-artifact@v5
+        with:
+          name: npm-tgz
+          path: dist-npm
+      - name: npm publish（版本=tag 名）
+        env:
+          ARKUI_NPM_VERSION: ${{ github.ref_name }}
+        run: |
+          npm publish dist-npm/clearnature-arkui-dom-runtime-${ARKUI_NPM_VERSION}.tgz \
+            --registry https://npm.pkg.github.com --access public
