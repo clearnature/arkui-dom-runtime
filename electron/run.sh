@@ -24,9 +24,38 @@ if [ -z "${TMPDIR:-}" ]; then
   fi
 fi
 
+# ── Windows 二期垫层（docs/PLAN-WINDOWS-CI.md 一期实录结论，结构照抄一期 run.sh）──
+# PYTHON：Windows runner 的 Git Bash 里未必有 python3 命令（一期实录：只有 python），
+# 可经环境变量覆盖（CI caller 传 PYTHON=python）；serve.py 调用点统一走它。
+# Linux 默认 python3 与现状一致，零行为变化。
+PYTHON="${PYTHON:-python3}"
+# TIMEOUT_BIN：Git Bash 下裸 timeout 可能解析到 Windows System32 的 timeout.exe
+# （参数语义完全不同，经典劫持坑）。判据：GNU coreutils timeout 支持 --version
+# 且退出 0；System32 timeout.exe 不支持。Linux 上探测必成功（coreutils 自带），
+# 解析到的是同一个 timeout，行为零变化。
+TIMEOUT_BIN="${TIMEOUT_BIN:-}"
+if [ -z "$TIMEOUT_BIN" ]; then
+  if command -v timeout >/dev/null 2>&1 && timeout --version >/dev/null 2>&1; then
+    TIMEOUT_BIN="$(command -v timeout)"
+  else
+    echo "❌ 找不到 GNU coreutils timeout（Windows Git Bash 会命中 System32 timeout.exe 劫持坑）" >&2
+    echo "   请设 TIMEOUT_BIN=/usr/bin/timeout（Git Bash 自带 coreutils）" >&2
+    exit 2
+  fi
+fi
+# OZONE_ARGS：Linux 上 Electron 需 --ozone-platform=x11（显示后端指定）；Windows
+# 无 X11——OSTYPE 探测为 MSYS/MINGW（Git Bash）或 OS=Windows_NT 命中时置空数组。
+# 空数组展开防 unbound：set -u 下 bash <4.4 对空数组的 "$@" 式展开会报 unbound，
+# 调用点（run_one）用 ${OZONE_ARGS[@]+"${OZONE_ARGS[@]}"} 惯用法——空数组展开为无、
+# 非空数组逐元素带引号展开，两形态都安全。
+OZONE_ARGS=(--ozone-platform=x11)
+case "${OSTYPE:-}" in msys*|mingw*) OZONE_ARGS=() ;; esac
+if [ "${OS:-}" = "Windows_NT" ]; then OZONE_ARGS=(); fi
+
 # ARKUI_EXTRACT_ONLY=1 时只做产物抽取不启动 Electron（打包工作流预热趟），
-# Electron 二进制缺席不算错
-if [ ! -x "$ELECTRON" ] && [ "${ARKUI_EXTRACT_ONLY:-0}" != "1" ]; then
+# Electron 二进制缺席不算错。-f 双形态兜底：Git Bash/MSYS 下 .exe 的 -x 判定
+# 不可靠（exec 位不映射，一期实录）——electron.exe 存在即放行
+if [ ! -x "$ELECTRON" ] && [ ! -f "$ELECTRON" ] && [ "${ARKUI_EXTRACT_ONLY:-0}" != "1" ]; then
   echo "找不到 Electron：$ELECTRON"
   echo "（本地：从 ~/.cache/electron/ 里的 zip 解包到 electron/runtime/ 即可；"
   echo "  CI：npm install --no-save electron@44.2.0 → node_modules/electron/dist/electron）"
@@ -195,7 +224,7 @@ run_one() {
   # 这样页面内的 fetch 是同源（net.http 用例需要），也与浏览器侧跑的是同一份页面
   local logf port server_pid
   logf="$(mktemp)"
-  python3 "$ROOT/tools/serve.py" 0 >"$logf" 2>&1 &
+  "$PYTHON" "$ROOT/tools/serve.py" 0 >"$logf" 2>&1 &
   server_pid=$!
   port=""
   for _ in $(seq 1 25); do
@@ -217,7 +246,8 @@ run_one() {
   ARKUI_TEST="$label" \
   ARKUI_PAGE_URL="http://127.0.0.1:$port/test/$(page_of "$page").html$query" \
   ARKUI_OFFSCREEN="${ARKUI_OFFSCREEN:-1}" \
-    timeout 180 "$ELECTRON" --no-sandbox --disable-gpu --ozone-platform=x11 "$HERE" 2>&1 \
+    "$TIMEOUT_BIN" 180 "$ELECTRON" --no-sandbox --disable-gpu \
+      ${OZONE_ARGS[@]+"${OZONE_ARGS[@]}"} "$HERE" 2>&1 \
     | grep -v -E 'Fontconfig|libva|GLX|dbus|MESA|Mesa|vulkan|Vulkan|gbm|DRM|drm' \
     | tee "$outf" \
     | sed 's/^/  /'

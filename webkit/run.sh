@@ -26,9 +26,26 @@ if [ -z "${TMPDIR:-}" ]; then
 fi
 
 NODE="${NODE:-/data/training/cli/commandline-tools-linux-x64-26.0.0.821/command-line-tools/tool/node/bin/node}"
+# PYTHON：Windows runner 的 Git Bash 里未必有 python3 命令（docs/PLAN-WINDOWS-CI.md
+# 一期实录：只有 python），可经环境变量覆盖（CI caller 传 PYTHON=python）；ff-plan
+# 调用点走它。Linux 默认 python3 与现状一致，零行为变化。
+PYTHON="${PYTHON:-python3}"
 target="${1:-all}"
 
-WK_PY="${WK_PYTHON:-/data/tmp/wk-venv/bin/python}"
+# WK_PY：env WK_PYTHON 优先 → 本机 venv（/data/tmp/wk-venv，现状默认，Linux 零行为
+# 变化）→ 裸 python3/python 探测（Windows 本机 venv 形态不同；import playwright
+# 失败会走下方既有显式跳过路径，语义安全——绝不冒充通过）。
+if [ -n "${WK_PYTHON:-}" ]; then
+  WK_PY="$WK_PYTHON"
+elif [ -x /data/tmp/wk-venv/bin/python ]; then
+  WK_PY=/data/tmp/wk-venv/bin/python
+elif command -v python3 >/dev/null 2>&1; then
+  WK_PY="$(command -v python3)"
+elif command -v python >/dev/null 2>&1; then
+  WK_PY="$(command -v python)"
+else
+  WK_PY=/data/tmp/wk-venv/bin/python
+fi
 if [ ! -x "$WK_PY" ] || ! "$WK_PY" -c "import playwright" 2>/dev/null; then
   printf '════ webkit (webkit/run.sh %s) ════\n' "$target"
   printf '  ⏭  跳过（原因：本机缺带 playwright 的 python（找 %s 失败；\n' "$WK_PY"
@@ -39,7 +56,7 @@ fi
 
 # ── 用例计划：与 Firefox 同一份解析产物（run.sh all 块 = 单一事实来源）──
 mkdir -p build
-python3 tools/ff-plan.py > build/ff-plan.jsonl || exit 1
+"$PYTHON" tools/ff-plan.py > build/ff-plan.jsonl || exit 1
 
 # 解析漂移哨兵（同 firefox/run.sh）：计划数 vs 独立行计数法，防 ff-plan 静默漏案例
 plan_n="$(grep -c '^{' build/ff-plan.jsonl 2>/dev/null || true)"

@@ -27,17 +27,38 @@ if [ -z "${TMPDIR:-}" ]; then
 fi
 
 NODE="${NODE:-/data/training/cli/commandline-tools-linux-x64-26.0.0.821/command-line-tools/tool/node/bin/node}"
+# PYTHON：Windows runner 的 Git Bash 里未必有 python3 命令（docs/PLAN-WINDOWS-CI.md
+# 一期实录：只有 python），可经环境变量覆盖（CI caller 传 PYTHON=python）；ff-plan /
+# ff-matrix 三个调用点统一走它。Linux 默认 python3 与现状一致，零行为变化。
+PYTHON="${PYTHON:-python3}"
 GD_PORT=9555
 target="${1:-all}"
 
 # ── 环境定位：firefox 与 geckodriver 缺一即显式跳过 ──
-FIREFOX_BIN="${FF_FIREFOX:-$(command -v firefox 2>/dev/null || true)}"
+# FIREFOX_BIN：env FF_FIREFOX 未设时依次探测——PATH 里的 firefox → Windows runner
+# 预装路径（.exe 用 -f 判存在而非 -x：Git Bash 下 Windows 可执行文件的 -x 可能为假，
+# 一期实录）→ 空（保持既有显式跳过语义）。Linux 上 command -v 命中即止，零行为变化。
+if [ -n "${FF_FIREFOX:-}" ]; then
+  FIREFOX_BIN="$FF_FIREFOX"
+elif command -v firefox >/dev/null 2>&1; then
+  FIREFOX_BIN="$(command -v firefox)"
+elif [ -f "/c/Program Files/Mozilla Firefox/firefox.exe" ]; then
+  FIREFOX_BIN="/c/Program Files/Mozilla Firefox/firefox.exe"
+else
+  FIREFOX_BIN=""
+fi
+# GECKODRIVER：FF_GECKODRIVER env 优先 → PATH → ~/.local/bin → /data/tmp（现状链，
+# Linux 零行为变化）→ 尾部追加 Windows 侧常见安装位（CI 上 caller 会下载到 PATH，
+# 这一行只是本地 Windows 便利）。
 GECKODRIVER="${FF_GECKODRIVER:-$(command -v geckodriver 2>/dev/null || true)}"
 if [ -z "$GECKODRIVER" ] && [ -x "$HOME/.local/bin/geckodriver" ]; then
   GECKODRIVER="$HOME/.local/bin/geckodriver"
 fi
 if [ -z "$GECKODRIVER" ] && [ -x /data/tmp/geckodriver ]; then
   GECKODRIVER=/data/tmp/geckodriver
+fi
+if [ -z "$GECKODRIVER" ] && [ -f "/c/Program Files/geckodriver/geckodriver.exe" ]; then
+  GECKODRIVER="/c/Program Files/geckodriver/geckodriver.exe"
 fi
 if [ -z "$FIREFOX_BIN" ] || [ -z "$GECKODRIVER" ]; then
   printf '════ firefox (firefox/run.sh %s) ════\n' "$target"
@@ -49,7 +70,7 @@ fi
 
 # ── 用例计划：解析 run.sh all 块（run.sh 增删用例，本矩阵自动跟随）──
 mkdir -p build
-python3 tools/ff-plan.py > build/ff-plan.jsonl || exit 1
+"$PYTHON" tools/ff-plan.py > build/ff-plan.jsonl || exit 1
 
 # 解析漂移守卫（自包含，不依赖浏览器 TSV 的新鲜度）：计划用例数必须等于
 # 用"另一套解析法"（逐行数 run_one 行）数出来的 all 块用例数——
@@ -89,9 +110,9 @@ ARKUI_EXTRACT_ONLY=1 bash run.sh all >build/extract.log 2>&1 || {
 
 # ── 跑矩阵（python 只做环回 HTTP；TSV/判定再加工在本文件）──
 if [ "$target" = "all" ]; then
-  python3 tools/ff-matrix.py >build/ff-matrix.log
+  "$PYTHON" tools/ff-matrix.py >build/ff-matrix.log
 else
-  python3 tools/ff-matrix.py "$target" >build/ff-matrix.log
+  "$PYTHON" tools/ff-matrix.py "$target" >build/ff-matrix.log
 fi
 rc=$?
 grep '^CASE' build/ff-matrix.log | awk -F'\t' '{print $2 "\t" $4}' > build/assert-counts-firefox.tsv
