@@ -30,6 +30,8 @@ name: "ubuntu · HarmonyOS CLT 26.0.0.821（hvigorw 编译 + fixtures 漂移守�
 on:
   push:
     branches: [main, ci]
+  pull_request:
+    types: [labeled]          # ci/full 标签审核制：维护者加标签触发 PR 全量
   workflow_dispatch: {}        # 手动按钮（Actions 后台按本名分条显示）
 
 # 治理（R159.3，参考 Reasonix 前置 CI 模型）：PR 只跑 pr-gate.yml（轻量前置：
@@ -44,6 +46,7 @@ concurrency:
 
 jobs:
   ohos-toolchain:
+    if: github.event_name != 'pull_request' || github.event.label.name == 'ci/full'
     name: ohos-toolchain (CLT 26.0.0.821)
     # 钉 24.04（2026-10-02 实测校准的镜像）：ubuntu-latest 将于 2026-10-19 起
     # 迁移 Ubuntu 26（runner-images#14748）——迁移日的包名/预装变化不应在

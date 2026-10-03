@@ -10,6 +10,8 @@ name: "ubuntu · WebKit · 全矩阵 87 用例"
 on:
   push:
     branches: [main, ci]
+  pull_request:
+    types: [labeled]          # ci/full 标签审核制：维护者加标签触发 PR 全量
   workflow_dispatch: {}
 
 # 治理（R159.3，参考 Reasonix 前置 CI 模型）：PR 只跑 pr-gate.yml（轻量前置：
@@ -24,6 +26,7 @@ concurrency:
 
 jobs:
   webkit:
+    if: github.event_name != 'pull_request' || github.event.label.name == 'ci/full'
     name: webkit (node ${{ matrix.node }})
     runs-on: ubuntu-24.04   # 钉 24.04（同家族理由）
     timeout-minutes: 60

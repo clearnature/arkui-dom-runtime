@@ -25,6 +25,8 @@ on:
   push:
     branches: [main, ci]
   workflow_dispatch: {}        # 手动按钮：GitHub 页面 Actions → CI → Run workflow
+  pull_request:
+    types: [labeled]          # ci/full 标签审核制：维护者加标签触发 PR 全量
 
 # 治理（R159.3，参考 Reasonix 前置 CI 模型）：PR 只跑 pr-gate.yml（轻量前置：
 #   body 三要素声明检查 + 快检）；本重矩阵仅在 push main/ci 与手动触发——
@@ -42,6 +44,7 @@ jobs:
   # 测的是「构建/抽取工具链在新 Node 上行为一致」：拼接产物必须逐字节一致
   # （build-runtime --check），任何一版 Node 上产物漂移都是真问题。
   toolchain:
+    if: github.event_name != 'pull_request' || github.event.label.name == 'ci/full'
     name: toolchain (node ${{ matrix.node }})
     runs-on: ubuntu-24.04   # 钉 24.04：ubuntu-latest 2026-10-19 起迁 Ubuntu 26（runner-images#14748）——迁移适配另做验证切片
     timeout-minutes: 10
@@ -70,6 +73,7 @@ jobs:
   # 与本地门禁同一套守卫）。Node 版本只影响工具链（抽取/守门），浏览器渲染用
   # Chrome 自带 V8——双版本跑同一矩阵是为了一并守住工具链确定性。
   browser:
+    if: github.event_name != 'pull_request' || github.event.label.name == 'ci/full'
     name: browser (node ${{ matrix.node }})
     runs-on: ubuntu-24.04   # 钉 24.04：ubuntu-latest 2026-10-19 起迁 Ubuntu 26（runner-images#14748）——迁移适配另做验证切片
     timeout-minutes: 60
