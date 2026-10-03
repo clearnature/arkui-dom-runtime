@@ -58,6 +58,23 @@ Node 工具链（extract/assert-counts/stats 全跨平台）、零依赖纪律�
 - T4.1 DEVICE-DIFF.md 补 Windows Chromium 差异条目（带出处）。
 - T4.2 ROADMAP 记 R160 实录；记忆坑沉淀（timeout.exe 劫持/MSYS 路径/字体）。
 
+## 一期实录（2026-10-03 收口：browser-windows 腿全绿）
+
+- T1/T2 按 A/B 双代理并行完成；T3 实跑 **3 轮**收敛（预期 2–5）。
+- 首跑三炸点：①`chrome.exe --version` Windows GUI 子系统无输出不退出→基线挂 18min
+  （治理 PR#2：基线只留 `-f` 存在性检查）；②tools 五文件 `.pathname` 惯用法 Windows
+  返回 `/D:/...`→`\D:\` 死路径（extract.mjs 加载 vendor TS 即炸）→`fileURLToPath`
+  统一替换 6 处/5 文件（POSIX 零行为变化，本地 smalldemo 实证）；③caller 注入
+  `PYTHON=python`（windows runner 不保证 python3 命令名）。
+- **验收：Windows Chromium 80 页矩阵零断言容差全绿**（守门 140 处声明与实测一致；
+  与 Linux 145/15 的差=分端用例集，无引擎差异需容差化）。
+- 顺修：electron-realtime 治理 reusable 内部 matrix 未被消费→2×2 四腿纯重复（治理
+  PR#3 删除，calls 全量 bump 15c140c）。
+- 附带发现（本轮最重）：治理分离整合（代码仓 d68ce71）时 electron 真实时钟/
+  kernel-contract/ohos 三腿静默消失——已全部接回（见 ROADMAP R160 行）。
+- 遗留：firefox node24 mediademo 负载瞬态 1 FAIL（R152 既知族，rerun 即绿）——
+  容差加固仍在待办，与本轮无关。
+
 ## 二期轮廓（一期跑绿后再原子化）
 
 - **W2-1 electron-windows**：无 xvfb/metacity（真显示栈）；疑点=offscreen 截图在 Win 的 paint 行为；
