@@ -38,4 +38,4 @@ jobs:
         node: ["24", "26"]
     with:
       node-version: ${{ matrix.node }}
-    uses: clearnature/arkui-ci/.github/workflows/electron-realtime.yml@64ac7a4e766a8c6c797b511246e2fa168e543353
+    uses: clearnature/arkui-ci/.github/workflows/electron-realtime.yml@3871f3accfdbb8e54ae3f00033de2468fb1b015b
