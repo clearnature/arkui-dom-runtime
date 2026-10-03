@@ -32,4 +32,4 @@ jobs:
         node: ["24", "26"]
     with:
       node-version: ${{ matrix.node }}
-    uses: clearnature/arkui-ci/.github/workflows/webkit-matrix.yml@8426f6d2931c83fef245c753b15d67d52df6f560
+    uses: clearnature/arkui-ci/.github/workflows/webkit-matrix.yml@3871f3accfdbb8e54ae3f00033de2468fb1b015b
