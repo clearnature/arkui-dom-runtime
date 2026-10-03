@@ -20,7 +20,7 @@ RUN_SH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))
 
 
 def main():
-    with open(RUN_SH) as f:
+    with open(RUN_SH, encoding="utf-8") as f:
         src = f.read()
     # all 分派块：从 "  all)" 到 "    exit $rc ;;"
     m = re.search(r"^  all\)\n(.*?)^    exit \$rc ;;", src, re.S | re.M)

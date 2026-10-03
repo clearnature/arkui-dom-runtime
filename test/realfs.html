@@ -92,11 +92,14 @@
         const vfsPath = '/vfs/files/demo.txt';
         const p = __arkui_dom_fs.realPathOf(vfsPath);
         if (d.osVisiblePath) {
-          check(p.startsWith('/'), `OS 可见后端给的是真路径：'${p}'`);
+          // 平台真路径判据：POSIX 以 / 开头；Windows 盘符形态 D:\…（dev 盘 /data、CI 盘 D:\a）。
+          // 两形态都语义同构：「OS 可见」的真路径，页面断言跨平台中立。
+          const isRealPath = p.startsWith('/') || /^[A-Za-z]:[\\/]/.test(p);
+          check(isRealPath, `OS 可见后端给的是真路径：'${p}'`);
           const nodeFs = globalThis.__arkui_dom_nodeFs;
           check(!!nodeFs && nodeFs.existsSync(vfsPath),
             `该文件在真磁盘上确实存在（外部核验，不靠页面自报）：vfs=${vfsPath} → real=${p}`);
-          check(p.endsWith('/files/demo.txt'),
+          check(/[\\/]files[\\/]demo\.txt$/.test(p),
             `真实路径确实指向刚写的那个文件：'${p}'`);
         } else {
           // 光"不像真路径"不够 —— 一个把 vfs 路径原样吐回来的实现也不以 / 开头吗？（它其实以 / 开头）
