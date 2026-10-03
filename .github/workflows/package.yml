@@ -1,0 +1,67 @@
+# package · 打包 CI（R159.3 起）——治理链「测试 → 打包」的打包段
+#
+# 产物：Electron 目录分发 tar.gz（102 测试页 + 90 模块 + cjk/hs 内核分发集）
+# + 包内冒烟（perfdemo ELECTRON_RESULT 必须 PASS——packager 自带冒烟）。
+#
+# 工具：tools/package-app.mjs（R81 固化、R88/R109/R127/R134 历代增强）——
+#   · Electron zip 预热：npm install electron 会把 zip 缓存到 ~/.cache/electron
+#     （packager hasZip 直用，免 --download.mirror 镜像下载）
+#   · cjk 分发集：CI 无仓颉运行时 → 脚本自带降级留痕（权威=本地打包）
+#   · hs 分发集：patchelf 装了就有闭包（kernel-compilers 的 ghcup 布局亦可）
+# 触发：push main（测试矩阵全绿后的合并面）+ 手动。ci 分支不跑（省额度）。
+
+name: "package · 打包（Electron 目录分发 tar.gz + 包内冒烟）"
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: package-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: 打包 + 包内冒烟（Electron 44.2.0）
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      NODE: node
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - name: 系统依赖（xvfb 供包内冒烟 + Electron 运行库 + 字体）
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb libnss3 libasound2t64 libgbm1 fonts-noto-cjk fonts-dejavu-core
+      - name: 预热 Electron zip（~/.cache/electron——packager hasZip 直用）
+        run: |
+          cd electron
+          npm install --no-save electron@44.2.0
+          ls "$HOME/.cache/electron/" | grep electron-v44.2.0 || { echo "❌ zip 缓存未就位"; exit 1; }
+      - name: 产物抽取（ARKUI_EXTRACT_ONLY 全量趟）
+        env:
+          NODE: node
+        run: ARKUI_EXTRACT_ONLY=1 bash run.sh all
+      - name: 打包 + 包内冒烟（perfdemo ELECTRON_RESULT=PASS 守门）
+        env:
+          ARKUI_PKG_TMP: ${{ runner.temp }}
+        run: xvfb-run -a node tools/package-app.mjs --out "$RUNNER_TEMP/arkui-pkg-out"
+      - name: tar.gz 固化
+        run: |
+          tar -czf "$RUNNER_TEMP/arkui-dom-desktop-linux-x64.tar.gz" \
+            -C "$RUNNER_TEMP/arkui-pkg-out" arkui-dom-electron-linux-x64
+          du -h "$RUNNER_TEMP/arkui-dom-desktop-linux-x64.tar.gz"
+      - name: 上传分发产物
+        uses: actions/upload-artifact@v5
+        with:
+          name: arkui-dom-desktop-linux-x64
+          path: |
+            ${{ runner.temp }}/arkui-dom-desktop-linux-x64.tar.gz
+          retention-days: 14
