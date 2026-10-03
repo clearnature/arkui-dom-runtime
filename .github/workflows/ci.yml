@@ -33,11 +33,10 @@ jobs:
       matrix:
         node: ["24", "26"]
     uses: clearnature/arkui-ci/.github/workflows/browser.yml@8692818a36934feb97e63359574d725a7adf4183
-    env:
-      ARKUI_VIRTUAL_TIME_SKIP: builtindemo imageext measimage
     with:
       node-version: ${{ matrix.node }}
-      test-command: bash run.sh all
+      # 虚拟时间豁免清单内联在 test-command 里（caller job 不允许 env:——schema 只允许 with/secrets）
+      test-command: ARKUI_VIRTUAL_TIME_SKIP="builtindemo imageext measimage" bash run.sh all
       artifact-path: |
         build/*.png
         build/assert-counts-browser.tsv
