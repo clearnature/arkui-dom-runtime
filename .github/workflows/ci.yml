@@ -32,7 +32,7 @@ jobs:
       fail-fast: false
       matrix:
         node: ["24", "26"]
-    uses: clearnature/arkui-ci/.github/workflows/browser.yml@15123b1ebb41bee78025c51f8d1ba28764b7cecd
+    uses: clearnature/arkui-ci/.github/workflows/browser.yml@8692818a36934feb97e63359574d725a7adf4183
     with:
       node-version: ${{ matrix.node }}
       test-command: bash run.sh all
@@ -47,7 +47,7 @@ jobs:
       fail-fast: false
       matrix:
         node: ["24", "26"]
-    uses: clearnature/arkui-ci/.github/workflows/firefox.yml@15123b1ebb41bee78025c51f8d1ba28764b7cecd
+    uses: clearnature/arkui-ci/.github/workflows/firefox.yml@8692818a36934feb97e63359574d725a7adf4183
     with:
       node-version: ${{ matrix.node }}
       test-command: bash firefox/run.sh all
@@ -62,7 +62,7 @@ jobs:
       fail-fast: false
       matrix:
         node: ["24", "26"]
-    uses: clearnature/arkui-ci/.github/workflows/webkit.yml@15123b1ebb41bee78025c51f8d1ba28764b7cecd
+    uses: clearnature/arkui-ci/.github/workflows/webkit.yml@8692818a36934feb97e63359574d725a7adf4183
     with:
       node-version: ${{ matrix.node }}
       test-command: bash webkit/run.sh all
@@ -73,4 +73,4 @@ jobs:
   kernel-compilers:
     if: github.event_name != 'pull_request' || github.event.label.name == 'ci/full'
     name: kernel-compilers
-    uses: clearnature/arkui-ci/.github/workflows/kernel-compilers.yml@15123b1ebb41bee78025c51f8d1ba28764b7cecd
+    uses: clearnature/arkui-ci/.github/workflows/kernel-compilers.yml@8692818a36934feb97e63359574d725a7adf4183
