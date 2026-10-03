@@ -27,48 +27,10 @@ concurrency:
 
 jobs:
   firefox:
-    if: github.event_name != 'pull_request' || github.event.label.name == 'ci/full'
-    name: firefox (node ${{ matrix.node }})
-    runs-on: ubuntu-24.04   # 钉 24.04（同家族理由）
-    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
         node: ["24", "26"]
-    env:
-      NODE: node
-      FF_FIREFOX: /usr/bin/firefox
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: ${{ matrix.node }}
-      - name: 系统依赖（Firefox 运行库 + 字体对齐 + geckodriver）
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq fonts-noto-cjk fonts-dejavu-core libnss3 libgbm1
-          test -x /usr/bin/firefox || { echo "❌ 未找到 /usr/bin/firefox（runner 应预装）"; exit 1; }
-          firefox --version
-          if ! command -v geckodriver >/dev/null 2>&1; then
-            curl -sSL -o /tmp/geckodriver.tar.gz \
-              https://github.com/mozilla/geckodriver/releases/download/v0.36.0/geckodriver-v0.36.0-linux64.tar.gz
-            sudo tar -xzf /tmp/geckodriver.tar.gz -C /usr/local/bin
-          fi
-          geckodriver --version
-      - name: firefox/run.sh all（87 用例 + 断言计数守门，overrides 分端差异）
-        env:
-          FF_FIREFOX: /usr/bin/firefox
-          # FF_GECKODRIVER 不强制：交给 PATH 解析（十六跑实证——强制 /usr/local/bin
-          # 会覆盖 runner 预装的 geckodriver 路径且下载步被跳过时 404）
-        run: bash firefox/run.sh all
-      - name: 失败留档（计数表 + 矩阵日志）
-        if: failure()
-        uses: actions/upload-artifact@v5
-        with:
-          name: firefox-logs-node${{ matrix.node }}
-          path: |
-            build/assert-counts-firefox.tsv
-            build/ff-matrix.log
-            build/ff-geckodriver.log
-          if-no-files-found: ignore
-          retention-days: 7
+    with:
+      node-version: ${{ matrix.node }}
+    uses: clearnature/arkui-ci/.github/workflows/firefox-matrix.yml@2f38327c489de26b2904ee1c9cc93bb3bb01ad01

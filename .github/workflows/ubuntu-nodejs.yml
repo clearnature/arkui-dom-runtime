@@ -40,84 +40,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # ── Node 工具链（V8 双版本：24/26）──
-  # 测的是「构建/抽取工具链在新 Node 上行为一致」：拼接产物必须逐字节一致
-  # （build-runtime --check），任何一版 Node 上产物漂移都是真问题。
   toolchain:
-    if: github.event_name != 'pull_request' || github.event.label.name == 'ci/full'
-    name: toolchain (node ${{ matrix.node }})
-    runs-on: ubuntu-24.04   # 钉 24.04：ubuntu-latest 2026-10-19 起迁 Ubuntu 26（runner-images#14748）——迁移适配另做验证切片
-    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
         node: ["24", "26"]
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: ${{ matrix.node }}
-      - name: Node 版本
-        run: node --version
-      - name: build-runtime --check（拼接产物逐字节一致）
-        run: node tools/build-runtime.mjs --check
-      - name: extract 冒烟（Index → build/app.js）
-        run: |
-          mkdir -p build
-          node tools/extract.mjs fixtures/pages/Index.ts build/app.js
-          # 类型残留由 extract.mjs 自检（run_one 每例都打印「类型残留: ✅ 无」），
-          # 这里不再另写正则——对象字面量 key: value 会误报
-
-  # ── browser 端全矩阵（Chrome headless = V8 环境）──
-  # run.sh all：85 用例 + 退出时断言计数守门（文档「（N 条断言）」vs 实测逐条比对，
-  # 与本地门禁同一套守卫）。Node 版本只影响工具链（抽取/守门），浏览器渲染用
-  # Chrome 自带 V8——双版本跑同一矩阵是为了一并守住工具链确定性。
+    with:
+      node-version: ${{ matrix.node }}
+    uses: clearnature/arkui-ci/.github/workflows/nodejs-toolchain.yml@2f38327c489de26b2904ee1c9cc93bb3bb01ad01
   browser:
-    if: github.event_name != 'pull_request' || github.event.label.name == 'ci/full'
-    name: browser (node ${{ matrix.node }})
-    runs-on: ubuntu-24.04   # 钉 24.04：ubuntu-latest 2026-10-19 起迁 Ubuntu 26（runner-images#14748）——迁移适配另做验证切片
-    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
         node: ["24", "26"]
-    env:
-      # run.sh 三处本地路径的 CI 覆盖（R159.3 参数化）：
-      # NODE 用 PATH 解析——指向 setup-node 装的矩阵版本（写死 /usr/bin/node 会
-      # 绕过 24/26 矩阵、落到 runner 系统自带 node）；runner 预装 Google Chrome
-      NODE: node
-      CHROME: /usr/bin/google-chrome
-      # 虚拟时间豁免清单（R159.3 十一跑后裁定）：真实解码页（imageext/measimage——
-      # 解码回调不到）+ 真实时序页（builtindemo——动画收口/摩擦轮转 flake，预算
-      # 迭代降频未根除）在虚拟时间 browser CI 腿跳过；权威=真实时钟端
-      # （Electron CI 腿 ubuntu-electron.yml / firefox / webkit / android / 本地）
-      ARKUI_CHROME_DEBUG: "0"
-      ARKUI_VIRTUAL_TIME_SKIP: "builtindemo imageext measimage"
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: ${{ matrix.node }}
-      - name: Chrome 就位确认（runner 预装，缺席即刻显式失败）
-        run: |
-          test -x "$CHROME" || { echo "❌ 未找到 $CHROME——ubuntu runner 应预装 Google Chrome"; exit 1; }
-          "$CHROME" --version
-          node --version
-      - name: 安装字体（CI 二跑实测：runner 缺 Noto Sans CJK，textmeasure 的
-          换行/行高断言按本地字体度量冻结——字体环境必须对齐，否则假红）
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq fonts-noto-cjk fonts-dejavu-core
-          fc-match sans-serif
-      - name: run.sh all（85 用例 + 断言计数守门）
-        run: bash run.sh all
-      - name: 失败留档（截图 + 计数表）
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: browser-logs-node${{ matrix.node }}
-          path: |
-            build/*.png
-            build/assert-counts-browser.tsv
-          if-no-files-found: ignore
-          retention-days: 7
+    with:
+      node-version: ${{ matrix.node }}
+      virtual-time-skip: "builtindemo imageext measimage"
+    uses: clearnature/arkui-ci/.github/workflows/nodejs-browser.yml@2f38327c489de26b2904ee1c9cc93bb3bb01ad01

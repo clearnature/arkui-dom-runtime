@@ -32,54 +32,10 @@ concurrency:
 
 jobs:
   electron:
-    if: github.event_name != 'pull_request' || github.event.label.name == 'ci/full'
-    name: electron (node ${{ matrix.node }})
-    runs-on: ubuntu-24.04   # 钉 24.04：ubuntu-latest 2026-10-19 起迁 Ubuntu 26——适配另做验证切片
-    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
         node: ["24", "26"]
-    env:
-      NODE: node
-      ELECTRON: ${{ github.workspace }}/electron/node_modules/electron/dist/electron
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: ${{ matrix.node }}
-      - name: 系统依赖（Electron 运行库 + 字体对齐 + metacity 窗管 + xvfb）
-        run: |
-          sudo apt-get update -qq
-          # fonts：textmeasure 换行/行高断言按本地字体度量冻结（同 browser 腿）
-          # metacity：xvfb 无窗管时 Electron fullscreen/maximize 语义缺失（九跑实证）；
-          #   openbox 的 restore 不还原宽度（十六跑实证）——GNOME 系 metacity 与本地一致
-          sudo apt-get install -y -qq fonts-noto-cjk fonts-dejavu-core metacity libnss3 libasound2t64 libgbm1 xvfb
-      - name: 安装 Electron 44.2.0（与本地 electron/runtime/ 同版本）
-        run: |
-          cd electron
-          npm install --no-save electron@44.2.0
-          # 首跑实证：runner npm 的 postinstall 未下载二进制（992ms 即完）——
-          # 显式回退手动触发 electron 的 install.js（下载 dist 到 node_modules）
-          if [ ! -x node_modules/electron/dist/electron ]; then
-            echo "postinstall 未产出二进制——手动触发 install.js"
-            node node_modules/electron/install.js
-          fi
-          test -x node_modules/electron/dist/electron || { echo "❌ electron 二进制未就位"; exit 1; }
-          # --no-sandbox 必带：runner 上 chrome-sandbox 非 root:4755 会 FATAL（run.sh 同款）
-          ./node_modules/electron/dist/electron --version --no-sandbox
-      # 弃用 GabrielBB/xvfb-action（node20 已废弃警告 + run 只取首行/无引号解析
-      # 两个实测约束）——改手动 xvfb-run：全参数自主、编排全在
-      # .github/scripts/electron-xvfb-run.sh（metacity 窗管先起、run.sh all 随后）
-      - name: electron/run.sh all（97 用例 + 断言计数守门，xvfb + metacity 真实时钟）
-        run: xvfb-run -a --server-args="-screen 0 1920x1080x24" bash .github/scripts/electron-xvfb-run.sh
-      - name: 失败留档（截图 + 计数表）
-        if: failure()
-        uses: actions/upload-artifact@v5
-        with:
-          name: electron-logs-node${{ matrix.node }}
-          path: |
-            build/electron-*.png
-            build/assert-counts-electron.tsv
-          if-no-files-found: ignore
-          retention-days: 7
+    with:
+      node-version: ${{ matrix.node }}
+    uses: clearnature/arkui-ci/.github/workflows/electron-realtime.yml@2f38327c489de26b2904ee1c9cc93bb3bb01ad01

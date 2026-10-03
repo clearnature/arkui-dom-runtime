@@ -26,42 +26,10 @@ concurrency:
 
 jobs:
   webkit:
-    if: github.event_name != 'pull_request' || github.event.label.name == 'ci/full'
-    name: webkit (node ${{ matrix.node }})
-    runs-on: ubuntu-24.04   # 钉 24.04（同家族理由）
-    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
         node: ["24", "26"]
-    env:
-      NODE: node
-      WK_PYTHON: python3
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: ${{ matrix.node }}
-      - name: Python + playwright + WebKitGTK（版本钉 1.63.0=本地同款）
-        run: |
-          python3 -m pip install --user --break-system-packages playwright==1.63.0
-          python3 -m playwright install --with-deps webkit
-          python3 -c "from playwright.sync_api import sync_playwright; print('playwright ✅')"
-      - name: 字体对齐（textmeasure 度量，同 browser 腿）
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq fonts-noto-cjk fonts-dejavu-core
-      - name: webkit/run.sh all（87 用例 + 断言计数守门，overrides 分端差异）
-        env:
-          WK_PYTHON: python3
-        run: bash webkit/run.sh all
-      - name: 失败留档（计数表 + 矩阵日志）
-        if: failure()
-        uses: actions/upload-artifact@v5
-        with:
-          name: webkit-logs-node${{ matrix.node }}
-          path: |
-            build/assert-counts-webkit.tsv
-            build/wk-matrix.log
-          if-no-files-found: ignore
-          retention-days: 7
+    with:
+      node-version: ${{ matrix.node }}
+    uses: clearnature/arkui-ci/.github/workflows/webkit-matrix.yml@2f38327c489de26b2904ee1c9cc93bb3bb01ad01
