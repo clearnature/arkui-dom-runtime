@@ -89,6 +89,13 @@ run_one() {
     return 2
   fi
   "$NODE" tools/extract.mjs "$src" "$out" $extra || return 1
+  # R159.3：抽取-only 模式——firefox/webkit 驱动的前置产物趟（它们不自带抽取，
+  # 曾假设 build/ 已由浏览器侧跑过=本地陈货依赖，CI 全新树上全 404 实证）。
+  # 用法：ARKUI_EXTRACT_ONLY=1 bash run.sh all（87 例仅抽取，不启服务不跑浏览器）
+  if [ "${ARKUI_EXTRACT_ONLY:-0}" = "1" ]; then
+    printf '  ⚙  [extract-only] %s → %s\n' "$name" "$out"
+    return 0
+  fi
 
   logf="$(mktemp)"
   # fixed_port 非空时用指定端口：localStorage 按 origin 隔离，而 origin 含端口，

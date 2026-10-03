@@ -51,6 +51,12 @@ if [ "$plan_n" -ne "$raw_n" ]; then
   exit 1
 fi
 
+# ── 前置产物趟（R159.3）：同 firefox/run.sh——驱动不自带抽取，复用 run.sh
+#    的用例表与抽取配方（单一事实来源），仅抽取不跑浏览器。 ──
+ARKUI_EXTRACT_ONLY=1 bash run.sh all >build/extract.log 2>&1 || {
+  echo "  ❌ 产物抽取趟失败（尾部 20 行）："; tail -20 build/extract.log; exit 1
+}
+
 # ── 跑矩阵 ──
 if [ "$target" = "all" ]; then
   "$WK_PY" tools/wk-matrix.py >build/wk-matrix.log

@@ -80,6 +80,13 @@ for _ in $(seq 1 25); do
   sleep 0.2
 done
 
+# ── 前置产物趟（R159.3）：本驱动不自带抽取——曾假设 build/ 已由浏览器侧跑过
+#    （本地陈货依赖，CI 全新树全 404 实证）。ARKUI_EXTRACT_ONLY 模式复用
+#    run.sh 的用例表与抽取配方（单一事实来源），仅抽取不跑浏览器。 ──
+ARKUI_EXTRACT_ONLY=1 bash run.sh all >build/extract.log 2>&1 || {
+  echo "  ❌ 产物抽取趟失败（尾部 20 行）："; tail -20 build/extract.log; exit 1
+}
+
 # ── 跑矩阵（python 只做环回 HTTP；TSV/判定再加工在本文件）──
 if [ "$target" = "all" ]; then
   python3 tools/ff-matrix.py >build/ff-matrix.log
