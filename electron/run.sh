@@ -93,7 +93,7 @@ prepare() {
     navdemo) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/NavDemo.ts" "$ROOT/build/navdemo.js" >/dev/null || return 1 ;;
     reldemo) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/RelDemo.ts" "$ROOT/build/reldemo.js" >/dev/null || return 1 ;;
     drawdemo) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/DrawDemo.ts" "$ROOT/build/drawdemo.js" >/dev/null || return 1 ;;
-    imageext) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/DrawDemo.ts" "$ROOT/build/drawdemo.js" >/dev/null || return 1 ;;
+    imageext) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/Index.ts" "$ROOT/build/app.js" >/dev/null || return 1 ;;
     textmeasure) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/TextMeasure.ts" "$ROOT/build/textmeasure-module.js" --cjs --register TextMeasure >/dev/null || return 1 ;;
     measure) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/Measure.ts" "$ROOT/build/measure.js" >/dev/null || return 1 ;;
     lazy) "$NODE" "$ROOT/tools/extract.mjs" "$FIXTURES/pages/Lazy.ts" "$ROOT/build/lazy.js" >/dev/null || return 1 ;;
