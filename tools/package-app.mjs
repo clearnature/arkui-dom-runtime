@@ -22,7 +22,7 @@
 //   node tools/package-app.mjs --out /tmp/myout   # 自定义输出目录
 //   node tools/package-app.mjs --page perfdemo    # 冒烟页（默认 perfdemo）
 // ─────────────────────────────────────────────────────────────────────────────
-import { execSync } from 'node:child_process';
+import { execSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -68,6 +68,8 @@ fs.rmSync(S, { recursive: true, force: true });
 for (const d of ['electron', 'test', 'build', 'runtime', 'bridge/napi', 'data/kernel', 'harmony-proj/entry/src/main/resources'])
   fs.mkdirSync(path.join(S, d), { recursive: true });
 for (const f of ['main.js', 'preload.js']) fs.copyFileSync(path.join(ROOT, 'electron', f), path.join(S, 'electron', f));
+fs.mkdirSync(path.join(S, 'tools'), { recursive: true });
+fs.copyFileSync(path.join(ROOT, 'tools', 'serve.py'), path.join(S, 'tools', 'serve.py'));
 fs.cpSync(path.join(ROOT, 'runtime'), path.join(S, 'runtime'), { recursive: true });
 // 全部测试页 + 全部页面模块（分发包要能跑整个用例矩阵，不只冒烟页）
 for (const f of fs.readdirSync(path.join(ROOT, 'test'))) if (f.endsWith('.html')) fs.copyFileSync(path.join(ROOT, 'test', f), path.join(S, 'test', f));
@@ -249,6 +251,21 @@ delete smokeEnv.ARKUI_KERNEL_LIB;
 delete smokeEnv.LD_LIBRARY_PATH;
 delete smokeEnv.GHC_LIB_DIR;
 if (KERNEL === 'hs') smokeEnv.ARKUI_KERNEL_KIND = 'hs';
+// 冒烟与 run.sh 矩阵同构走 http://：同一 runner 上矩阵（serve.py + ARKUI_PAGE_URL）
+// perfdemo 绿、包内 file:// loadFile 红且页停 running…（rAF 零派发、无任何 JS 报错、
+// invalidate/ozone=x11 均无效）——file://+OSR 是唯一活变量，不再走 loadFile 兜底。
+const server = spawn('python3', [path.join(S, 'tools', 'serve.py'), '0'], {
+  cwd: S, stdio: ['ignore', 'pipe', 'inherit'],
+});
+let serverOut = '';
+server.stdout.on('data', (d) => { serverOut += d; });
+let port = '';
+for (let i = 0; i < 50 && !port; i++) {
+  port = (serverOut.match(/http:\/\/127\.0\.0\.1:(\d+)/) || [])[1] || '';
+  if (!port) await new Promise((r) => setTimeout(r, 100));
+}
+if (!port) { console.error('❌ 包内 http 服务未启动'); process.exit(1); }
+smokeEnv.ARKUI_PAGE_URL = `http://127.0.0.1:${port}/test/${PAGE}.html`;
 let result = '';
 try {
   result = execSync(`cd ${cwd} && ${JSON.stringify(bin)} ${runArgs} .`, {
@@ -256,6 +273,7 @@ try {
     encoding: 'utf8', timeout: 180000,
   });
 } catch (e) { result = (e.stdout || '') + (e.stderr || ''); }
+finally { server.kill(); }
 
 console.log(result.split('\n').filter((l) => /PASS|FAIL|ELECTRON_RESULT/.test(l)).slice(-6).join('\n'));
 const ok = /ELECTRON_RESULT: PASS/.test(result);

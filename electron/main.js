@@ -666,11 +666,10 @@ try {
       // 关键证据（本地无法复现的 runner 卡死，靠它区分「rAF 停摆」与「页面卡他处」）
       if (useOffscreen && (++probeTick % 10 === 0)) {
         const probe = await win.webContents.executeJavaScript(
-          "new Promise((res) => { const t0 = performance.now();" +
-          " const done = (raf) => res('raf=' + raf + ' vis=' + document.visibilityState +" +
-          " hidden=' + document.hidden + ' ms=' + (performance.now() - t0).toFixed(0));" +
-          " const timer = setTimeout(() => done('stalled'), 1500);" +
-          " requestAnimationFrame(() => { clearTimeout(timer); done((performance.now() - t0).toFixed(1)); }); })"
+          "new Promise((res) => { let fired = false;" +
+          " requestAnimationFrame(() => { fired = true; });" +
+          " setTimeout(() => res('raf=' + (fired ? 'yes' : 'stalled') +" +
+          " ' vis=' + document.visibilityState), 1500); })"
         ).catch((e) => 'probe 失败: ' + e.message);
         console.log('[probe] ' + probe);
       }
