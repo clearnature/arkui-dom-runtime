@@ -124,6 +124,28 @@ Node 工具链（extract/assert-counts/stats 全跨平台）、零依赖纪律�
   141.7MB，sha256sum -c OK）。
 - 触发：Linux package 成功后 workflow_run 链式 + 手动；单 node 24（计费 2×）。
 
+## U26 切片实录（2026-10-04 收口：全仓迁 ubuntu-26.04）
+
+- 背景：ubuntu-latest 2026-10-19 起迁 Ubuntu 26。我仓从未用 latest（历史全为
+  显式 24.04 钉版），本切片=主动迁移+证据化，10/19 迁移自此与本项目无关。
+- **探针**（ubuntu26-probe.yml，runner 标签 input 化）：26.04 标签已上线
+  （26.04.1 LTS）；python 3.14.4（ff-plan 87 用例解析正常）/pip 25.1/PEP668 标记在；
+  chrome 154/chromium/firefox 预装；patchelf 0.18 预装（24.04 要 pip 装）；apt 包
+  全在（libasound2t64 名字存活，旧名 libasound2 无——我们用的正是 t64）；node 预装
+  v24；firefox --version 打 Sandbox EPERM 警告（真腿无碍）。
+- **治理仓 PR#5**（aab1bd5）：七条 Linux reusable 加 `runner` input，默认
+  ubuntu-24.04 行为不变——caller 显式传 26.04 逐腿迁移；firefox-matrix/
+  webkit-matrix 两死变体（零调用者）未动。
+- **验证**（ubuntu26-validate.yml，六腿 26.04 全量）：run 37136198612 全绿
+  （browser/firefox/webkit/electron/kernel-contract/compilers）。
+- **迁移**（caller 侧显式，逐腿可回退）：ci.yml 六 Linux 腿 `runner: ubuntu-26.04`
+  + 全 calls bump aab1bd5；package/pr-gate/ubuntu-ohos 三自持工作流直改 26.04
+  （ohos 的 CLT 华为二进制链 26 glibc 兼容由 push CI 真腿裁决——绿，run 37137315565）。
+  迁移后整跑（run 37136777128 + 37137316091）全绿。
+- **策略定案**：治理仓默认 24.04（外部使用方零影响），本项目 caller 显式 26.04；
+  24.04 镜像退役（预计 2026 年末）前无需再动；复验工具=probe（任意 runner）+
+  validate（六腿全量）两个 dispatch 工作流常驻。
+
 ## 三期（建议进「明确不做」或远期池）
 
 - kernel-contract / kernel-compilers 的 Windows 化：C addon `dlopen(.so)` → `LoadLibrary(.dll)`
