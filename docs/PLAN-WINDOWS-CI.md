@@ -75,6 +75,28 @@ Node 工具链（extract/assert-counts/stats 全跨平台）、零依赖纪律�
 - 遗留：firefox node24 mediademo 负载瞬态 1 FAIL（R152 既知族，rerun 即绿）——
   容差加固仍在待办，与本轮无关。
 
+## 二期实录（2026-10-03 收口：四 Windows 腿全绿）
+
+- W2-1/W2-2/W2-3 按 A/B 双代理并行完成；首跑 2 轮收敛（webkit-windows 首跑即绿）。
+- 三 reusable 合并（治理 PR#4→764061e）：electron-windows（真实显示栈免 xvfb/metacity/
+  字体/运行库——Electron 自包含 DLL）、firefox-windows（Firefox 预装确认 + geckodriver
+  v0.36.0 win64 直下 ~/.local/bin + cygpath 写 GITHUB_PATH）、webkit-windows
+  （playwright 1.63.0 Win32 口味；**口径记档：第三种 WebKit，与 WebKitGTK 不互推**）。
+  GUI 程序一律不做 --version 冒烟（一期实录纪律）；geckodriver.exe 是 console 子系统
+  安全冒烟。
+- 项目侧适配（4c0abc8）：electron OZONE_ARGS 数组参数化（MSYS/Windows_NT 置空，
+  `${arr[@]+…}` 防 unbound 惯用法）+ ELECTRON 缺席判定 -f 双形态；firefox
+  FF_FIREFOX/geckodriver 探测链扩展 Windows 位；webkit WK_PY 探测式（env→venv→
+  python3→python）；三文件 PYTHON/TIMEOUT_BIN 垫层统一。
+- 首跑两炸点（第二轮修复 a43c8b8）：
+  ① realfs 路径断言 POSIX 假设——Windows 真路径 D:\ 盘符形态（isRealPath 判据
+  改跨平台中立 + 正则尾匹配双分隔符）；
+  ② ff-plan/ff-matrix/wk-matrix 裸 open() 未指定 encoding——Windows python 默认
+  cp1252 读 run.sh 中文注释即 UnicodeDecodeError（补 utf-8）。
+- **终态验收（run 37130701597）**：browser-windows（80 页）/ electron-windows
+  （**97 用例 + 守门 157 处声明一致**）/ firefox-windows / webkit-windows 全绿。
+  Windows runner 均单 node 26（计费 2×）。
+
 ## 二期轮廓（一期跑绿后再原子化）
 
 - **W2-1 electron-windows**：无 xvfb/metacity（真显示栈）；疑点=offscreen 截图在 Win 的 paint 行为；
