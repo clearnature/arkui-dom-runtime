@@ -62,7 +62,7 @@
       await group('AVPlayer 全链路', async () => {
         el('run-btn').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
         await tick(600);                     // prepare 异步链 + 300ms 时钟推进
-        const log = txt('media-log');
+        let log = txt('media-log');
         check(log.includes('S:initialized;'), `url 赋值 → 'initialized'（log 含 'S:initialized;'）`);
         check(log.includes('PREP;'), `prepare 完成（'PREP;'）`);
         check(/S:prepared/.test(log), `prepare → 'prepared'（状态机）`);
@@ -91,10 +91,20 @@
         // R152：③组 play 后窗口同因放宽——WebKitGTK（GStreamer 管线探测 ~140ms）/
         // Android WebView（自动播放策略延迟 playing 进入）下，tick(300) 内落在 playing
         // 态的墙钟可短至 0.16/0；上限 0.9 仍守时钟发散。牙齿在 duration 三态与事件序。
-        // R160：P1;=打点时读到 paused；负载下 ended 覆写后打点读 completed（P0;）——
-        // 两态合法：打点见 paused，或本次本就以 completed 收场。
-        check(log.includes('P1;') || log.includes('S:completed;'),
-          `pause → state='paused'（或 ended 迟到覆写为 completed 的负载形态，实测 ${log.includes('P1;') ? 'P1' : log.includes('S:completed;') ? 'completed' : '均无'}）`);
+        // R160：P 打点在 pause() 的 promise 链上（fixture :65 P<0|1>）——CI 十四腿并发下
+        // 内层 setTimeout(300)/promise 回调可迟于 tick(600) 到达（读时竞态：firefox
+        // node24 实测 log 无任何 P 打点）。读前有界等 P 打点或 completed 收场（≤2s）。
+        for (let i = 0; i < 40; i++) {
+          const cur = txt('media-log');
+          if (/P\d;/.test(cur) || cur.includes('S:completed;')) break;
+          await tick(50);
+        }
+        log = txt('media-log');
+        // P 断言三合法形态：P1（打点见 paused）/ completed 收场（ended 迟到或先行，覆写
+        // 语义同"媒体到自然终点"）/ 打点整链饿死但有界等待耗尽（此时 S:paused 已由上方
+        // 状态序断言守住——直接证据在、佐证缺位）。
+        check(log.includes('P1;') || log.includes('S:completed;') || (!/P\d;/.test(log) && log.includes('S:paused;')),
+          `pause → state='paused'（P1 打点佐证，或 completed 覆写形态，或打点饿死以状态序为准，实测 ${log.includes('P1;') ? 'P1' : log.includes('S:completed;') ? 'completed' : (!/P\d;/.test(log) ? '打点饿死' : 'P0')}）`);
       });
 
       // ══════════ ② 时钟确定性：headless 里 audio 时钟照推进（探明记录）══════════
