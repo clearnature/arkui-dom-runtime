@@ -66,8 +66,22 @@ const electronBin = PLATFORM === 'win'
   ? path.join(ROOT, 'electron/node_modules/electron/dist/electron.exe')
   : path.join(ROOT, 'electron/runtime/electron');
 if (!hasZip && !fs.existsSync(electronBin)) {
-  console.error(`❌ 找不到 Electron v${ELECTRON_VERSION}（~/.cache/electron/ 的 zip 或 electron/runtime/ 解包）`);
-  process.exit(2);
+  // win 包无本地解包形态（electronBin 指向 node_modules，CI 不 npm install）——
+  // 就地预热：官方 Releases 直下 zip 到 cache（与 package.yml Linux 预热同源；
+  // @electron/get 的缓存位置在 runner 上不可靠，R159.3 实测），packager hasZip 直用。
+  if (PLATFORM === 'win') {
+    const tag = `v${ELECTRON_VERSION}`;
+    const asset = `electron-${tag}-win32-x64.zip`;
+    fs.mkdirSync(cache, { recursive: true });
+    const dest = path.join(cache, asset);
+    console.log(`  预热 Electron zip：${asset}`);
+    execSync(`curl -fsSL --retry 3 -o ${JSON.stringify(dest)} ` +
+      `https://github.com/electron/electron/releases/download/${tag}/${asset}`, { stdio: 'inherit' });
+    if (!fs.existsSync(dest)) { console.error('❌ zip 预热失败'); process.exit(2); }
+  } else {
+    console.error(`❌ 找不到 Electron v${ELECTRON_VERSION}（~/.cache/electron/ 的 zip 或 electron/runtime/ 解包）`);
+    process.exit(2);
+  }
 }
 for (const f of ['electron/main.js', 'electron/preload.js', 'runtime/arkui-dom-runtime.js', 'build/app.js']) {
   if (!fs.existsSync(path.join(ROOT, f))) { console.error(`❌ 缺 ${f}（先跑 npm run check 的构建步骤）`); process.exit(2); }
