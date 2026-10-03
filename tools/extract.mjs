@@ -15,9 +15,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
-const HERE = path.dirname(path.dirname(new URL(import.meta.url).pathname));   // 仓库根
+// fileURLToPath：.pathname 在 Windows 返回 /D:/...（盘符前带斜杠），join 出 \D:\ 死路径
+const HERE = path.dirname(path.dirname(fileURLToPath(import.meta.url)));   // 仓库根
 // TypeScript（4.9.5-r4，华为补丁版）解析顺序：
 //   ① env TS_PATH（应急覆盖）
 //   ② test/vendor/ 入库副本（R159.3：CI 上没有本地 CLT——vendor 与 CLT 副本逐字节

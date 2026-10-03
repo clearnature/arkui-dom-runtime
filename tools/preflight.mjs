@@ -13,8 +13,10 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+// fileURLToPath：.pathname 在 Windows 返回 /D:/...（盘符前带斜杠），join 出 \D:\ 死路径
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CLT = '/data/training/cli/commandline-tools-linux-x64-26.0.0.821/command-line-tools';
 const ETS_LOADER = path.join(CLT, 'sdk/default/openharmony/ets/build-tools/ets-loader');
 
@@ -85,7 +87,7 @@ if (fixtureCount > 0) ok('冻结的转换产物', `${fixtureCount} 个 .ts`);
 else bad('fixtures/pages 下没有 .ts', '测试的输入没有了');
 
 // hvigor 缓存：只在需要重新生成 fixtures 时才要，没有不算失败
-const CACHE = new URL('../harmony-proj/entry/build/default/cache/default/default@CompileArkTS/esmodule/debug/entry/src/main/ets', import.meta.url).pathname;
+const CACHE = fileURLToPath(new URL('../harmony-proj/entry/build/default/cache/default/default@CompileArkTS/esmodule/debug/entry/src/main/ets', import.meta.url));
 if (fs.existsSync(CACHE)) note('hvigor 缓存存在', CACHE);
 else note('hvigor 缓存不在（尚未构建）', '只在新增页面/重新生成 fixtures 时需要：cd harmony-proj && devecocli build');
 

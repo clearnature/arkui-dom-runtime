@@ -25,8 +25,10 @@
 import { execSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+// fileURLToPath：.pathname 在 Windows 返回 /D:/...（盘符前带斜杠），join 出 \D:\ 死路径
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
 const flag = (name, def) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : def; };
 const MODE = flag('--mode', 'packager');

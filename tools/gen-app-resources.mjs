@@ -7,8 +7,10 @@
 //    重排资源后 id 会变：先重编 harmony-proj、重冻结受影响 fixture、再重跑本生成器。
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+// fileURLToPath：.pathname 在 Windows 返回 /D:/...（盘符前带斜杠），join 出 \D:\ 死路径
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const RES = path.join(ROOT, 'harmony-proj/entry/src/main/resources/base');
 const IDS = path.join(ROOT, 'harmony-proj/entry/build/default/intermediates/res/default/ids_map/id_defined.json');
 const OUT = path.join(ROOT, 'runtime/src/generated-app-resources.js');

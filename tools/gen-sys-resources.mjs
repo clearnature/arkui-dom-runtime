@@ -39,8 +39,10 @@
 //   条数写进产物头注；仍超则如实记录体积（此时已无可裁类别）。
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+// fileURLToPath：.pathname 在 Windows 返回 /D:/...（盘符前带斜杠），join 出 \D:\ 死路径
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SRC = '/data/training/cli/commandline-tools-linux-x64-26.0.0.821/command-line-tools'
   + '/sdk/default/openharmony/previewer/common/resources/entry/resources.txt';
 const OUT = path.join(ROOT, 'runtime/src/generated-sys-resources.js');
