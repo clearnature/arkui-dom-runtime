@@ -24,7 +24,9 @@ if [ -z "${TMPDIR:-}" ]; then
   fi
 fi
 
-if [ ! -x "$ELECTRON" ]; then
+# ARKUI_EXTRACT_ONLY=1 时只做产物抽取不启动 Electron（打包工作流预热趟），
+# Electron 二进制缺席不算错
+if [ ! -x "$ELECTRON" ] && [ "${ARKUI_EXTRACT_ONLY:-0}" != "1" ]; then
   echo "找不到 Electron：$ELECTRON"
   echo "（本地：从 ~/.cache/electron/ 里的 zip 解包到 electron/runtime/ 即可；"
   echo "  CI：npm install --no-save electron@44.2.0 → node_modules/electron/dist/electron）"
@@ -182,6 +184,12 @@ run_one() {
   local page="$1" query="${2:-}" label="${3:-$1}"
   echo "════════════ electron: $label ════════════"
   prepare "$page" || { echo "  ❌ 生成产物失败"; return 1; }
+  # 打包工作流的预热趟只产产物（缺这趟包内就没有 perfdemo-module.js 等驱动期
+  # 才抽取的模块——页面 404、驱动脚本静默卡死，R159.3 CI 实测）
+  if [ "${ARKUI_EXTRACT_ONLY:-0}" = "1" ]; then
+    echo "  ⚙  [extract-only] $label"
+    return 0
+  fi
 
   # 起本地服务，让 Electron 走 http:// 而非 file://：
   # 这样页面内的 fetch 是同源（net.http 用例需要），也与浏览器侧跑的是同一份页面
@@ -259,6 +267,8 @@ case "${1:-layout}" in
       run_one "$t" || rc=1
       echo
     done
+    # 抽取-only 到此为止（netfile 实跑/落盘核验是真测试段）
+    if [ "${ARKUI_EXTRACT_ONLY:-0}" = "1" ]; then exit $rc; fi
     # 两阶段持久化（真 fs）
     rm -rf "$HERE/data"
     run_one netfile "?phase=1" netfile-1 || rc=1

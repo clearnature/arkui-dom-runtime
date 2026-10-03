@@ -57,10 +57,13 @@ jobs:
           curl -fsSL --retry 3 -o "$HOME/.cache/electron/electron-v44.2.0-linux-x64.zip" \
             https://github.com/electron/electron/releases/download/v44.2.0/electron-v44.2.0-linux-x64.zip
           ls -lh "$HOME/.cache/electron/electron-v44.2.0-linux-x64.zip"
-      - name: 产物抽取（ARKUI_EXTRACT_ONLY 全量趟）
+      - name: 产物抽取（两套驱动全量趟——electron 侧模块驱动期才抽取，缺了包内页面 404）
         env:
           NODE: node
-        run: ARKUI_EXTRACT_ONLY=1 bash run.sh all
+        run: |
+          ARKUI_EXTRACT_ONLY=1 bash run.sh all
+          ARKUI_EXTRACT_ONLY=1 bash electron/run.sh all
+          ls build/perfdemo-module.js || { echo "❌ perfdemo-module 缺失"; exit 1; }
       - name: 打包 + 包内冒烟（perfdemo ELECTRON_RESULT=PASS 守门）
         env:
           ARKUI_PKG_TMP: ${{ runner.temp }}
