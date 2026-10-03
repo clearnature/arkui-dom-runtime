@@ -86,6 +86,10 @@ $EMU -instance hmtest_phone -screenshot -screenshotPath /data/tmp/hm-shots \
 | hdc 连不上 | `hdc list targets` 空 | 必须 `export HDC_SERVER_PORT=5557`（模拟器只监听 `127.0.0.1:5557`）；hdc 二进制在 CLT 的 `sdk/default/openharmony/toolchains/` 下 |
 | `-list` 显示 `[Empty]` | 以为没起起来 | `-list` 同样要带 `-instancePath`（默认查的是 `~/Library/...` 下的空目录） |
 | 截图"路径不存在" | 文件落到 `~/图片/` | `-screenshotPath` 的**目录必须预先存在** |
+| guest 内核 panic（R161 实录） | 起机 20 分钟无 5557 监听；kernel.log 出现 `Kernel panic - not syncing: sysrq triggered crash` | guest 已死、进程还活着——`-stop` 后**重启**（复跑一次即过）；高负载下冷启动 6 分钟+ 属正常 |
+| hdc 桥接端口漂移（R161） | `tconn 5557` 连不上，但 Emulator.log 已有 `Guest OS Boot Completed!!` | 端口随 boot 漂移（10/02=5557，本次=5555）——**以 `hdc list targets` 非空为准**，5555/5557 双探测 |
+| 锁屏拒绝启动（R161） | `aa start` 报 10106102「The device screen is locked…unlock screen failed」 | `power-shell wakeup` + `uitest uiInput swipe 400 2200 400 600 500` 上滑解锁（开发者模式不能自动解锁） |
+| 首帧 hilog 措辞漂移（R161） | 按旧配方 grep `NotifyCompleteFirstFrameDrawing` 恒空 | 本构建改发 `SCBSceneSession --> onBufferAvailableChange, isBufferAvailable: true`——**两模式都认**（hm-run.sh 已固化） |
 
 停机：`$EMU -stop hmtest_phone -instancePath … -imageRoot …`。
 负载纪律：起它之前 pkill 掉 Android 模拟器（qemu 抢核会让冷启动显著变慢）。
@@ -107,8 +111,9 @@ $EMU -instance hmtest_phone -screenshot -screenshotPath /data/tmp/hm-shots \
 定位：语义验证从「对真机 C++ 源码逐式对齐」升级为「对官方镜像实测对齐」。
 管线与拆片：
 
-1. **脚本化冒烟**（小切片）：把 §4 六步收进 `tools/hm-run.sh`（start→tconn→install→
-   `aa start`→hilog 首帧判定→screenshot 留档），先只跑 Index 页。
+1. ✅ **脚本化冒烟**（R161 完成）：`tools/hm-run.sh`（start→tconn→install→解锁→
+   `aa start`→hilog 渲染判定→screenshot；缺席显式跳过，退出码=守门）。首跑抓四个
+   真坑（panic 重启/端口漂移/锁屏 10106102/首帧措辞漂移），已固化进脚本与 §4 坑表。
 2. **逐页驱动器**（标准切片）：遍历产物里 `registerNamedRoute` 的全部页面
    （router 跳转或 `aa start` 带 page 参数）→ 断言通道两选一：页面 hilog 埋点输出
    PASS 行（与浏览器驱动同构），或模拟器自动化（`-click/-slide`）+ uitest 读屏。

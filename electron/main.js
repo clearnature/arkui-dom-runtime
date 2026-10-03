@@ -224,7 +224,10 @@ app.whenReady().then(async () => {
     return;
   }
 
-  const useOffscreen = process.env.ARKUI_OFFSCREEN === '1';
+  const useOffscreen = process.env.ARKUI_OFFSCREEN === '1' && process.env.ARKUI_PROFILE !== '1';
+  // ARKUI_PROFILE=1 强制非 OSR：offscreen 与 webContents.debugger 冲突（实测
+  // attach 后页面挂死、"target closed while handling command"）——profiling 轮次
+  // 牺牲截图（capturePage 有超时护栏），判定只认 #result 文本不受影响
   const fsRoot = fsRootForRenderer();
   const win = new BrowserWindow({
     width: 480,
@@ -651,6 +654,25 @@ try {
 
   try {
     // 走 http:// 而非 file://：这样页面里的 fetch 是同源，net.http 等平台能力才与浏览器侧一致
+    // ARKUI_PROFILE=1（R161 profiling 切片）：CDP 采样 CPU profiler 包住页面执行——
+    // loadURL 前启动、结果落定后停止，build/<页>.cpuprofile 供 tools/profile-report.mjs 分析
+    let profilerDbg = null;
+    if (process.env.ARKUI_PROFILE === '1') {
+      try {
+        profilerDbg = win.webContents.debugger;
+        profilerDbg.attach('1.3');
+        // Electron 44 实测 quirk：enable/start 的响应不回投（命令实际生效——
+        // stop 照常拿到采样），所以这仨只等 1.5s 就放行，不因超时放弃 profiling
+        const lenient = (cmd, params) => Promise.race([
+          profilerDbg.sendCommand(cmd, params),
+          new Promise((r) => setTimeout(() => r(null), 1500)),
+        ]);
+        await lenient('Profiler.enable');
+        await lenient('Profiler.setSamplingInterval', { interval: 100 });
+        await lenient('Profiler.start');
+        console.log('[profile] 采样启动（100µs；enable/start 响应不回投为已知 quirk）');
+      } catch (e) { console.error('[profile] 启动失败: ' + e.message); profilerDbg = null; }
+    }
     if (pageUrl) await win.loadURL(pageUrl);
     else await win.loadFile(pagePath);
 
@@ -691,6 +713,26 @@ try {
 
     console.log('──── 渲染进程内的断言输出（与浏览器同一份页面）────');
     console.log(result || '（空）');
+    // profiling 收口：结果落定即停采样（截图段的时间不计入热点）
+    if (profilerDbg) {
+      try {
+        const stopped = await Promise.race([
+          profilerDbg.sendCommand('Profiler.stop'),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('stop 5s 超时')), 5000)),
+        ]);
+        const profile = stopped && stopped.profile;
+        const total = profile ? profile.nodes.reduce((a, n) => a + (n.hitCount || 0), 0) : 0;
+        if (profile && total > 0) {
+          const out = path.join(__dirname, '..', 'build', `${testName}.cpuprofile`);
+          fs.writeFileSync(out, JSON.stringify(profile));
+          console.log(`[profile] build/${testName}.cpuprofile（采样 ${total}，分析：node tools/profile-report.mjs build/${testName}.cpuprofile）`);
+        } else {
+          console.error('[profile] 停止返回空 profile（enable 未生效？）');
+        }
+      } catch (e) { console.error('[profile] 停止失败: ' + e.message); }
+      try { profilerDbg.detach(); } catch { /* 已分离 */ }
+      profilerDbg = null;
+    }
     // 页面状态快照：脚本加载件数（resource 条目）、路由渲染长度、陷阱捕获——
     // 「卡 running…」时区分【脚本根本没跑】与【跑了但死在 await 链上】
     try {
