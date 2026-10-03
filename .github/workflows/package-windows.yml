@@ -1,0 +1,71 @@
+# package-windows · Windows 打包 CI（W3，PLAN-WINDOWS-CI.md）
+#
+# 产物（Reasonix dist/ 清单形态）：win-unpacked 目录 + arkui-dom-desktop-windows-x64.zip
+# + SHA256SUMS + artifacts.json（清单一处可查：文件/字节/SHA256/内核集口径）。
+#
+# 与 Linux package.yml 的差异：
+#   · 无 xvfb/patchelf/字体段——Windows 真实显示栈 + Electron 自包含；
+#   · cjk/hs 内核分发集跳过（ELF .so + dlopen 架构，Windows 化=三期裁定不做；
+#     包内 cjk 系用例经 run.sh SKIP 留痕自动降级）；
+#   · Electron zip 从 npmmirror 拉取（packager --download.mirror 兜底，
+#     win 上不做 ~/.cache 预热——软链要特权）。
+# 冒烟：perfdemo ELECTRON_RESULT=PASS 守门（与 Linux 同口径）。
+# 触发：workflow_dispatch + Linux package 成功后（workflow_run 链式依赖——与
+#   Linux package 同治理语义：测试矩阵全绿才打包）。
+# 计费：Windows runner 2×，单 node 24。
+
+name: "package-windows · Windows 打包（win zip + SHA256SUMS/artifacts.json + 包内冒烟）"
+
+on:
+  workflow_run:
+    workflows: ["package · 打包（Electron 目录分发 tar.gz + 包内冒烟）"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: package-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package-windows:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    name: Windows 打包 + 包内冒烟（Electron 44.2.0）
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    env:
+      NODE: node
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: 产物抽取（两套驱动全量趟——electron 侧模块驱动期才抽取，缺了包内页面 404）
+        env:
+          NODE: node
+          PYTHON: python
+        run: |
+          ARKUI_EXTRACT_ONLY=1 bash run.sh all
+          ARKUI_EXTRACT_ONLY=1 bash electron/run.sh all
+          test -f build/perfdemo-module.js || { echo "❌ perfdemo-module 缺失"; exit 1; }
+      - name: 打包 + 包内冒烟（perfdemo ELECTRON_RESULT=PASS 守门）
+        env:
+          ARKUI_PKG_TMP: ${{ runner.temp }}
+        run: node tools/package-app.mjs --platform win --out "$RUNNER_TEMP/arkui-pkg-out-win"
+      - name: 上传分发产物
+        uses: actions/upload-artifact@v5
+        with:
+          name: arkui-dom-desktop-windows-x64
+          path: |
+            ${{ runner.temp }}/arkui-pkg-out-win/arkui-dom-desktop-windows-x64.zip
+            ${{ runner.temp }}/arkui-pkg-out-win/SHA256SUMS
+            ${{ runner.temp }}/arkui-pkg-out-win/artifacts.json
+          retention-days: 14
