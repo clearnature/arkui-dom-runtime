@@ -114,10 +114,18 @@ $EMU -instance hmtest_phone -screenshot -screenshotPath /data/tmp/hm-shots \
 1. ✅ **脚本化冒烟**（R161 完成）：`tools/hm-run.sh`（start→tconn→install→解锁→
    `aa start`→hilog 渲染判定→screenshot；缺席显式跳过，退出码=守门）。首跑抓四个
    真坑（panic 重启/端口漂移/锁屏 10106102/首帧措辞漂移），已固化进脚本与 §4 坑表。
-2. **逐页驱动器**（标准切片）：遍历产物里 `registerNamedRoute` 的全部页面
-   （router 跳转或 `aa start` 带 page 参数）→ 断言通道两选一：页面 hilog 埋点输出
-   PASS 行（与浏览器驱动同构），或模拟器自动化（`-click/-slide`）+ uitest 读屏。
-   产出 `build/assert-counts-hm.tsv`，与五端结果对拍。
+2. ✅ **逐页驱动器**（R163 完成）：`tools/hm-pages.py`——EntryAbility `--ps hm_page`
+   逐页通道（改 EntryAbility 读 want 参数 + 重冻结 fixture）、断言通道选
+   **uitest dumpLayout 文本流**（JSON，含 pagePath 标记）vs 浏览器侧中立 harness
+   （`test/hm-harness.html`，#result 单通道）文本流，归一化逐字符对拍。首轮 55 页
+   **PASS 22 / DIFF 33 / INFRA 0**，产出 `build/assert-counts-hm.tsv`（`tools/hm-pages.sh`
+   包装器落盘——python 只算不写是安全扫描纪律，`@@TEXT` 双侧全文在 `build/hm-pages.log`）。
+   形态分类入 DEVICE-DIFF「第六端机器对拍」节。**首跑三真坑**：①重页挂载 ~8s
+   （SETTLE 默认 6s + 内部 dump 6/8/10s + force-stop 间隙 2s——每次重试重启会清挂载
+   时钟，重试必须给首发等待）；②真机 `publish` 缺参**同步抛 401 → jscrash 进程终止**
+   （.catch 接不住同步抛；故障日志通道 `/data/log/faultlog/faultlogger/jscrash-*` 是
+   设备侧排障的真值源）；③harness 动态注入路径下虚拟时钟 rAF 不派发（结算改
+   setTimeout，测试页 tick() 同款）。
 3. **2in1 桌面语义对拍**：下载 2in1 镜像建第二实例，对拍 R91 的
    maximize/restore/isFocused/windowEvent 13 条断言（当前按 d.ts 校准，
    DEVICE-DIFF 里标注"与真机窗口管理器仍有宿主差异"的那批）。

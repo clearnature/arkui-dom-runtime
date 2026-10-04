@@ -20,13 +20,21 @@ import { window } from '@kit.ArkUI';
 const DOMAIN = 0x0000;
 
 export default class EntryAbility extends UIAbility {
+  // R163（第六端切片 2）：逐页驱动通道——aa start --ps hm_page pages/X 指定首屏页；
+  // 未带参数保持原语义（pages/Index）。归一化守卫：只接受 main_pages 形态的合法路径。
+  private hmPage: string = 'pages/Index';
+
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     try {
       this.context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
     } catch (err) {
       hilog.error(DOMAIN, 'testTag', 'Failed to set colorMode. Cause: %{public}s', JSON.stringify(err));
     }
-    hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onCreate');
+    const page = want && want.parameters ? want.parameters['hm_page'] : undefined;
+    if (typeof page === 'string' && /^pages\/[A-Za-z][A-Za-z0-9_]*$/.test(page)) {
+      this.hmPage = page;
+    }
+    hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onCreate hmPage=' + this.hmPage);
   }
 
   onDestroy(): void {
@@ -37,7 +45,7 @@ export default class EntryAbility extends UIAbility {
     // Main window is created, set main page for this ability
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onWindowStageCreate');
 
-    windowStage.loadContent('pages/Index', (err) => {
+    windowStage.loadContent(this.hmPage, (err) => {
       if (err.code) {
         hilog.error(DOMAIN, 'testTag', 'Failed to load the content. Cause: %{public}s', JSON.stringify(err));
         return;

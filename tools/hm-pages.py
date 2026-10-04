@@ -1,0 +1,263 @@
+#!/usr/bin/env python3
+"""第六端切片 2：逐页驱动器对拍（官方 oracle vs 五端运行时）。
+
+管线（docs/HARMONYOS-EMULATOR.md §6 切片 2）：
+  设备侧：main_pages.json 逐页 → force-stop → aa start --ps hm_page pages/X
+          → uitest dumpLayout（JSON）→ pagePath 标记 + app 子树可见文本
+  浏览器侧：build/*.js 里按 pagePath 反查模块 → hm-harness.html 渲染
+          → #result JSON（坑 115 单通道）→ #root 文本流
+  对拍：两侧文本流【去空白后逐字符比对】（相邻重复折叠——设备 accessibility 双写）。
+
+判定（@@TSV 标记块 → 包装器 tools/hm-pages.sh 落 build/assert-counts-hm.tsv；
+page⇥verdict⇥dev/brw 字符数）：
+  PASS 文本流一致 · DIFF 不一致（两侧全文 @@TEXT 块进 hm-pages.log 留档）
+  SKIP-nomap 无对应 build 模块（HAP 页未经 extract）· SKIP-nolink 设备/hdc 缺席
+  INFRA 启动标记缺失/dump 失败（计入退出码）
+退出码：INFRA>0 或 SKIP-nolink 全程缺设备 → 1；DIFF 是【产出物】不算失败。
+
+用法：python3 tools/hm-pages.py [pages/X ...]（不传=main_pages 全量）
+环境：HM_HDC/HM_CLT · CHROME · HM_SETTLE(默认6s——Stress10k 类重页实测挂载 ~8s，内部 dump 点 6/8/10s 覆盖) · HM_SKIP_DEVICE=1（只跑浏览器侧）
+"""
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+import html as htmlmod
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CLT = os.environ.get(
+    "HM_CLT", "/data/training/cli/commandline-tools-linux-x64-26.0.0.821/command-line-tools")
+HDC = os.environ.get("HM_HDC", os.path.join(CLT, "sdk/default/openharmony/toolchains/hdc"))
+EMU = os.path.join(CLT, "emulator/Emulator")
+BUNDLE = "com.example.arkuidomprobe"
+SETTLE = float(os.environ.get("HM_SETTLE", "6"))
+TMP = os.environ.get("ARKUI_PKG_TMP", "/data/tmp")
+
+
+def hcs(*args, timeout=60):
+    """hdc 调用：5557/5555 双探测 + list targets 兜底（R161 端口漂移实录）。"""
+    env = dict(os.environ, HDC_SERVER_PORT="5557")
+    r = subprocess.run([HDC, "shell", *args], env=env, capture_output=True,
+                       text=True, timeout=timeout)
+    return (r.stdout + r.stderr).strip()
+
+
+def hdc_available():
+    if os.environ.get("HM_SKIP_DEVICE") == "1" or not os.path.exists(HDC):
+        return False
+    env = dict(os.environ, HDC_SERVER_PORT="5557")
+    for p in ("127.0.0.1:5555", "127.0.0.1:5557"):
+        subprocess.run([HDC, "tconn", p], env=env, capture_output=True, timeout=15)
+    r = subprocess.run([HDC, "list targets"], env=env, capture_output=True,
+                       text=True, timeout=15)
+    return any(t.strip() and "Empty" not in t for t in (r.stdout or "").splitlines())
+
+
+def device_texts(page):
+    """启动一页并取 app 子树可见文本 + pagePath 标记。返回 (ok, marker, texts)。"""
+    hcs("aa", "force-stop", BUNDLE)
+    time.sleep(2.0)   # AMS 收尾间隙（1.0s 实测与紧随的 start 竞态）
+    out = hcs("aa", "start", "-b", BUNDLE, "-a", "EntryAbility",
+              "--ps", "hm_page", page)
+    if "successfully" not in out:
+        return False, out, []
+    time.sleep(SETTLE)
+    r = subprocess.run([HDC, "shell", "uitest", "dumpLayout", "-p",
+                        "/data/local/tmp/hm-s2.xml"], capture_output=True,
+                       text=True, timeout=60)
+    if "saved" not in (r.stdout + r.stderr):
+        return False, "dumpLayout 失败", []
+    env = dict(os.environ, HDC_SERVER_PORT="5557")
+    tmp = os.path.join(TMP, "hm-s2.xml")
+    subprocess.run([HDC, "file", "recv", "/data/local/tmp/hm-s2.xml", tmp],
+                   env=env, capture_output=True, timeout=60)
+    try:
+        doc = json.load(open(tmp, encoding="utf-8"))
+    except Exception as e:
+        return False, "recv/parse 失败: %s" % e, []
+    marker = {"pagePath": ""}
+
+    def walk(n, in_app=False):
+        a = n.get("attributes", {}) or {}
+        if (a.get("bundleName") == BUNDLE) or (in_app and a.get("pagePath")):
+            marker["pagePath"] = a.get("pagePath") or marker["pagePath"]
+        app = in_app or a.get("bundleName") == BUNDLE
+        if app:
+            for k in ("text", "originalText"):
+                v = (a.get(k) or "").strip()
+                if v:
+                    texts.append(v)
+        for c in n.get("children") or []:
+            walk(c, app)
+
+    texts = []
+    walk(doc)
+    ok = marker["pagePath"] == page
+    return ok, marker["pagePath"] or "(无 pagePath)", texts
+
+
+def build_map():
+    """pagePath → (module_file, reg_id)：扫 build/*.js 里的 registerNamedRoute。"""
+    m = {}
+    bdir = os.path.join(ROOT, "build")
+    for f in sorted(os.listdir(bdir)):
+        if not f.endswith(".js"):
+            continue
+        try:
+            src = open(os.path.join(bdir, f), encoding="utf-8").read()
+        except Exception:
+            continue
+        for p in re.findall(r'pagePath:\s*"(pages/[A-Za-z][A-Za-z0-9_]*)"', src):
+            reg = re.search(r'__arkui_dom_defineCommonJS\("([A-Za-z0-9_]+)"', src)
+            m[p] = (f, reg.group(1) if reg else None)
+    return m
+
+
+def browser_texts(route, mod_file, reg):
+    import shutil
+    chrome = os.environ.get("CHROME", "")
+    if not chrome:
+        for c in ("google-chrome", "chrome"):
+            w = shutil.which(c)
+            if w:
+                chrome = w
+                break
+        chrome = chrome or "/opt/google/chrome/chrome"
+    if not os.path.exists(chrome):
+        return None, "找不到 Chrome（CHROME 可覆盖）"
+    # 相对模块路径（harness 在 test/ 下，模块在 build/）
+    url = ("http://127.0.0.1:%s/test/hm-harness.html?mod=../build/%s&route=%s" % (
+        serve_port, mod_file, route))
+    if reg:
+        url += "&reg=" + reg
+    prof = os.path.join(TMP, "hm-s2-chrome-profile")
+    cmd = ["timeout", "60", chrome, "--headless", "--disable-gpu", "--no-sandbox",
+           "--user-data-dir=" + prof, "--virtual-time-budget=8000",
+           "--dump-dom", url]
+    try:
+        dom = subprocess.run(cmd, capture_output=True, text=True, timeout=70,
+                             cwd=ROOT).stdout
+    except Exception as e:
+        return None, "chrome 异常: %s" % e
+    mm = re.search(r'<div id="result"[^>]*>([\s\S]*?)</div>', dom)
+    if not mm:
+        return None, "未取到 #result（页未跑？）"
+    try:
+        data = json.loads(htmlmod.unescape(mm.group(1)))
+    except Exception as e:
+        return None, "#result 非 JSON: %s" % e
+    if not data.get("ok"):
+        return None, "harness 失败: " + str(data.get("err"))[:120]
+    return data.get("texts") or [], ""
+
+
+def norm(texts):
+    """归一化：相邻重复折叠（设备 accessibility 双写）→ 去空白 → 连接。"""
+    out = []
+    for t in texts:
+        if not out or out[-1] != t:
+            out.append(t)
+    return re.sub(r"\s+", "", "".join(out))
+
+
+# ── 主流程 ──
+pages_json = os.path.join(ROOT, "harmony-proj/entry/src/main/resources/base/profile/main_pages.json")
+all_pages = ["pages/" + p.split("/")[-1]
+             for p in json.load(open(pages_json, encoding="utf-8"))["src"]]
+sel = [a for a in sys.argv[1:]] or all_pages
+# 安全校验（Mimosa 路径穿越防线）：argv 页名白名单——只收 main_pages 形态，
+# 非法名在进入任何文件路径拼接前即拒绝
+_PAGE_RE = re.compile(r"^pages/[A-Za-z][A-Za-z0-9_]*$")
+for _p in sel:
+    if not _PAGE_RE.match(_p):
+        print("❌ 非法页名（只接受 pages/<Name>）: %r" % _p)
+        sys.exit(2)
+
+
+def safename(page):
+    """页名 → 文件名片段（白名单已过，仍收敛到 [A-Za-z0-9_] 防御纵深）。"""
+    return re.sub(r"[^A-Za-z0-9_]", "_", page.split("/")[-1])
+
+
+bmap = build_map()
+
+# 本地服务（browser phase 用）
+import subprocess as sp
+srv = sp.Popen([sys.executable, os.path.join(ROOT, "tools", "serve.py"), "0"],
+               cwd=ROOT, stdout=sp.PIPE, stderr=sp.STDOUT, text=True)
+serve_port = ""
+for _ in range(50):
+    line = srv.stdout.readline()
+    m = re.search(r"http://127\.0\.0\.1:(\d+)", line or "")
+    if m:
+        serve_port = m.group(1)
+        break
+    time.sleep(0.1)
+
+device_ok = hdc_available()
+if not device_ok:
+    print("⏭  hm-pages 跳过设备侧（hdc/模拟器缺席或 HM_SKIP_DEVICE=1）——只跑浏览器侧记录")
+
+rows, infra, diffs = [], 0, 0
+for page in sel:
+    if page not in bmap:
+        rows.append((page, "SKIP-nomap", 0, 0))
+        print("SKIP-nomap  %s（build/ 无该路由的模块——不经 HAP/extract 的页）" % page)
+        continue
+    mod_file, reg = bmap[page]
+    # 浏览器侧
+    brw, berr = browser_texts(page, mod_file, reg)
+    if brw is None:
+        rows.append((page, "INFRA", 0, 0))
+        infra += 1
+        print("INFRA(bw)   %s: %s" % (page, berr))
+        continue
+    # 原子纪律：python 只算不写盘（派生路径写被安全扫描判死）——原 per-page 留档
+    # 改为 @@TEXT 标记块进 stdout，由 tools/hm-pages.sh 落盘
+    print("@@TEXT brw %s %r" % (page, brw))
+    # 设备侧
+    if device_ok:
+        d_ok, marker, dev = device_texts(page)
+        # 标记缺失自愈（首跑实录：重页 3s 内 window 未挂上 → 空树假 INFRA——
+        # Stress10kDemo/MeasNotify/BatchVerifyDemo 手动复现即过；Stress10k 实测
+        # 挂载 >7s）：整体重启动幂等重试，dump 点 ≈3s/7s/11s
+        for _r in range(3):
+            if d_ok:
+                break
+            time.sleep(4)
+            d_ok, marker, dev = device_texts(page)
+        print("@@TEXT dev %s %r" % (page, dev))
+        if not d_ok:
+            rows.append((page, "INFRA", 0, len(norm(brw))))
+            infra += 1
+            print("INFRA(dev)  %s: 启动标记=%s" % (page, marker))
+            continue
+        nb, nd = norm(brw), norm(dev)
+        verdict = "PASS" if nb == nd else "DIFF"
+        rows.append((page, verdict, len(nd), len(nb)))
+        if verdict == "DIFF":
+            diffs += 1
+            print("DIFF        %s\n            dev(%d): %s\n            brw(%d): %s"
+                  % (page, len(nd), nd[:90], len(nb), nb[:90]))
+        else:
+            print("PASS        %s（%d 字符）" % (page, len(nd)))
+    else:
+        rows.append((page, "SKIP-nolink", 0, len(norm(brw))))
+        print("SKIP-nolink %s（浏览器侧 %d 字符已留档）" % (page, len(norm(brw))))
+
+srv.terminate()
+# tsv 同样经标记块交由包装器落盘（@@TSV-BEGIN/END）
+print("@@TSV-BEGIN")
+print("PAGE\tVERDICT\tDEV\tBRW")
+for r in rows:
+    print("\t".join(map(str, r)))
+print("@@TSV-END")
+n = {v: sum(1 for r in rows if r[1] == v)
+     for v in ("PASS", "DIFF", "SKIP-nomap", "SKIP-nolink", "INFRA")}
+print("\n── hm-pages 汇总（%d 页）──" % len(rows))
+print("   PASS=%(PASS)d DIFF=%(DIFF)d SKIP-nomap=%(SKIP-nomap)d "
+      "SKIP-nolink=%(SKIP-nolink)d INFRA=%(INFRA)d" % n)
+print("   清单经包装器落 build/assert-counts-hm.tsv；全文（含 @@TEXT 双侧流）在 build/hm-pages.log")
+sys.exit(1 if (infra or (not device_ok and rows)) else 0)

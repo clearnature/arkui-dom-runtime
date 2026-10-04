@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>第六端对拍 harness（切片 2）</title>
+<style>body{margin:8px}#root{width:420px}</style>
+</head>
+<body>
+  <div id="root"></div>
+  <div id="result">running…</div>
+  <script src="../runtime/generated-components.js"></script>
+  <script src="../runtime/arkui-dom-runtime.js"></script>
+  <script src="../runtime/ohos-shims.js"></script>
+  <script>
+  // R163（第六端切片 2）：中立渲染 harness——不做断言，只把 fixture 在我们运行时
+  // 里的【可见文本流】交给 hm-pages.py 与真 ArkUI（uitest dumpLayout）对拍。
+  // 查询参数：mod=build/X.js（模块文件）· reg=注册 id（cjs 包装件需要，classic 件可空）
+  //           route=pages/X（registerNamedRoute 的 pagePath）
+  // 结果：#result = JSON {ok, texts, err}（只被 hm-pages.py 的 #result 单通道读取——
+  //   坑 115 纪律：不经 title 快通道）
+  (async function () {
+    const fail = (m) => {
+      document.getElementById('result').textContent = JSON.stringify({ ok: false, texts: [], err: m });
+    };
+    try {
+      const q = new URLSearchParams(location.search);
+      const mod = q.get('mod'), reg = q.get('reg'), route = q.get('route');
+      if (!mod || !route) { fail('缺 mod/route 参数'); return; }
+      console.log('[harness] 加载 ' + mod);
+      await new Promise((res, rej) => {
+        const s = document.createElement('script');
+        s.src = mod;
+        s.onload = () => { console.log('[harness] 模块 onload'); res(); };
+        s.onerror = () => rej(new Error('模块加载失败: ' + mod));
+        document.head.appendChild(s);
+      });
+      // cjs 包装件需要 requireModule 触发工厂（factory 里才有 registerNamedRoute）；
+      // classic 件脚本加载即已自注册——缺 id 时跳过
+      if (reg) { try { __arkui_dom_requireModule(reg); } catch (e) { /* classic 件无 id */ } }
+      console.log('[harness] loadRoute ' + route);
+      __arkui_dom_loadRoute(route, document.getElementById('root'));
+      console.log('[harness] loadRoute 返回');
+      // 结算用 setTimeout（虚拟时钟下 rAF 在动态注入路径不派发——实测卡 running；
+      // 测试页 tick()=setTimeout 是已验证惯例）
+      await new Promise((r) => setTimeout(r, 400));
+      // 可见文本流：#root 全部文本节点按序拼接（跳过 script/style），与设备侧
+      // uitest 文本流做归一化对拍（去空白后逐字符比对）
+      const parts = [];
+      const walker = document.createTreeWalker(document.getElementById('root'), NodeFilter.SHOW_TEXT);
+      let n;
+      while ((n = walker.nextNode())) {
+        const t = n.nodeValue || '';
+        if (t.trim()) parts.push(t);
+      }
+      document.getElementById('result').textContent = JSON.stringify({ ok: true, texts: parts });
+    } catch (e) {
+      fail(String(e && e.stack || e));
+    }
+  })();
+  </script>
+</body>
+</html>

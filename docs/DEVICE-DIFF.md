@@ -85,6 +85,25 @@ ets-loader 前端本身就是 Node.js 上的 JS/TS 实现——本运行时与�
 | `@ohos:measure` 的 `textContent`/尺寸传 `Resource` 引用 → 按空串/默认值处理并记警告（R128 未覆盖 measure 模块） | **行为差异** | `docs/CAPABILITY.md:236-241`；实测同 HEAD（`runtime/ohos-shims.js:601-604`） |
 | `Rating.starStyle` 是图片 URI，无图片加载管线 → 退化为内置星形并记警告 | **行为差异** | `docs/CAPABILITY.md:234`；`docs/ARCHITECTURE.md:847` |
 
+## 第六端机器对拍（R163 首轮，2026-10-04）
+
+**方法**：`tools/hm-pages.py`——55 个 main_pages 页面逐页在官方模拟器（真 ArkUI）启动
+（EntryAbility `--ps hm_page` 通道），`uitest dumpLayout` 取 app 子树可见文本流，与
+同一 fixture 在我们运行时（`test/hm-harness.html` + headless Chrome）的 #root 文本流
+归一化逐字符对拍（`tools/hm-pages.sh` 包装器落 `build/assert-counts-hm.tsv`，
+双侧全文在 `build/hm-pages.log` 的 `@@TEXT` 块）。**首轮结果：PASS 22 / DIFF 33 / INFRA 0**。
+这是本清单首次**机器自动**产差（此前为人工
+读真机 C++ 源码考证）。
+
+**已分类的 DIFF 形态**（详单见 tsv，未分类的按形态复用这些类）：
+| 形态 | 例 | 定性 |
+|---|---|---|
+| 真机 API 语义更严 | **MeasNotify**：通知权限禁用（`e1:Notification disabled`）+ `publish` 缺参**同步抛 401**（垫片宽松不抛）——真机 jscrash 进程终止，fixture 已加 sync 兜底（R163 故障日志 `MeasNotify.ets:26:25/60:25`） | **行为差异**（新，本轮最重发现） |
+| 错误文案语言 | PromptAct：真机英文 `Required input parameters are missing` vs 垫片中文 `message 未指定` | **行为差异**（文案，语义同） |
+| 平台内容 | NotesHome：UA 字符串（OpenHarmony vs Mozilla）进页面 | 环境差异（预期） |
+| 时钟敏感 | TextTimeDemo/TimePickerDemo：两侧采集时刻不同 | 环境差异（对拍需时钟归一） |
+| 视口/挂载窗口 | ScrollDemo/NavTransDemo/PerfBigDemo/Stress*：设备 dumpLayout 只含可见/已挂载子树，浏览器 TreeWalker 含全部 DOM | **口径差异**（对拍需视口归一，非渲染错） |
+
 ## 本清单的边界
 
 **"语义一致性断言"覆盖了什么**——三层一致性模型（R95，`docs/ARCHITECTURE.md:49-53`）中，
