@@ -183,9 +183,14 @@ def safename(page):
 
 bmap = build_map()
 
-# 本地服务（browser phase 用）
+# 本地服务（browser phase 用）——固定命令三元组（字面量解释器 + ROOT 内脚本 +
+# 字面量端口 "0"），list 形式 shell=False；启动前做路径 containment 守卫：
+# 无任何用户输入（argv 页名）可达此命令（Mimosa 188 行复查收口）
 import subprocess as sp
-srv = sp.Popen([sys.executable, os.path.join(ROOT, "tools", "serve.py"), "0"],
+_SERVE = os.path.realpath(os.path.join(ROOT, "tools", "serve.py"))
+if not _SERVE.startswith(os.path.realpath(ROOT) + os.sep) or not os.path.isfile(_SERVE):
+    raise SystemExit("❌ serve 脚本路径异常: " + _SERVE)
+srv = sp.Popen(["python3", _SERVE, "0"],
                cwd=ROOT, stdout=sp.PIPE, stderr=sp.STDOUT, text=True)
 serve_port = ""
 for _ in range(50):
