@@ -2843,7 +2843,13 @@
   // ────────────────────── 具体组件 ──────────────────────
   /** @param {any} node @param {any} args */
   const textLike = (node, args) => {
-    if (args && args[0] !== undefined) node.textContent = String(resolveResource(args[0]));
+    if (args && args[0] !== undefined) {
+      const s = String(resolveResource(args[0]));
+      // R162（v3 第一刀）：同值去重——textContent 重复赋同值照样打脏 DOM（stress10k
+      // bulk_update 3300 行实测 rerender 全量重写）；运行时独占这些节点的文本，
+      // 旁路写不存在，last 值记在节点上即可
+      if (node.__lastText !== s) { node.__lastText = s; node.textContent = s; }
+    }
   };
 
   const Text = ensureComponent('Text', (args) => {

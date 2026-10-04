@@ -3452,6 +3452,13 @@
 
   /** @param {HTMLElement} node @param {number} maxLines @param {any} overflow */
   function applyTextClamp(node, maxLines, overflow) {
+    // R162（v3 第一刀）：幂等守卫——maxLines/textOverflow 成对重放（rerender 全量重放
+    // 属性管线）时跳过同参重刷（style 三连写打脏 DOM）；maxLines<=0（未设）不缓存，
+    // 保持"不写任何样式"的原语义
+    if (maxLines >= 1) {
+      if (node.__lastClampM === maxLines && node.__lastClampO === overflow) return;
+      node.__lastClampM = maxLines; node.__lastClampO = overflow;
+    }
     if (maxLines === 1) {
       node.style.overflow = 'hidden';
       node.style.whiteSpace = 'nowrap';
@@ -8534,7 +8541,13 @@
   // ────────────────────── 具体组件 ──────────────────────
   /** @param {any} node @param {any} args */
   const textLike = (node, args) => {
-    if (args && args[0] !== undefined) node.textContent = String(resolveResource(args[0]));
+    if (args && args[0] !== undefined) {
+      const s = String(resolveResource(args[0]));
+      // R162（v3 第一刀）：同值去重——textContent 重复赋同值照样打脏 DOM（stress10k
+      // bulk_update 3300 行实测 rerender 全量重写）；运行时独占这些节点的文本，
+      // 旁路写不存在，last 值记在节点上即可
+      if (node.__lastText !== s) { node.__lastText = s; node.textContent = s; }
+    }
   };
 
   const Text = ensureComponent('Text', (args) => {
