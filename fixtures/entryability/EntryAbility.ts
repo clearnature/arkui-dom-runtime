@@ -33,7 +33,7 @@ export default class EntryAbility extends UIAbility {
                 hilog.error(DOMAIN, 'testTag', 'Failed to load the content. Cause: %{public}s', JSON.stringify(err));
                 return;
             }
-            hilog.info(DOMAIN, 'testTag', '%{public}s', 'Succeeded in loading the content.');
+            hilog.info(DOMAIN, 'testTag', 'Succeeded in loading the content.');
         });
     }
     onWindowStageDestroy(): void {
@@ -45,7 +45,7 @@ export default class EntryAbility extends UIAbility {
         hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onForeground');
     }
     onBackground(): void {
-        // Ability has brought to background
+        // Ability has back to background
         hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onBackground');
     }
 }
