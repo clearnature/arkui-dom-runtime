@@ -224,10 +224,11 @@ app.whenReady().then(async () => {
     return;
   }
 
-  const useOffscreen = process.env.ARKUI_OFFSCREEN === '1' && process.env.ARKUI_PROFILE !== '1';
-  // ARKUI_PROFILE=1 强制非 OSR：offscreen 与 webContents.debugger 冲突（实测
-  // attach 后页面挂死、"target closed while handling command"）——profiling 轮次
-  // 牺牲截图（capturePage 有超时护栏），判定只认 #result 文本不受影响
+  const useOffscreen = process.env.ARKUI_OFFSCREEN === '1'
+    && process.env.ARKUI_PROFILE !== '1' && process.env.ARKUI_TRACE !== '1';
+  // ARKUI_PROFILE=1 / ARKUI_TRACE=1 强制非 OSR：offscreen 与 webContents.debugger
+  // 冲突（实测 attach 后页面挂死、"target closed while handling command"）——
+  // 取证轮次牺牲截图（capturePage 有超时护栏），判定只认 #result 文本不受影响
   const fsRoot = fsRootForRenderer();
   const win = new BrowserWindow({
     width: 480,
@@ -656,8 +657,12 @@ try {
     // 走 http:// 而非 file://：这样页面里的 fetch 是同源，net.http 等平台能力才与浏览器侧一致
     // ARKUI_PROFILE=1（R161 profiling 切片）：CDP 采样 CPU profiler 包住页面执行——
     // loadURL 前启动、结果落定后停止，build/<页>.cpuprofile 供 tools/profile-report.mjs 分析
+    // ARKUI_TRACE=1（R164 tracing 切片）：Tracing 域把 native (program) 拆到
+    // style/layout/paint——build/<页>.trace.json 供 tools/trace-report.mjs 分析
     let profilerDbg = null;
-    if (process.env.ARKUI_PROFILE === '1') {
+    let traceBuf = null;
+    const traceMode = process.env.ARKUI_TRACE === '1';
+    if (process.env.ARKUI_PROFILE === '1' || traceMode) {
       try {
         profilerDbg = win.webContents.debugger;
         profilerDbg.attach('1.3');
@@ -667,11 +672,31 @@ try {
           profilerDbg.sendCommand(cmd, params),
           new Promise((r) => setTimeout(() => r(null), 1500)),
         ]);
-        await lenient('Profiler.enable');
-        await lenient('Profiler.setSamplingInterval', { interval: 100 });
-        await lenient('Profiler.start');
-        console.log('[profile] 采样启动（100µs；enable/start 响应不回投为已知 quirk）');
-      } catch (e) { console.error('[profile] 启动失败: ' + e.message); profilerDbg = null; }
+        if (process.env.ARKUI_PROFILE === '1') {
+          await lenient('Profiler.enable');
+          await lenient('Profiler.setSamplingInterval', { interval: 100 });
+          await lenient('Profiler.start');
+          console.log('[profile] 采样启动（100µs；enable/start 响应不回投为已知 quirk）');
+        }
+        if (traceMode) {
+          traceBuf = { events: [], done: false, onDone: null };
+          profilerDbg.on('message', (_ev, method, params) => {
+            if (method === 'Tracing.dataCollected' && params && params.value) {
+              traceBuf.events.push(...params.value);
+            } else if (method === 'Tracing.tracingComplete') {
+              traceBuf.done = true;               // 早于等待注册也要记（竞态）
+              if (traceBuf.onDone) traceBuf.onDone();
+            }
+          });
+          // 类别：devtools.timeline 给 Layout/Paint/RecalcStyles 主相，blink 补
+          // 详细相，disabled-by-default 增补计数细节（体积可控——只截页面执行窗）
+          await lenient('Tracing.start', {
+            traceConfig: { includedCategories: ['devtools.timeline', 'blink',
+              'disabled-by-default-devtools.timeline'] },
+          });
+          console.log('[trace] 采集启动');
+        }
+      } catch (e) { console.error('[profile/trace] 启动失败: ' + e.message); profilerDbg = null; }
     }
     if (pageUrl) await win.loadURL(pageUrl);
     else await win.loadFile(pagePath);
@@ -713,23 +738,44 @@ try {
 
     console.log('──── 渲染进程内的断言输出（与浏览器同一份页面）────');
     console.log(result || '（空）');
-    // profiling 收口：结果落定即停采样（截图段的时间不计入热点）
+    // profiling/tracing 收口：结果落定即停（截图段时间不计入）
     if (profilerDbg) {
-      try {
-        const stopped = await Promise.race([
-          profilerDbg.sendCommand('Profiler.stop'),
-          new Promise((_, rej) => setTimeout(() => rej(new Error('stop 5s 超时')), 5000)),
-        ]);
-        const profile = stopped && stopped.profile;
-        const total = profile ? profile.nodes.reduce((a, n) => a + (n.hitCount || 0), 0) : 0;
-        if (profile && total > 0) {
-          const out = path.join(__dirname, '..', 'build', `${testName}.cpuprofile`);
-          fs.writeFileSync(out, JSON.stringify(profile));
-          console.log(`[profile] build/${testName}.cpuprofile（采样 ${total}，分析：node tools/profile-report.mjs build/${testName}.cpuprofile）`);
-        } else {
-          console.error('[profile] 停止返回空 profile（enable 未生效？）');
-        }
-      } catch (e) { console.error('[profile] 停止失败: ' + e.message); }
+      if (process.env.ARKUI_PROFILE === '1') {
+        try {
+          const stopped = await Promise.race([
+            profilerDbg.sendCommand('Profiler.stop'),
+            new Promise((_, rej) => setTimeout(() => rej(new Error('stop 5s 超时')), 5000)),
+          ]);
+          const profile = stopped && stopped.profile;
+          const total = profile ? profile.nodes.reduce((a, n) => a + (n.hitCount || 0), 0) : 0;
+          if (profile && total > 0) {
+            const out = path.join(__dirname, '..', 'build', `${testName}.cpuprofile`);
+            fs.writeFileSync(out, JSON.stringify(profile));
+            console.log(`[profile] build/${testName}.cpuprofile（采样 ${total}，分析：node tools/profile-report.mjs build/${testName}.cpuprofile）`);
+          } else {
+            console.error('[profile] 停止返回空 profile（enable 未生效？）');
+          }
+        } catch (e) { console.error('[profile] 停止失败: ' + e.message); }
+      }
+      if (traceBuf) {
+        try {
+          // Tracing.end 响应可能不回投（同 Profiler quirk）——3s 放行后等
+          // tracingComplete（8s 上限），dataCollected 应已到齐
+          await Promise.race([
+            profilerDbg.sendCommand('Tracing.end'),
+            new Promise((r) => setTimeout(() => r(null), 3000)),
+          ]);
+          await new Promise((r) => {
+            if (traceBuf.done) return r();
+            const t = setTimeout(r, 8000);
+            traceBuf.onDone = () => { clearTimeout(t); r(); };
+          });
+          const out = path.join(__dirname, '..', 'build', `${testName}.trace.json`);
+          fs.writeFileSync(out, JSON.stringify({ traceEvents: traceBuf.events }));
+          console.log(`[trace] build/${testName}.trace.json（事件 ${traceBuf.events.length}，分析：node tools/trace-report.mjs build/${testName}.trace.json）`);
+        } catch (e) { console.error('[trace] 收口失败: ' + e.message); }
+        traceBuf = null;
+      }
       try { profilerDbg.detach(); } catch { /* 已分离 */ }
       profilerDbg = null;
     }

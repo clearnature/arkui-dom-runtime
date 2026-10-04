@@ -56,6 +56,30 @@ stress10k 的 bulk update 每行写的是【新值】，挂载期全是首写—
 两刀自动生效。真正的性能杠杆在 **DOM 结构侧**（减少节点数/样式属性数——
 运行时渲染策略，非编译期），需要单独立项且与语义保真目标权衡。
 
+## tracing 量化（R164，DOM 结构侧专项方向裁定）
+
+方法：`electron/main.js ARKUI_TRACE=1`（CDP Tracing 域，页面执行窗，互斥时间口径
+——嵌套不双计）→ `tools/trace-report.mjs` 分桶。两重型页交叉：
+
+| bucket（互斥） | stress10k | attrheavy | 说明 |
+|---|---|---|---|
+| **style 样式重算** | **1.1%**（15.2ms） | **0.1%**（1.1ms） | Document::recalcStyle 等 |
+| layout 布局+排版 | **31.0%**（420ms） | 15.6%（116ms） | performLayout 21.8% + ShapeText 文本整形 7.8% 等 |
+| paint 绘制合成 | 5.9% | 3.9% | PrePaint/Paint/Raster/Compositing |
+| parse 解析（一次性） | 27.4% | 25.1% | CSSParser 8.9% + JS parse/eval + 资源解码——**仅首渲染** |
+| script 脚本回调 | 5.8% | 2.1% | Timer/微任务/GC |
+| other（RunTask 为主） | 28.7% | 53.2% | **页面自身 JS 泵**（驱动轮询），非运行时 |
+
+**方向裁定（数据说话）**：
+1. **A 档（样式写批处理）被证伪**——style 重算 0.1-1.1%，R162 "(program) 是
+   样式" 的直觉在样式侧没有对应物；样式写入的 recalc 成本可忽略。
+2. **B/C 档（减节点）是唯一结构杠杆**——layout+文本整形 16-31% 随节点/文本量
+   走，paint 连带；减节点 ≈ 等比缩这部分（B 档合并容器=中等降幅；C 档虚拟化=
+   长列表页大幅降幅，真机 LazyForEach 同语义）。
+3. **新识别的独立杠杆：parse 25-27%**（一次性加载成本，与 DOM 结构无关）——
+   CSS/JS 模块体积与注入策略的优化面，仅影响首渲染时长，rerender 型负载不受益；
+   不并入本专项，记档待议。
+
 ## 复跑
 
 ```bash
