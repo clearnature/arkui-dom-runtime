@@ -49,6 +49,11 @@
       check(!!pn.querySelector('[data-panel-dragbar]') && pn.dataset.dragBar === 'true',
         `dragBar(true) → 拖拽条可见（实际 '${pn.dataset.dragBar}'）`);
       check(!!el('pn-body'), `builder 子组件 body 已挂载`);
+      // R166：onHeightChange 派发（真机初始/切档即派发面板实高 px——第六端对拍
+      // 实测设备 h=1137、我们此前零触发 hVal 恒 0=真缺陷）。双 rAF 等布局后读 pn-h。
+      // 直接同步读（offsetHeight 读取强制布局；rAF 在虚拟时钟下不派发——B0 坑③）
+      const hv = txt('pn-h');
+      check(/^h=\d*[1-9]/.test(hv), `onHeightChange 派发面板实高（'${hv}'，真机 half 实高 1137 同构）`);
 
       // ══════════ ② backgroundMask（0 条：夹具未包含此属性） ══════════
 

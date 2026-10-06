@@ -151,8 +151,8 @@ RichVideo/Image）。
 |---|---|---|
 | AnimatorDemo | 设备多 `FIN;`（onFinish 完成回调） | 行为差异：Animator 完成回调派发时机 |
 | BuiltinDemo | 浏览器多 `P1P2/S/L` 指示器文本 | 渲染差异：指示器是否进 a11y 树 |
-| **GridDemo** | `I0,5` vs `I0,4`（onReachEnd 索引差 1） | **行为差异**：到达判定边界（真 bug 候选） |
-| **PanelDemo** | `bodyh=1137` vs `bodyh=0` | **渲染差异**：Panel body 高度测量（真 bug 候选） |
+| GridDemo | `I0,5` vs `I0,4`（onScrollIndex last 差 1） | **视口口径**：设备竖屏可见 6 行 vs 浏览器窗口 5 行（测试页 :81 断言 I0,4 本按我们视口定；非行为差） |
+| PanelDemo | ~~`bodyh=0`~~ → 修复后 `h=221/202`（真机 1137 同构语义） | **已修复（R165）**：onHeightChange 零派发+高度档位 CSS 未实现+同值早退跳过首派——四层根因全修，数值环境相关 |
 | PopDemo | 设备 `Choosed+选项` vs 浏览器 `BA+ABCXY+✓` | 渲染差异：Select 选中态/面板呈现 |
 | ShowDemo | 浏览器多 `Hello/marquee` | 渲染差异：隐藏态内容是否进树 |
 | SideBarDemo | 浏览器多 `→` | 渲染差异：图标文本化 |

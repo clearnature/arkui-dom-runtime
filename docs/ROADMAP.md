@@ -981,7 +981,7 @@ backgroundMask/customHeight/onChange/onHeightChange）；`Panel.create(show?: bo
 缺省显示；mode 同值守卫（不重复发 onChange）。**编译器双拒**：`halfFullScreenHeight`
 和 `backgroundMask` 不在当前 SDK API——夹具简化为 mode+dragBar+双事件。
 
-**验收**：`bash run.sh paneldemo`（6 条断言：基座 4/mode 切换 2）双端通过。
+**验收**：`bash run.sh paneldemo`（7 条断言：基座 4/onHeightChange 1/mode 切换 2——R166 增派发断言）双端通过。
 
 **触及**：`runtime/src/panel.js`（新，第 31 个分片）、`runtime/src/main.js`（@include +
 Panel/PanelMode 挂 global）、`runtime/src/runtime.d.ts`、`tools/stats.mjs`（手写 69→70）、

@@ -546,6 +546,16 @@
         return;
       }
     }
+    // Panel（R63）：mode/dragBar/customHeight/onHeightChange/onChange 语义属性。
+    // R166 实锤：PANEL_ATTRS 此前从未接线——onHeightChange/onChange 被通用 on*
+    // 规则当 'heightchange'/'change' DOM 事件监听（永不触发）、mode 走 data-* 落点，
+    // onHeightChange 派发链整体缺失（第六端对拍 h=1137 vs h=0）
+    if (node.__arkuiPanel) {
+      if (PANEL_ATTRS[prop]) {
+        PANEL_ATTRS[prop](node, value);
+        return;
+      }
+    }
     // 表层类（R31/R32）：Canvas 的 onReady、XComponent 的 onLoad 都是函数值且原生元素
     // 不会自发派发——必须拦在通用 on* 规则之前（坑 86 同族）
     if (node.__arkuiCanvasFlag && CANVAS_ATTRS[prop]) {
