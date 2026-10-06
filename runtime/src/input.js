@@ -54,6 +54,12 @@
 
   const Checkbox = inputComponent('Checkbox', 'checkbox', (el, o) => {
     if (o.name !== undefined && o.name !== null) el.name = String(o.name);
+    // R166 续（第六端对拍 pages/InputDemo/pages/BatchInputDemo，设备 dumpLayout=权威）：
+    // 真机 a11y 文本流的控件口径 —— Checkbox 的 a11y 文本 = name（设备流含 'cb1'/'ck2'/
+    // 'apple'/'banana'；未选中的 ck2 也照报，与选中态无关）。原生 checkbox 缺省
+    // value="on" 是浏览器缺省不是语义映射：value 落 name（无 name 落空），
+    // hm-harness 采集 input.value 即与设备流同口径。
+    el.value = o.name === undefined || o.name === null ? '' : String(o.name);
     // R147：组标记落 dataset——batch-input.js 的 CheckboxGroup 组员发现路径按
     // data-arkui-checkbox-group 精确命中（此前丢弃 group，组员自态变化带不动组状态）
     if (o.group !== undefined && o.group !== null) {
@@ -77,6 +83,10 @@
     el.dataset.toggleType = o.type === undefined ? ToggleType.Checkbox : String(o.type);
     if (o.type === ToggleType.Switch) el.classList.add('arkui-toggle-switch');
     if (o.isOn !== undefined) el.checked = !!o.isOn;
+    // R166 续（第六端对拍 pages/InputDemo，设备 dumpLayout=权威）：真机对 Toggle
+    // （Switch 形态）不报任何 a11y 文本（设备流里 tg1 无痕迹）——原生 checkbox
+    // 缺省 value="on" 会混进 harness 文本流，置空消差。
+    el.value = '';
   });
   const Slider = inputComponent('Slider', 'range', (el, o) => {
     /** @param {any} v @param {number} d */
@@ -85,6 +95,13 @@
     el.max = String(num(o.max, 100));
     el.step = String(num(o.step, 1));
     el.value = String(num(o.value, num(o.min, 0)));
+    // R166 续（第六端对拍 pages/InputDemo，设备 dumpLayout=权威）：真机把 slider
+    // 当前值以 %f 形态（'40.000000'，6 位小数）报进 a11y 文本；range 控件的 value
+    // 属性被浏览器规范化为 '40' 装不下该形态 → 落 aria-valuetext（ARIA 数值控件的
+    // "人读值文本"位），拖动时随 input 事件同步；hm-harness 采集优先取它。
+    const fmtVal = (v) => { const n = Number(v); return Number.isFinite(n) ? n.toFixed(6) : String(v); };
+    el.setAttribute('aria-valuetext', fmtVal(el.value));
+    el.addEventListener('input', () => { el.setAttribute('aria-valuetext', fmtVal(el.value)); });
   });
 
   // ── 输入收官（R34）：TextInput / TextArea / Search ──

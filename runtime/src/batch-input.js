@@ -359,6 +359,10 @@
       warnedFallback: false,
     });
     el.dataset.checkboxGroup = w.group;
+    // R166 续（第六端对拍 pages/BatchInputDemo，设备 dumpLayout=权威）：真机
+    // CheckboxGroup 的 a11y 文本 = group 名（设备流含 'fruits'）——原生 checkbox
+    // 缺省 value="on" 是浏览器缺省，value 落组名（无组名落空）与设备流同口径。
+    el.value = w.group;
     cgMasters.add(el);
     // 点击母 Checkbox：全选 ↔ 全不选翻转，同步组员并派发 onChange
     el.addEventListener('click', () => {

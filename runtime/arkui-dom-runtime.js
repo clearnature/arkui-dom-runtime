@@ -9060,6 +9060,12 @@
 
   const Checkbox = inputComponent('Checkbox', 'checkbox', (el, o) => {
     if (o.name !== undefined && o.name !== null) el.name = String(o.name);
+    // R166 续（第六端对拍 pages/InputDemo/pages/BatchInputDemo，设备 dumpLayout=权威）：
+    // 真机 a11y 文本流的控件口径 —— Checkbox 的 a11y 文本 = name（设备流含 'cb1'/'ck2'/
+    // 'apple'/'banana'；未选中的 ck2 也照报，与选中态无关）。原生 checkbox 缺省
+    // value="on" 是浏览器缺省不是语义映射：value 落 name（无 name 落空），
+    // hm-harness 采集 input.value 即与设备流同口径。
+    el.value = o.name === undefined || o.name === null ? '' : String(o.name);
     // R147：组标记落 dataset——batch-input.js 的 CheckboxGroup 组员发现路径按
     // data-arkui-checkbox-group 精确命中（此前丢弃 group，组员自态变化带不动组状态）
     if (o.group !== undefined && o.group !== null) {
@@ -9083,6 +9089,10 @@
     el.dataset.toggleType = o.type === undefined ? ToggleType.Checkbox : String(o.type);
     if (o.type === ToggleType.Switch) el.classList.add('arkui-toggle-switch');
     if (o.isOn !== undefined) el.checked = !!o.isOn;
+    // R166 续（第六端对拍 pages/InputDemo，设备 dumpLayout=权威）：真机对 Toggle
+    // （Switch 形态）不报任何 a11y 文本（设备流里 tg1 无痕迹）——原生 checkbox
+    // 缺省 value="on" 会混进 harness 文本流，置空消差。
+    el.value = '';
   });
   const Slider = inputComponent('Slider', 'range', (el, o) => {
     /** @param {any} v @param {number} d */
@@ -9091,6 +9101,13 @@
     el.max = String(num(o.max, 100));
     el.step = String(num(o.step, 1));
     el.value = String(num(o.value, num(o.min, 0)));
+    // R166 续（第六端对拍 pages/InputDemo，设备 dumpLayout=权威）：真机把 slider
+    // 当前值以 %f 形态（'40.000000'，6 位小数）报进 a11y 文本；range 控件的 value
+    // 属性被浏览器规范化为 '40' 装不下该形态 → 落 aria-valuetext（ARIA 数值控件的
+    // "人读值文本"位），拖动时随 input 事件同步；hm-harness 采集优先取它。
+    const fmtVal = (v) => { const n = Number(v); return Number.isFinite(n) ? n.toFixed(6) : String(v); };
+    el.setAttribute('aria-valuetext', fmtVal(el.value));
+    el.addEventListener('input', () => { el.setAttribute('aria-valuetext', fmtVal(el.value)); });
   });
 
   // ── 输入收官（R34）：TextInput / TextArea / Search ──
@@ -13678,6 +13695,10 @@
       warnedFallback: false,
     });
     el.dataset.checkboxGroup = w.group;
+    // R166 续（第六端对拍 pages/BatchInputDemo，设备 dumpLayout=权威）：真机
+    // CheckboxGroup 的 a11y 文本 = group 名（设备流含 'fruits'）——原生 checkbox
+    // 缺省 value="on" 是浏览器缺省，value 落组名（无组名落空）与设备流同口径。
+    el.value = w.group;
     cgMasters.add(el);
     // 点击母 Checkbox：全选 ↔ 全不选翻转，同步组员并派发 onChange
     el.addEventListener('click', () => {
@@ -14352,6 +14373,12 @@
   };
 
   // ── ③ RichText（rich_text.d.ts）：HTML 内容 → <iframe srcdoc> ──
+  /** HTML 内容 → 解析后的纯文本（真机内嵌 Web 的 a11y 文本口径）。DOMParser 文档
+   *  不加载资源、不执行脚本，比 innerHTML 副作用干净。 */
+  const richTextParsedText = (html) => {
+    try { return new DOMParser().parseFromString(html, 'text/html').documentElement.textContent || ''; }
+    catch (e) { return ''; }
+  };
   /** @param {any} el @param {any} content */
   const applyRichTextContent = (el, content) => {
     const w = /** @type {any} */ (el).__richTxt;
@@ -14369,6 +14396,9 @@
     }, 0);
     // 相同内容重赋 srcdoc 会触发整页重载——diff 掉
     if (w.frame.getAttribute('srcdoc') !== s) w.frame.setAttribute('srcdoc', s);
+    // a11y 双文本同步（照真机：①原始内容串 ②解析纯文本，顺序同设备流）
+    if (w.rawA11y) w.rawA11y.textContent = s;
+    if (w.parsedA11y) w.parsedA11y.textContent = richTextParsedText(s);
   };
   const RichText = ensureComponent('RichText', (args) => {
     const el = document.createElement('div');
@@ -14387,6 +14417,26 @@
     frame.setAttribute('sandbox', 'allow-same-origin');
     el.appendChild(frame);
     const w = /** @type {any} */ (el).__richTxt = /** @type {any} */ ({ frame, cbs: {}, lastContent: null, started: false });
+    // R166 续（第六端对拍 pages/BatchVerifyDemo，设备 dumpLayout=权威）：真机 a11y
+    // 树对 RichText 报两条文本 —— ①原始内容串（HTML 字面量转义形态 '<b>rt</b>'，
+    // text/originalText 口径）②内嵌 Web 解析后的纯文本（'rt'）。iframe 跨文档内容
+    // 不进宿主文本流，两条 a11y 文本用 sr-only 文本节点承载（clip 隐藏而非
+    // display:none —— hm-harness 采集循环只跳 display:none/visibility:hidden；
+    // 视觉仍只有 iframe 渲染的富文本）。顺序照设备流：原始串在前、解析文本在后。
+    const srOnly = {
+      position: 'absolute', width: '1px', height: '1px',
+      overflow: 'hidden', clipPath: 'inset(50%)', whiteSpace: 'nowrap',
+    };
+    const rawA11y = document.createElement('span');
+    rawA11y.setAttribute('data-arkui-richtext-raw', '');
+    Object.assign(rawA11y.style, srOnly);
+    const parsedA11y = document.createElement('span');
+    parsedA11y.setAttribute('data-arkui-richtext-text', '');
+    Object.assign(parsedA11y.style, srOnly);
+    el.appendChild(rawA11y);
+    el.appendChild(parsedA11y);
+    w.rawA11y = rawA11y;
+    w.parsedA11y = parsedA11y;
     applyRichTextContent(el, args && args[0]);
     // load 挂在首份内容装载之后（避免 about:blank 的首次空 load 误派发 onComplete）
     frame.addEventListener('load', () => {

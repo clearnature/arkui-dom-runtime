@@ -50,8 +50,17 @@
       const scope = document.getElementById('root');
       const els = scope.querySelectorAll('*');
       for (const e of els) {
+        // R166 续（H0）：不可见子树跳过——真机 a11y 树只含可见内容，display:none
+        // （ShowDemo 隐藏项/Swiper 非当前页等）在设备侧不进 dumpLayout。visibility
+        // 与 display:contents（ForEach 透传层，子仍可见）不跳。
+        const cs = getComputedStyle(e);
+        if (cs.display === 'none' || cs.visibility === 'hidden') continue;
         if (e.tagName === 'INPUT' || e.tagName === 'TEXTAREA' || e.tagName === 'SELECT') {
-          const v = String(e.value || '');
+          // R166 续（设备对拍 InputDemo/BatchInputDemo/BatchVerifyDemo）：控件 a11y
+          // 口径——checkbox/checkboxgroup/radio 的身份文本（name/group/value）由
+          // runtime 落 input.value；slider 的 %f 格式值（'40.000000'，range 控件的
+          // value 属性被浏览器规范化装不下）由 runtime 落 aria-valuetext，采集优先取它。
+          const v = String(e.getAttribute('aria-valuetext') || e.value || '');
           if (v.trim()) parts.push(v);
         }
         for (const c of e.childNodes) {

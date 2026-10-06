@@ -276,6 +276,12 @@
   };
 
   // ── ③ RichText（rich_text.d.ts）：HTML 内容 → <iframe srcdoc> ──
+  /** HTML 内容 → 解析后的纯文本（真机内嵌 Web 的 a11y 文本口径）。DOMParser 文档
+   *  不加载资源、不执行脚本，比 innerHTML 副作用干净。 */
+  const richTextParsedText = (html) => {
+    try { return new DOMParser().parseFromString(html, 'text/html').documentElement.textContent || ''; }
+    catch (e) { return ''; }
+  };
   /** @param {any} el @param {any} content */
   const applyRichTextContent = (el, content) => {
     const w = /** @type {any} */ (el).__richTxt;
@@ -293,6 +299,9 @@
     }, 0);
     // 相同内容重赋 srcdoc 会触发整页重载——diff 掉
     if (w.frame.getAttribute('srcdoc') !== s) w.frame.setAttribute('srcdoc', s);
+    // a11y 双文本同步（照真机：①原始内容串 ②解析纯文本，顺序同设备流）
+    if (w.rawA11y) w.rawA11y.textContent = s;
+    if (w.parsedA11y) w.parsedA11y.textContent = richTextParsedText(s);
   };
   const RichText = ensureComponent('RichText', (args) => {
     const el = document.createElement('div');
@@ -311,6 +320,26 @@
     frame.setAttribute('sandbox', 'allow-same-origin');
     el.appendChild(frame);
     const w = /** @type {any} */ (el).__richTxt = /** @type {any} */ ({ frame, cbs: {}, lastContent: null, started: false });
+    // R166 续（第六端对拍 pages/BatchVerifyDemo，设备 dumpLayout=权威）：真机 a11y
+    // 树对 RichText 报两条文本 —— ①原始内容串（HTML 字面量转义形态 '<b>rt</b>'，
+    // text/originalText 口径）②内嵌 Web 解析后的纯文本（'rt'）。iframe 跨文档内容
+    // 不进宿主文本流，两条 a11y 文本用 sr-only 文本节点承载（clip 隐藏而非
+    // display:none —— hm-harness 采集循环只跳 display:none/visibility:hidden；
+    // 视觉仍只有 iframe 渲染的富文本）。顺序照设备流：原始串在前、解析文本在后。
+    const srOnly = {
+      position: 'absolute', width: '1px', height: '1px',
+      overflow: 'hidden', clipPath: 'inset(50%)', whiteSpace: 'nowrap',
+    };
+    const rawA11y = document.createElement('span');
+    rawA11y.setAttribute('data-arkui-richtext-raw', '');
+    Object.assign(rawA11y.style, srOnly);
+    const parsedA11y = document.createElement('span');
+    parsedA11y.setAttribute('data-arkui-richtext-text', '');
+    Object.assign(parsedA11y.style, srOnly);
+    el.appendChild(rawA11y);
+    el.appendChild(parsedA11y);
+    w.rawA11y = rawA11y;
+    w.parsedA11y = parsedA11y;
     applyRichTextContent(el, args && args[0]);
     // load 挂在首份内容装载之后（避免 about:blank 的首次空 load 误派发 onComplete）
     frame.addEventListener('load', () => {
