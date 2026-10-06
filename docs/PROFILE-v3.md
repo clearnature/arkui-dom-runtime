@@ -135,6 +135,10 @@ outerHTML「void 元素丢子树」盲区，两坑均 textdemo 实测）+ `layou
 - 修复（六处）：inputComponent helper（盖 TextInput/TextArea/Search/Checkbox/Radio/
   Toggle/Slider 族）+ Hyperlink + Span + Divider + LoadingProgress 补 `__arkuiLeaf`；
   `parentOfTop` 增 **VOID_ELEMENT_TAGS 结构兜底**（input 等 void 层级无论漏标都弹）。
+- **修复的连锁暴露（f87cda3 CI 9 腿红）**：QRCode 拒绘判据原用布局 offsetWidth——
+  挂载修正后无声明 QRCode 被父拉出非 0 rect 即误绘（components qrRendered='29'，
+  断言曾靠挂错状态通过）。改**声明尺寸口径**（真机 qrCodeSize=声明值）判据与绘制
+  同源；QrDemo 三件双声明零误伤。
 - 复验：二轮 87 页 **报警清零**；爆页双端+全 browser 矩阵（145 声明）+全 electron
   矩阵（159 声明）全绿；textdemo 增**父链防回归断言**（16→17 条，三处声明同步）。
 
