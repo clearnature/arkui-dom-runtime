@@ -25,6 +25,52 @@ import subprocess
 import sys
 import time
 import html as htmlmod
+import http.client
+
+
+class Cdp:
+    """极简同步 CDP 客户端（同 chrome-trace.py——真实时钟通道，R165 B0 实证
+    --dump-dom 虚拟时钟存在「终态树不完整」假象，对拍 browser 侧一并弃用）。"""
+
+    def __init__(self, url):
+        import websocket
+        self.ws = websocket.create_connection(url, timeout=10, origin="http://127.0.0.1")
+        self.n = 0
+        self.events = {}
+
+    def call(self, method, params=None, timeout=10):
+        self.n += 1
+        self.ws.send(json.dumps({"id": self.n, "method": method, "params": params or {}}))
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            self.ws.settimeout(max(0.5, deadline - time.time()))
+            try:
+                msg = json.loads(self.ws.recv())
+            except Exception:
+                continue
+            if msg.get("id") == self.n:
+                if "error" in msg:
+                    raise RuntimeError("%s: %s" % (method, msg["error"]))
+                return msg.get("result", {})
+            if "method" in msg:
+                self.events.setdefault(msg["method"], []).append(msg.get("params") or {})
+        raise RuntimeError("%s 响应超时" % method)
+
+    def close(self):
+        try:
+            self.ws.close()
+        except Exception:
+            pass
+
+
+def devtools_tabs(dbg_port):
+    """http.client + 字面量 host（Mimosa SSRF 纪律，禁 urlopen/动态 URL）。"""
+    conn = http.client.HTTPConnection("127.0.0.1", int(dbg_port), timeout=2)
+    try:
+        conn.request("GET", "/json/list")
+        return json.loads(conn.getresponse().read())
+    finally:
+        conn.close()
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CLT = os.environ.get(
@@ -116,41 +162,57 @@ def build_map():
 
 
 def browser_texts(route, mod_file, reg):
-    import shutil
-    chrome = os.environ.get("CHROME", "")
-    if not chrome:
-        for c in ("google-chrome", "chrome"):
-            w = shutil.which(c)
-            if w:
-                chrome = w
+    """真实时钟 CDP 取 harness 的 JSON texts（rootdump 化——R165 B0 实证
+    --dump-dom 虚拟时钟「终态树不完整」：TextDemo 残树 brw=7，真实时钟 4 控件齐）。"""
+    dbg = os.environ.get("HM_CHROME_DEBUG_PORT", "")
+    if not dbg or not re.match(r"^\d{1,5}$", dbg):
+        return None, "浏览器调试端口未就绪（tools/hm-pages.sh 应已起 chrome）"
+    ws_url = ""
+    for _ in range(50):
+        try:
+            tabs = [t for t in devtools_tabs(dbg) if t.get("type") == "page"]
+            if tabs:
+                ws_url = tabs[0]["webSocketDebuggerUrl"]
                 break
-        chrome = chrome or "/opt/google/chrome/chrome"
-    if not os.path.exists(chrome):
-        return None, "找不到 Chrome（CHROME 可覆盖）"
-    # 相对模块路径（harness 在 test/ 下，模块在 build/）
-    url = ("http://127.0.0.1:%s/test/hm-harness.html?mod=../build/%s&route=%s" % (
-        serve_port, mod_file, route))
-    if reg:
-        url += "&reg=" + reg
-    prof = os.path.join(TMP, "hm-s2-chrome-profile")
-    cmd = ["timeout", "60", chrome, "--headless", "--disable-gpu", "--no-sandbox",
-           "--user-data-dir=" + prof, "--virtual-time-budget=8000",
-           "--dump-dom", url]
+        except Exception:
+            pass
+        time.sleep(0.2)
+    if not ws_url:
+        return None, "拿不到页面 CDP 端点"
+    cdp = Cdp(ws_url)
     try:
-        dom = subprocess.run(cmd, capture_output=True, text=True, timeout=70,
-                             cwd=ROOT).stdout
-    except Exception as e:
-        return None, "chrome 异常: %s" % e
-    mm = re.search(r'<div id="result"[^>]*>([\s\S]*?)</div>', dom)
-    if not mm:
-        return None, "未取到 #result（页未跑？）"
-    try:
-        data = json.loads(htmlmod.unescape(mm.group(1)))
-    except Exception as e:
-        return None, "#result 非 JSON: %s" % e
-    if not data.get("ok"):
-        return None, "harness 失败: " + str(data.get("err"))[:120]
-    return data.get("texts") or [], ""
+        from urllib.parse import quote
+        # 相对模块路径（harness 在 test/ 下，模块在 build/）；页名已过主流程白名单
+        url = ("http://127.0.0.1:%s/test/hm-harness.html?mod=../build/%s&route=%s" % (
+            serve_port, quote(mod_file, safe="/._-"), quote(route, safe="/._-")))
+        if reg:
+            url += "&reg=" + quote(reg, safe="._-")
+        cdp.call("Page.navigate", {"url": url})
+        done = False
+        for _ in range(450):
+            try:
+                r = cdp.call("Runtime.evaluate",
+                             {"expression": "(() => { const e = document.getElementById('result');"
+                                            " return e ? e.textContent : ''; })()",
+                              "returnByValue": True}, timeout=5)
+                txt = r.get("result", {}).get("value") or ""
+                if txt and "running" not in txt:
+                    done = True
+                    break
+            except Exception:
+                pass
+            time.sleep(0.2)
+        if not done:
+            return None, "90s 未落定（真实时钟）"
+        r = cdp.call("Runtime.evaluate",
+                     {"expression": "(document.getElementById('result')||{textContent:''}).textContent",
+                      "returnByValue": True}, timeout=10)
+        data = json.loads(r.get("result", {}).get("value") or "")
+        if not data.get("ok"):
+            return None, "harness 失败: " + str(data.get("err"))[:120]
+        return data.get("texts") or "", ""
+    finally:
+        cdp.close()
 
 
 def norm(texts):

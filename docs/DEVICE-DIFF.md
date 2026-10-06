@@ -104,6 +104,37 @@ ets-loader 前端本身就是 Node.js 上的 JS/TS 实现——本运行时与�
 | 时钟敏感 | TextTimeDemo/TimePickerDemo：两侧采集时刻不同 | 环境差异（对拍需时钟归一） |
 | 视口/挂载窗口 | ScrollDemo/NavTransDemo/PerfBigDemo/Stress*：设备 dumpLayout 只含可见/已挂载子树，浏览器 TreeWalker 含全部 DOM | **口径差异**（对拍需视口归一，非渲染错） |
 
+### R165 二轮完全分类（rootdump 真实时钟通道，55 页 33 DIFF 逐项裁定）
+
+通道升级后全量复跑（`browser 侧同步 rootdump 化`），33 DIFF 逐项分类：
+
+**硬发现（真渲染/行为差异，11 项——逐项待单独立项对齐）：**
+
+| 页 | 双侧差异 | 定性 |
+|---|---|---|
+| AnimatorDemo | 设备多 `FIN;`（动画完成回调） | 行为差异：Animator onFinish 派发时机 |
+| BuiltinDemo | 浏览器多 `P1P2/S0S1S2/L0L1L2` 指示器文本 | 渲染差异：指示器/拷贝是否进 a11y 树 |
+| GridDemo | `I0,5` vs `I0,4`（onReachEnd 索引差 1） | **行为差异**：到达判定边界 |
+| ListGroupDemo | 浏览器多 `GA尾gb0gb1gb2`（尾组） | 渲染差异：ListItemGroup 尾组挂载 |
+| PanelDemo | `bodyh=1137` vs `bodyh=0` | **渲染差异**：Panel body 高度测量 |
+| PopDemo | 设备 `Choosed+选项` vs 浏览器 `ABCXY+✓` | 渲染差异：Select 选中态呈现 |
+| ShowDemo | 浏览器多 `Hello/marquee` | 渲染差异：Show/隐藏态是否进树 |
+| SideBarDemo | 浏览器多 `→`（箭头） | 渲染差异：图标文本化 |
+| StepDemo | 浏览器多 `back0step1step2` | 渲染差异：Stepper 状态文本 |
+| TextPickerDemo | 选中集/选项集不同（设备含重复选中态） | 渲染差异：picker 选中与选项呈现 |
+| BatchVerifyDemo | 设备含 `<b>` HTML 转义原文 | 序列化口径：富文本转义 |
+
+**口径类（非渲染错，22 项归 5 类）**：视口/挂载窗口 ×10（AttrHeavy/Motion/NavBar/
+NavTrans/PerfBig/Scroll/Stress1k/Stress10k/WaterFlow/NotesHome 部分）；value 型
+a11y 口径 ×3（BatchInput/Image/TextDemo——设备 a11y 含 input/select 的 value，
+浏览器 textContent 不含）；时钟/本地化 ×3（TextTime/TimePicker/CalendarPicker
+——采集时刻与 年月日 格式）；平台内容 ×3（Notes UA/Cjk degraded 标记/RichVideo
+软渲无日志）；已知 API 语义 ×2（MeasNotify/PromptAct，见上表首行）。
+
+**对拍方法论补强（R165）**：browser 侧同步 rootdump 化（真实时钟 CDP——B0 实证
+--dump-dom 虚拟时钟终态树不完整不可信）；value 型组件与视口两类的**口径归一**
+（compare 前归一化）是 DIFF 收敛到真语义差的前置工程。
+
 ## 本清单的边界
 
 **"语义一致性断言"覆盖了什么**——三层一致性模型（R95，`docs/ARCHITECTURE.md:49-53`）中，
