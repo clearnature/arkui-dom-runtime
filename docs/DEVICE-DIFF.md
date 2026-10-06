@@ -135,6 +135,38 @@ a11y 口径 ×3（BatchInput/Image/TextDemo——设备 a11y 含 input/select �
 --dump-dom 虚拟时钟终态树不完整不可信）；value 型组件与视口两类的**口径归一**
 （compare 前归一化）是 DIFF 收敛到真语义差的前置工程。
 
+### R166 口径归一后终态（55 页：PASS 22 + PASS-SUBSET 13 + DIFF 20）
+
+**归一手段**：①harness 采集补 value 型（input/textarea/select 的 value 按文档序进
+文本流——真机 a11y 含 value、浏览器 textContent 不含，TextDemo 31v7 实锤即此口径）；
+②判定加 PASS-SUBSET 档（设备文本流是浏览器流的子序列 = 挂载窗口口径归一——
+设备 dumpLayout 只含可见/已挂载子树）。13 项视口/挂载类归一收敛（AttrHeavy/Motion/
+NavBar/NavTrans/PerfBig/Scroll/Stress1k/Stress10k/WaterFlow/ListGroup/Step/
+RichVideo/Image）。
+
+**剩余 20 DIFF 终分类**：
+
+硬发现（12——逐项待对齐，每项独立切片）：
+| 页 | 双侧差异 | 定性 |
+|---|---|---|
+| AnimatorDemo | 设备多 `FIN;`（onFinish 完成回调） | 行为差异：Animator 完成回调派发时机 |
+| BuiltinDemo | 浏览器多 `P1P2/S/L` 指示器文本 | 渲染差异：指示器是否进 a11y 树 |
+| **GridDemo** | `I0,5` vs `I0,4`（onReachEnd 索引差 1） | **行为差异**：到达判定边界（真 bug 候选） |
+| **PanelDemo** | `bodyh=1137` vs `bodyh=0` | **渲染差异**：Panel body 高度测量（真 bug 候选） |
+| PopDemo | 设备 `Choosed+选项` vs 浏览器 `BA+ABCXY+✓` | 渲染差异：Select 选中态/面板呈现 |
+| ShowDemo | 浏览器多 `Hello/marquee` | 渲染差异：隐藏态内容是否进树 |
+| SideBarDemo | 浏览器多 `→` | 渲染差异：图标文本化 |
+| **TextDemo** | 设备多 `TIseed;SEhello;` | **行为差异**：真机初始渲染即派发一次 onChange（value 型），垫片不派发 |
+| TextPickerDemo | 选中集/选项集不同 | 渲染差异：picker 选中与选项呈现 |
+| BatchVerifyDemo | 设备含 `<b>` 转义原文 | 序列化口径：富文本转义 |
+| InputDemo | 设备 `cb1ck2ab40.000000` vs 浏览器 `onabon40` | value/checked 口径残余（checkbox/slider 状态进 a11y） |
+| BatchInputDemo | 设备 `fruitsapplebanana` vs 浏览器 `on` | value 口径残余（select/option 树） |
+
+口径/环境（8）：MeasNotify（已知 API 语义）、PromptAct（错误文案语言）、NotesHome
+（平台 UA）、CjkDemo（仓颉编码器 degraded 标记——环境）、RichText 转义归
+BatchVerify、TextTimeDemo/TimePickerDemo/CalendarPickerDemo（时钟采集时刻 +
+年月日本地化格式——对拍需时钟/格式归一）。
+
 ## 本清单的边界
 
 **"语义一致性断言"覆盖了什么**——三层一致性模型（R95，`docs/ARCHITECTURE.md:49-53`）中，

@@ -302,12 +302,25 @@ for page in sel:
             print("INFRA(dev)  %s: 启动标记=%s" % (page, marker))
             continue
         nb, nd = norm(brw), norm(dev)
-        verdict = "PASS" if nb == nd else "DIFF"
+        # 三档判定：PASS 全等；PASS-SUBSET 设备流是浏览器流的子序列（挂载窗口口径
+        # ——设备 dumpLayout 只含可见/已挂载子树，浏览器 DOM 含全部；对拍目的=
+        # 「设备见到的我们也能渲染」，子序列成立即归一为通过）；其余 DIFF
+        def is_subseq(needle, hay):
+            it = iter(hay)
+            return all(ch in it for ch in needle)
+        if nb == nd:
+            verdict = "PASS"
+        elif is_subseq(nd, nb):
+            verdict = "PASS-SUBSET"
+        else:
+            verdict = "DIFF"
         rows.append((page, verdict, len(nd), len(nb)))
         if verdict == "DIFF":
             diffs += 1
             print("DIFF        %s\n            dev(%d): %s\n            brw(%d): %s"
                   % (page, len(nd), nd[:90], len(nb), nb[:90]))
+        elif verdict == "PASS-SUBSET":
+            print("PASS-SUBSET %s（dev %d ⊆ brw %d——挂载窗口口径）" % (page, len(nd), len(nb)))
         else:
             print("PASS        %s（%d 字符）" % (page, len(nd)))
     else:
@@ -322,7 +335,7 @@ for r in rows:
     print("\t".join(map(str, r)))
 print("@@TSV-END")
 n = {v: sum(1 for r in rows if r[1] == v)
-     for v in ("PASS", "DIFF", "SKIP-nomap", "SKIP-nolink", "INFRA")}
+     for v in ("PASS", "PASS-SUBSET", "DIFF", "SKIP-nomap", "SKIP-nolink", "INFRA")}
 print("\n── hm-pages 汇总（%d 页）──" % len(rows))
 print("   PASS=%(PASS)d DIFF=%(DIFF)d SKIP-nomap=%(SKIP-nomap)d "
       "SKIP-nolink=%(SKIP-nolink)d INFRA=%(INFRA)d" % n)

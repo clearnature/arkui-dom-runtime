@@ -43,14 +43,23 @@
       // 结算用 setTimeout（虚拟时钟下 rAF 在动态注入路径不派发——实测卡 running；
       // 测试页 tick()=setTimeout 是已验证惯例）
       await new Promise((r) => setTimeout(r, 400));
-      // 可见文本流：#root 全部文本节点按序拼接（跳过 script/style），与设备侧
-      // uitest 文本流做归一化对拍（去空白后逐字符比对）
+      // 可见文本流：#root 按文档序收集——文本节点 + input/textarea/select 的 value
+      // （R165 口径归一：真机 a11y 树含 value 型组件的显示值，浏览器 textContent
+      // 不含——TextDemo 31v7 实锤即此口径差，采集端补齐后两侧同口径）
       const parts = [];
-      const walker = document.createTreeWalker(document.getElementById('root'), NodeFilter.SHOW_TEXT);
-      let n;
-      while ((n = walker.nextNode())) {
-        const t = n.nodeValue || '';
-        if (t.trim()) parts.push(t);
+      const scope = document.getElementById('root');
+      const els = scope.querySelectorAll('*');
+      for (const e of els) {
+        if (e.tagName === 'INPUT' || e.tagName === 'TEXTAREA' || e.tagName === 'SELECT') {
+          const v = String(e.value || '');
+          if (v.trim()) parts.push(v);
+        }
+        for (const c of e.childNodes) {
+          if (c.nodeType === Node.TEXT_NODE) {
+            const t = c.nodeValue || '';
+            if (t.trim()) parts.push(t);
+          }
+        }
       }
       document.getElementById('result').textContent = JSON.stringify({ ok: true, texts: parts });
     } catch (e) {
