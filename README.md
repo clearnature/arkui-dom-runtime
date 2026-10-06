@@ -1077,7 +1077,7 @@ target=_blank、无子组件时显示 content——JSDoc 原文）；`TextInputC
 
 ```
 $ bash run.sh textdemo
-=== ALL PASS ===                    （16 条断言，双端同数）
+=== ALL PASS ===                    （17 条断言，双端同数）
 PASS TextInput：初始 text→value／placeholder／maxLength(4) 原生截断属性／caretColor
 PASS input → onChange('abcd')（值字符串，R27 的 boolean 包装按 type 分流）
 PASS TextArea 原生 <textarea>／Search type=search + value 直落／search change 也派发 onChange

@@ -61,10 +61,18 @@
     StopGetAccessRecording() { (/** @type {any} */ (this))._recording = null; },
   };
 
+  // HTML void 元素（结构上不可能有子）——挂它们内部 = 序列化必丢、视觉必缺，
+  // 属于「无论哪个组件漏标 leaf 都不可恢复」的层级
+  const VOID_ELEMENT_TAGS = { INPUT: 1, IMG: 1, HR: 1, BR: 1, SOURCE: 1, TRACK: 1, WBR: 1 };
+
   const parentOfTop = () => {
-    // 叶组件（编译产物缺 .pop()，坑 97）挂载后自动弹出，避免后续兄弟挂进叶内
+    // 叶组件（编译产物缺 .pop()，坑 97）挂载后自动弹出，避免后续兄弟挂进叶内。
+    // R165 全页审计补结构兜底：top 是 void 元素也弹（坑 97 家族双保险——leaf
+    // 标记管语义叶，void 兜底管 HTML 层）
     let top = ViewStackProcessor.top();
-    while (top && top.__arkuiLeaf) { ViewStackProcessor.pop(); top = ViewStackProcessor.top(); }
+    while (top && (top.__arkuiLeaf || (top.tagName && VOID_ELEMENT_TAGS[top.tagName]))) {
+      ViewStackProcessor.pop(); top = ViewStackProcessor.top();
+    }
     return top || rootNode;
   };
 

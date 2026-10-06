@@ -61,10 +61,18 @@
     StopGetAccessRecording() { (/** @type {any} */ (this))._recording = null; },
   };
 
+  // HTML void 元素（结构上不可能有子）——挂它们内部 = 序列化必丢、视觉必缺，
+  // 属于「无论哪个组件漏标 leaf 都不可恢复」的层级
+  const VOID_ELEMENT_TAGS = { INPUT: 1, IMG: 1, HR: 1, BR: 1, SOURCE: 1, TRACK: 1, WBR: 1 };
+
   const parentOfTop = () => {
-    // 叶组件（编译产物缺 .pop()，坑 97）挂载后自动弹出，避免后续兄弟挂进叶内
+    // 叶组件（编译产物缺 .pop()，坑 97）挂载后自动弹出，避免后续兄弟挂进叶内。
+    // R165 全页审计补结构兜底：top 是 void 元素也弹（坑 97 家族双保险——leaf
+    // 标记管语义叶，void 兜底管 HTML 层）
     let top = ViewStackProcessor.top();
-    while (top && top.__arkuiLeaf) { ViewStackProcessor.pop(); top = ViewStackProcessor.top(); }
+    while (top && (top.__arkuiLeaf || (top.tagName && VOID_ELEMENT_TAGS[top.tagName]))) {
+      ViewStackProcessor.pop(); top = ViewStackProcessor.top();
+    }
     return top || rootNode;
   };
 
@@ -9032,6 +9040,10 @@
         el.setAttribute('aria-label', String(o.placeholder));
       }
       setup(el, o);
+      // 坑 97 漏网（R165 全页审计实锤 5 页）：input 系全部是叶子（ArkUI 无子组件
+      // 语义），产物对无子组件不生成 .pop()——不标则后续兄弟挂进 input 内部
+      //（HTML 序列化对 void 元素丢弃子树：视觉缺件、断言查全局不查父链故全绿）
+      el.__arkuiLeaf = true;
       return el;
     });
   }
@@ -9111,6 +9123,7 @@
   const Hyperlink = ensureComponent('Hyperlink', (args) => {
     const el = document.createElement('a');
     el.__arkuiLink = true;
+    el.__arkuiLeaf = true;                                // 坑 97 漏网（R165：textdemo 实锤兄弟挂进 a 内）
     el.__arkuiHref = args && args[0] !== undefined ? String(resolveResource(args[0])) : '';
     el.href = el.__arkuiHref;                              // <a> 语义：href 直落
     el.target = '_blank';                                  // 外链新开（实现选择）
@@ -9298,6 +9311,8 @@
   const Divider = ensureComponent('Divider', () => {
     const el = document.createElement('div');
     el.__arkuiShow = 'Divider';
+    el.__arkuiLeaf = true;   // 坑 97 漏网（R165：showdemo 实锤——Divider 是叶子，
+    // 产物无子不生成 pop，不标则后续组件挂进分隔线内）
     el.dataset.divider = '';
     el.style.background = '#33182431';        // .d.ts JSDoc 默认色原文
     el.style.height = '1px';                  // 默认横向、粗细 1px（JSDoc）
@@ -12536,6 +12551,8 @@
   const Span = ensureComponent('Span', (args) => {
     const el = document.createElement('span');
     el.__arkuiSpan = true;
+    el.__arkuiLeaf = true;   // 坑 97 漏网（R165：smalldemo 3 个平铺 Span 实测嵌套——
+    // ArkUI Span 是 Text 内联叶子、产物无子不生成 pop，不标则后续 Span 挂进前一个内）
     el.textContent = args && args[0] !== undefined ? String(resolveResource(args[0])) : '';
     return el;
   });
@@ -12558,6 +12575,7 @@
   const LoadingProgress = ensureComponent('LoadingProgress', () => {
     const el = document.createElement('div');
     el.__arkuiLoading = true;
+    el.__arkuiLeaf = true;   // 坑 97 漏网（R165 二轮暴露——首轮被前序错位掩盖）
     el.dataset.loadingProgress = '';
     if (!document.getElementById('arkui-loading-keyframes')) {
       const kf = document.createElement('style');

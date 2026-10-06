@@ -79,10 +79,16 @@ def devtools_tabs(dbg_port):
 
 def main():
     if len(sys.argv) < 2 or not PORT_RE.match(sys.argv[1]):
-        print("用法: chrome-trace.py <dbg_port> [页名 ...]（通常经 tools/chrome-trace.sh）")
+        print("用法: chrome-trace.py <dbg_port> [trace|rootdump] [页名 ...]"
+              "（通常经 tools/chrome-trace.sh / layout-audit.sh）")
         sys.exit(2)
     dbg_port = sys.argv[1]
-    pages = [a for a in sys.argv[2:]] or ["stress10k", "attrheavy"]
+    mode = "trace"
+    rest = sys.argv[2:]
+    if rest and rest[0] in ("trace", "rootdump"):
+        mode = rest[0]
+        rest = rest[1:]
+    pages = rest or ["stress10k", "attrheavy"]
     for pg in pages:
         if not PAGE_RE.match(pg):
             print("❌ 非法页名: %r" % pg)
@@ -124,6 +130,46 @@ def main():
         print("❌ 拿不到页面 CDP 端点（chrome 起了吗）")
         srv.terminate()
         sys.exit(1)
+
+    if mode == "rootdump":
+        # B0 专用：真实时钟渲完一页 → 取 #root 的【JSON 树】打 stdout（诊断行
+        # 走 stderr）——不走 --dump-dom 虚拟时钟（终态树不完整假象实测 3/3），
+        # 也不走 outerHTML（void 元素子树被序列化丢弃，挂错父不可见）
+        pg = pages[0]
+        cdp = Cdp(ws_url)
+        cdp.call("Page.navigate",
+                 {"url": "http://127.0.0.1:%s/test/%s.html" % (port, pg)})
+        done = False
+        for _ in range(450):
+            try:
+                r = cdp.call("Runtime.evaluate",
+                             {"expression": "(() => { const e = document.getElementById('result');"
+                                            " return e ? e.textContent : ''; })()",
+                              "returnByValue": True}, timeout=5)
+                txt = r.get("result", {}).get("value") or ""
+                if txt and "running" not in txt:
+                    done = True
+                    break
+            except Exception:
+                pass
+            time.sleep(0.2)
+        # 额外 0.5s 等断言后可能的重挂载/微任务收尾
+        time.sleep(0.5)
+        # JSON 树序列化（**不用 outerHTML**：HTML 序列化对 void 元素（input 等）
+        # 丢弃子树——textdemo 的挂错父实锤靠 id 查询才现形，outerHTML 永远看不到）
+        r = cdp.call("Runtime.evaluate", {
+            "expression": "(function(){function conv(n){var o={tag:(n.tagName||'').toLowerCase(),attrs:{},kids:[]};"
+                          "if(n.attributes){for(var i=0;i<n.attributes.length;i++){o.attrs[n.attributes[i].name]=n.attributes[i].value;}}"
+                          "var c=n.firstChild;while(c){if(c.nodeType===1){o.kids.push(conv(c));}c=c.nextSibling;}return o;}"
+                          "var r=document.getElementById('root');return r?JSON.stringify(conv(r)):''})()",
+            "returnByValue": True}, timeout=10)
+        sys.stdout.write(r.get("result", {}).get("value") or "")
+        sys.stdout.write("\n")
+        print("[rootdump %s] #result %s" % (pg, "落定" if done else "90s 超时（仍输出）"),
+              file=sys.stderr)
+        cdp.close()
+        srv.terminate()
+        return
 
     results = []
     for pg in pages:

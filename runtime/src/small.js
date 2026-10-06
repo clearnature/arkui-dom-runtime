@@ -16,6 +16,8 @@
   const Span = ensureComponent('Span', (args) => {
     const el = document.createElement('span');
     el.__arkuiSpan = true;
+    el.__arkuiLeaf = true;   // 坑 97 漏网（R165：smalldemo 3 个平铺 Span 实测嵌套——
+    // ArkUI Span 是 Text 内联叶子、产物无子不生成 pop，不标则后续 Span 挂进前一个内）
     el.textContent = args && args[0] !== undefined ? String(resolveResource(args[0])) : '';
     return el;
   });
@@ -38,6 +40,7 @@
   const LoadingProgress = ensureComponent('LoadingProgress', () => {
     const el = document.createElement('div');
     el.__arkuiLoading = true;
+    el.__arkuiLeaf = true;   // 坑 97 漏网（R165 二轮暴露——首轮被前序错位掩盖）
     el.dataset.loadingProgress = '';
     if (!document.getElementById('arkui-loading-keyframes')) {
       const kf = document.createElement('style');

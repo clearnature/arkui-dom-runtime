@@ -40,6 +40,21 @@
       __arkui_dom_loadRoute('pages/TextDemo', root);
       await tick(80);
       check(!!el('ti1') && !!el('ta1') && !!el('se1') && !!el('hl1'), 'TextDemo 页面已渲染');
+      // R165 挂错父防回归：编译产物对无子组件不生成 pop()，运行时叶标记（坑 97）
+      // 漏网时后续兄弟挂进 input/a 内部——HTML 序列化对 void 元素丢子树（视觉缺件）
+      // 而断言查全局不查父链（历史全绿盲区）——父链断言是唯一能抓住它的守卫
+      {
+        const chain = ['ta1', 'se1', 'hl1'].map((id) => {
+          const n = el(id);
+          return id + '→' + (n && n.parentElement
+            ? n.parentElement.tagName + '[' + (n.parentElement.getAttribute('data-arkui-comp') || '') + ']'
+            : '无');
+        });
+        check(['ta1', 'se1', 'hl1'].every((id) => {
+          const n = el(id);
+          return n && n.parentElement && n.parentElement.getAttribute('data-arkui-comp') === 'Column';
+        }), `三个控件都直挂 Column 而非嵌进兄弟内（父链：${chain.join(' ')}）`);
+      }
 
       // ══════════ ① TextInput：初始值/placeholder/maxLength/caretColor ══════════
       await group('TextInput', async () => {

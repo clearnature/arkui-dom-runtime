@@ -126,6 +126,8 @@
   const Divider = ensureComponent('Divider', () => {
     const el = document.createElement('div');
     el.__arkuiShow = 'Divider';
+    el.__arkuiLeaf = true;   // 坑 97 漏网（R165：showdemo 实锤——Divider 是叶子，
+    // 产物无子不生成 pop，不标则后续组件挂进分隔线内）
     el.dataset.divider = '';
     el.style.background = '#33182431';        // .d.ts JSDoc 默认色原文
     el.style.height = '1px';                  // 默认横向、粗细 1px（JSDoc）

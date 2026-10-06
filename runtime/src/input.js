@@ -44,6 +44,10 @@
         el.setAttribute('aria-label', String(o.placeholder));
       }
       setup(el, o);
+      // 坑 97 漏网（R165 全页审计实锤 5 页）：input 系全部是叶子（ArkUI 无子组件
+      // 语义），产物对无子组件不生成 .pop()——不标则后续兄弟挂进 input 内部
+      //（HTML 序列化对 void 元素丢弃子树：视觉缺件、断言查全局不查父链故全绿）
+      el.__arkuiLeaf = true;
       return el;
     });
   }
@@ -123,6 +127,7 @@
   const Hyperlink = ensureComponent('Hyperlink', (args) => {
     const el = document.createElement('a');
     el.__arkuiLink = true;
+    el.__arkuiLeaf = true;                                // 坑 97 漏网（R165：textdemo 实锤兄弟挂进 a 内）
     el.__arkuiHref = args && args[0] !== undefined ? String(resolveResource(args[0])) : '';
     el.href = el.__arkuiHref;                              // <a> 语义：href 直落
     el.target = '_blank';                                  // 外链新开（实现选择）

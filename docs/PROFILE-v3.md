@@ -107,6 +107,37 @@ stress10k 的 bulk update 每行写的是【新值】，挂载期全是首写—
    跨端成立。
 4. 方法论：跨端对拍只信构成比与排序，不信绝对毫秒（窗口/视口/版本全不同）。
 
+## B0 起步审计（R165，用户裁定「B 起步、C 随后」）——坍缩收益趋零 + 坑 97 漏网存量缺陷
+
+工具：`tools/layout-audit.sh`（Chrome 启停在 bash）+ `chrome-trace.py rootdump`
+（**真实时钟 CDP JSON 树**——不用 --dump-dom 虚拟时钟「终态树不完整」假象、不用
+outerHTML「void 元素丢子树」盲区，两坑均 textdemo 实测）+ `layout-audit.py`
+（只读分析：三档坍缩模拟 + 非法挂载检测）。
+
+**坍缩三档（87 页实测）**：
+| 档 | 结果 | 定性 |
+|---|---|---|
+| T0 contents 透传层 | 每页 0-1 个（0.0-0.3%） | 收益趋零 |
+| T1 同向白名单层 | 每页 0-1 个 | 收益趋零 |
+| 宽档「带几何也删」 | stress10k 33.3% 等 | **假上限**（Row 有 width/height/padding，无实现可删） |
+
+**→ B 档（合并嵌套纯布局容器）按数据如实收缩：页面形态是「单容器+大量带几何
+叶子行」，非「多层无几何套娃」，坍缩候选 0-1 节点/页，不值得动 DOM 结构。**
+（页面真实形态：stress10k 9905 节点全带 comp、Row 直挂 ForEach contents 层 1 个。）
+
+**同轮审计的真产出——坑 97 漏网存量缺陷（misnest 检测）**：
+- 首轮 87 页 **5 页爆雷 29 处**：components 7（Slider 挂进 TextInput）/ inputdemo 10
+  （Radio 嵌 Radio）/ showdemo 3（Divider 当父）/ textdemo 5（input/a 内藏控件）/
+  smalldemo 4（Span 嵌 Span）——编译产物对无子组件不生成 `.pop()`，运行时
+  `__arkuiLeaf` 自动弹栈（坑 97）标记未覆盖这些族。
+- **为什么历史全绿没人发现**：断言查全局 `querySelector` 不查父链；HTML 序列化对
+  void 元素丢子树 → dump/截图/序列化都看不见，只有真实 DOM 树（JSON 序列化）能看见。
+- 修复（六处）：inputComponent helper（盖 TextInput/TextArea/Search/Checkbox/Radio/
+  Toggle/Slider 族）+ Hyperlink + Span + Divider + LoadingProgress 补 `__arkuiLeaf`；
+  `parentOfTop` 增 **VOID_ELEMENT_TAGS 结构兜底**（input 等 void 层级无论漏标都弹）。
+- 复验：二轮 87 页 **报警清零**；爆页双端+全 browser 矩阵（145 声明）+全 electron
+  矩阵（159 声明）全绿；textdemo 增**父链防回归断言**（16→17 条，三处声明同步）。
+
 ## 复跑
 
 ```bash
