@@ -54,6 +54,7 @@
     "pages/UiContextDemo",
     "pages/WaterFlowDemo",
     "pages/WindowDemo",
-    "pages/XCompDemo"
+    "pages/XCompDemo",
+    "pages/WinSem"
   ]
 }

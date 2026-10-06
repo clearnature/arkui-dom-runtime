@@ -90,6 +90,9 @@ $EMU -instance hmtest_phone -screenshot -screenshotPath /data/tmp/hm-shots \
 | hdc 桥接端口漂移（R161） | `tconn 5557` 连不上，但 Emulator.log 已有 `Guest OS Boot Completed!!` | 端口随 boot 漂移（10/02=5557，本次=5555）——**以 `hdc list targets` 非空为准**，5555/5557 双探测 |
 | 锁屏拒绝启动（R161） | `aa start` 报 10106102「The device screen is locked…unlock screen failed」 | `power-shell wakeup` + `uitest uiInput swipe 400 2200 400 600 500` 上滑解锁（开发者模式不能自动解锁） |
 | 首帧 hilog 措辞漂移（R161） | 按旧配方 grep `NotifyCompleteFirstFrameDrawing` 恒空 | 本构建改发 `SCBSceneSession --> onBufferAvailableChange, isBufferAvailable: true`——**两模式都认**（hm-run.sh 已固化） |
+| 2in1 装包后「添加到桌面」对话框（R167） | 启动 1 秒即 aboutToDisappear、dumpLayout 无 app 节点 | PC 形态装包一次性系统对话框挡启动——`uitest dumpLayout` 找「添加」按钮 bounds 点掉再 `aa start` |
+| 2in1 hdcPort 范围（R167） | `-hdcPort 5560` 报「port should be in 10000-16555」 | 第二实例端口用 16001（10000-16555），`hdc -t 127.0.0.1:<port>` 多目标访问 |
+| 2in1 `-osVersion` 格式（R167） | 纯数字 `7.0.0.107` 报 Invalid OS version format | 用 imageList 的 osVersion 原文 `HarmonyOS 7.0.0(26.0.0)` |
 
 停机：`$EMU -stop hmtest_phone -instancePath … -imageRoot …`。
 负载纪律：起它之前 pkill 掉 Android 模拟器（qemu 抢核会让冷启动显著变慢）。
@@ -126,9 +129,16 @@ $EMU -instance hmtest_phone -screenshot -screenshotPath /data/tmp/hm-shots \
    （.catch 接不住同步抛；故障日志通道 `/data/log/faultlog/faultlogger/jscrash-*` 是
    设备侧排障的真值源）；③harness 动态注入路径下虚拟时钟 rAF 不派发（结算改
    setTimeout，测试页 tick() 同款）。
-3. **2in1 桌面语义对拍**：下载 2in1 镜像建第二实例，对拍 R91 的
-   maximize/restore/isFocused/windowEvent 13 条断言（当前按 d.ts 校准，
-   DEVICE-DIFF 里标注"与真机窗口管理器仍有宿主差异"的那批）。
+3. ✅ **2in1 桌面语义对拍**（R167 完成）：镜像 7.0.0.107 下载 + 实例 hmtest_2in1
+   （hdcPort 16001/osVersion 原文格式/装包对话框点击三坑见 §4 坑表）+ 新 fixture
+   **WinSem**（auto-run：订阅 windowEvent→maximize→isFocused→restore，冻结件
+   fixtures/pages/WinSem.ts）。**真机 oracle 三则**（两轮确定性，入 DEVICE-DIFF
+   R91 行）：①maximize 成功+isFocused=1（对齐 ✓）②restore 在 maximize 后**必拒
+   1300004**——d.ts restore=从最小化恢复，我们 Electron 桥当 unmaximize 用=分叉；
+   且 d.ts 面无 exitMaximized（PC 形态 API 缺口）③maximize/restore 序列**不派发
+   windowEvent**。13 断言中 95/99（SHOWN/HIDDEN）路径真机侧无事件=宿主差异实证。
+   **遗留**：hm-2in1.sh 脚本化封装（本配方可直接收）+ 真机从 maximized 退出的官方
+   路径调研（d.ts 缺口）。
 4. **门禁接入**：先做非门禁脚本（`tools/`，缺席显式跳过——同 webkit 第 6c 步先例），
    稳定后再议成为门禁第 12 步。
 
