@@ -55,6 +55,9 @@
         // 与 display:contents（ForEach 透传层，子仍可见）不跳。
         const cs = getComputedStyle(e);
         if (cs.display === 'none' || cs.visibility === 'hidden') continue;
+        // R166 续（C 接管）：aria-hidden 也不进——真机 a11y 树不含装饰文本（跑马灯
+        // 内容/侧栏箭头/非当前 Swiper 页），屏幕阅读器语义同此
+        if (e.getAttribute('aria-hidden') === 'true') continue;
         if (e.tagName === 'INPUT' || e.tagName === 'TEXTAREA' || e.tagName === 'SELECT') {
           // R166 续（设备对拍 InputDemo/BatchInputDemo/BatchVerifyDemo）：控件 a11y
           // 口径——checkbox/checkboxgroup/radio 的身份文本（name/group/value）由

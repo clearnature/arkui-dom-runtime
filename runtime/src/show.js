@@ -158,6 +158,9 @@
     root.style.whiteSpace = 'nowrap';
     const inner = document.createElement('span');
     inner.setAttribute('data-arkui-marquee-text', '');
+    // R166 续（真机口径）：跑马灯重复滚动文本不进 a11y 树（设备 ShowDemo 无
+    // 'Hello marquee' 痕迹；对读屏是重复噪声）——视觉保留、a11y 隐藏
+    inner.setAttribute('aria-hidden', 'true');
     inner.style.display = 'inline-block';
     inner.style.whiteSpace = 'nowrap';
     inner.textContent = String(resolveResource(o.src === undefined ? '' : o.src));

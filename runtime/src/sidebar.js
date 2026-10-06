@@ -42,7 +42,10 @@
       if (!btn || !v || typeof v !== 'object') return;
       if (v.left !== undefined) btn.style.left = Number(resolveResource(v.left)) + 'px';
       if (v.top !== undefined) btn.style.top = Number(resolveResource(v.top)) + 'px';
-      if (v.icons && v.icons.shown !== undefined) btn.textContent = String(v.icons.shown);
+      if (v.icons && v.icons.shown !== undefined) {
+        btn.dataset.arrow = String(v.icons.shown);      // 字形走 ::after（见 factory）
+        btn.setAttribute('aria-label', 'menutoggle');
+      }
     },
     showControlButton: (n, v) => {
       const btn = n.querySelector('[data-sbc-btn]');
@@ -73,7 +76,17 @@
     // 控制按钮：absolute 定位在容器左上（真机 controlButton 位置语义）
     const btn = document.createElement('button');
     btn.setAttribute('data-sbc-btn', '');
-    btn.textContent = '←';
+    // R166 续（真机口径）：控制按钮箭头是图标资源——'→'/'←' 不进 a11y 文本
+    //（设备流无字形、a11y 名为系统 menutoggle）。字形走 ::after attr(data-arrow)
+    //（视觉保留、textContent 空、读屏读 aria-label）
+    if (!document.getElementById('arkui-sbc-arrow')) {
+      const kf = document.createElement('style');
+      kf.id = 'arkui-sbc-arrow';
+      kf.textContent = '[data-sbc-btn]::after{content:attr(data-arrow)}';
+      document.head.appendChild(kf);
+    }
+    btn.dataset.arrow = '←';
+    btn.setAttribute('aria-label', 'menutoggle');
     btn.style.position = 'absolute';
     btn.style.zIndex = '10';
     btn.style.cursor = 'pointer';
