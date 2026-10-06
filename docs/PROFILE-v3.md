@@ -142,6 +142,24 @@ outerHTML「void 元素丢子树」盲区，两坑均 textdemo 实测）+ `layou
 - 复验：二轮 87 页 **报警清零**；爆页双端+全 browser 矩阵（145 声明）+全 electron
   矩阵（159 声明）全绿；textdemo 增**父链防回归断言**（16→17 条，三处声明同步）。
 
+## C 档虚拟化——C0 量化与设计（R167，A/B 证伪/收缩后唯一结构杠杆）
+
+**C0 量化**（trace 实测）：有虚拟化的 lazyvh 页 layout=11.2%/style 0.5%；无虚拟化的
+stress10k（9905 节点全挂载）layout=**31%**+paint 5.9%。stress10k 视口 600px 内仅
+约 10 行（~33 节点）——**3300 行中 99% 在视口外**。收益上限估算：虚拟化后节点
+9905→~60，Blink layout/paint 随节点缩 → stress 类页总 CPU 预期降 **25-30%**——
+A/B 档全灭后的**本项目最大单笔性能杠杆**。
+
+**C1 设计**（实现切片，待接力）：
+- 范围：ForEach/静态长列表的**视口窗口化挂载**——真机 LazyForEach 语义同源
+  （oracle 背书：真机本就只挂视口+占位高度）。
+- 机制：复用既有 lazyvh（LazyVar 页 R150 窗口机制）——spacer 占位保持布局语义
+  （scrollHeight/锚距口径，R150 估高教训：窗口重挂须 flush 后二次对齐）。
+- 断言影响面：stress10k 的 rows=3300 PERF 计数（挂载数变——断言改「占位+窗口」
+  语义）；页级查询 `querySelectorAll` 全量行的断言需改窗口内查询（先 grep 影响面）。
+- 验证链：全矩阵 rc + 第六端对拍（**虚拟化后设备/浏览器文本流应更接近**——
+  真机 LazyForEach 同窗口）+ trace before/after 同口径（R162 闭环纪律）。
+
 ## 复跑
 
 ```bash
