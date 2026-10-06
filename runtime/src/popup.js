@@ -43,6 +43,9 @@
     const o = (args && typeof args[0] === 'object' && args[0] !== null) ? args[0] : {};
     const mark = document.createElement('span');
     mark.setAttribute('data-arkui-select-icon', '');
+    // R166 续（真机口径）：选中标记 ✓ 是字形——真机为图标资源不进 a11y 文本
+    //（设备 PopDemo 流无 ✓），视觉保留、a11y 隐藏（harness 跳 aria-hidden）
+    mark.setAttribute('aria-hidden', 'true');
     el.appendChild(mark);
     const text = document.createElement('span');
     text.textContent = String(resolveResource(o.content === undefined ? '' : o.content));
@@ -76,7 +79,16 @@
       if (mark) mark.textContent = v ? '✓' : '';
     },
     selectIcon: (n, v) => { n.dataset.selectIcon = String(resolveResource(v)); },
-    value: (n, v) => { n.dataset.valueText = String(resolveResource(v)); },   // Select.value：显示文本覆盖（记录取舍）
+    value: (n, v) => {
+      const s = String(resolveResource(v));
+      n.dataset.valueText = s;                          // Select.value：显示文本覆盖（记录）
+      // R166 续（真机口径）：value() 是【显示文本覆盖】——真机页面折叠态可见
+      // 'Choosed'（设备 dumpLayout 实证），我们此前只记 dataset 显示仍为选中
+      // option 文本。改写当前选中 option 的 textContent（视觉与采集同源）；
+      // option.value 属性不动（onSelect 派发原值）
+      const i = n.selectedIndex;
+      if (i >= 0 && n.options && n.options[i]) n.options[i].textContent = s;
+    },
     fontColor: (n, v) => { n.style.color = colorOf(v); },
     showPosition: (n, v) => { n.dataset.showPosition = String(resolveResource(v)); },
     onChange: (n, v) => { (/** @type {any} */ (n.__popupCbs = n.__popupCbs || {})).onChange = v; },   // MenuItem 的回调（点击切换见工厂）
@@ -89,7 +101,9 @@
     node.addEventListener('change', () => {
       const i = node.selectedIndex;
       const opt = node.options && node.options[i];
-      try { cb(i, opt ? opt.textContent : ''); }
+      // R166 续：派发 SelectOption.value 原值（与 create 填充 line23 同源）——
+      // textContent 可能被 value() 显示覆盖改写，派发不应带覆盖文本
+      try { cb(i, opt ? opt.value : ''); }
       catch (e) { layoutWarnings.push(`Select.onSelect 派发抛错：${e && e.message}`); }
     });
   }

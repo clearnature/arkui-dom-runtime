@@ -46,32 +46,65 @@
       // 可见文本流：#root 按文档序收集——文本节点 + input/textarea/select 的 value
       // （R165 口径归一：真机 a11y 树含 value 型组件的显示值，浏览器 textContent
       // 不含——TextDemo 31v7 实锤即此口径差，采集端补齐后两侧同口径）
-      const parts = [];
-      const scope = document.getElementById('root');
-      const els = scope.querySelectorAll('*');
-      for (const e of els) {
-        // R166 续（H0）：不可见子树跳过——真机 a11y 树只含可见内容，display:none
-        // （ShowDemo 隐藏项/Swiper 非当前页等）在设备侧不进 dumpLayout。visibility
-        // 与 display:contents（ForEach 透传层，子仍可见）不跳。
-        const cs = getComputedStyle(e);
-        if (cs.display === 'none' || cs.visibility === 'hidden') continue;
-        // R166 续（C 接管）：aria-hidden 也不进——真机 a11y 树不含装饰文本（跑马灯
-        // 内容/侧栏箭头/非当前 Swiper 页），屏幕阅读器语义同此
-        if (e.getAttribute('aria-hidden') === 'true') continue;
-        if (e.tagName === 'INPUT' || e.tagName === 'TEXTAREA' || e.tagName === 'SELECT') {
-          // R166 续（设备对拍 InputDemo/BatchInputDemo/BatchVerifyDemo）：控件 a11y
-          // 口径——checkbox/checkboxgroup/radio 的身份文本（name/group/value）由
-          // runtime 落 input.value；slider 的 %f 格式值（'40.000000'，range 控件的
-          // value 属性被浏览器规范化装不下）由 runtime 落 aria-valuetext，采集优先取它。
-          const v = String(e.getAttribute('aria-valuetext') || e.value || '');
-          if (v.trim()) parts.push(v);
-        }
-        for (const c of e.childNodes) {
-          if (c.nodeType === Node.TEXT_NODE) {
-            const t = c.nodeValue || '';
-            if (t.trim()) parts.push(t);
+      const collect = () => {
+        const parts = [];
+        const scope = document.getElementById('root');
+        const els = scope.querySelectorAll('*');
+        for (const e of els) {
+          // R166 续（H0）：不可见子树跳过——真机 a11y 树只含可见内容，display:none
+          // （ShowDemo 隐藏项/Swiper 非当前页等）在设备侧不进 dumpLayout。visibility
+          // 与 display:contents（ForEach 透传层，子仍可见）不跳。
+          const cs = getComputedStyle(e);
+          if (cs.display === 'none' || cs.visibility === 'hidden') continue;
+          // R166 续（C 接管）：aria-hidden 也不进——真机 a11y 树不含装饰文本（跑马灯
+          // 内容/侧栏箭头/非当前 Swiper 页），屏幕阅读器语义同此
+          if (e.getAttribute('aria-hidden') === 'true') continue;
+          // R166 续：折叠 <select> 的 <option> 子文本不进流——真机折叠态 a11y 只报
+          // 选中值（选项列表仅展开时报；设备 PopDemo 无 ABCXY），选中值由下方
+          // SELECT.value 通道采集
+          if (e.tagName === 'OPTION') continue;
+          if (e.tagName === 'INPUT' || e.tagName === 'TEXTAREA' || e.tagName === 'SELECT') {
+            // R166 续（设备对拍 InputDemo/BatchInputDemo/BatchVerifyDemo）：控件 a11y
+            // 口径——checkbox/checkboxgroup/radio 的身份文本（name/group/value）由
+            // runtime 落 input.value；slider 的 %f 格式值（'40.000000'，range 控件的
+            // value 属性被浏览器规范化装不下）由 runtime 落 aria-valuetext，采集优先取它。
+            // SELECT 特化：取【选中 option 的 textContent】=可见显示语义（真机
+            // value() 覆盖文本 'Choosed' 即此通道；value 属性恒为原值不反映覆盖）
+            let v = '';
+            if (e.tagName === 'SELECT') {
+              const sel = e.selectedIndex >= 0 ? e.options[e.selectedIndex] : null;
+              v = String(sel ? sel.textContent : '');
+            } else {
+              v = String(e.getAttribute('aria-valuetext') || e.value || '');
+            }
+            if (v.trim()) parts.push(v);
+          }
+          for (const c of e.childNodes) {
+            if (c.nodeType === Node.TEXT_NODE) {
+              const t = c.nodeValue || '';
+              if (t.trim()) parts.push(t);
+            }
           }
         }
+        return parts;
+      };
+      // R166 续：稳定轮询——初等 400ms 后每 300ms 重采，连续两采样相等才落定
+      //（上限 8s）。实证：animatordemo 的 FIN 在 1.5-2.5s 才进 DOM（动画链+延时派发+
+      // rerender），固定 settle 400/1000 均会采到中间态（时序类假 DIFF）
+      let prev = JSON.stringify(collect());
+      let parts = JSON.parse(prev);
+      let same = 0;
+      for (let i = 0; i < 26; i++) {
+        await new Promise((r) => setTimeout(r, 300));
+        const cur = JSON.stringify(collect());
+        if (i >= 10 && cur === prev) {           // 前 10 次（3s）保底——动画 log 是稀疏
+          same += 1;                             // 事件，早段采样相等≠动画完（FIN 1.5-2.5s）
+          if (same >= 2) break;
+        } else {
+          same = 0;
+        }
+        prev = cur;
+        parts = JSON.parse(cur);
       }
       document.getElementById('result').textContent = JSON.stringify({ ok: true, texts: parts });
     } catch (e) {
