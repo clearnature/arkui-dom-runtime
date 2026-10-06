@@ -167,6 +167,37 @@ RichVideo/Image）。
 BatchVerify、TextTimeDemo/TimePickerDemo/CalendarPickerDemo（时钟采集时刻 +
 年月日本地化格式——对拍需时钟/格式归一）。
 
+### R166.1 对齐轮收敛终态（55 页：PASS 25 + PASS-SUBSET 13 + DIFF 16 + INFRA 1）
+
+三编队（A/B/C）并行对齐 + 主会话接管收尾（A/B/C 均限额中断）——**DIFF 33→16，通过 22→38**：
+
+**对齐落地（runtime/harness 改动，全部 rc=0 + 双矩阵绿）**：
+- **采集/判定口径**（harness 稳定轮询——前 3s 保底+连续 2 次相等才落定，animatordemo
+  FIN 实测 1.5-2.5s 才进 DOM；OPTION 子文本跳过；SELECT 取选中 option textContent；
+  display:none/aria-hidden 跳过）
+- **input 族 a11y 口径**（Checkbox value=name/Group value=group/Toggle 置空/Slider
+  aria-valuetext %f 六位小数）+ RichText `<b>` 字面转义
+- **PopupMenu**：Select.value() 显示覆盖落地（真机页面可见 Choosed）+ onSelect 派发
+  opt.value 原值 + MenuItem ✓ 字形 aria-hidden
+- **SideBar**：箭头 ::after attr(data-arrow) 化 + aria-label=menutoggle（真机图标不进文本）
+- **Marquee**：内容 aria-hidden（真机跑马灯文本不进 a11y）
+- **Panel**（R166 已记）onHeightChange 派发链全修
+
+**残差 16 终分类**：
+| 类 | 页 | 说明 |
+|---|---|---|
+| 环境/宿主尺寸 | PanelDemo（1137 vs 219——**派发已对齐**，仅屏高/窗口高差）、NotesHome（UA）、CjkDemo（编码器标记） | 非渲染差 |
+| 时序/采样窗 | TextTime/TimePicker/CalendarPicker（时钟+本地化）、TextDemo（真机初始 onChange 多一次）、ShowDemo（MS/MF=marquee 日志采样窗） | 采集时机 |
+| a11y 序/形态 | **SideBarDemo（content/menu/toggle 序差——真机 a11y 树序≠源码声明序）**、TextPickerDemo（选中回显形态——**待真机截图裁定**）、BatchVerifyDemo（富文本转义口径） | 树序/形态 |
+| 视口 | GridDemo（I0,4/5）、BuiltinDemo（非当前 Swiper 页+T/S/L 序） | 挂载窗 |
+| 已知 API | MeasNotify/PromptAct | R163 记档 |
+
+INFRA 1 = Stress10kDemo 单次启动瞬态（复验 PASS-SUBSET 133⊆38503 ✓）。
+
+**遗留待查**：ShowDemo 的 999-vs-99/±5 序（组件值呈现——Counter/Stepper 深对齐）；
+TextPickerDemo 形态需真机截图；SideBar a11y 树序差异（真机 content 优先——深挖成本高、
+收益=序对拍，记档）。
+
 ## 本清单的边界
 
 **"语义一致性断言"覆盖了什么**——三层一致性模型（R95，`docs/ARCHITECTURE.md:49-53`）中，
