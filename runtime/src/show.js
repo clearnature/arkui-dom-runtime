@@ -285,8 +285,12 @@
     }
     el.__arkuiQrPending = false;
     try {
-      const w = el.offsetWidth || 0;
-      const h = el.offsetHeight || 0;
+      // 照真机（qrcode_modifier.cpp LessNotEqual(qrCodeSize, qrWidth)）：组件尺寸=
+      // 【声明】width/height，未声明=0 → 必拒。R165 挂载修正后暴露判据口径分叉：
+      // offsetWidth 是布局值——QRCode 无声明时被父拉伸出非 0 rect 就误绘
+      //（components 实锤 qrRendered='29'；真机无声明恒拒）。判据与绘制同源用声明值。
+      const w = parseFloat(el.style.width) || 0;
+      const h = parseFloat(el.style.height) || 0;
       if (w > 0) el.width = w;
       if (h > 0) el.height = h;
       const value = el.__arkuiQrValue.slice(0, 512);           // JSDoc：取前 512
