@@ -9335,7 +9335,13 @@
       }
     });
     root.appendChild(dec);
-    root.appendChild(inc);
+    // R167（第六端对拍 ShowDemo 实锤）：原实现 dec、inc 同步先挂 + CSS order 重排
+    // 视觉——视觉 [-][5][+] 正确但 **DOM/a11y 序 = [-][+][5]**（真机 a11y 序=视觉
+    // 序 '-5+'，我们 '-+5'）。修：inc 延后一个宏任务挂载——子值组件（fixture Text5）
+    // 同步 build 先落 root 末尾（dec,5），inc 随后 → DOM 序 dec,5,inc 与视觉一致；
+    // order 保留（纯视觉兜底，无子组件时 inc 也仅晚一帧出现）。断言全部 selector
+    // 查询（位置无关），showdemo 29 条不受影响。
+    setTimeout(() => { root.appendChild(inc); }, 0);
     return root;
   });
 
