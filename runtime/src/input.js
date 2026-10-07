@@ -99,7 +99,7 @@
     // 当前值以 %f 形态（'40.000000'，6 位小数）报进 a11y 文本；range 控件的 value
     // 属性被浏览器规范化为 '40' 装不下该形态 → 落 aria-valuetext（ARIA 数值控件的
     // "人读值文本"位），拖动时随 input 事件同步；hm-harness 采集优先取它。
-    const fmtVal = (v) => { const n = Number(v); return Number.isFinite(n) ? n.toFixed(6) : String(v); };
+    const fmtVal = (/** @type {any} */ v) => { const n = Number(v); return Number.isFinite(n) ? n.toFixed(6) : String(v); };
     el.setAttribute('aria-valuetext', fmtVal(el.value));
     el.addEventListener('input', () => { el.setAttribute('aria-valuetext', fmtVal(el.value)); });
   });

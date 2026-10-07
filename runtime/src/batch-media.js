@@ -278,7 +278,7 @@
   // ── ③ RichText（rich_text.d.ts）：HTML 内容 → <iframe srcdoc> ──
   /** HTML 内容 → 解析后的纯文本（真机内嵌 Web 的 a11y 文本口径）。DOMParser 文档
    *  不加载资源、不执行脚本，比 innerHTML 副作用干净。 */
-  const richTextParsedText = (html) => {
+  const richTextParsedText = (/** @type {any} */ html) => {
     try { return new DOMParser().parseFromString(html, 'text/html').documentElement.textContent || ''; }
     catch (e) { return ''; }
   };

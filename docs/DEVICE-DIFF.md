@@ -198,6 +198,28 @@ INFRA 1 = Stress10kDemo 单次启动瞬态（复验 PASS-SUBSET 133⊆38503 ✓�
 TextPickerDemo 形态需真机截图；SideBar a11y 树序差异（真机 content 优先——深挖成本高、
 收益=序对拍，记档）。
 
+### R168 ForEach 大数组窗口化（C1-v2）——runtime 主动分叉记档
+
+**这不是对拍残差，是 runtime 的语义决策**（性能杠杆，反向于真机语义——真机 ForEach
+全量挂载，无论多大）：≥500 项的 ForEach 若处于真滚动祖先（overflow auto/scroll 且有
+高）或文档滚动根、且估高总量 > 1.5×视口 → 只挂视口窗口 + 上下 spacer 撑总高
+（复用 LazyForEach 同款窗口引擎）。分叉面与保真面：
+
+| 维度 | 真机 | 本 runtime（窗口化后） | 保真手段 |
+|---|---|---|---|
+| DOM 节点数 | 全量挂载 | 窗口 ~10-25 行 | **主动分叉**（性能） |
+| scrollHeight/滚动条 | 全量 | 全量（spacer 撑出） | 保真 ✓ |
+| 滚动跟随/到达判定 | 全量 | 窗口随 scrollTop 重算 | 保真 ✓ |
+| 数据变更 | 全量 diff | 窗口级重建（R76 行级复用不适用） | 主动分叉 |
+| 挂载窗口 | — | [scrollTop 锚定, +overscan 3] | 对拍 PASS-SUBSET ✓ |
+
+- 逃生旋钮：全局 `__arkui_dom_noForEachWindow = true`（文档名
+  ARKUI_NO_FOREACH_WINDOW）一票否决回全量挂载。既有小表（≤350 项）不走此路径。
+- Stress10k 对拍：窗口化前 PASS-SUBSET（brw=38503 全量流）；窗口化后仍
+  PASS-SUBSET（brw=223 窗口流 ⊇ 设备可见流 133）——前提=对拍 chrome 视口
+  （hm-pages.sh `--window-size=800,1300`）≥ 设备可见行数，缺省 800×600 的
+  11 行 < 设备 13 行曾恰好翻 DIFF（实录）。
+
 ## 本清单的边界
 
 **"语义一致性断言"覆盖了什么**——三层一致性模型（R95，`docs/ARCHITECTURE.md:49-53`）中，

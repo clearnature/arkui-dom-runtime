@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<title>E2-2：万节点压测（~9905 节点 / ~33000 条属性语句）</title>
+<title>E2-2：万节点压测（ForEach 窗口化——spacer 占位 + 视口窗口）</title>
 <style>
   body { font-family: system-ui, sans-serif; margin: 16px; }
   #root { width: 360px; }
@@ -11,7 +11,7 @@
 </style>
 </head>
 <body>
-  <h3>E2-2：万节点压测——3300 行 × 3 组件（嵌套 Row+双 Text）+ 单点动态</h3>
+  <h3>E2-2：万节点压测——3300 行 × 3 组件，ForEach 窗口化挂载（C1-v2：spacer 撑总高，滚动链测量语义保真）</h3>
   <div id="root"></div>
   <div id="result">running…</div>
 
@@ -28,8 +28,9 @@
     const tick = () => new Promise((r) => setTimeout(r, 0));
     const root = document.getElementById('root');
     const resetPerf = () => { const P = globalThis.__arkui_dom_perf; P.flushMs = 0; P.updateMs = 0; P.alignMs = 0; P.drawMs = 0; P.areasMs = 0; P.navMs = 0; P.n = 0; return P; };
+    const infoOf = () => { const h = root.querySelector('[data-arkui-foreach-window]'); return h ? globalThis.__arkui_dom_lazyInfo(h) : null; };
 
-    // 首渲染（同步段 + 双 raf 后的全量段）
+    // 首渲染（窗口化：同步段只挂视口窗口 ~15 行 + spacer，全量 3300 行语义由占位撑出）
     const t0 = performance.now();
     __arkui_dom_requireModule('Stress10kDemo');
     __arkui_dom_loadRoute('pages/Stress10kDemo', root);
@@ -39,11 +40,14 @@
     const btnFlip = root.querySelector('#btn-flip');
     const btnHot = root.querySelector('#btn-hot');
     const hotEl = root.querySelector('#hot-count');
+    const holder = root.querySelector('[data-arkui-foreach-window]');
+    const info = infoOf();
     const rowEls = root.querySelectorAll('[data-arkui-comp="Row"]').length;
-    // 行复用探针：埋在中段行（第 500 行），翻转后验证 DOM 节点同一（键 'a' + idx 稳定）
-    root.querySelectorAll('[data-arkui-comp="Row"]')[500].__reuseProbe = 'e22';
+    const txtInit = root.textContent;   // 就地快照：后续滚动/翻转会让窗口文本出 DOM
+    // C1-v2：窗口语义——挂载数=窗口大小，不再是全量 3300；总高/滚动语义由 spacer 撑回
+    // 全量口径（R76 行复用探针随之不适用：窗口重建即换行，节点身份只在窗口存续期保持）
 
-    // ① 单点动态（依赖追踪最小更新，单 Text 改写）
+    // ① 单点动态（依赖追踪最小更新，单 Text 改写——窗口化不触碰单点路径）
     let P = resetPerf();
     btnHot.click();
     let r0 = performance.now();
@@ -51,37 +55,58 @@
     const singlePollMs = performance.now() - r0;
     const single = { flushMs: P.flushMs, updateMs: P.updateMs, n: P.n };
 
-    // ② 批量翻转 3300 行（行复用 + 守卫）；万节点级轮询上限放宽到 2000 tick，
-    //    容纳 textContent 全树序列化的测量污染（9900 行文本，单次序列化本身就几十 ms）
+    // ② 滚动跟随：跳到列表底 → 窗口滑到底（引擎 setTimeout(0) 重算，spacer 模型自锚定）
+    const se = document.scrollingElement || document.documentElement;
+    const scrollH0 = se.scrollHeight;
+    se.scrollTop = 1e9;
+    let r1 = performance.now();
+    for (let i = 0; i < 2000; i++) { await tick(); if (root.textContent.indexOf('item 3299') >= 0) break; }
+    const followPollMs = performance.now() - r1;
+    const info2 = infoOf();
+    const rowEls2 = root.querySelectorAll('[data-arkui-comp="Row"]').length;
+    const txtFollow = root.textContent;   // 就地快照：翻转后 item 变 ITEM
+
+    // ③ 批量翻转 3300 行（窗口级重建：只重渲染当前窗口行，数据变更不改总高）
     P = resetPerf();
     btnFlip.click();
     r0 = performance.now();
     for (let i = 0; i < 2000; i++) { await tick(); if (root.textContent.indexOf('ITEM 3299') >= 0) break; }
     const bulkPollMs = performance.now() - r0;
     const bulk = { flushMs: P.flushMs, updateMs: P.updateMs, n: P.n };
-
-    // ③ 行复用同一性（R76 语义在万节点级保持）
-    const rowEls2 = root.querySelectorAll('[data-arkui-comp="Row"]');
-    const okReuse = !!(rowEls2[500] && rowEls2[500].__reuseProbe === 'e22');
+    const scrollH1 = se.scrollHeight;
 
     lines.push('PERF10 first_sync_ms=' + syncMs.toFixed(1) + ' first_ms=' + firstMs.toFixed(1) +
       ' single_poll_ms=' + singlePollMs.toFixed(1) + ' single_flush_ms=' + single.flushMs.toFixed(1) +
       ' bulk_poll_ms=' + bulkPollMs.toFixed(1) + ' bulk_flush_ms=' + bulk.flushMs.toFixed(1) +
       ' bulk_update_ms=' + bulk.updateMs.toFixed(1) + ' rows=' + rowEls);
 
-    // 预算先宽后紧（E2-2 首跑基线）：千节点 400/500ms → 万节点 2500/3000ms，
+    // 窗口语义断言（挂载数=窗口大小；总高/到达判定由 spacer 保真——scrollHeight 不塌）
+    check(!!holder && !!info && info.total === 3300 && rowEls > 0 && rowEls < 80,
+      '窗口挂载：引擎就位 total=3300 / 视口窗口 ' + rowEls + ' 行 < 80（全量 3300 不再整挂）');
+    check(scrollH0 > 100000 && info.totalH > 160000,
+      'spacer 撑总高：scrollHeight ' + Math.round(scrollH0) + ' / 模型 ' + Math.round(info.totalH) +
+      ' ≈ 3300×50（滚动链测量语义保真——c-v:auto 否决的对照面）');
+    check(txtInit.indexOf('item 0') >= 0 && txtInit.indexOf('item 100') < 0,
+      '窗口只含头部：item 0 在 DOM / item 100 不在 DOM（屏外未挂载）');
+    check(hotEl.textContent === 'hot=1',
+      '单点动态 hot=1 就位（窗口化不触碰单点更新路径）');
+    check(txtFollow.indexOf('item 3299') >= 0 && !!info2 && info2.window[0] > 0 &&
+      info2.window[1] === 3300 && rowEls2 < 80,
+      '滚动跟随：item 3299 入窗 / 窗口滑到 [' + (info2 ? info2.window.join(',') : '?') +
+      '] 行数 ' + rowEls2 + ' 仍 < 80（滑动不增长）');
+    check(root.textContent.indexOf('ITEM 3299') >= 0 && root.textContent.indexOf('item 3299') < 0 &&
+      Math.abs(scrollH1 - scrollH0) < 8,
+      '批量翻转：窗口行翻 ITEM / 全量 ' + Math.abs(Math.round(scrollH1 - scrollH0)) + 'px 总高漂移 < 8（数据变更不改占位总高）');
+    // 预算先宽后紧（窗口化首跑基线）：同步段只挂 ~15 行 < 300ms；翻转只重建窗口 < 1500ms，
     // 首跑实测后如需收紧/放宽，以本行实测值为准调整。
-    check(syncMs < 2500, 'perf 首渲染同步段 ~9905 节点 < 2500ms（实测 ' + syncMs.toFixed(1) + 'ms）');
-    check(bulkPollMs < 3000, 'perf 万节点批量翻转 < 3000ms（实测 ' + bulkPollMs.toFixed(1) + 'ms）');
-    check(hotEl.textContent === 'hot=1' && root.textContent.indexOf('ITEM 3299') >= 0 && rowEls === 3300,
-      'perf 正确性 hot=1 / ITEM 3299 就位 / Row 行数 ' + rowEls + ' = 3300');
+    check(syncMs < 300, 'perf 首渲染同步段（窗口 ~15 行）< 300ms（实测 ' + syncMs.toFixed(1) + 'ms）');
+    check(bulkPollMs < 1500, 'perf 窗口级批量翻转 < 1500ms（实测 ' + bulkPollMs.toFixed(1) + 'ms）');
     // 形状判定带计时分辨率守卫：CI runner 虚拟时间下批量 flush 可能量化为 0.0ms
     // （performance.now 虚拟化，三跑 node24 腿实测）——此时 0.1<0.0 恒假是计时假象
     // 而非依赖追踪失效；bulk==0 时跳过形状判定并在消息里如实记档（PASS 行数两端一致）
     check(single.flushMs < bulk.flushMs || bulk.flushMs === 0,
       'perf 单点动态 flush ' + single.flushMs.toFixed(1) +
-      'ms < 批量 ' + bulk.flushMs.toFixed(1) + 'ms（依赖追踪最小更新；bulk=0 为虚拟时间量化，形状判定跳过）');
-    check(okReuse, 'perf R76 行复用：万节点级翻转前后 DOM 节点同一');
+      'ms < 窗口批量 ' + bulk.flushMs.toFixed(1) + 'ms（依赖追踪最小更新；bulk=0 为虚拟时间量化，形状判定跳过）');
 
     if (fail === 0) lines.unshift(`=== ALL PASS (${pass}) ===`);
     else lines.unshift(`=== ${fail} FAILURES / ${pass} PASS ===`);

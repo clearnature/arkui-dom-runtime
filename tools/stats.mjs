@@ -409,7 +409,7 @@ const m10 = fs.existsSync(pf10)
   ? fs.readFileSync(pf10, 'utf8').match(/PERF10 first_sync_ms=([\d.]+) first_ms=([\d.]+) single_poll_ms=([\d.]+) single_flush_ms=([\d.]+) bulk_poll_ms=([\d.]+) bulk_flush_ms=([\d.]+) bulk_update_ms=([\d.]+) rows=(\d+)/)
   : null;
 if (m10) {
-  console.log(`  万节点 R138       首渲染同步 ${m10[1]} ms（${m10[8]} 节点/~33000 属性）· 批量翻转 poll ${m10[5]} ms / flush ${m10[6]} ms · 单点 flush ${m10[4]} ms（R139 增量走查后）`);
+  console.log(`  万节点 R138/C1-v2 首渲染同步 ${m10[1]} ms（ForEach 窗口化：挂载 ${m10[8]} 行/全量 3300 由 spacer 撑出）· 批量翻转 poll ${m10[5]} ms / flush ${m10[6]} ms · 单点 flush ${m10[4]} ms`);
 }
 
 console.log('\n== 体积（源码，不含产物/Electron 运行时）==');

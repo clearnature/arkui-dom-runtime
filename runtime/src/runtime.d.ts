@@ -91,6 +91,8 @@ interface Element {
   __arkuiAlphabetIndexer?: boolean;
   __aix?: any;
   __arkuiLeaf?: boolean;
+  __lastClampM?: number;                // R162 textClamp 幂等守卫缓存
+  __lastClampO?: any;
   __arkuiWithEnv?: boolean;                // WithEnv 作用域容器标记（R118）
   __arcList?: Record<string, unknown>;     // ArcList 容器状态（scroller/回调族/lastFirst——R121）
   __envValues?: Record<string, unknown>;   // WithEnv env/customEnv 键值事实（R118）

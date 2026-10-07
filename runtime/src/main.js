@@ -63,6 +63,7 @@
 
   // HTML void 元素（结构上不可能有子）——挂它们内部 = 序列化必丢、视觉必缺，
   // 属于「无论哪个组件漏标 leaf 都不可恢复」的层级
+  /** @type {Record<string, number>} */
   const VOID_ELEMENT_TAGS = { INPUT: 1, IMG: 1, HR: 1, BR: 1, SOURCE: 1, TRACK: 1, WBR: 1 };
 
   const parentOfTop = () => {
@@ -501,12 +502,44 @@
       currentNodeElmtId = savedElmt;
     }
 
-    // ForEach：数组变化才整体重建（键级 diff 留待后续优化）
+    // ForEach：数组变化才整体重建（键级 diff 留待后续优化）；大数组走窗口化引擎
     /** @param {number} elmtId @param {any[]} arr @param {any} itemGenFunc @param {any} keyGenFunc */
     forEachUpdateFunction(elmtId, arr, itemGenFunc, keyGenFunc) {
       const rec = elmtRecords.get(elmtId);
       if (!rec || !rec.node) return;
       const snap = (arr || []).slice();
+      // C1-v2：已窗口化的 ForEach 重入——数据变化只重算窗口（引擎自带滚动监听/锚定），
+      // 同值重放直接跳过（与全量路径的快照守卫同语义）。
+      if (rec.forEachWindow) {
+        const prev = rec.forEachSnapshot;
+        const same = !!(prev && prev.length === snap.length &&
+          prev.every((/** @type {any} */ v, /** @type {number} */ i) => Object.is(v, snap[i])));
+        rec.forEachSnapshot = snap;
+        rec.forEachWindow.spec.itemAt = (/** @type {number} */ i) => snap[i];
+        if (!same) rec.forEachWindow.refresh(snap.length);
+        return;
+      }
+      // C1-v2：大数组窗口化闸门——≥500 项 + 真滚动祖先/文档滚动根 + 估高超视口 1.5×。
+      // 保守线把全部既有小表（≤350 项）钉在全量挂载语义上零偏差；ARKUI_NO_FOREACH_WINDOW
+      // （全局旋钮 __arkui_dom_noForEachWindow）一票否决回全量。spacer 撑总高 →
+      // scrollHeight/锚距口径不变（c-v:auto 否决的对照面）。
+      if (forEachWindowEligible(rec.node, snap)) {
+        rec.forEachSnapshot = snap;
+        rec.rowRecs = null;                       // 行级复用名册不参与窗口语义（窗口重建即换行）
+        const holder = rec.node;
+        holder.style.display = 'block';           // contents 层没有盒，spacer 需要真盒子撑高
+        holder.setAttribute('data-arkui-foreach-window', '1');
+        const pcs = holder.parentElement ? getComputedStyle(holder.parentElement) : null;
+        rec.forEachWindow = createWindowEngine(holder, {
+          total: snap.length,
+          gap: (pcs && (parseFloat(pcs.rowGap) || parseFloat(pcs.gap))) || 0,
+          scrollEl: forEachScrollEl(holder),
+          itemAt: (/** @type {number} */ i) => snap[i],
+          itemGen: (/** @type {any} */ it, /** @type {number} */ i) => itemGenFunc(it, i),
+          convergeEst: true,
+        });
+        return;
+      }
       const changed = !rec.forEachSnapshot
         || rec.forEachSnapshot.length !== snap.length
         || rec.forEachSnapshot.some((/** @type {any} */ v, /** @type {number} */ i) => !Object.is(v, snap[i]));
@@ -2948,10 +2981,14 @@
   const ForEach = ensureComponent('ForEach',
     () => { const el = document.createElement('div'); el.style.display = 'contents'; return el; });
 
-  // ────────── LazyForEach：虚拟滚动 ──────────
-  // 产物形式（与 ForEach 不同，view/dataSource 直接传进 create）：
+  // ────────── 窗口化列表引擎：LazyForEach 与大数组 ForEach 共用（C1-v2）──────────
+  //   产物形式（LazyForEach 与 ForEach 不同，view/dataSource 直接传进 create）：
   //   LazyForEach.create("1", this, this.source, itemGen, keyGen); LazyForEach.pop();
-  // 只渲染视口内的项 + overscan，用上下 spacer 撑出总高度；滚动/数据变更时重算窗口。
+  //   只渲染视口内的项 + overscan，用上下 spacer 撑出总高度；滚动/数据变更时重算窗口。
+  //   ForEach 走 forEachUpdateFunction 的闸门路径（见该函数：≥500 项 + 真滚动祖先 +
+  //   估高超视口；ARKUI_NO_FOREACH_WINDOW 旋钮一票否决）。
+  // spacer 是 c-v:auto 否决（R167 复盘）的对照面：占位高把 scrollHeight/锚距口径
+  // 撑回"全量"语义，滚动链（ScrollBar/到达判定）不被触碰。
   /** @param {HTMLElement} startEl */
   function nearestScrollable(startEl) {
     let p = startEl.parentElement;
@@ -2963,30 +3000,42 @@
     return startEl.parentElement;
   }
 
-  /** @param {any} id @param {any} view @param {any} source @param {any} itemGen @param {any} keyGen */
-  function createLazyForEach(id, view, source, itemGen, keyGen) {
-    const holder = document.createElement('div');
-    holder.setAttribute('data-arkui-lazyforeach', String(id));
-    const parent = parentOfTop();
-    const pcs = parent ? getComputedStyle(parent) : null;
-    // 用【块级 + 每项 margin-bottom】表达容器 space，而不是 flex gap：
-    // flex gap 会把 topSpacer 也算作一个子项 → 每个窗口都多算一个 gap，
-    // 于是"偏移模型"与真实 DOM 永远差一个 gap（实测 item0 的 DOM offsetTop=2 而模型=0）。
-    // 块级 + margin 下 offset(i) 恰好等于累计 advance，spacer 也不会引入额外间距。
-    holder.style.display = 'block';
-    const parentGap = (pcs && (parseFloat(pcs.rowGap) || parseFloat(pcs.gap))) || 0;
-    mountNode(holder, elmtRecords.get(currentNodeElmtId));
-    ViewStackProcessor.push(holder);              // create 入栈，pop 出栈（与 ForEach 一致）
+  // 窗口项测高：直接子项无盒（display:contents 包裹层/自定义组件容器）时取首个带
+  // comp 标记的后代。有盒（offsetParent 非空）⇒ 与直接读 offsetHeight 逐字节同行为。
+  /** @param {HTMLElement} el */
+  function boxHeightOf(el) {
+    if (el.offsetParent) return el.offsetHeight;
+    /** @type {HTMLElement|null} */
+    const d = el.querySelector('[data-arkui-comp]');
+    return d ? d.offsetHeight : 0;
+  }
+  /** @param {HTMLElement} el */
+  function boxTargetOf(el) {
+    if (el.offsetParent) return el;
+    /** @type {HTMLElement|null} */
+    const d = el.querySelector('[data-arkui-comp]');
+    return d || el;
+  }
 
+  /**
+   * 引擎工厂。spec: { total, itemAt(i), itemGen(item, i), gap, scrollEl?, itemQuery?,
+   * convergeEst? }。itemQuery 缺省 = 通用模式（holder 直接子项中带 comp 标记的元素），
+   * LazyForEach 传 ListItem 选择器保持历史行为不变。
+   * 返回 state（offsetOf/totalHOf/indexAt/refresh/flush；spec 可换源，For Each 重入换 snap）。
+   * @param {HTMLElement} holder
+   * @param {any} spec
+   */
+  function createWindowEngine(holder, spec) {
     // @type 档位：scrollEl/window/prefix 都是 null↔对象 摆动，onScroll 等后挂 → 整袋 any
     const state = /** @type {any} */ ({
-      total: typeof source.totalCount === 'function' ? source.totalCount() : 0,
+      total: spec.total,
       estItemH: 26,                                  // 未实测项的【估计高度】（不含 gap）
       heights: new Map(),                            // index → 实测高度（不含 gap）
-      gap: parentGap,
+      gap: spec.gap,
       /** @type {any} */ prefix: null,               // 累计偏移（长度 total+1），懒算
       prefixDirty: true,
-      window: [-1, -1], scrollEl: null, tid: 0, passes: 0,
+      window: [-1, -1], scrollEl: spec.scrollEl || null, tid: 0, passes: 0,
+      spec: spec,
     });
     lazyMeta.set(holder, state);
 
@@ -3025,6 +3074,23 @@
     state.totalHOf = totalHOf;
     state.indexAt = indexAt;
 
+    // 窗口渲染项定位：选择器模式（LazyForEach）按 comp 查；通用模式取直接子项
+    // （排除两个 spacer——它们不带 comp 标记，身份排除是双保险）
+    function windowItemEls() {
+      if (state.spec.itemQuery) {
+        return [...holder.querySelectorAll(state.spec.itemQuery)];
+      }
+      /** @type {HTMLElement[]} */
+      const out = [];
+      for (const el of holder.children) {
+        if (el === state.topSpacer || el === state.bottomSpacer) continue;
+        if (el.nodeType === 1 && el.hasAttribute('data-arkui-comp')) {
+          out.push(/** @type {HTMLElement} */ (el));
+        }
+      }
+      return out;
+    }
+
     /** @param {number=} [depth] */
     function renderWindow(depth) {
       const d = depth || 0;
@@ -3055,15 +3121,16 @@
         const savedElmt = currentNodeElmtId;
         ViewStackProcessor.restore([]);
         ViewStackProcessor.push(holder);
-        for (let i = start; i < end; i++) itemGen(source.getData(i), i);
+        for (let i = start; i < end; i++) state.spec.itemGen(state.spec.itemAt(i), i);
         ViewStackProcessor.restore(savedStack);
         currentNodeElmtId = savedElmt;
 
         // 项间距用 margin-bottom 表达（最后一项不加，否则总高会多一个 gap）
-        const freshItems = /** @type {HTMLElement[]} */ ([...holder.querySelectorAll('[data-arkui-comp="ListItem"]')]);
+        const freshItems = windowItemEls();
         freshItems.forEach((node, k) => {
           const idx = start + k;
-          node.style.marginBottom = (state.gap > 0 && idx < state.total - 1) ? state.gap + 'px' : '0';
+          const target = boxTargetOf(node);
+          target.style.marginBottom = (state.gap > 0 && idx < state.total - 1) ? state.gap + 'px' : '0';
         });
 
         const bottomSpacer = document.createElement('div');
@@ -3085,23 +3152,26 @@
       const anchor = indexAt(scrollTop);
       const anchorOld = offsetOf(anchor);
       let changed = false;
-      const rendered = /** @type {HTMLElement[]} */ ([...holder.querySelectorAll('[data-arkui-comp="ListItem"]')]);
+      const rendered = windowItemEls();
       rendered.forEach((node, k) => {
         const idx = start + k;
-        const h = node.offsetHeight;
+        const h = boxHeightOf(node);
         if (h > 0 && state.heights.get(idx) !== h) { state.heights.set(idx, h); changed = true; }
       });
       // 估计值：用【已实测项的均值】逐步收敛，而不是"取第一项"（变高列表里取第一项会错一半，
       // 且随窗口滑动来回翻，导致每次滚动都重算整条前缀）。实测项够多后就不再多算。
-      if (state.heights.size <= 24) {
+      // ForEach 窗口模式带 convergeEst：est 与实测均值差 >5% 就继续收敛——26 的缺省
+      // 估计在 48px 行高下会把列表总高错报 43%（LazyForEach 历史口径保持冻结不掺和）。
+      if (state.spec.convergeEst || state.heights.size <= 24) {
         let sum = 0;
         for (const h of state.heights.values()) sum += h;
         const avg = sum / state.heights.size;
-        if (Math.abs(state.estItemH - avg) > 0.5) { state.estItemH = avg; changed = true; }
+        const tol = state.spec.convergeEst ? Math.max(0.5, state.estItemH * 0.05) : 0.5;
+        if (Math.abs(state.estItemH - avg) > tol) { state.estItemH = avg; changed = true; }
       }
       if (!changed) return;
       // ⚠️ 顺序要紧：必须等【实测高度 + 估计值】**全都写完之后**再取 anchorNew。
-      // 我第一版先取 anchorNew 再改估计值 → 补偿量少算了估计值那部分，目标会偏出十几像素。
+      // 第一版先取 anchorNew 再改估计值 → 补偿量少算了估计值那部分，目标会偏出十几像素。
       state.prefixDirty = true;
       const anchorNew = offsetOf(anchor);
       const delta = anchorNew - anchorOld;
@@ -3112,33 +3182,107 @@
       if (d < 3) renderWindow(d + 1);                 // 高度变了 → spacer/窗口要按新偏移重排
     }
 
-    const refresh = () => {
-      state.total = typeof source.totalCount === 'function' ? source.totalCount() : state.total;
+    // 数据/源刷新：total 可选（缺省保持），itemAt 换闭包（ForEach 重入换 snap 引用）
+    state.refresh = (/** @type {number=} */ total, /** @type {any=} */ itemAt) => {
+      if (total !== undefined && total !== null) state.total = total;
+      if (itemAt) state.spec.itemAt = itemAt;
       state.window = [-1, -1];
       renderWindow();
     };
-    if (typeof source.registerDataChangeListener === 'function') {
-      state.listener = {
-        onDataReloaded: refresh, onDataAdd: refresh, onDataMove: refresh, onDataDelete: refresh,
-        onDataChange: refresh, onDatasetChange: refresh, onDataAdded: refresh,
-        onDataDeleted: refresh, onDataChanged: refresh,
-      };
-      try { source.registerDataChangeListener(state.listener); } catch (_) { /* 数据源可不实现 */ }
-    }
-
     state.flush = () => renderWindow(0);          // 供 Scroller 等同步刷新（不等节流）
     renderWindow(0);
     if (state.scrollEl) {
       // 用 setTimeout(0) 合并滚动事件，而【不是】requestAnimationFrame：
       // rAF 在 headless + --virtual-time-budget 下触发时机不稳（实测单独跑过、在 all 里失败）。
       state.onScroll = () => {
+        if (state.docScroll) {
+          // 文档滚动根（html）常驻跨页——页面拆走后自摘，防窗口监听泄漏
+          if (!holder.isConnected) {
+            if (state.tid) { clearTimeout(state.tid); state.tid = 0; }
+            window.removeEventListener('scroll', state.onScroll);
+            lazyMeta.delete(holder);
+            return;
+          }
+        }
         if (state.tid) return;
         state.tid = setTimeout(() => { state.tid = 0; renderWindow(); }, 0);
       };
-      state.scrollEl.addEventListener('scroll', state.onScroll);
+      // 文档滚动根的 scroll 事件目标是 document/window（不冒泡到祖先元素链）
+      if (state.scrollEl === (document.scrollingElement || document.documentElement)) {
+        state.docScroll = true;
+        window.addEventListener('scroll', state.onScroll);
+      } else {
+        state.scrollEl.addEventListener('scroll', state.onScroll);
+      }
     }
+    return state;
+  }
+
+  // C1-v2 闸门：≥500 项 + 真滚动祖先（overflow auto/scroll 且有高）或文档滚动根，
+  // 且估高总量 > 1.5×视口。保守线把全部既有小表（≤350 项）钉在全量挂载语义上零偏差。
+  const FOREACH_WINDOW_MIN = 500;
+  /** @param {HTMLElement} node */
+  function forEachScrollEl(node) {
+    let p = node.parentElement;
+    while (p) {
+      const cs = getComputedStyle(p);
+      if ((cs.overflowY === 'auto' || cs.overflowY === 'scroll') && p.clientHeight > 0) return p;
+      p = p.parentElement;
+    }
+    const doc = document.scrollingElement || document.documentElement;
+    return doc && doc.clientHeight > 0 ? doc : null;
+  }
+  /** @param {HTMLElement} node @param {any[]} snap */
+  function forEachWindowEligible(node, snap) {
+    if ((/** @type {any} */ (global)).__arkui_dom_noForEachWindow) return false;
+    if (snap.length < FOREACH_WINDOW_MIN) return false;
+    const se = forEachScrollEl(node);
+    if (!se) return false;
+    return snap.length * 26 > se.clientHeight * 1.5;
+  }
+
+  /** @param {any} id @param {any} view @param {any} source @param {any} itemGen @param {any} keyGen */
+  function createLazyForEach(id, view, source, itemGen, keyGen) {
+    const holder = document.createElement('div');
+    holder.setAttribute('data-arkui-lazyforeach', String(id));
+    const parent = parentOfTop();
+    const pcs = parent ? getComputedStyle(parent) : null;
+    // 用【块级 + 每项 margin-bottom】表达容器 space，而不是 flex gap：
+    // flex gap 会把 topSpacer 也算作一个子项 → 每个窗口都多算一个 gap，
+    // 于是"偏移模型"与真实 DOM 永远差一个 gap（实测 item0 的 DOM offsetTop=2 而模型=0）。
+    // 块级 + margin 下 offset(i) 恰好等于累计 advance，spacer 也不会引入额外间距。
+    holder.style.display = 'block';
+    const parentGap = (pcs && (parseFloat(pcs.rowGap) || parseFloat(pcs.gap))) || 0;
+    mountNode(holder, elmtRecords.get(currentNodeElmtId));
+    ViewStackProcessor.push(holder);              // create 入栈，pop 出栈（与 ForEach 一致）
+
+    createWindowEngine(holder, {
+      total: typeof source.totalCount === 'function' ? source.totalCount() : 0,
+      gap: parentGap,
+      itemAt: (/** @type {number} */ i) => source.getData(i),
+      itemGen: (/** @type {any} */ it, /** @type {number} */ i) => itemGen(it, i),
+      itemQuery: '[data-arkui-comp="ListItem"]',
+    });
+
+    if (typeof source.registerDataChangeListener === 'function') {
+      const state = lazyMeta.get(holder);
+      const listener = {
+        onDataReloaded: () => state.refresh(typeof source.totalCount === 'function' ? source.totalCount() : undefined),
+        onDataAdd: () => state.refresh(typeof source.totalCount === 'function' ? source.totalCount() : undefined),
+        onDataMove: () => state.refresh(typeof source.totalCount === 'function' ? source.totalCount() : undefined),
+        onDataDelete: () => state.refresh(typeof source.totalCount === 'function' ? source.totalCount() : undefined),
+        onDataChange: () => state.refresh(typeof source.totalCount === 'function' ? source.totalCount() : undefined),
+        onDatasetChange: () => state.refresh(typeof source.totalCount === 'function' ? source.totalCount() : undefined),
+        onDataAdded: () => state.refresh(typeof source.totalCount === 'function' ? source.totalCount() : undefined),
+        onDataDeleted: () => state.refresh(typeof source.totalCount === 'function' ? source.totalCount() : undefined),
+        onDataChanged: () => state.refresh(typeof source.totalCount === 'function' ? source.totalCount() : undefined),
+      };
+      try { source.registerDataChangeListener(listener); } catch (_) { /* 数据源可不实现 */ }
+    }
+
     // 注意：logs 由 ohos-shims.js 创建，未加载时不能假设它存在
     if ((/** @type {any} */ (global)).__arkui_dom_logs) {
+      const state = lazyMeta.get(holder);
       (/** @type {any} */ (global)).__arkui_dom_logs.push({ t: 'lazyForEach.mounted', id: String(id), total: state.total, estItemH: state.estItemH });
     }
     return holder;

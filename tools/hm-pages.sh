@@ -23,6 +23,7 @@ mkdir -p "$HM_PROF"
 "$CHROME_BIN" --headless --disable-gpu --no-sandbox \
   --user-data-dir="$HM_PROF" --remote-debugging-port="$CT_PORT" \
   --remote-allow-origins=http://127.0.0.1 \
+  --window-size=800,1300 \
   --no-first-run --no-default-browser-check about:blank >/dev/null 2>&1 &
 CHROME_PID=$!
 sleep 3

@@ -161,10 +161,40 @@ A/B 档全灭后的**本项目最大单笔性能杠杆**。
 - **教训**：content-visibility 的 contains 语义触碰**滚动测量链**（scrollHeight/
   offset/transform 解析）——任何触及测量的组件路径（ScrollBar/Grid 到达判定/
   动效位移）都不可共存于全局 c-v。本地绿≠CI 绿（视口维度的新例）。
-- **重做方向（C1-v2，待接力）**：①只对不含滚动测量的纯展示列表类容器缩面（静态
+- **重做方向（C1-v2）**：①只对不含滚动测量的纯展示列表类容器缩面（静态
   判定哪些页无测量断言——审计工具可扩展）②layout.js 层做屏外跳过（逻辑层不进
   CSS contains 语义）③或接受布局收益改在**渲染时机**侧（屏外项延迟挂载=LIFO
   窗口——即 spacer 方案原设计）。
+
+**C1-v2：spacer 挂载窗口落地（R168，方向③——唯一保测量语义的刀）**：
+- 实现：main.js 提取 `createWindowEngine`（原 LazyForEach 的 spacer 窗口机制
+  参数化——`spec.itemAt/itemGen/itemQuery` 去掉 ListItem 硬编码），LazyForEach
+  走选择器模式**行为逐字节不变**，ForEach 走通用模式（holder 直接子项）。
+  `forEachUpdateFunction` 加闸门路径：**≥500 项 + 真滚动祖先（overflow
+  auto/scroll 且有高）或文档滚动根 + 估高总量 > 1.5×视口**——保守线把全部
+  既有小表（stress1k 350/perfbig 200/attrheavy 100/notesdemo 300）钉在全量
+  挂载语义上零偏差；全局旋钮 `__arkui_dom_noForEachWindow`（文档名
+  ARKUI_NO_FOREACH_WINDOW）一票否决回全量。已窗口化的重入走快照守卫
+  （同值跳过/变化 refresh 换 itemAt 闭包）。
+- 测量语义保真（c-v:auto 否决的对照面）：上下 spacer 按累计偏移模型撑出
+  全量 scrollHeight——滚动链（ScrollBar/到达判定/scrollToIndex 换算）不被触碰；
+  不引入任何 contain 类 CSS。
+- **convergeEst**：ForEach 模式带 est 收敛开关（est 与实测均值差 >5% 就继续）——
+  缺省估计 26 在实测行高 62px 下会把总高错报 43%（LazyForEach 的 `size<=24`
+  冻结口径是视口巧合，不掺和进通用模式）。
+- **实测（同口径 electron trace，R162 纪律，stress10k）**：layout **406.7→128.9ms
+  （-68%）**、占比 33.1%→15.7%、script 59.5→35.7ms、事件 11931→3094；与
+  c-v:auto 首刀（layout 115.5ms）同水平收益且**零测量破坏**。页面 PERF：
+  first_sync 143.5→43.5ms、rootLen 万级→3336。
+- 断言：stress10k.html 5→**9 条**改「占位+窗口」语义（窗口行 <80 / spacer
+  scrollHeight>10 万 / item 100 不在 DOM 负向 / 滚动跟随窗口 [*,3300] 滑动不
+  增长 / 翻转后总高漂移 <8px / 预算 300/1500ms）；R76 行复用探针随之不适用
+  （窗口重建即换行）。
+- 对拍：Stress10k 单页复验 **PASS-SUBSET**（dev 133 ⊆ brw 223）——窗口化后
+  浏览器流必须 ⊇ 设备可见流，`hm-pages.sh` chrome 视口加高 `--window-size=
+  800,1300`（设备可见行数 ~13 > 缺省 800×600 的窗口行数 11 恰好翻车实录）。
+- 遗留：scrollToIndex 未接窗口化 ForEach（stress10k 无用例；lazyMeta 已注册
+  state，接通是纯增量）；文档滚动根的自摘监听防泄漏已内建（isConnected 守卫）。
 
 **C1 全量设计**（余下切片，待接力）：
 - 范围：ForEach/静态长列表的**视口窗口化挂载**——真机 LazyForEach 语义同源
