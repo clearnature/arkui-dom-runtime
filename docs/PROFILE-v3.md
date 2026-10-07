@@ -150,7 +150,16 @@ stress10k（9905 节点全挂载）layout=**31%**+paint 5.9%。stress10k 视口 
 9905→~60，Blink layout/paint 随节点缩 → stress 类页总 CPU 预期降 **25-30%**——
 A/B 档全灭后的**本项目最大单笔性能杠杆**。
 
-**C1 设计**（实现切片，待接力）：
+**C1 首刀落地（R167 续，content-visibility:auto 方案——比 spacer 重写小一个量级）**：
+- 实现：Column/Row 加 `content-visibility: 'auto'`（Blink 原生屏外跳过）——节点保留
+  DOM（查询/计数/对拍文本流零分叉）、显式 height 占位、读时强制包含（断言语义安全）。
+- **收益实测（stress10k 同口径 trace）：layout 420→115.5ms（-73%）、paint 减半、
+  渲染事件 12192→9109**——C0 预估兑现大头。
+- 验证：browser 全矩阵 rc=0 + electron 全矩阵 rc=0（99 PASS）+ 对拍 Stress10k
+  文本流不变（PASS-SUBSET 133⊆38503——c-v 不删节点实证）。
+- 可扩面（记档未做）：Flex/Stack 同款；含动画/transition 容器的屏外首帧行为待观察。
+
+**C1 全量设计**（余下切片，待接力）：
 - 范围：ForEach/静态长列表的**视口窗口化挂载**——真机 LazyForEach 语义同源
   （oracle 背书：真机本就只挂视口+占位高度）。
 - 机制：复用既有 lazyvh（LazyVar 页 R150 窗口机制）——spacer 占位保持布局语义
