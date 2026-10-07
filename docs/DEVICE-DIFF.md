@@ -153,11 +153,11 @@ RichVideo/Image）。
 | BuiltinDemo | 浏览器多 `P1P2/S/L` 指示器文本 | 渲染差异：指示器是否进 a11y 树 |
 | GridDemo | `I0,5` vs `I0,4`（onScrollIndex last 差 1） | **视口口径**：设备竖屏可见 6 行 vs 浏览器窗口 5 行（测试页 :81 断言 I0,4 本按我们视口定；非行为差） |
 | PanelDemo | ~~`bodyh=0`~~ → 修复后 `h=221/202`（真机 1137 同构语义） | **已修复（R165）**：onHeightChange 零派发+高度档位 CSS 未实现+同值早退跳过首派——四层根因全修，数值环境相关 |
-| PopDemo | 设备 `Choosed+选项` vs 浏览器 `BA+ABCXY+✓` | 渲染差异：Select 选中态/面板呈现 |
-| ShowDemo | 浏览器多 `Hello/marquee` | 渲染差异：隐藏态内容是否进树 |
-| SideBarDemo | 浏览器多 `→` | 渲染差异：图标文本化 |
-| **TextDemo** | 设备多 `TIseed;SEhello;` | **行为差异**：真机初始渲染即派发一次 onChange（value 型），垫片不派发 |
-| TextPickerDemo | 选中集/选项集不同 | 渲染差异：picker 选中与选项呈现 |
+| PopDemo | ~~`Choosed+选项` vs `BA+ABCXY+✓`~~ | **已修（R166.1）**：Select.value() 显示覆盖落地+onSelect 读 opt.value+✓ aria-hidden+OPTION 跳过 → **PASS-SUBSET 收敛** |
+| ShowDemo | ~~Hello/marquee~~（aria-hidden 已修）；残差=`999`（徽标值 a11y 双报形态）+ `MS;MF;` marquee 日志（真机视口外=视口类）；**Counter ±5 序差已修**（R167 截图裁定：CSS order 重排视觉但 DOM 序 ≠视觉序 '-5+'——inc 延后挂载，showdemo 29 条绿） | 已修 1 + 残差 2 类 |
+| SideBarDemo | ~~`→`~~（箭头 ::after attr(data-arrow)+aria-label=menutoggle 已修）；残差=**content/menu/toggle 序差**（真机 a11y 树序≠源码声明序——深挖成本高记档） | 已修 1 + 树序残差 |
+| TextDemo | 设备多 `TIseed;SEhello;` | **行为差异**：真机初始渲染即派发一次 onChange（value 型），垫片不派发（值采集/时序已归口径后仍存此差） |
+| TextPickerDemo | 选中集/选项集不同 | **截图裁定（R167）**：真机=全高展开**循环滚轮**（邻项 wrap-around、蓝色高亮居中），我们=range 自然序静态窗口不 wrap——**滚轮 wrap 语义差**（独立小修：renderCol 模运算）；选中回显两侧行为一致（无差） |
 | BatchVerifyDemo | 设备含 `<b>` 转义原文 | 序列化口径：富文本转义 |
 | InputDemo | 设备 `cb1ck2ab40.000000` vs 浏览器 `onabon40` | value/checked 口径残余（checkbox/slider 状态进 a11y） |
 | BatchInputDemo | 设备 `fruitsapplebanana` vs 浏览器 `on` | value 口径残余（select/option 树） |
