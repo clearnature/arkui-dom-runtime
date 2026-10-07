@@ -2875,14 +2875,13 @@
 
   const RelativeContainer = ensureComponent('RelativeContainer',
     defaultDom('div', { position: 'relative', display: 'block' }));
-  // R167 C1（虚拟化第一刀·content-visibility:auto 方案）：屏外子树由 Blink 原生跳过
-  // layout/paint——节点保留 DOM（querySelectorAll 全量/PERF 计数/文本流对拍零分叉）、
-  // 自身显式 height 占位滚动稳定、真机 a11y 本就只报可见（对拍更一致）。C0 实测：
-  // stress10k layout 31% 中大头是屏外 3300 行——收益上限 25-30% 总 CPU 的直接抓手。
-  // 语义边界：真机 ForEach 全挂载=全可见渲染，c-v:auto 只跳屏外**内容渲染**时机不改
-  // 节点存在性（getBoundingClientRect 读时强制包含——断言安全）。
-  const Column = ensureComponent('Column', defaultDom('div', { display: 'flex', flexDirection: 'column', contentVisibility: 'auto' }));
-  const Row = ensureComponent('Row', defaultDom('div', { display: 'flex', flexDirection: 'row', contentVisibility: 'auto' }));
+  // R167 C1 复盘（全局 content-visibility:auto 已回滚）：首刀实测 layout -73% 收益
+  // 真实，但 **CI 否决全局方案**——c-v:auto 改变测量语义（motiondemo 滑块位移
+  // NaN、griddemo 到达判定红；本地视口差异恰好掩盖、CI 小视口暴露）。回滚保全矩阵
+  // 权威；重做方向=只对不含滚动测量的纯展示列表类容器缩面，或 layout.js 层做
+  // 屏外跳过（不动 CSS contains 语义）——见 docs/PROFILE-v3.md C1 复盘节。
+  const Column = ensureComponent('Column', defaultDom('div', { display: 'flex', flexDirection: 'column' }));
+  const Row = ensureComponent('Row', defaultDom('div', { display: 'flex', flexDirection: 'row' }));
   // Stack：叠放语义用 grid 同格实现 —— 所有子项 grid-area:1/1，靠 justify/align-items 对齐
   // （默认 Center，与 ArkUI 一致；alignContent 由 applyAttr 的 applyAlignment 改）
   const Stack = ensureComponent('Stack', () => {

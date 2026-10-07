@@ -150,14 +150,21 @@ stress10k（9905 节点全挂载）layout=**31%**+paint 5.9%。stress10k 视口 
 9905→~60，Blink layout/paint 随节点缩 → stress 类页总 CPU 预期降 **25-30%**——
 A/B 档全灭后的**本项目最大单笔性能杠杆**。
 
-**C1 首刀落地（R167 续，content-visibility:auto 方案——比 spacer 重写小一个量级）**：
-- 实现：Column/Row 加 `content-visibility: 'auto'`（Blink 原生屏外跳过）——节点保留
-  DOM（查询/计数/对拍文本流零分叉）、显式 height 占位、读时强制包含（断言语义安全）。
-- **收益实测（stress10k 同口径 trace）：layout 420→115.5ms（-73%）、paint 减半、
-  渲染事件 12192→9109**——C0 预估兑现大头。
-- 验证：browser 全矩阵 rc=0 + electron 全矩阵 rc=0（99 PASS）+ 对拍 Stress10k
-  文本流不变（PASS-SUBSET 133⊆38503——c-v 不删节点实证）。
-- 可扩面（记档未做）：Flex/Stack 同款；含动画/transition 容器的屏外首帧行为待观察。
+**C1 首刀：content-visibility:auto——收益真实但 CI 否决（回滚复盘）**：
+- 首刀实现：Column/Row 加 `content-visibility: 'auto'`。**收益实测真实**（stress10k
+  同口径 trace：layout 420→115.5ms **-73%**、paint 减半、渲染事件 12192→9109）；
+  本地 browser/electron 全矩阵 rc=0、对拍 Stress10k 文本流不变。
+- **CI 否决（run 37562711988）**：c-v:auto 改变**测量语义**——motiondemo ScrollBar
+  滑块位移 NaN/起点 ''（`getComputedStyle`/offset 链被 contain 影响）、griddemo
+  到达判定红（scrollHeight 口径变）；**本地视口差异恰好掩盖、CI 小视口暴露**——
+  5 腿红（browser×2/firefox×3/firefox-windows）。已回滚保全矩阵权威。
+- **教训**：content-visibility 的 contains 语义触碰**滚动测量链**（scrollHeight/
+  offset/transform 解析）——任何触及测量的组件路径（ScrollBar/Grid 到达判定/
+  动效位移）都不可共存于全局 c-v。本地绿≠CI 绿（视口维度的新例）。
+- **重做方向（C1-v2，待接力）**：①只对不含滚动测量的纯展示列表类容器缩面（静态
+  判定哪些页无测量断言——审计工具可扩展）②layout.js 层做屏外跳过（逻辑层不进
+  CSS contains 语义）③或接受布局收益改在**渲染时机**侧（屏外项延迟挂载=LIFO
+  窗口——即 spacer 方案原设计）。
 
 **C1 全量设计**（余下切片，待接力）：
 - 范围：ForEach/静态长列表的**视口窗口化挂载**——真机 LazyForEach 语义同源
