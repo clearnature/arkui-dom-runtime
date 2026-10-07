@@ -78,6 +78,10 @@ CLT = os.environ.get(
 HDC = os.environ.get("HM_HDC", os.path.join(CLT, "sdk/default/openharmony/toolchains/hdc"))
 EMU = os.path.join(CLT, "emulator/Emulator")
 BUNDLE = "com.example.arkuidomprobe"
+# 多 target（phone 5555 + 2in1 16001 并存）时 hdc shell 必须 -t——R167 实录：双实例
+# 起来后全部设备调用报 connect-key/more than one device（INFRA 假红）。
+# 恒对 phone（第六端正主）——固定字面量写死在各调用点，2in1（16001）是切片 3 专用
+# 不经本工具。
 SETTLE = float(os.environ.get("HM_SETTLE", "6"))
 TMP = os.environ.get("ARKUI_PKG_TMP", "/data/tmp")
 
@@ -85,8 +89,8 @@ TMP = os.environ.get("ARKUI_PKG_TMP", "/data/tmp")
 def hcs(*args, timeout=60):
     """hdc 调用：5557/5555 双探测 + list targets 兜底（R161 端口漂移实录）。"""
     env = dict(os.environ, HDC_SERVER_PORT="5557")
-    r = subprocess.run([HDC, "shell", *args], env=env, capture_output=True,
-                       text=True, timeout=timeout)
+    r = subprocess.run([HDC, "-t", "127.0.0.1:5555", "shell", *args], env=env,
+                       capture_output=True, text=True, timeout=timeout, shell=False)
     return (r.stdout + r.stderr).strip()
 
 
@@ -110,15 +114,16 @@ def device_texts(page):
     if "successfully" not in out:
         return False, out, []
     time.sleep(SETTLE)
-    r = subprocess.run([HDC, "shell", "uitest", "dumpLayout", "-p",
-                        "/data/local/tmp/hm-s2.xml"], capture_output=True,
-                       text=True, timeout=60)
+    r = subprocess.run([HDC, "-t", "127.0.0.1:5555", "shell", "uitest", "dumpLayout",
+                        "-p", "/data/local/tmp/hm-s2.xml"], capture_output=True,
+                       text=True, timeout=60, shell=False)
     if "saved" not in (r.stdout + r.stderr):
         return False, "dumpLayout 失败", []
     env = dict(os.environ, HDC_SERVER_PORT="5557")
     tmp = os.path.join(TMP, "hm-s2.xml")
-    subprocess.run([HDC, "file", "recv", "/data/local/tmp/hm-s2.xml", tmp],
-                   env=env, capture_output=True, timeout=60)
+    subprocess.run([HDC, "-t", "127.0.0.1:5555", "file", "recv",
+                    "/data/local/tmp/hm-s2.xml", tmp],
+                   env=env, capture_output=True, timeout=60, shell=False)
     try:
         doc = json.load(open(tmp, encoding="utf-8"))
     except Exception as e:
