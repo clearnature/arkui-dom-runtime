@@ -81,6 +81,10 @@
     el.dataset.scroll = '';
     // 默认档：Vertical + scrollBar(Auto) + edgeEffect(Spring)（.d.ts 各自的 @default）
     el.style.overflowY = 'auto';
+    // 滚动容器一律 relative：offsetTop 以它为基准（grid/waterflow/List 同款铁律；
+    // R172 scrollToIndex 接窗口化 ForEach 时实测抓漏——Scroll 缺这行则 holder.offsetTop
+    // 量到页面坐标系，want 被污染出 +400 页内偏移）
+    el.style.position = 'relative';
     // R125：内置拖拽滚动 + 惯性（触摸/手写笔/鼠标按住拖）
     attachScrollDrag(el);
     el.__scrollCbs = {};

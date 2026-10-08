@@ -2,12 +2,24 @@
 //   ① 基座：200px 视口装 12×40px 内容 → 可滚 280px；scrollBar(Off) 隐藏滚动条
 //   ② Scroller：scrollTo({xOffset,yOffset}) / scrollBy / scrollEdge(Edge.Top) / currentOffset
 //   ③ 事件：onScroll(x,y) / onScrollEdge(side) / onScrollEnd（DOM 化收口为滚动静默 80ms）
+//   ④ R172：sc2 + 600 行 ForEach → 过 C1-v2 窗口化闸门；scrollToIndex 经引擎
+//      meta.windowItems 取窗口行对齐（隔离在独立 scroller2，不污染 sc1 事件日志）
 // 行高与视口都是固定值，断言数字可精确预期。
 @Entry
 @Component
 struct ScrollDemo {
   @State log: string = '';
+  @State big: string[] = [];
   scroller: Scroller = new Scroller();
+  scroller2: Scroller = new Scroller();
+
+  aboutToAppear() {
+    const arr: string[] = [];
+    for (let i = 0; i < 600; i++) {
+      arr.push('fs' + i);
+    }
+    this.big = arr;
+  }
 
   build() {
     Column({ space: 8 }) {
@@ -55,6 +67,23 @@ struct ScrollDemo {
       Button('where').id('btn-w').onClick(() => {
         const o = this.scroller.currentOffset();
         this.log = this.log + '@' + Math.round(o.yOffset) + ';';
+      })
+
+      Scroll(this.scroller2) {
+        Column({ space: 0 }) {
+          ForEach(this.big, (it: string) => {
+            Text(it).id(it).height(40).width(200)
+          }, (it: string) => it)
+        }
+      }
+      .id('sc2')
+      .width(240)
+      .height(200)
+      .scrollable(ScrollDirection.Vertical)
+      .scrollBar(BarState.Off)
+
+      Button('si500').id('btn-si').onClick(() => {
+        this.scroller2.scrollToIndex(500);
       })
       Text(this.log).id('sc-log').fontSize(12)
     }

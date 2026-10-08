@@ -3550,12 +3550,19 @@
       // 所以优先按组件标记查，再退回直接子节点。容器已设 position:relative → offsetTop 以它为基准。
       // R53：WaterFlow 的 FlowItem 同为合法目标（此前只查 ListItem → WaterFlow 下必走
       // '目标不存在' 警告分支）
-      const items = el.querySelectorAll('[data-arkui-comp="ListItem"], [data-arkui-comp="FlowItem"]');
+      // R172：holder 双属性（LazyForEach / 窗口化 ForEach 的 data-arkui-foreach-window）；
+      // 窗口行优先取引擎自省 meta.windowItems()——窗口化 ForEach 的行是任意 comp（写死
+      // ListItem/FlowItem 选择器会漏 → 必走'目标不存在'警告）；无 meta（全量挂载
+      // List/Grid）退回历史选择器，行为零变化。
+      const holder = /** @type {HTMLElement|null} */ (
+        el.querySelector('[data-arkui-lazyforeach], [data-arkui-foreach-window]'));
+      const meta = holder && lazyMeta.get(holder);
+      const items = (meta && typeof meta.windowItems === 'function')
+        ? meta.windowItems()
+        : el.querySelectorAll('[data-arkui-comp="ListItem"], [data-arkui-comp="FlowItem"]');
       // 虚拟列表的 `items` 是【当前窗口】的渲染项，不是全量列表：
       // 窗口内第 k 个渲染项对应的索引是 window[0]+k。第一版直接取 items[i]，
       // 于是 scrollToIndex(0) 会滚到"当前窗口第一个渲染项"（实测跳到了 100 段）。
-      const holder = el.querySelector('[data-arkui-lazyforeach]');
-      const meta = holder && lazyMeta.get(holder);
       const win = meta && meta.window;
       const k = win ? i - win[0] : i;
       const target = (k >= 0 && k < items.length) ? /** @type {HTMLElement} */ (items[k]) : null;
@@ -3565,7 +3572,10 @@
       } else if (meta) {                         // 真机 scrollToIndex 同样发滚动事件
         // 目标没渲染 → 用【累计偏移】换算（而不是"统一行高 × 序号"：变高列表下后者会偏出几十上百像素）
         const max = Math.max(0, el.scrollHeight - el.clientHeight);
-        const want = typeof meta.offsetOf === 'function' ? meta.offsetOf(i) : meta.estItemH * i;
+        // R172：want 补 holder.offsetTop——offsetOf 是 holder 相对模型，holder 上方有兄弟
+        // 时 scroll 坐标系还差那一段（历史 Lazy 页 holder 即首子 top=0，零变化）
+        const want = (typeof meta.offsetOf === 'function' ? meta.offsetOf(i) : meta.estItemH * i)
+          + (holder ? holder.offsetTop : 0);
         el.scrollTop = Math.min(want, max);
         if (typeof meta.flush === 'function') meta.flush();      // 同步刷新窗口（确定性）
         // R150：估高落点的一次性校正。估高偏移来自【未渲染区间的估计 advance】，与真实
@@ -3576,7 +3586,8 @@
         const win2 = meta.window;
         const k2 = win2 ? i - win2[0] : -1;
         if (win2 && k2 >= 0 && k2 <= win2[1] - win2[0]) {
-          const items2 = el.querySelectorAll('[data-arkui-comp="ListItem"], [data-arkui-comp="FlowItem"]');
+          const items2 = (meta && typeof meta.windowItems === 'function') ? meta.windowItems()
+            : el.querySelectorAll('[data-arkui-comp="ListItem"], [data-arkui-comp="FlowItem"]');
           const t2 = /** @type {HTMLElement|undefined} */ (items2[k2]);
           if (t2) {
             const max2 = Math.max(0, el.scrollHeight - el.clientHeight);
@@ -8798,6 +8809,7 @@
       }
       return out;
     }
+    state.windowItems = windowItemEls;   // R172：scrollToIndex 取当前窗口行（序=data 索引 window[0]+k）
 
     /** @param {number=} [depth] */
     function renderWindow(depth) {
@@ -11934,6 +11946,10 @@
     el.dataset.scroll = '';
     // 默认档：Vertical + scrollBar(Auto) + edgeEffect(Spring)（.d.ts 各自的 @default）
     el.style.overflowY = 'auto';
+    // 滚动容器一律 relative：offsetTop 以它为基准（grid/waterflow/List 同款铁律；
+    // R172 scrollToIndex 接窗口化 ForEach 时实测抓漏——Scroll 缺这行则 holder.offsetTop
+    // 量到页面坐标系，want 被污染出 +400 页内偏移）
+    el.style.position = 'relative';
     // R125：内置拖拽滚动 + 惯性（触摸/手写笔/鼠标按住拖）
     attachScrollDrag(el);
     el.__scrollCbs = {};

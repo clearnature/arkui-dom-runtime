@@ -3090,6 +3090,7 @@
       }
       return out;
     }
+    state.windowItems = windowItemEls;   // R172：scrollToIndex 取当前窗口行（序=data 索引 window[0]+k）
 
     /** @param {number=} [depth] */
     function renderWindow(depth) {

@@ -110,6 +110,31 @@
         check(bad.length === 0, `Scroll 属性不记"未实现"警告（剩 ${bad.length} 条）`);
       });
 
+      // ══════════ ⑤ R172 窗口化 ForEach + scrollToIndex（5 条） ══════════
+      await group('窗口化 scrollToIndex', async () => {
+        const sc2 = el('sc2');
+        const holder2 = sc2.querySelector('[data-arkui-foreach-window]');
+        const info0 = holder2 ? __arkui_dom_lazyInfo(holder2) : null;
+        const rows0 = sc2.querySelectorAll('[data-arkui-comp="Text"]').length;
+        check(!!holder2 && !!info0 && info0.total === 600 && rows0 > 0 && rows0 < 30,
+          `sc2 600 行过 C1-v2 窗口化闸门：total=600 / 初始窗口 ${rows0} 行 < 30（实际 total=${info0 ? info0.total : '?'}）`);
+        await click('#btn-si');                     // scroller2.scrollToIndex(500)
+        let hit = null;
+        for (let k = 0; k < 60 && !hit; k++) {
+          await tick(10);
+          hit = el('fs500');
+        }
+        check(!!hit, 'scrollToIndex(500) → 目标行 fs500 入 DOM（meta 分支：估偏换算 + flush + 二次对齐）');
+        const delta = hit ? Math.abs(hit.offsetTop - sc2.scrollTop) : 999;
+        check(delta <= 2, `目标对齐 |fs500.offsetTop - scrollTop| = ${delta.toFixed(1)} ≤ 2`);
+        const info3 = holder2 ? __arkui_dom_lazyInfo(holder2) : null;
+        const rows3 = sc2.querySelectorAll('[data-arkui-comp="Text"]').length;
+        check(!!info3 && info3.window[0] <= 500 && 500 < info3.window[1] && rows3 < 30,
+          `窗口滑动且不增长：[${info3 ? info3.window.join(',') : '?'}] 行数 ${rows3} < 30（总高不换算全量挂载）`);
+        const gone = __arkui_dom_layout_warnings.filter((w) => /目标不存在/.test(String(w)));
+        check(gone.length === 0, `无"目标不存在且非虚拟列表"警告（实际 ${gone.length} 条）`);
+      });
+
       lines.push(`LOG='${txt('sc-log').slice(-40)}'`);
       lines.push(`ELMT ${__arkui_dom_elmtRecords.size}`);
     } catch (e) {

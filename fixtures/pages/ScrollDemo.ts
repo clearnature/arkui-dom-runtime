@@ -3,7 +3,9 @@ if (!("finalizeConstruction" in ViewPU.prototype)) {
 }
 interface ScrollDemo_Params {
     log?: string;
+    big?: string[];
     scroller?: Scroller;
+    scroller2?: Scroller;
 }
 class ScrollDemo extends ViewPU {
     constructor(parent, params, __localStorage, elmtId = -1, paramsLambda = undefined, extraInfo) {
@@ -12,7 +14,9 @@ class ScrollDemo extends ViewPU {
             this.paramsGenerator_ = paramsLambda;
         }
         this.__log = new ObservedPropertySimplePU('', this, "log");
+        this.__big = new ObservedPropertyObjectPU([], this, "big");
         this.scroller = new Scroller();
+        this.scroller2 = new Scroller();
         this.setInitiallyProvidedValue(params);
         this.finalizeConstruction();
     }
@@ -20,17 +24,25 @@ class ScrollDemo extends ViewPU {
         if (params.log !== undefined) {
             this.log = params.log;
         }
+        if (params.big !== undefined) {
+            this.big = params.big;
+        }
         if (params.scroller !== undefined) {
             this.scroller = params.scroller;
+        }
+        if (params.scroller2 !== undefined) {
+            this.scroller2 = params.scroller2;
         }
     }
     updateStateVars(params: ScrollDemo_Params) {
     }
     purgeVariableDependenciesOnElmtId(rmElmtId) {
         this.__log.purgeDependencyOnElmtId(rmElmtId);
+        this.__big.purgeDependencyOnElmtId(rmElmtId);
     }
     aboutToBeDeleted() {
         this.__log.aboutToBeDeleted();
+        this.__big.aboutToBeDeleted();
         SubscriberManager.Get().delete(this.id__());
         this.aboutToBeDeletedInternal();
     }
@@ -41,7 +53,22 @@ class ScrollDemo extends ViewPU {
     set log(newValue: string) {
         this.__log.set(newValue);
     }
+    private __big: ObservedPropertyObjectPU<string[]>;
+    get big() {
+        return this.__big.get();
+    }
+    set big(newValue: string[]) {
+        this.__big.set(newValue);
+    }
     private scroller: Scroller;
+    private scroller2: Scroller;
+    aboutToAppear() {
+        const arr: string[] = [];
+        for (let i = 0; i < 600; i++) {
+            arr.push('fs' + i);
+        }
+        this.big = arr;
+    }
     initialRender() {
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Column.create({ space: 8 });
@@ -176,6 +203,42 @@ class ScrollDemo extends ViewPU {
             Button.onClick(() => {
                 const o = this.scroller.currentOffset();
                 this.log = this.log + '@' + Math.round(o.yOffset) + ';';
+            });
+        }, Button);
+        Button.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Scroll.create(this.scroller2);
+            Scroll.id('sc2');
+            Scroll.width(240);
+            Scroll.height(200);
+            Scroll.scrollable(ScrollDirection.Vertical);
+            Scroll.scrollBar(BarState.Off);
+        }, Scroll);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Column.create({ space: 0 });
+        }, Column);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            ForEach.create();
+            const forEachItemGenFunction = _item => {
+                const it = _item;
+                this.observeComponentCreation2((elmtId, isInitialRender) => {
+                    Text.create(it);
+                    Text.id(it);
+                    Text.height(40);
+                    Text.width(200);
+                }, Text);
+                Text.pop();
+            };
+            this.forEachUpdateFunction(elmtId, this.big, forEachItemGenFunction, (it: string) => it, false, false);
+        }, ForEach);
+        ForEach.pop();
+        Column.pop();
+        Scroll.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Button.createWithLabel('si500');
+            Button.id('btn-si');
+            Button.onClick(() => {
+                this.scroller2.scrollToIndex(500);
             });
         }, Button);
         Button.pop();

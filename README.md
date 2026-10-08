@@ -1342,7 +1342,7 @@ onError/onComplete 载荷 13×5/syncLoad/回归）+ `bash run.sh widgets`（Imag
 事件收口：`onScrollEdge` 只在**到达沿**触发一次（lastEdge 记忆，离开再到才再发）；
 `onScrollStart/End` 是真机手势语义——DOM 化为"滚动静默 80ms 收口"（近似，标注）。
 
-**验收**：`bash run.sh scrolldemo`（16 条断言：基座/Scroller 五法/事件三族/回归）双端通过。
+**验收**：`bash run.sh scrolldemo`（21 条断言：基座/Scroller 五法/事件三族/回归/窗口化 scrollToIndex 5）双端通过。
 **破坏验证（3 处，各 1 红）**：overflow 映射短路；滚动条隐藏选择器破坏；onScroll 派发删除。
 还原后 md5 一致。
 
