@@ -1799,25 +1799,25 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   fixtures 转换产物  81 个：AlphabetIndexerDemo AnimDemo AnimatorDemo AsyncIO AttrHeavyDemo BatchFuncDemo BatchInputDemo BatchLayoutDemo BatchMediaDemo BatchVerifyDemo BuiltinDemo CalendarPickerDemo Callee CanvasDemo CjkDemo DatePickerDemo Detail DrawDemo GestureDemo GestureGroupDemo GridDemo GridRowDemo Home ImageDemo Index InputDemo Layout Lazy LazyVar ListGroupDemo MeasArea MeasImage MeasNotify Measure MediaDemo MotionDemo NavBarDemo NavDemo NavShimDemo NavTransDemo NetFile NotesDetail NotesHome Observe PanelDemo PerfBigDemo PerfDemo PickerDemo PopDemo PromptAct Provide QrDemo RefreshDemo RelDemo ResourceDemo Rich RichVideoDemo ScrollDemo ShapeDemo ShowDemo SideBarDemo SmallDemo SplitDemo StepDemo Stress10kDemo Stress1kDemo SwiperDemo TabsGrid TextDemo TextMeasure TextPickerDemo TextTimeDemo TimePickerDemo TransitionDemo UiContextDemo V2 WaterFlowDemo Widgets WinSem WindowDemo XCompDemo
 
 == 性能基线（Electron 实测）==
-  首渲染            34.5 ms（33 节点：Column+Button+Text+ForEach×30）
-  最小 rerender     7.2 ms（@State 计数脏区单 Text，rAF 口径）
-  rerender 管道     1.0 ms / 1 tick（setTimeout 轮询口径，R70）
+  首渲染            35.4 ms（33 节点：Column+Button+Text+ForEach×30）
+  最小 rerender     13.3 ms（@State 计数脏区单 Text，rAF 口径）
+  rerender 管道     1.1 ms / 1 tick（setTimeout 轮询口径，R70）
   微任务底噪        0.00 ms
   行数              31
-  剖面 R71          loadRoute 同步 7.6 ms（require 0.3）· raf1 0.2 / raf2 26.7 ms（offscreen 首帧）
-  脚本 eval         runtime 153.3 / generated 146.6 / shims 151.1 / module 150.2 ms（计时起点之前）
+  剖面 R71          loadRoute 同步 7.6 ms（require 0.4）· raf1 1.0 / raf2 26.8 ms（offscreen 首帧）
+  脚本 eval         runtime 153.1 / generated 144.9 / shims 150.9 / module 150.0 ms（计时起点之前）
   判定              框架同步构建 3.5ms 无大头；"首渲染"=脚本 eval + offscreen 首帧（非框架成本）
-  千节点 R79        首渲染同步 33.0 ms（350 节点/~3500 属性，亚线性）· 单点 flush 0.3 ms · 批量翻转 flush 3.1 ms
+  千节点 R79        首渲染同步 33.5 ms（350 节点/~3500 属性，亚线性）· 单点 flush 0.3 ms · 批量翻转 flush 3.1 ms
   规模曲线          203→4.8 / 304→11.2 / 1055→19.0 ms（创建路径亚线性）；行复用+守卫千节点级保持
-  万节点 R138/C1-v2 首渲染同步 52.8 ms（ForEach 窗口化：挂载 10 行/全量 3300 由 spacer 撑出）· 批量翻转 poll 4.3 ms / flush 3.2 ms · 单点 flush 0.3 ms
+  万节点 R138/C1-v2 首渲染同步 54.5 ms（ForEach 窗口化：挂载 10 行/全量 3300 由 spacer 撑出）· 批量翻转 poll 4.9 ms / flush 3.4 ms · 单点 flush 0.2 ms
 
 == 体积（源码，不含产物/Electron 运行时）==
   runtime          9602.6 KB
   runtime(src)     1622.1 KB
   test             9589.5 KB
-  tools            384.1 KB
+  tools            384.0 KB
   electron(src)    181.6 KB
-  docs             1003.7 KB
+  docs             1005.1 KB
   fixtures         565.2 KB
 
 == 逐文件（文档"文件职责"表的来源）==
@@ -1830,7 +1830,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   tools/stats.mjs                          22890 B  22.4 KB
   tools/assert-counts.mjs                   9247 B  9.0 KB
   tools/preflight.mjs                       5573 B  5.4 KB
-  tools/check-all.sh                        8514 B  8.3 KB
+  tools/check-all.sh                        8400 B  8.2 KB
   tools/build-runtime.mjs                   5138 B  5.0 KB
   run.sh                                   49794 B  48.6 KB
   electron/run.sh                          28557 B  27.9 KB
@@ -1838,12 +1838,12 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   electron/preload.js                      11432 B  11.2 KB
   package.json                              1366 B  1.3 KB
   .gitignore                                 993 B  1.0 KB
-  README.md                               158195 B  154.5 KB
+  README.md                               158292 B  154.6 KB
   THIRD-PARTY-NOTICES.md                   14233 B  13.9 KB
-  docs/ARCHITECTURE.md                    172198 B  168.2 KB
+  docs/ARCHITECTURE.md                    172371 B  168.3 KB
   docs/CAPABILITY.md                       70868 B  69.2 KB
   docs/DEVELOPING.md                       77261 B  75.5 KB
-  docs/ROADMAP.md                         308445 B  301.2 KB
+  docs/ROADMAP.md                         309469 B  302.2 KB
   docs/surface-measurement.md               6496 B  6.3 KB
   docs/SESSION-2026-09-20.md               12842 B  12.5 KB
   runtime/src/.mimosa                       4096 B  4.0 KB
@@ -2141,13 +2141,13 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
 | `tools/stats.mjs` | 13.7 KB | 本文档所有数字的来源（`--json` 机器可读）；**`--check-doc`/`--write-doc` 守 §6 引用块** | 覆盖范围变化时 |
 | `tools/assert-counts.mjs` | 7.3 KB | 断言计数守门（运行期 emit 的 PASS 行 ↔ 文档声明的「N 条断言」，见坑表 77） | 声明写法/扫描范围变化时 |
 | `tools/preflight.mjs` | 5.3 KB | 环境自检（工具链/宿主/可执行位） | 外部依赖变化时 |
-| `tools/check-all.sh` | 8.6 KB | 一条命令做完验收（11 步，firefox/webkit/android 步缺席显式跳过），退出码只看被调命令 | 新增验收步骤时 |
+| `tools/check-all.sh` | 8.6 KB | 一条命令做完验收（10 步，firefox/webkit 缺席显式跳过；android 步已停止——2026-10-08 裁定只验 PC 端、移动端停止验证，跳过留痕），退出码只看被调命令 | 新增验收步骤时 |
 | `run.sh` | 40.5 KB | 浏览器 84 用例驱动 | 新增用例 |
 | `electron/run.sh` | 22.7 KB | Electron 97 用例 + 磁盘验证 | 新增用例 |
 | `firefox/run.sh` | 3.9 KB | Firefox(Gecko) 同用例表跨引擎复跑（R144；geckodriver 缺席显式跳过，计数覆盖表 `firefox/assert-overrides.tsv`） | 引擎差异分诊 |
 | `webkit/run.sh` | 3.2 KB | WebKit 第四端同用例表复跑（R148；playwright python 缺席显式跳过，覆盖表 `webkit/assert-overrides.tsv`） | 引擎差异分诊 |
 | `tools/wk-matrix.py` | 5.0 KB | playwright WebKit 执行器（#result 单通道判定，坑 115 纪律） | 判定通道变化时 |
-| `android/run.sh` | 5.8 KB | Android 第五端（System WebView 移动 Blink；模拟器起停+socket 白名单发现+reverse 路由） | 引擎差异分诊 |
+| `android/run.sh` | 5.8 KB | Android 第五端（**已停止验证 2026-10-08**——只验 PC 端；工具保留，手动 `bash android/run.sh <case>` 可复核；模拟器起停+socket 白名单发现+reverse 路由） | 引擎差异分诊 |
 | `tools/an-matrix.py` | 5.6 KB | 原始 CDP WebSocket 执行器（playwright connectOverCDP 不支持 WebView——实测坑） | 判定通道变化时 |
 | `tools/ff-plan.py` | 2.4 KB | 解析 run.sh all 块 → Firefox 矩阵用例计划（单一事实来源，run.sh 增删用例自动跟随） | 用例表语义变化时 |
 | `tools/ff-matrix.py` | 7.1 KB | geckodriver 环回 HTTP 执行器（title/#result 双通道判定；Fx 156 BiDi 无 script.* 的实录） | 判定通道变化时 |

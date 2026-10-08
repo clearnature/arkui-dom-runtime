@@ -109,18 +109,14 @@ else
   SKIPPED+=("webkit (矩阵)")
 fi
 
-# ── 6d. Android(System WebView) 用例（R149 第五验证端：同用例表 × 移动 Blink）──
-# 兼容性加分端：Android SDK（/data/android-sdk）+ AVD arkui_test + venv 缺一即显式跳过；
-# 就位时自动转真（模拟器起停/socket 发现/转发全在 android/run.sh）。
-if [ -x /data/android-sdk/platform-tools/adb ] && [ -x /data/android-sdk/emulator/emulator ] \
-   && [ -x /data/tmp/wk-venv/bin/python ]; then
-  step "android (android/run.sh all)" bash android/run.sh all
-else
-  printf '════ android (android/run.sh all) ════\n'
-  printf '  ⏭  跳过（原因：Android SDK 或 AVD/venv 不齐——Android 为移动 Blink 兼容性\n'
-  printf '      加分第五端，主验收基准=Electron/Chromium；补齐后本步自动转真）\n'
-  SKIPPED+=("android (矩阵)")
-fi
+# ── 6d. Android(System WebView) —— 已停止（2026-10-08 用户裁定：只验证 PC 端，
+#        移动端停止验证；主验收基准=Electron/Chromium/PC 引擎）。android/run.sh 与
+#        环境（/data/android-sdk、AVD arkui_test）保留在库不删，需要复核时手动跑
+#        `bash android/run.sh <case>`；门禁不再自动转真，显式跳过留痕。
+printf '════ android (android/run.sh all) ════\n'
+printf '  ⏭  跳过（原因：用户裁定 2026-10-08 只验 PC 端——移动端停止验证；\n'
+printf '      移动 Blink 结论与既有 80/80 实测记档于 ROADMAP R149，按需手动复核）\n'
+SKIPPED+=("android (矩阵·移动端停止)")
 
 # ── 7. 统计（不是验收条件，只留档给文档引用）──
 printf '════ 统计（留档，不影响退出码）════\n'
