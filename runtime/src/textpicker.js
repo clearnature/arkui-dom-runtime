@@ -52,12 +52,14 @@
    * @param {number[]} sel0
    * @param {number} rowH
    * @param {(values: any, indexes: any) => void} fire
+   * @param {boolean=} [canLoop0] 缺省 true（text_picker.d.ts:487 canLoop "Default value: **true**"）
    */
-  /** @param {any} hostEl @param {any} norm @param {number[]} sel0 @param {number} rowH @param {any} fire */
-  const tpxEngine = (hostEl, norm, sel0, rowH, fire) => {
+  /** @param {any} hostEl @param {any} norm @param {number[]} sel0 @param {number} rowH @param {any} fire @param {boolean=} [canLoop0] */
+  const tpxEngine = (hostEl, norm, sel0, rowH, fire, canLoop0) => {
     const st = /** @type {any} */ ({
       kind: norm.kind, cascade: norm.cascade, cols: norm.cols, sel: sel0.slice(),
       rowH, colEls: [], cbs: {}, onChange: fire,
+      canLoop: canLoop0 !== false,                 // R168：循环滚轮缺省开（真机截图裁定 + d.ts 缺省）
     });
     /** @returns {string[]} */
     /** @param {number} c */
@@ -89,8 +91,14 @@
     /** @param {number} c @param {number} dir */
     const step = (c, dir) => {
       const opts = optionsOf(c);
-      const next = Math.max(0, Math.min(opts.length - 1, (st.sel[c] || 0) + dir));
-      if (next === (st.sel[c] || 0)) return;          // 边界：不动不发
+      const n = opts.length;
+      if (!n) return;
+      let next = (st.sel[c] || 0) + dir;
+      // R168：canLoop（缺省 true）→ 越界环绕（模 n）并发 onChange；canLoop(false) →
+      // 边界钳位不动不发（原语义）
+      if (st.canLoop) next = ((next % n) + n) % n;
+      else next = Math.max(0, Math.min(n - 1, next));
+      if (next === (st.sel[c] || 0)) return;          // 边界/单选项：不动不发
       st.sel[c] = next;
       if (st.kind === 'cascade') {
         // 父变 → 子列选项联动重置（截断 sel 到当前深度，下游从 0 重新计）
@@ -109,12 +117,23 @@
     const renderCol = (c) => {
       const ce = st.colEls[c];
       const opts = optionsOf(c);
+      const n = opts.length;
       const idx = st.sel[c] || 0;
       for (let r = 0; r < TPX_ROWS; r++) {
         const oi = idx - 2 + r;
-        ce.rows[r].textContent = (oi >= 0 && oi < opts.length) ? opts[oi] : '';
+        // R168：canLoop（缺省 true）→ 行文本按模 n 环绕（真机截图裁定：全高展开循环
+        // 滚轮、邻项 wrap-around）；canLoop(false) → 自然序越界留空
+        let text = '';
+        if (n) {
+          if (st.canLoop) text = opts[((oi % n) + n) % n];
+          else if (oi >= 0 && oi < n) text = opts[oi];
+        }
+        ce.rows[r].textContent = text;
       }
-      ce.inner.style.transform = `translateY(${(2 - idx) * st.rowH}px)`;
+      // transform 固定 0：rows[2] 的文本窗已按 idx 居中（rows[2]=选中项、蓝色），
+      // 原 (2-idx)*rowH 是"整列全项滑动"旧设计的残留补偿——与文本窗模型双重补偿
+      // 导致 idx≠2 时蓝行滑到 4-idx 槽（活体探针实测：sel=1 蓝行落槽 3、末项被裁）
+      ce.inner.style.transform = 'none';
     };
     const build = () => {
       hostEl.textContent = '';
@@ -176,6 +195,10 @@
         build();
         hostEl.dataset.selectedIndex = JSON.stringify(st.sel);
       },
+      /** 重渲染全部列（不重建 DOM——selectedTextStyle 等后挂样式保留） */
+      rerender() {
+        for (let c = 0; c < st.colEls.length; c++) renderCol(c);
+      },
       /** @param {number} c @param {number} dir */
       stepCol(c, dir) { step(c, dir); },
       stepFirst,
@@ -190,6 +213,12 @@
     onChange: (n, v) => {
       const w = /** @type {any} */ (n).__txp;
       if (w) w.cbs.change = v;
+    },
+    canLoop: (n, v) => {
+      const w = /** @type {any} */ (n).__txp;
+      if (!w) return;
+      w.st.canLoop = resolveResource(v) !== false;    // 缺省 true（.d.ts:487）
+      w.rerender();
     },
     selectedIndex: (n, v) => {
       const w = /** @type {any} */ (n).__txp;
@@ -236,7 +265,7 @@
       if (typeof cb !== 'function') return;
       try { cb(values, indexes); }                    // FireChangeEvent(value, index)（真机 :803-822）
       catch (e) { layoutWarnings.push(`TextPicker.onChange 回调抛错：${e && e.message}`); }
-    });
+    }, o.canLoop);
     /** @type {any} */ (el).__txp = engine;
     el.style.height = TPX_ROWS * TPX_ROW_H_DEFAULT + 'px';
     el.dataset.txRange = JSON.stringify(
@@ -277,7 +306,7 @@
           try { o.onChange({ value: values, index: indexes }); }
           catch (e) { layoutWarnings.push(`TextPickerDialog.onChange 抛错：${e && e.message}`); }
         }
-      });
+      }, o.canLoop);
       const ok = document.createElement('button');
       ok.setAttribute('data-tpx-ok', '');
       ok.textContent = 'OK';

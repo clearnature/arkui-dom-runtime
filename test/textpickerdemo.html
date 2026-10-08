@@ -60,6 +60,8 @@
         const st = /** @type {any} */ (tx1).__txp;
         check(st.colEls[0].rows[2].textContent === '夏',
           `选中行显示 '夏'（实际 '${st.colEls[0].rows[2].textContent}'）`);
+        check(st.colEls[0].rows[0].textContent === '冬' && st.colEls[0].rows[4].textContent === '冬',
+          `R168 循环滚轮（canLoop 缺省 true）：邻项环绕 rows[0]=rows[4]='冬'（实际 '${st.colEls[0].rows[0].textContent}'/'${st.colEls[0].rows[4].textContent}'）`);
         check(tx1.dataset.rowHeight === '40' && tx1.style.height === '200px',
           `defaultPickerItemHeight(40)（实际 ${tx1.dataset.rowHeight}/${tx1.style.height}）`);
       });
@@ -83,11 +85,11 @@
         check(txt('tx-log') === 'CHG秋:2;CHG冬:3;', `+1 → 'CHG冬:3;'（实际 '${txt('tx-log')}'）`);
         (/** @type {any} */ (tx1)).__txpStep(1);
         await tick(30);
-        check(txt('tx-log') === 'CHG秋:2;CHG冬:3;' && selOf(tx1)[0] === 3,
-          `末行再 +1：不动不发（实际 '${txt('tx-log')}'）`);
+        check(txt('tx-log') === 'CHG秋:2;CHG冬:3;CHG春:0;' && selOf(tx1)[0] === 0,
+          `R168 末行再 +1：环绕到首项 onChange('春',0)（实际 '${txt('tx-log')}'）`);
         (/** @type {any} */ (tx1)).__txpStep(-1);
         await tick(30);
-        check(txt('tx-log').endsWith('CHG秋:2;'), `-1 回退（实际 '${txt('tx-log').slice(-12)}'）`);
+        check(txt('tx-log').endsWith('CHG冬:3;'), `-1 首项环绕回退到 '冬'（实际 '${txt('tx-log').slice(-12)}'）`);
       });
 
       // ══════════ ④ 多列（3 条） ══════════
@@ -132,6 +134,23 @@
         await click(dlg2.querySelector('[data-tpx-cancel]'));
         check(!document.body.querySelector('[data-arkui-tpx-static]') && txt('tx-log').endsWith('CAN;'),
           `Cancel → 关层 + onCancel（实际 '${txt('tx-log').slice(-6)}'）`);
+      });
+
+      // ══════════ ⑦ R168 循环滚轮关闭对照组（3 条） ══════════
+      await group('循环关闭', async () => {
+        const tx6 = el('tx6');
+        const st6 = /** @type {any} */ (tx6).__txp;
+        check(st6.st.canLoop === false && st6.colEls[0].rows[0].textContent === '' &&
+          st6.colEls[0].rows[2].textContent === '甲',
+          `tx6 canLoop(false)：行不环绕 rows[0]=''/选中='甲'（实际 canLoop=${st6.st.canLoop} rows[0]='${st6.colEls[0].rows[0].textContent}'）`);
+        (/** @type {any} */ (tx6)).__txpStep(-1);
+        await tick(30);
+        check(txt('tx-log').endsWith('L甲:0;') === false && selOf(tx6)[0] === 0,
+          `canLoop(false) 顶行 -1：不动不发（实际 log 尾='${txt('tx-log').slice(-8)}'）`);
+        (/** @type {any} */ (tx6)).__txpStep(1);
+        await tick(30);
+        check(txt('tx-log').endsWith('L乙:1;') && selOf(tx6)[0] === 1,
+          `canLoop(false) +1 正常步进 onChange('乙',1)（实际 '${txt('tx-log').slice(-8)}'）`);
       });
 
       lines.push(`LOG='${txt('tx-log')}'`);

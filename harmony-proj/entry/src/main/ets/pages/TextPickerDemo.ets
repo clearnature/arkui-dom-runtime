@@ -53,6 +53,17 @@ struct TextPickerDemo {
           this.log = this.log + 'C' + v + ':' + i + ';';
         })
 
+      // ⑦ R168：canLoop(false)——循环滚轮关闭对照组（缺省 true，text_picker.d.ts:487
+      //   "Default value: **true**"；真机截图裁定=全高展开循环滚轮）
+      TextPicker({ range: ['甲', '乙', '丙'], selected: 0 })
+        .id('tx6')
+        .canLoop(false)
+        .onChange((value: string | string[], index: number | number[]) => {
+          const v = Array.isArray(value) ? value.join('/') : String(value);
+          const i = Array.isArray(index) ? index.join('/') : String(index);
+          this.log = this.log + 'L' + v + ':' + i + ';';
+        })
+
       // ⑥ 静态弹层
       Button('dlg').id('btn-dlg').onClick(() => {
         TextPickerDialog.show({

@@ -157,7 +157,7 @@ RichVideo/Image）。
 | ShowDemo | ~~Hello/marquee~~（aria-hidden 已修）；残差=`999`（徽标值 a11y 双报形态）+ `MS;MF;` marquee 日志（真机视口外=视口类）；**Counter ±5 序差已修**（R167 截图裁定：CSS order 重排视觉但 DOM 序 ≠视觉序 '-5+'——inc 延后挂载，showdemo 29 条绿） | 已修 1 + 残差 2 类 |
 | SideBarDemo | ~~`→`~~（箭头 ::after attr(data-arrow)+aria-label=menutoggle 已修）；残差=**content/menu/toggle 序差**（真机 a11y 树序≠源码声明序——深挖成本高记档） | 已修 1 + 树序残差 |
 | TextDemo | 设备多 `TIseed;SEhello;` | **行为差异**：真机初始渲染即派发一次 onChange（value 型），垫片不派发（值采集/时序已归口径后仍存此差） |
-| TextPickerDemo | 选中集/选项集不同 | **截图裁定（R167）**：真机=全高展开**循环滚轮**（邻项 wrap-around、蓝色高亮居中），我们=range 自然序静态窗口不 wrap——**滚轮 wrap 语义差**（独立小修：renderCol 模运算）；选中回显两侧行为一致（无差） |
+| TextPickerDemo | 选中集/选项集不同 | **已修（R169）**：`canLoop` 缺省 true 落地（d.ts:487 "Default value: **true**"）——行文本模 n 环绕 + 越界步进环绕发 onChange（对拍复验：设备轮体 [冬,春,夏,秋,冬] 与浏览器逐项相同）；**顺修三选择器同源视觉错位**（(2-idx)*rowH transform 是旧"全项滑动"残留，活体探针实证 idx≠2 蓝行落 4−idx 槽、边界行被裁——textpicker/datepicker/timepicker 三处同修 transform 固定 0）。**对拍残差 DIFF（采集口径类）**：设备 dumpLayout 选中值前置 echo×3 + 多列拼接 token（'秋早'）——R166 已知"a11y 序/形态"家族，非渲染差 |
 | BatchVerifyDemo | 设备含 `<b>` 转义原文 | 序列化口径：富文本转义 |
 | InputDemo | 设备 `cb1ck2ab40.000000` vs 浏览器 `onabon40` | value/checked 口径残余（checkbox/slider 状态进 a11y） |
 | BatchInputDemo | 设备 `fruitsapplebanana` vs 浏览器 `on` | value 口径残余（select/option 树） |
@@ -188,7 +188,7 @@ BatchVerify、TextTimeDemo/TimePickerDemo/CalendarPickerDemo（时钟采集时�
 |---|---|---|
 | 环境/宿主尺寸 | PanelDemo（1137 vs 219——**派发已对齐**，仅屏高/窗口高差）、NotesHome（UA）、CjkDemo（编码器标记） | 非渲染差 |
 | 时序/采样窗 | TextTime/TimePicker/CalendarPicker（时钟+本地化）、TextDemo（真机初始 onChange 多一次）、ShowDemo（MS/MF=marquee 日志采样窗） | 采集时机 |
-| a11y 序/形态 | **SideBarDemo（content/menu/toggle 序差——真机 a11y 树序≠源码声明序）**、TextPickerDemo（选中回显形态——**待真机截图裁定**）、BatchVerifyDemo（富文本转义口径） | 树序/形态 |
+| a11y 序/形态 | **SideBarDemo（content/menu/toggle 序差——真机 a11y 树序≠源码声明序）**、TextPickerDemo（**wrap 已修 R169**；残差=选中值前置 echo + 多列拼接 token，采集口径——截图裁定已闭环）、BatchVerifyDemo（富文本转义口径） | 树序/形态 |
 | 视口 | GridDemo（I0,4/5）、BuiltinDemo（非当前 Swiper 页+T/S/L 序） | 挂载窗 |
 | 已知 API | MeasNotify/PromptAct | R163 记档 |
 

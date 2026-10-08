@@ -72,7 +72,8 @@
         const oi = idx - 2 + r;
         c.rows[r].textContent = (oi >= 0 && oi < options.length) ? fmtFn(options[oi]) : '';
       }
-      c.inner.style.transform = `translateY(${(2 - idx) * 40}px)`;
+      // transform 固定 0：rows[2] 文本窗已按 idx 居中——(2-idx)*40 旧设计残留（R168 同 textpicker）
+      c.inner.style.transform = 'none';
     };
     el.__tpRender = tp.tpRender = () => {
       const hours = []; for (let h = 0; h < 24; h++) hours.push(h);

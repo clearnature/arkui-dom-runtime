@@ -86,10 +86,31 @@ SETTLE = float(os.environ.get("HM_SETTLE", "6"))
 TMP = os.environ.get("ARKUI_PKG_TMP", "/data/tmp")
 
 
-def hcs(*args, timeout=60):
-    """hdc 调用：5557/5555 双探测 + list targets 兜底（R161 端口漂移实录）。"""
+# R169：hdc 目标端口每轮冷启动会漂（R161 实录 5557→5555，本轮回 5557）——
+# 候选集固定【字面量】（扫描纪律：动态串不进命令列表），tconn 逐个试 + list targets
+# 对账，取命中的第一个；都不中回退 5555（设备离线时反正走 INFRA 显式跳过）。
+HDC_TARGETS = ["127.0.0.1:5557", "127.0.0.1:5555", "127.0.0.1:16001"]
+TARGET = "127.0.0.1:5555"
+
+
+def resolve_target():
+    global TARGET
     env = dict(os.environ, HDC_SERVER_PORT="5557")
-    r = subprocess.run([HDC, "-t", "127.0.0.1:5555", "shell", *args], env=env,
+    for p in HDC_TARGETS:
+        subprocess.run([HDC, "tconn", p], env=env, capture_output=True, timeout=15)
+    r = subprocess.run([HDC, "list targets"], env=env, capture_output=True,
+                       text=True, timeout=15)
+    lines = {t.strip() for t in (r.stdout or "").splitlines()}
+    for p in HDC_TARGETS:
+        if p in lines:
+            TARGET = p
+            break
+
+
+def hcs(*args, timeout=60):
+    """hdc 调用：候选端口逐个 tconn + list targets 对账选靶（R161/R169 漂移实录）。"""
+    env = dict(os.environ, HDC_SERVER_PORT="5557")
+    r = subprocess.run([HDC, "-t", TARGET, "shell", *args], env=env,
                        capture_output=True, text=True, timeout=timeout, shell=False)
     return (r.stdout + r.stderr).strip()
 
@@ -97,11 +118,9 @@ def hcs(*args, timeout=60):
 def hdc_available():
     if os.environ.get("HM_SKIP_DEVICE") == "1" or not os.path.exists(HDC):
         return False
-    env = dict(os.environ, HDC_SERVER_PORT="5557")
-    for p in ("127.0.0.1:5555", "127.0.0.1:5557"):
-        subprocess.run([HDC, "tconn", p], env=env, capture_output=True, timeout=15)
-    r = subprocess.run([HDC, "list targets"], env=env, capture_output=True,
-                       text=True, timeout=15)
+    resolve_target()
+    r = subprocess.run([HDC, "list targets"], env=dict(os.environ, HDC_SERVER_PORT="5557"),
+                       capture_output=True, text=True, timeout=15)
     return any(t.strip() and "Empty" not in t for t in (r.stdout or "").splitlines())
 
 
@@ -114,14 +133,14 @@ def device_texts(page):
     if "successfully" not in out:
         return False, out, []
     time.sleep(SETTLE)
-    r = subprocess.run([HDC, "-t", "127.0.0.1:5555", "shell", "uitest", "dumpLayout",
+    r = subprocess.run([HDC, "-t", TARGET, "shell", "uitest", "dumpLayout",
                         "-p", "/data/local/tmp/hm-s2.xml"], capture_output=True,
                        text=True, timeout=60, shell=False)
     if "saved" not in (r.stdout + r.stderr):
         return False, "dumpLayout 失败", []
     env = dict(os.environ, HDC_SERVER_PORT="5557")
     tmp = os.path.join(TMP, "hm-s2.xml")
-    subprocess.run([HDC, "-t", "127.0.0.1:5555", "file", "recv",
+    subprocess.run([HDC, "-t", TARGET, "file", "recv",
                     "/data/local/tmp/hm-s2.xml", tmp],
                    env=env, capture_output=True, timeout=60, shell=False)
     try:

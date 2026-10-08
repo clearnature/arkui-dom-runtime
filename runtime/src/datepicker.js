@@ -101,7 +101,9 @@
         const oi = idx - 2 + r;
         c.rows[r].textContent = (oi >= 0 && oi < options.length) ? fmt(options[oi]) : '';
       }
-      c.inner.style.transform = `translateY(${(2 - idx) * DP_ROW_H}px)`;
+      // transform 固定 0：rows[2] 文本窗已按 idx 居中——(2-idx)*rowH 是旧"全项滑动"
+      // 设计残留（R168 活体探针实证 idx≠2 时蓝行落 4-idx 槽、边界行被裁；三选择器同源）
+      c.inner.style.transform = 'none';
     };
     const dp = el.__dp;
     dp.renderAll = () => {

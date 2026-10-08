@@ -111,6 +111,27 @@ class TextPickerDemo extends ViewPU {
         // ⑤ 级联：父变 → 子列选项联动重置
         TextPicker.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
+            // ⑦ R168：canLoop(false)——循环滚轮关闭对照组（缺省 true，text_picker.d.ts:487
+            //   "Default value: **true**"；真机截图裁定=全高展开循环滚轮）
+            TextPicker.create({ range: ['甲', '乙', '丙'], selected: 0 });
+            // ⑦ R168：canLoop(false)——循环滚轮关闭对照组（缺省 true，text_picker.d.ts:487
+            //   "Default value: **true**"；真机截图裁定=全高展开循环滚轮）
+            TextPicker.id('tx6');
+            // ⑦ R168：canLoop(false)——循环滚轮关闭对照组（缺省 true，text_picker.d.ts:487
+            //   "Default value: **true**"；真机截图裁定=全高展开循环滚轮）
+            TextPicker.canLoop(false);
+            // ⑦ R168：canLoop(false)——循环滚轮关闭对照组（缺省 true，text_picker.d.ts:487
+            //   "Default value: **true**"；真机截图裁定=全高展开循环滚轮）
+            TextPicker.onChange((value: string | string[], index: number | number[]) => {
+                const v = Array.isArray(value) ? value.join('/') : String(value);
+                const i = Array.isArray(index) ? index.join('/') : String(index);
+                this.log = this.log + 'L' + v + ':' + i + ';';
+            });
+        }, TextPicker);
+        // ⑦ R168：canLoop(false)——循环滚轮关闭对照组（缺省 true，text_picker.d.ts:487
+        //   "Default value: **true**"；真机截图裁定=全高展开循环滚轮）
+        TextPicker.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
             // ⑥ 静态弹层
             Button.createWithLabel('dlg');
             // ⑥ 静态弹层
