@@ -3567,7 +3567,9 @@
       const k = win ? i - win[0] : i;
       const target = (k >= 0 && k < items.length) ? /** @type {HTMLElement} */ (items[k]) : null;
       if (target) {
-        el.scrollTop = target.offsetTop;
+        // R172 后补：窗口行可能是 display:contents 的自定义组件包装容器（直接子项无盒），
+        // 直接读 offsetTop 得 0 → 经 boxTargetOf 穿透到行根再取（有盒元素行为不变）。
+        el.scrollTop = boxTargetOf(target).offsetTop;
         el.dispatchEvent(new Event('scroll'));   // R53：与 scrollBy/scrollEdge 同款同步派发（确定性）；
       } else if (meta) {                         // 真机 scrollToIndex 同样发滚动事件
         // 目标没渲染 → 用【累计偏移】换算（而不是"统一行高 × 序号"：变高列表下后者会偏出几十上百像素）
@@ -3591,7 +3593,9 @@
           const t2 = /** @type {HTMLElement|undefined} */ (items2[k2]);
           if (t2) {
             const max2 = Math.max(0, el.scrollHeight - el.clientHeight);
-            el.scrollTop = Math.min(t2.offsetTop, max2);
+            // 同 in-window 分支：包装容器行（display:contents）offsetTop 为 0，
+            // 二次对齐必须经 boxTargetOf 穿透到行根（直接 comp 行行为不变）。
+            el.scrollTop = Math.min(boxTargetOf(t2).offsetTop, max2);
           }
         }
         el.dispatchEvent(new Event('scroll'));
@@ -8728,7 +8732,12 @@
     const d = el.querySelector('[data-arkui-comp]');
     return d ? d.offsetHeight : 0;
   }
-  /** @param {HTMLElement} el */
+  /**
+   * margin 落点/精确对齐取点：有盒自己就是盒；无盒（display:contents 包装容器/自定义
+   * 组件容器）穿透到首个带 comp 标记的行根。恒返回一个真实有盒元素（退化回自身）。
+   * @param {HTMLElement} el
+   * @returns {HTMLElement}
+   */
   function boxTargetOf(el) {
     if (el.offsetParent) return el;
     /** @type {HTMLElement|null} */
@@ -8793,8 +8802,12 @@
     state.totalHOf = totalHOf;
     state.indexAt = indexAt;
 
-    // 窗口渲染项定位：选择器模式（LazyForEach）按 comp 查；通用模式取直接子项
-    // （排除两个 spacer——它们不带 comp 标记，身份排除是双保险）
+    // 窗口渲染项定位：选择器模式（LazyForEach）按 comp 查【历史行为逐字节不变】；
+    // 通用模式（窗口化 ForEach）取【全部非 spacer 直接子项】——行单元=直接子项：
+    // 要么自带 comp 标记（sc2 的 Text 行），要么是 display:contents 的自定义组件
+    // 包装容器（直接子项无 comp 标记；测高 boxHeightOf / margin 落点 boxTargetOf
+    // 穿透到首个带 comp 的行根）。spacer 靠身份排除——topSpacer 必须在行渲染【前】
+    // 登记（见 renderWindow），否则新 spacer 会被当成首行计入。
     function windowItemEls() {
       if (state.spec.itemQuery) {
         return [...holder.querySelectorAll(state.spec.itemQuery)];
@@ -8803,9 +8816,7 @@
       const out = [];
       for (const el of holder.children) {
         if (el === state.topSpacer || el === state.bottomSpacer) continue;
-        if (el.nodeType === 1 && el.hasAttribute('data-arkui-comp')) {
-          out.push(/** @type {HTMLElement} */ (el));
-        }
+        if (el.nodeType === 1) out.push(/** @type {HTMLElement} */ (el));
       }
       return out;
     }
@@ -8836,6 +8847,7 @@
         topSpacer.style.height = offsetOf(start) + 'px';
         topSpacer.style.flex = 'none';
         holder.appendChild(topSpacer);
+        state.topSpacer = topSpacer;   // 行渲染前登记：windowItemEls 按身份把新 spacer 排除在行外
 
         const savedStack = ViewStackProcessor.snapshot();
         const savedElmt = currentNodeElmtId;
@@ -8856,8 +8868,7 @@
         const bottomSpacer = document.createElement('div');
         bottomSpacer.style.flex = 'none';
         holder.appendChild(bottomSpacer);
-        state.topSpacer = topSpacer;
-        state.bottomSpacer = bottomSpacer;
+        state.bottomSpacer = bottomSpacer;   // topSpacer 已在行渲染前登记（见上）
       }
 
       // spacer 高度【每次都按当前偏移重设】，而不是只在窗口变化时设一次：

@@ -3009,7 +3009,12 @@
     const d = el.querySelector('[data-arkui-comp]');
     return d ? d.offsetHeight : 0;
   }
-  /** @param {HTMLElement} el */
+  /**
+   * margin 落点/精确对齐取点：有盒自己就是盒；无盒（display:contents 包装容器/自定义
+   * 组件容器）穿透到首个带 comp 标记的行根。恒返回一个真实有盒元素（退化回自身）。
+   * @param {HTMLElement} el
+   * @returns {HTMLElement}
+   */
   function boxTargetOf(el) {
     if (el.offsetParent) return el;
     /** @type {HTMLElement|null} */
@@ -3074,8 +3079,12 @@
     state.totalHOf = totalHOf;
     state.indexAt = indexAt;
 
-    // 窗口渲染项定位：选择器模式（LazyForEach）按 comp 查；通用模式取直接子项
-    // （排除两个 spacer——它们不带 comp 标记，身份排除是双保险）
+    // 窗口渲染项定位：选择器模式（LazyForEach）按 comp 查【历史行为逐字节不变】；
+    // 通用模式（窗口化 ForEach）取【全部非 spacer 直接子项】——行单元=直接子项：
+    // 要么自带 comp 标记（sc2 的 Text 行），要么是 display:contents 的自定义组件
+    // 包装容器（直接子项无 comp 标记；测高 boxHeightOf / margin 落点 boxTargetOf
+    // 穿透到首个带 comp 的行根）。spacer 靠身份排除——topSpacer 必须在行渲染【前】
+    // 登记（见 renderWindow），否则新 spacer 会被当成首行计入。
     function windowItemEls() {
       if (state.spec.itemQuery) {
         return [...holder.querySelectorAll(state.spec.itemQuery)];
@@ -3084,9 +3093,7 @@
       const out = [];
       for (const el of holder.children) {
         if (el === state.topSpacer || el === state.bottomSpacer) continue;
-        if (el.nodeType === 1 && el.hasAttribute('data-arkui-comp')) {
-          out.push(/** @type {HTMLElement} */ (el));
-        }
+        if (el.nodeType === 1) out.push(/** @type {HTMLElement} */ (el));
       }
       return out;
     }
@@ -3117,6 +3124,7 @@
         topSpacer.style.height = offsetOf(start) + 'px';
         topSpacer.style.flex = 'none';
         holder.appendChild(topSpacer);
+        state.topSpacer = topSpacer;   // 行渲染前登记：windowItemEls 按身份把新 spacer 排除在行外
 
         const savedStack = ViewStackProcessor.snapshot();
         const savedElmt = currentNodeElmtId;
@@ -3137,8 +3145,7 @@
         const bottomSpacer = document.createElement('div');
         bottomSpacer.style.flex = 'none';
         holder.appendChild(bottomSpacer);
-        state.topSpacer = topSpacer;
-        state.bottomSpacer = bottomSpacer;
+        state.bottomSpacer = bottomSpacer;   // topSpacer 已在行渲染前登记（见上）
       }
 
       // spacer 高度【每次都按当前偏移重设】，而不是只在窗口变化时设一次：

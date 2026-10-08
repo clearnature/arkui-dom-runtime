@@ -135,6 +135,37 @@
         check(gone.length === 0, `无"目标不存在且非虚拟列表"警告（实际 ${gone.length} 条）`);
       });
 
+      // ══════════ ⑥ 自定义组件行（display:contents 包装容器）+ scrollToIndex 精确对齐（5 条） ══════════
+      // 行单元 = holder 直接子项：ItemRow 挂载产物是包装容器（直接子项无 comp 标记），
+      // 测高 boxHeightOf / 落点与对齐 boxTargetOf 穿透到首个带 comp 的行根（ir500）。
+      await group('包装行 scrollToIndex', async () => {
+        const sc3 = el('sc3');
+        const holder3 = sc3 ? sc3.querySelector('[data-arkui-foreach-window]') : null;
+        const info0 = holder3 ? __arkui_dom_lazyInfo(holder3) : null;
+        const rows0 = holder3 ? holder3.children.length - 2 : -1;   // 行数按直接子项算（−2 个 spacer）
+        const compKids0 = holder3
+          ? Array.from(holder3.children).filter((c) => c.hasAttribute('data-arkui-comp')).length : -1;
+        check(!!holder3 && !!info0 && info0.total === 600 && rows0 > 0 && rows0 < 30
+          && compKids0 === 0 && info0.measured > 0,
+          `sc3 自定义组件行过 C1-v2 闸门：total=${info0 ? info0.total : '?'} / 直接子项行 ${rows0} < 30 / 行均无 comp 标记（${compKids0} 个）/ 穿透测高 measured=${info0 ? info0.measured : '?'} > 0`);
+        await click('#btn-si3');                    // scroller3.scrollToIndex(500)
+        let hit3 = null;
+        for (let k = 0; k < 60 && !hit3; k++) {
+          await tick(10);
+          hit3 = sc3 ? sc3.querySelector('#ir500') : null;
+        }
+        check(!!hit3, 'btn-si3 → scrollToIndex(500) → 包装行目标 ir500 入 DOM（windowItems 按直接子项命中）');
+        const delta3 = (hit3 && sc3) ? Math.abs(hit3.offsetTop - sc3.scrollTop) : 999;
+        check(delta3 <= 2,
+          `包装行精确对齐 |ir500.offsetTop - scrollTop| = ${delta3.toFixed(1)} ≤ 2（经 boxTargetOf 穿透取行根 offsetTop；容器直读得 0）`);
+        const info1 = holder3 ? __arkui_dom_lazyInfo(holder3) : null;
+        const rows1 = holder3 ? holder3.children.length - 2 : -1;
+        check(!!info1 && info1.window[0] <= 500 && 500 < info1.window[1] && rows1 < 30,
+          `窗口滑动且不增长：[${info1 ? info1.window.join(',') : '?'}] 行数 ${rows1} < 30（包装行不换算全量挂载）`);
+        const gone1 = __arkui_dom_layout_warnings.filter((w) => /目标不存在/.test(String(w)));
+        check(gone1.length === 0, `无"目标不存在且非虚拟列表"警告（实际 ${gone1.length} 条）`);
+      });
+
       lines.push(`LOG='${txt('sc-log').slice(-40)}'`);
       lines.push(`ELMT ${__arkui_dom_elmtRecords.size}`);
     } catch (e) {

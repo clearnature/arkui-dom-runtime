@@ -149,18 +149,28 @@ def device_texts(page):
         return False, "recv/parse 失败: %s" % e, []
     marker = {"pagePath": ""}
 
-    def walk(n, in_app=False):
+    # R169 残差归一（结构判据，非文本硬凑）：真机 dumpLayout 里 TextPicker 的
+    # 「选中值 echo」挂在【容器节点】上——
+    #   ① picker 根 type=TextPicker（多列拼接值，如 tx4 text=orig='秋早'）
+    #   ② Stack/Column 列容器（外层 text=选中值/originalText 空；内层双通道同值）
+    # 真渲染滚轮行只在【叶子 type=Text】节点（tx1..tx4 实测 kids=0）。
+    # echo 是官方 a11y 的「当前值」通道（与视觉同源、非页面文本，截图裁定已闭环），
+    # 故 picker 子树内只收叶子 Text；picker 外逻辑原样不动（本仓仅 TextPickerDemo
+    # 实例化 TextPicker，作用域即本页）。
+    def walk(n, in_app=False, in_picker=False):
         a = n.get("attributes", {}) or {}
         if (a.get("bundleName") == BUNDLE) or (in_app and a.get("pagePath")):
             marker["pagePath"] = a.get("pagePath") or marker["pagePath"]
         app = in_app or a.get("bundleName") == BUNDLE
-        if app:
+        picker = in_picker or a.get("type") == "TextPicker"
+        keep = (not picker) or (a.get("type") == "Text" and not n.get("children"))
+        if app and keep:
             for k in ("text", "originalText"):
                 v = (a.get(k) or "").strip()
                 if v:
                     texts.append(v)
         for c in n.get("children") or []:
-            walk(c, app)
+            walk(c, app, picker)
 
     texts = []
     walk(doc)

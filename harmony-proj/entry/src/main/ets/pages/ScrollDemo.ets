@@ -4,14 +4,30 @@
 //   ③ 事件：onScroll(x,y) / onScrollEdge(side) / onScrollEnd（DOM 化收口为滚动静默 80ms）
 //   ④ R172：sc2 + 600 行 ForEach → 过 C1-v2 窗口化闸门；scrollToIndex 经引擎
 //      meta.windowItems 取窗口行对齐（隔离在独立 scroller2，不污染 sc1 事件日志）
+//   ⑤ sc3 + 600 行【自定义组件行】ForEach：行=ItemRow 包装容器（display:contents、
+//      直接子项无 comp 标记）→ 通用模式按直接子项计行、boxHeightOf/boxTargetOf
+//      穿透测高/落点；btn-si3 验证包装行下 scrollToIndex 精确二次对齐
 // 行高与视口都是固定值，断言数字可精确预期。
+
+// 自定义组件行：ForEach 的一行 = 本组件（挂载产物是 display:contents 包装容器，
+// 其内行根 Text 带 comp 标记）——真实应用「大列表每行=一个自定义组件」的形态。
+@Component
+struct ItemRow {
+  @Prop text: string = '';
+  build() {
+    Text(this.text).id(this.text).height(40).width(200)
+  }
+}
+
 @Entry
 @Component
 struct ScrollDemo {
   @State log: string = '';
   @State big: string[] = [];
+  @State big3: string[] = [];
   scroller: Scroller = new Scroller();
   scroller2: Scroller = new Scroller();
+  scroller3: Scroller = new Scroller();
 
   aboutToAppear() {
     const arr: string[] = [];
@@ -19,6 +35,11 @@ struct ScrollDemo {
       arr.push('fs' + i);
     }
     this.big = arr;
+    const arr3: string[] = [];
+    for (let i = 0; i < 600; i++) {
+      arr3.push('ir' + i);
+    }
+    this.big3 = arr3;
   }
 
   build() {
@@ -84,6 +105,23 @@ struct ScrollDemo {
 
       Button('si500').id('btn-si').onClick(() => {
         this.scroller2.scrollToIndex(500);
+      })
+
+      Scroll(this.scroller3) {
+        Column({ space: 0 }) {
+          ForEach(this.big3, (it: string) => {
+            ItemRow({ text: it })
+          }, (it: string) => it)
+        }
+      }
+      .id('sc3')
+      .width(240)
+      .height(200)
+      .scrollable(ScrollDirection.Vertical)
+      .scrollBar(BarState.Off)
+
+      Button('si500-3').id('btn-si3').onClick(() => {
+        this.scroller3.scrollToIndex(500);
       })
       Text(this.log).id('sc-log').fontSize(12)
     }

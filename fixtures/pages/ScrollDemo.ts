@@ -4,8 +4,61 @@ if (!("finalizeConstruction" in ViewPU.prototype)) {
 interface ScrollDemo_Params {
     log?: string;
     big?: string[];
+    big3?: string[];
     scroller?: Scroller;
     scroller2?: Scroller;
+    scroller3?: Scroller;
+}
+interface ItemRow_Params {
+    text?: string;
+}
+class ItemRow extends ViewPU {
+    constructor(parent, params, __localStorage, elmtId = -1, paramsLambda = undefined, extraInfo) {
+        super(parent, __localStorage, elmtId, extraInfo);
+        if (typeof paramsLambda === "function") {
+            this.paramsGenerator_ = paramsLambda;
+        }
+        this.__text = new SynchedPropertySimpleOneWayPU(params.text, this, "text");
+        this.setInitiallyProvidedValue(params);
+        this.finalizeConstruction();
+    }
+    setInitiallyProvidedValue(params: ItemRow_Params) {
+        if (params.text === undefined) {
+            this.__text.set('');
+        }
+    }
+    updateStateVars(params: ItemRow_Params) {
+        this.__text.reset(params.text);
+    }
+    purgeVariableDependenciesOnElmtId(rmElmtId) {
+        this.__text.purgeDependencyOnElmtId(rmElmtId);
+    }
+    aboutToBeDeleted() {
+        this.__text.aboutToBeDeleted();
+        SubscriberManager.Get().delete(this.id__());
+        this.aboutToBeDeletedInternal();
+    }
+    private __text: SynchedPropertySimpleOneWayPU<string>;
+    get text() {
+        return this.__text.get();
+    }
+    set text(newValue: string) {
+        this.__text.set(newValue);
+    }
+    initialRender() {
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create(this.text);
+            Text.id(this.text);
+            Text.height(40);
+            Text.width(200);
+        }, Text);
+        Text.pop();
+    }
+    rerender() {
+        this.updateDirtyElements();
+    }
+    public __resetStateVarsOnReuse__Internal(params: Object): void {
+    }
 }
 class ScrollDemo extends ViewPU {
     constructor(parent, params, __localStorage, elmtId = -1, paramsLambda = undefined, extraInfo) {
@@ -15,8 +68,10 @@ class ScrollDemo extends ViewPU {
         }
         this.__log = new ObservedPropertySimplePU('', this, "log");
         this.__big = new ObservedPropertyObjectPU([], this, "big");
+        this.__big3 = new ObservedPropertyObjectPU([], this, "big3");
         this.scroller = new Scroller();
         this.scroller2 = new Scroller();
+        this.scroller3 = new Scroller();
         this.setInitiallyProvidedValue(params);
         this.finalizeConstruction();
     }
@@ -27,11 +82,17 @@ class ScrollDemo extends ViewPU {
         if (params.big !== undefined) {
             this.big = params.big;
         }
+        if (params.big3 !== undefined) {
+            this.big3 = params.big3;
+        }
         if (params.scroller !== undefined) {
             this.scroller = params.scroller;
         }
         if (params.scroller2 !== undefined) {
             this.scroller2 = params.scroller2;
+        }
+        if (params.scroller3 !== undefined) {
+            this.scroller3 = params.scroller3;
         }
     }
     updateStateVars(params: ScrollDemo_Params) {
@@ -39,10 +100,12 @@ class ScrollDemo extends ViewPU {
     purgeVariableDependenciesOnElmtId(rmElmtId) {
         this.__log.purgeDependencyOnElmtId(rmElmtId);
         this.__big.purgeDependencyOnElmtId(rmElmtId);
+        this.__big3.purgeDependencyOnElmtId(rmElmtId);
     }
     aboutToBeDeleted() {
         this.__log.aboutToBeDeleted();
         this.__big.aboutToBeDeleted();
+        this.__big3.aboutToBeDeleted();
         SubscriberManager.Get().delete(this.id__());
         this.aboutToBeDeletedInternal();
     }
@@ -60,14 +123,27 @@ class ScrollDemo extends ViewPU {
     set big(newValue: string[]) {
         this.__big.set(newValue);
     }
+    private __big3: ObservedPropertyObjectPU<string[]>;
+    get big3() {
+        return this.__big3.get();
+    }
+    set big3(newValue: string[]) {
+        this.__big3.set(newValue);
+    }
     private scroller: Scroller;
     private scroller2: Scroller;
+    private scroller3: Scroller;
     aboutToAppear() {
         const arr: string[] = [];
         for (let i = 0; i < 600; i++) {
             arr.push('fs' + i);
         }
         this.big = arr;
+        const arr3: string[] = [];
+        for (let i = 0; i < 600; i++) {
+            arr3.push('ir' + i);
+        }
+        this.big3 = arr3;
     }
     initialRender() {
         this.observeComponentCreation2((elmtId, isInitialRender) => {
@@ -239,6 +315,54 @@ class ScrollDemo extends ViewPU {
             Button.id('btn-si');
             Button.onClick(() => {
                 this.scroller2.scrollToIndex(500);
+            });
+        }, Button);
+        Button.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Scroll.create(this.scroller3);
+            Scroll.id('sc3');
+            Scroll.width(240);
+            Scroll.height(200);
+            Scroll.scrollable(ScrollDirection.Vertical);
+            Scroll.scrollBar(BarState.Off);
+        }, Scroll);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Column.create({ space: 0 });
+        }, Column);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            ForEach.create();
+            const forEachItemGenFunction = _item => {
+                const it = _item;
+                {
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        if (isInitialRender) {
+                            let componentCall = new ItemRow(this, { text: it }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/ScrollDemo.ets", line: 113, col: 13 });
+                            ViewPU.create(componentCall);
+                            let paramsLambda = () => {
+                                return {
+                                    text: it
+                                };
+                            };
+                            componentCall.paramsGenerator_ = paramsLambda;
+                        }
+                        else {
+                            this.updateStateVarsOfChildByElmtId(elmtId, {
+                                text: it
+                            });
+                        }
+                    }, { name: "ItemRow" });
+                }
+            };
+            this.forEachUpdateFunction(elmtId, this.big3, forEachItemGenFunction, (it: string) => it, false, false);
+        }, ForEach);
+        ForEach.pop();
+        Column.pop();
+        Scroll.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Button.createWithLabel('si500-3');
+            Button.id('btn-si3');
+            Button.onClick(() => {
+                this.scroller3.scrollToIndex(500);
             });
         }, Button);
         Button.pop();

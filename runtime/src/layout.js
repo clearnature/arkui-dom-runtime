@@ -275,7 +275,9 @@
       const k = win ? i - win[0] : i;
       const target = (k >= 0 && k < items.length) ? /** @type {HTMLElement} */ (items[k]) : null;
       if (target) {
-        el.scrollTop = target.offsetTop;
+        // R172 后补：窗口行可能是 display:contents 的自定义组件包装容器（直接子项无盒），
+        // 直接读 offsetTop 得 0 → 经 boxTargetOf 穿透到行根再取（有盒元素行为不变）。
+        el.scrollTop = boxTargetOf(target).offsetTop;
         el.dispatchEvent(new Event('scroll'));   // R53：与 scrollBy/scrollEdge 同款同步派发（确定性）；
       } else if (meta) {                         // 真机 scrollToIndex 同样发滚动事件
         // 目标没渲染 → 用【累计偏移】换算（而不是"统一行高 × 序号"：变高列表下后者会偏出几十上百像素）
@@ -299,7 +301,9 @@
           const t2 = /** @type {HTMLElement|undefined} */ (items2[k2]);
           if (t2) {
             const max2 = Math.max(0, el.scrollHeight - el.clientHeight);
-            el.scrollTop = Math.min(t2.offsetTop, max2);
+            // 同 in-window 分支：包装容器行（display:contents）offsetTop 为 0，
+            // 二次对齐必须经 boxTargetOf 穿透到行根（直接 comp 行行为不变）。
+            el.scrollTop = Math.min(boxTargetOf(t2).offsetTop, max2);
           }
         }
         el.dispatchEvent(new Event('scroll'));

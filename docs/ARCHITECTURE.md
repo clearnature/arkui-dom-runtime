@@ -753,9 +753,16 @@ display:contents 包裹层）。要点：
   相对模型）；无 meta 全量挂载退回历史选择器零变化。**配套铁律补漏**：滚动容器一律
   `position:relative`（List/Grid/WaterFlow 同款）——Scroll 根 R46 早于铁律形成缺此行，
   致 holder.offsetTop 量到页面坐标系（scrolldemo sc2 首跑实测 want 污染 +400 页内偏移）。
-  消费页 scrolldemo sc2（600 行过闸 + si500 按钮，对齐 delta=0.0 精确）；已知边界：
-  display:contents 包裹的自定义组件行 `windowItems` 不命中（直接子项无 comp 标记）→
-  落估偏分支近似落点，精确二次对齐仅覆盖直接 comp 行。
+  消费页 scrolldemo sc2（600 行过闸 + si500 按钮，对齐 delta=0.0 精确）。
+- **R173：包装行边界收口**——`windowItemEls` 通用模式改收【全部非 spacer 直接子项】
+  （行单元=直接子项：自带 comp 或 display:contents 自定义组件包装容器；spacer 靠身份
+  排除，`topSpacer` 必须在行渲染**前**登记否则新 spacer 被当首行计入），测高
+  （boxHeightOf）/margin 落点（boxTargetOf）/`scrollToIndex` 两处 offsetTop 均经
+  `boxTargetOf` 穿透到行根（有盒元素恒等返回自身 → LazyForEach/List/Grid/全量挂载
+  路径行为不变）。消费页 scrolldemo sc3（行=页内 `@Component ItemRow`，实测
+  `|ir500.offsetTop − scrollTop| = 0.0` 精确、直接子项 0 个带 comp 标记实证包装形态）。
+  保留边界：行容器内**完全无 comp 后代**时 boxTargetOf 退化回容器自身，contents 上
+  margin 不落盒会丢 gap（当前消费面无此形态）。
 
 ### 4.6 平台层：`@ohos:*` 别名层 + CommonJS 装载
 
@@ -1792,29 +1799,29 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   fixtures 转换产物  81 个：AlphabetIndexerDemo AnimDemo AnimatorDemo AsyncIO AttrHeavyDemo BatchFuncDemo BatchInputDemo BatchLayoutDemo BatchMediaDemo BatchVerifyDemo BuiltinDemo CalendarPickerDemo Callee CanvasDemo CjkDemo DatePickerDemo Detail DrawDemo GestureDemo GestureGroupDemo GridDemo GridRowDemo Home ImageDemo Index InputDemo Layout Lazy LazyVar ListGroupDemo MeasArea MeasImage MeasNotify Measure MediaDemo MotionDemo NavBarDemo NavDemo NavShimDemo NavTransDemo NetFile NotesDetail NotesHome Observe PanelDemo PerfBigDemo PerfDemo PickerDemo PopDemo PromptAct Provide QrDemo RefreshDemo RelDemo ResourceDemo Rich RichVideoDemo ScrollDemo ShapeDemo ShowDemo SideBarDemo SmallDemo SplitDemo StepDemo Stress10kDemo Stress1kDemo SwiperDemo TabsGrid TextDemo TextMeasure TextPickerDemo TextTimeDemo TimePickerDemo TransitionDemo UiContextDemo V2 WaterFlowDemo Widgets WinSem WindowDemo XCompDemo
 
 == 性能基线（Electron 实测）==
-  首渲染            35.0 ms（33 节点：Column+Button+Text+ForEach×30）
-  最小 rerender     4.5 ms（@State 计数脏区单 Text，rAF 口径）
-  rerender 管道     0.8 ms / 1 tick（setTimeout 轮询口径，R70）
+  首渲染            34.5 ms（33 节点：Column+Button+Text+ForEach×30）
+  最小 rerender     7.2 ms（@State 计数脏区单 Text，rAF 口径）
+  rerender 管道     1.0 ms / 1 tick（setTimeout 轮询口径，R70）
   微任务底噪        0.00 ms
   行数              31
-  剖面 R71          loadRoute 同步 7.5 ms（require 0.3）· raf1 0.2 / raf2 27.3 ms（offscreen 首帧）
-  脚本 eval         runtime 149.8 / generated 147.8 / shims 142.1 / module 147.2 ms（计时起点之前）
+  剖面 R71          loadRoute 同步 7.6 ms（require 0.3）· raf1 0.2 / raf2 26.7 ms（offscreen 首帧）
+  脚本 eval         runtime 153.3 / generated 146.6 / shims 151.1 / module 150.2 ms（计时起点之前）
   判定              框架同步构建 3.5ms 无大头；"首渲染"=脚本 eval + offscreen 首帧（非框架成本）
-  千节点 R79        首渲染同步 32.6 ms（350 节点/~3500 属性，亚线性）· 单点 flush 0.2 ms · 批量翻转 flush 3.2 ms
+  千节点 R79        首渲染同步 33.0 ms（350 节点/~3500 属性，亚线性）· 单点 flush 0.3 ms · 批量翻转 flush 3.1 ms
   规模曲线          203→4.8 / 304→11.2 / 1055→19.0 ms（创建路径亚线性）；行复用+守卫千节点级保持
-  万节点 R138/C1-v2 首渲染同步 52.5 ms（ForEach 窗口化：挂载 10 行/全量 3300 由 spacer 撑出）· 批量翻转 poll 3.4 ms / flush 3.3 ms · 单点 flush 0.3 ms
+  万节点 R138/C1-v2 首渲染同步 52.8 ms（ForEach 窗口化：挂载 10 行/全量 3300 由 spacer 撑出）· 批量翻转 poll 4.3 ms / flush 3.2 ms · 单点 flush 0.3 ms
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          9601.4 KB
-  runtime(src)     1620.9 KB
-  test             9587.0 KB
-  tools            383.2 KB
+  runtime          9602.6 KB
+  runtime(src)     1622.1 KB
+  test             9589.5 KB
+  tools            384.1 KB
   electron(src)    181.6 KB
-  docs             1000.0 KB
-  fixtures         560.8 KB
+  docs             1003.7 KB
+  fixtures         565.2 KB
 
 == 逐文件（文档"文件职责"表的来源）==
-  runtime/arkui-dom-runtime.js            1384137 B  1351.7 KB
+  runtime/arkui-dom-runtime.js            1385353 B  1352.9 KB
   runtime/generated-components.js          57617 B  56.3 KB
   runtime/ohos-shims.js                   128747 B  125.7 KB
   tools/extract.mjs                         7386 B  7.2 KB
@@ -1831,12 +1838,12 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   electron/preload.js                      11432 B  11.2 KB
   package.json                              1366 B  1.3 KB
   .gitignore                                 993 B  1.0 KB
-  README.md                               158183 B  154.5 KB
+  README.md                               158195 B  154.5 KB
   THIRD-PARTY-NOTICES.md                   14233 B  13.9 KB
-  docs/ARCHITECTURE.md                    171504 B  167.5 KB
-  docs/CAPABILITY.md                       70856 B  69.2 KB
+  docs/ARCHITECTURE.md                    172198 B  168.2 KB
+  docs/CAPABILITY.md                       70868 B  69.2 KB
   docs/DEVELOPING.md                       77261 B  75.5 KB
-  docs/ROADMAP.md                         306366 B  299.2 KB
+  docs/ROADMAP.md                         308445 B  301.2 KB
   docs/surface-measurement.md               6496 B  6.3 KB
   docs/SESSION-2026-09-20.md               12842 B  12.5 KB
   runtime/src/.mimosa                       4096 B  4.0 KB
@@ -1869,8 +1876,8 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   runtime/src/image.js                      7211 B  7.0 KB
   runtime/src/incremental.js                3155 B  3.1 KB
   runtime/src/input.js                     13931 B  13.6 KB
-  runtime/src/layout.js                    21626 B  21.1 KB
-  runtime/src/main.js                     213710 B  208.7 KB
+  runtime/src/layout.js                    22078 B  21.6 KB
+  runtime/src/main.js                     214474 B  209.4 KB
   runtime/src/nav.js                       57837 B  56.5 KB
   runtime/src/panel.js                      5287 B  5.2 KB
   runtime/src/popup.js                      5989 B  5.8 KB
@@ -1947,7 +1954,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   fixtures/pages/ResourceDemo.ts            4444 B  4.3 KB
   fixtures/pages/Rich.ts                    9256 B  9.0 KB
   fixtures/pages/RichVideoDemo.ts           3353 B  3.3 KB
-  fixtures/pages/ScrollDemo.ts              9350 B  9.1 KB
+  fixtures/pages/ScrollDemo.ts             13909 B  13.6 KB
   fixtures/pages/ShapeDemo.ts               8081 B  7.9 KB
   fixtures/pages/ShowDemo.ts                8617 B  8.4 KB
   fixtures/pages/SideBarDemo.ts             4615 B  4.5 KB
@@ -2047,7 +2054,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   test/rich.html                            3794 B  3.7 KB
   test/richvideodemo.html                   3295 B  3.2 KB
   test/router.html                          4288 B  4.2 KB
-  test/scrolldemo.html                      8943 B  8.7 KB
+  test/scrolldemo.html                     11445 B  11.2 KB
   test/shapedemo.html                       9951 B  9.7 KB
   test/showdemo.html                        9917 B  9.7 KB
   test/sidebardemo.html                     5392 B  5.3 KB
