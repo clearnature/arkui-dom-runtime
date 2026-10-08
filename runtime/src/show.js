@@ -81,7 +81,14 @@
       text = String(resolveResource(o.value === undefined ? '' : o.value));
     }
     mark.textContent = text;
-    root.appendChild(mark);
+    // R170：容器 a11y 值——真机 dumpLayout 实测 Badge 容器节点自带 text=徽标值
+    // （a11y 分组把徽标值挂在容器上；子序=[内容, 角标]）。aria-label 承载同一语义，
+    // 对拍 harness 按 data-arkui-badge-root 采集（全局 aria-label 采集不动——波及面大）
+    root.dataset.arkuiBadgeRoot = '';
+    root.setAttribute('aria-label', text);
+    // 角标后置：真机子序=[内容, 角标]，create 时内容还没挂进来 → 延后一拍挂
+    //（R167 Counter 同款：DOM 序=视觉序=a11y 序）
+    setTimeout(() => { root.appendChild(mark); }, 0);
     return root;
   });
 

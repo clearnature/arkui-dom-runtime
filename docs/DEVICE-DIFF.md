@@ -154,7 +154,7 @@ RichVideo/Image）。
 | GridDemo | `I0,5` vs `I0,4`（onScrollIndex last 差 1） | **视口口径**：设备竖屏可见 6 行 vs 浏览器窗口 5 行（测试页 :81 断言 I0,4 本按我们视口定；非行为差） |
 | PanelDemo | ~~`bodyh=0`~~ → 修复后 `h=221/202`（真机 1137 同构语义） | **已修复（R165）**：onHeightChange 零派发+高度档位 CSS 未实现+同值早退跳过首派——四层根因全修，数值环境相关 |
 | PopDemo | ~~`Choosed+选项` vs `BA+ABCXY+✓`~~ | **已修（R166.1）**：Select.value() 显示覆盖落地+onSelect 读 opt.value+✓ aria-hidden+OPTION 跳过 → **PASS-SUBSET 收敛** |
-| ShowDemo | ~~Hello/marquee~~（aria-hidden 已修）；残差=`999`（徽标值 a11y 双报形态）+ `MS;MF;` marquee 日志（真机视口外=视口类）；**Counter ±5 序差已修**（R167 截图裁定：CSS order 重排视觉但 DOM 序 ≠视觉序 '-5+'——inc 延后挂载，showdemo 29 条绿） | 已修 1 + 残差 2 类 |
+| ShowDemo | ~~Hello/marquee~~（aria-hidden 已修）；~~999~~（**R170 已修收敛**：真机 dumpLayout 实测=Badge 容器节点自带 text=徽标值+子序 [内容,角标]——"999"实为 bd1 的 9 与 bd2 的 99 相邻串接观感；对齐=容器 aria-label 承载徽标值（harness 按 data-arkui-badge-root 采集）+角标后置一拍（Counter 同款）→对拍 **PASS-SUBSET**（16⊆22））；残差=`MS;MF;` marquee 日志（真机视口外=视口类）；**Counter ±5 序差已修**（R167 截图裁定：CSS order 重排视觉但 DOM 序 ≠视觉序 '-5+'——inc 延后挂载，showdemo 29 条绿） | 已修 2 + 残差 1 类 |
 | SideBarDemo | ~~`→`~~（箭头 ::after attr(data-arrow)+aria-label=menutoggle 已修）；残差=**content/menu/toggle 序差**（真机 a11y 树序≠源码声明序——深挖成本高记档） | 已修 1 + 树序残差 |
 | TextDemo | 设备多 `TIseed;SEhello;` | **行为差异**：真机初始渲染即派发一次 onChange（value 型），垫片不派发（值采集/时序已归口径后仍存此差） |
 | TextPickerDemo | 选中集/选项集不同 | **已修（R169）**：`canLoop` 缺省 true 落地（d.ts:487 "Default value: **true**"）——行文本模 n 环绕 + 越界步进环绕发 onChange（对拍复验：设备轮体 [冬,春,夏,秋,冬] 与浏览器逐项相同）；**顺修三选择器同源视觉错位**（(2-idx)*rowH transform 是旧"全项滑动"残留，活体探针实证 idx≠2 蓝行落 4−idx 槽、边界行被裁——textpicker/datepicker/timepicker 三处同修 transform 固定 0）。**对拍残差 DIFF（采集口径类）**：设备 dumpLayout 选中值前置 echo×3 + 多列拼接 token（'秋早'）——R166 已知"a11y 序/形态"家族，非渲染差 |

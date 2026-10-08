@@ -59,6 +59,13 @@
           // R166 续（C 接管）：aria-hidden 也不进——真机 a11y 树不含装饰文本（跑马灯
           // 内容/侧栏箭头/非当前 Swiper 页），屏幕阅读器语义同此
           if (e.getAttribute('aria-hidden') === 'true') continue;
+          // R170：Badge 容器值——真机 dumpLayout 实测 Badge 容器节点自带 text=徽标值
+          // （a11y 分组把徽标值挂在容器上），runtime 落 aria-label + data-arkui-badge-root；
+          // 此处按文档序在子文本之前采集（容器 attr 先于子节点，同设备 dump 序）
+          if (e.hasAttribute('data-arkui-badge-root')) {
+            const bv = String(e.getAttribute('aria-label') || '');
+            if (bv.trim()) parts.push(bv);
+          }
           // R166 续：折叠 <select> 的 <option> 子文本不进流——真机折叠态 a11y 只报
           // 选中值（选项列表仅展开时报；设备 PopDemo 无 ABCXY），选中值由下方
           // SELECT.value 通道采集

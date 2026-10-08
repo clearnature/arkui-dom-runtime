@@ -1782,29 +1782,29 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   fixtures 转换产物  81 个：AlphabetIndexerDemo AnimDemo AnimatorDemo AsyncIO AttrHeavyDemo BatchFuncDemo BatchInputDemo BatchLayoutDemo BatchMediaDemo BatchVerifyDemo BuiltinDemo CalendarPickerDemo Callee CanvasDemo CjkDemo DatePickerDemo Detail DrawDemo GestureDemo GestureGroupDemo GridDemo GridRowDemo Home ImageDemo Index InputDemo Layout Lazy LazyVar ListGroupDemo MeasArea MeasImage MeasNotify Measure MediaDemo MotionDemo NavBarDemo NavDemo NavShimDemo NavTransDemo NetFile NotesDetail NotesHome Observe PanelDemo PerfBigDemo PerfDemo PickerDemo PopDemo PromptAct Provide QrDemo RefreshDemo RelDemo ResourceDemo Rich RichVideoDemo ScrollDemo ShapeDemo ShowDemo SideBarDemo SmallDemo SplitDemo StepDemo Stress10kDemo Stress1kDemo SwiperDemo TabsGrid TextDemo TextMeasure TextPickerDemo TextTimeDemo TimePickerDemo TransitionDemo UiContextDemo V2 WaterFlowDemo Widgets WinSem WindowDemo XCompDemo
 
 == 性能基线（Electron 实测）==
-  首渲染            37.6 ms（33 节点：Column+Button+Text+ForEach×30）
-  最小 rerender     12.1 ms（@State 计数脏区单 Text，rAF 口径）
-  rerender 管道     1.2 ms / 1 tick（setTimeout 轮询口径，R70）
+  首渲染            36.0 ms（33 节点：Column+Button+Text+ForEach×30）
+  最小 rerender     13.7 ms（@State 计数脏区单 Text，rAF 口径）
+  rerender 管道     1.0 ms / 1 tick（setTimeout 轮询口径，R70）
   微任务底噪        0.00 ms
   行数              31
-  剖面 R71          loadRoute 同步 7.7 ms（require 0.3）· raf1 1.6 / raf2 28.3 ms（offscreen 首帧）
-  脚本 eval         runtime 203.4 / generated 200.4 / shims 201.1 / module 200.7 ms（计时起点之前）
+  剖面 R71          loadRoute 同步 7.7 ms（require 0.3）· raf1 0.8 / raf2 27.5 ms（offscreen 首帧）
+  脚本 eval         runtime 135.4 / generated 133.2 / shims 133.6 / module 132.5 ms（计时起点之前）
   判定              框架同步构建 3.5ms 无大头；"首渲染"=脚本 eval + offscreen 首帧（非框架成本）
-  千节点 R79        首渲染同步 35.9 ms（350 节点/~3500 属性，亚线性）· 单点 flush 0.3 ms · 批量翻转 flush 3.4 ms
+  千节点 R79        首渲染同步 32.6 ms（350 节点/~3500 属性，亚线性）· 单点 flush 0.2 ms · 批量翻转 flush 3.2 ms
   规模曲线          203→4.8 / 304→11.2 / 1055→19.0 ms（创建路径亚线性）；行复用+守卫千节点级保持
-  万节点 R138/C1-v2 首渲染同步 36.5 ms（ForEach 窗口化：挂载 10 行/全量 3300 由 spacer 撑出）· 批量翻转 poll 1.8 ms / flush 1.8 ms · 单点 flush 0.3 ms
+  万节点 R138/C1-v2 首渲染同步 53.4 ms（ForEach 窗口化：挂载 10 行/全量 3300 由 spacer 撑出）· 批量翻转 poll 5.0 ms / flush 3.4 ms · 单点 flush 0.2 ms
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          9599.5 KB
-  runtime(src)     1619.1 KB
-  test             9584.5 KB
+  runtime          9600.1 KB
+  runtime(src)     1619.6 KB
+  test             9585.3 KB
   tools            383.2 KB
   electron(src)    181.6 KB
-  docs             994.9 KB
+  docs             996.0 KB
   fixtures         558.6 KB
 
 == 逐文件（文档"文件职责"表的来源）==
-  runtime/arkui-dom-runtime.js            1382227 B  1349.8 KB
+  runtime/arkui-dom-runtime.js            1382823 B  1350.4 KB
   runtime/generated-components.js          57617 B  56.3 KB
   runtime/ohos-shims.js                   128747 B  125.7 KB
   tools/extract.mjs                         7386 B  7.2 KB
@@ -1826,7 +1826,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   docs/ARCHITECTURE.md                    170599 B  166.6 KB
   docs/CAPABILITY.md                       70375 B  68.7 KB
   docs/DEVELOPING.md                       77261 B  75.5 KB
-  docs/ROADMAP.md                         302793 B  295.7 KB
+  docs/ROADMAP.md                         303681 B  296.6 KB
   docs/surface-measurement.md               6496 B  6.3 KB
   docs/SESSION-2026-09-20.md               12842 B  12.5 KB
   runtime/src/.mimosa                       4096 B  4.0 KB
@@ -1870,7 +1870,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   runtime/src/runtime.d.ts                  7172 B  7.0 KB
   runtime/src/scroll.js                     6600 B  6.4 KB
   runtime/src/shape.js                      7525 B  7.3 KB
-  runtime/src/show.js                      21321 B  20.8 KB
+  runtime/src/show.js                      21917 B  21.4 KB
   runtime/src/sidebar.js                    5842 B  5.7 KB
   runtime/src/small.js                     12532 B  12.2 KB
   runtime/src/split.js                      1475 B  1.4 KB
@@ -1993,7 +1993,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   test/gesturegroupdemo.html               14791 B  14.4 KB
   test/griddemo.html                        6387 B  6.2 KB
   test/gridrowdemo.html                     3899 B  3.8 KB
-  test/hm-harness.html                      6211 B  6.1 KB
+  test/hm-harness.html                      6716 B  6.6 KB
   test/i18ndemo.html                        8597 B  8.4 KB
   test/imagedemo.html                       5733 B  5.6 KB
   test/imageext.html                       11006 B  10.7 KB
@@ -2044,7 +2044,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   test/smalldemo.html                       5299 B  5.2 KB
   test/splitdemo.html                       3821 B  3.7 KB
   test/stepdemo.html                        9752 B  9.5 KB
-  test/stress10k.html                       7322 B  7.2 KB
+  test/stress10k.html                       7663 B  7.5 KB
   test/stress1k.html                        4238 B  4.1 KB
   test/swiper.html                          9177 B  9.0 KB
   test/sysapi.html                          3814 B  3.7 KB
