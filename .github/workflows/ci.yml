@@ -4,9 +4,13 @@
 # 通用 reusable。
 #
 # 跳过清单（CI 上不跑的本地专属步）：gen-components --check（本地 SDK 路径）/
-# typecheck（TS 硬编码路径）/ stats 性能基线（权威=本地 Electron）/ Android 端
-# （模拟器）/ 鸿蒙模拟器 / builtindemo+imageext+measimage（虚拟时间+负载下
-# 时序与解码投递不稳——权威=electron 真实时钟腿与本地）。
+# stats 性能基线（权威=本地 Electron）/ Android 端（模拟器，R174 用户裁定移动端停止
+# 验证）/ 鸿蒙模拟器 / builtindemo+imageext+measimage（虚拟时间+负载下时序与解码
+# 投递不稳——权威=electron 真实时钟腿与本地）。
+# R174 全补：typecheck 已上云（ubuntu-ohos 腿 ARKUI_CLT）；node 矩阵收单轴 26
+# （LTS24/Current26 双轴收敛——harness 环境轴低价值，产品跑 Electron 自带 V8；
+# 临时要 24 可改回 matrix）；kernel-contract/kernel-compilers 迁独立 kernel.yml
+# （手动+周触发——五语言内核线已随 R120 收口，不随每次 push 烧）。
 
 name: "CI · 治理链（多引擎矩阵）"
 
@@ -27,16 +31,12 @@ concurrency:
 jobs:
   browser:
     if: github.event_name != 'pull_request' || github.event.label.name == 'ci/full'
-    name: browser (node ${{ matrix.node }})
-    strategy:
-      fail-fast: false
-      matrix:
-        node: ["24", "26"]
+    name: browser (node 26)
     uses: clearnature/arkui-ci/.github/workflows/browser.yml@d9184b6573b8f70e39336edf6575d14c37d529a7
     with:
       # U26 迁移（2026-10-19 ubuntu-latest 迁 26；六腿 26.04 全量验证 run 37136198612 全绿）
       runner: ubuntu-26.04
-      node-version: ${{ matrix.node }}
+      node-version: "26"
       # 虚拟时间豁免清单内联在 test-command 里（caller job 不允许 env:——schema 只允许 with/secrets）
       test-command: ARKUI_VIRTUAL_TIME_SKIP="builtindemo imageext measimage" bash run.sh all
       artifact-path: |
@@ -59,29 +59,21 @@ jobs:
 
   electron:
     if: github.event_name != 'pull_request' || github.event.label.name == 'ci/full'
-    name: electron (node ${{ matrix.node }})
-    strategy:
-      fail-fast: false
-      matrix:
-        node: ["24", "26"]
+    name: electron (node 26)
     uses: clearnature/arkui-ci/.github/workflows/electron-realtime.yml@d9184b6573b8f70e39336edf6575d14c37d529a7
     with:
       # U26 迁移（2026-10-19 ubuntu-latest 迁 26；六腿 26.04 全量验证 run 37136198612 全绿）
       runner: ubuntu-26.04
-      node-version: ${{ matrix.node }}
+      node-version: "26"
 
   firefox:
     if: github.event_name != 'pull_request' || github.event.label.name == 'ci/full'
-    name: firefox (node ${{ matrix.node }})
-    strategy:
-      fail-fast: false
-      matrix:
-        node: ["24", "26"]
+    name: firefox (node 26)
     uses: clearnature/arkui-ci/.github/workflows/firefox.yml@d9184b6573b8f70e39336edf6575d14c37d529a7
     with:
       # U26 迁移（2026-10-19 ubuntu-latest 迁 26；六腿 26.04 全量验证 run 37136198612 全绿）
       runner: ubuntu-26.04
-      node-version: ${{ matrix.node }}
+      node-version: "26"
       test-command: bash firefox/run.sh all
       artifact-path: |
         build/assert-counts-firefox.tsv
@@ -125,33 +117,13 @@ jobs:
 
   webkit:
     if: github.event_name != 'pull_request' || github.event.label.name == 'ci/full'
-    name: webkit (node ${{ matrix.node }})
-    strategy:
-      fail-fast: false
-      matrix:
-        node: ["24", "26"]
+    name: webkit (node 26)
     uses: clearnature/arkui-ci/.github/workflows/webkit.yml@d9184b6573b8f70e39336edf6575d14c37d529a7
     with:
       # U26 迁移（2026-10-19 ubuntu-latest 迁 26；六腿 26.04 全量验证 run 37136198612 全绿）
       runner: ubuntu-26.04
-      node-version: ${{ matrix.node }}
+      node-version: "26"
       test-command: bash webkit/run.sh all
       artifact-path: |
         build/assert-counts-webkit.tsv
         build/wk-matrix.log
-
-  kernel-contract:
-    if: github.event_name != 'pull_request' || github.event.label.name == 'ci/full'
-    name: kernel-contract
-    uses: clearnature/arkui-ci/.github/workflows/kernel-contract.yml@d9184b6573b8f70e39336edf6575d14c37d529a7
-    with:
-      # U26 迁移（2026-10-19 ubuntu-latest 迁 26；六腿 26.04 全量验证 run 37136198612 全绿）
-      runner: ubuntu-26.04
-      node-version: "24"
-
-  kernel-compilers:
-    if: github.event_name != 'pull_request' || github.event.label.name == 'ci/full'
-    name: kernel-compilers
-    uses: clearnature/arkui-ci/.github/workflows/kernel-compilers.yml@d9184b6573b8f70e39336edf6575d14c37d529a7
-    with:
-      runner: ubuntu-26.04

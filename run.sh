@@ -142,6 +142,19 @@ run_one() {
   if [ -z "$port" ]; then
     echo '  ❌ 服务未启动：'; sed 's/^/     /' "$logf"; kill $server_pid 2>/dev/null; rm -f "$logf"; return 1
   fi
+  # R174 全补③：服务就绪 HTTP 预检——日志出端口≠accept 链路已通（Windows runner
+  # 两发载入族实录同窗）；预检 3×0.5s 再失败即显式报错（常量 host 过 SSRF 纪律：
+  # http.client + 127.0.0.1 固定）。
+  local preflight_ok=0
+  for _ in 1 2 3; do
+    if "$PYTHON" -c "import http.client, sys; c = http.client.HTTPConnection('127.0.0.1', int(sys.argv[1]), timeout=5); c.request('GET', '/' + sys.argv[2]); sys.exit(0 if c.getresponse().status == 200 else 1)" "$port" "$page" 2>/dev/null; then
+      preflight_ok=1; break
+    fi
+    sleep 0.5
+  done
+  if [ "$preflight_ok" != 1 ]; then
+    echo '  ❌ 服务预检失败（HTTP 非 200，3 次重试耗尽）：'; sed 's/^/     /' "$logf"; kill $server_pid 2>/dev/null; rm -f "$logf"; return 1
+  fi
 
   # 虚拟时钟预算：默认 8000ms；用例可经 VTBUDGET 覆盖（R154：builtindemo 的弹簧解算器
   # 收口等待 tick(1200) 使全页虚拟耗时超 8s——长等待页用例自行声明更大预算）

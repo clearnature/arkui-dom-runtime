@@ -24,6 +24,7 @@ import importlib.util
 import io
 import json
 import os
+import re
 import socket
 import sys
 import threading
@@ -38,6 +39,12 @@ POLL0, POLL, CASE_TIMEOUT = 1.5, 0.4, 25
 ELEMENT_KEY = "element-6066-11e4-a52e-4f735466cecf"
 
 sys.stdout = io.StringIO()   # 吞掉 serve.py 模块级回显；本脚本输出只走 os.write(1,...)
+
+
+# R174 全补②：启动期载入族瞬态签名（与 run.sh 吸收层同款）——脚本载入 miss 被
+# 页面驱动 catch 写成 FAIL 行，原判定见 FAIL 即收 → 只此签名进一次性重跑；
+# 确定性真 bug 第二次照红不掩盖。
+LOAD_FAMILY = re.compile(r"抛出异常.*(is not defined|未注册的模块|SyntaxError|Unexpected token|Cannot read)")
 
 
 def out(s):
@@ -106,25 +113,32 @@ def run_case(driver, sid, c):
     page_path = "/test/" + c["page"].split("test/", 1)[-1]
     url = "http://127.0.0.1:" + str(c["_port"]) + page_path + c["query"]
     t0 = time.time()
-    driver("POST", f"/session/{sid}/url", {"url": url})
-    time.sleep(POLL0)
-    verdict, text, deadline = None, "", time.time() + CASE_TIMEOUT
-    while time.time() < deadline:
-        try:
-            el = driver("POST", f"/session/{sid}/element",
-                        {"using": "css selector", "value": "#result"})["value"]
-            text = driver("GET", f"/session/{sid}/element/{el[ELEMENT_KEY]}/text")["value"]
-            if "=== ALL PASS" in text:
-                verdict = "PASS"
-                break
-            if "FAILURES" in text or "=== HAS FAILURE" in text:
-                verdict = "FAIL"
-                break
-        except Exception:
-            pass
-        time.sleep(POLL)
-    if verdict is None:
-        verdict = "TIMEOUT"
+    verdict, text = None, ""
+    # R174 全补②：载入族 FAIL 进一次性重跑（吸收层——run.sh 同款签名）
+    for attempt in (1, 2):
+        driver("POST", f"/session/{sid}/url", {"url": url})
+        time.sleep(POLL0)
+        verdict, text, deadline = None, "", time.time() + CASE_TIMEOUT
+        while time.time() < deadline:
+            try:
+                el = driver("POST", f"/session/{sid}/element",
+                            {"using": "css selector", "value": "#result"})["value"]
+                text = driver("GET", f"/session/{sid}/element/{el[ELEMENT_KEY]}/text")["value"]
+                if "=== ALL PASS" in text:
+                    verdict = "PASS"
+                    break
+                if "FAILURES" in text or "=== HAS FAILURE" in text:
+                    verdict = "FAIL"
+                    break
+            except Exception:
+                pass
+            time.sleep(POLL)
+        if verdict is None:
+            verdict = "TIMEOUT"
+        if verdict == "FAIL" and attempt == 1 and LOAD_FAMILY.search(text):
+            out("  ⚠ 启动期载入族瞬态——重跑一次（瞬态吸收层）")
+            continue
+        break
     npass = sum(1 for ln in text.splitlines() if ln.startswith("PASS "))
     return verdict, npass, text, time.time() - t0
 

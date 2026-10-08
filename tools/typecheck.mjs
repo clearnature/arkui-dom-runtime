@@ -17,7 +17,8 @@ import url from 'node:url';
 
 const require = createRequire(import.meta.url);
 const HERE = path.dirname(path.dirname(url.fileURLToPath(import.meta.url)));
-const CLT = '/data/training/cli/commandline-tools-linux-x64-26.0.0.821/command-line-tools';
+// R174 全补①：路径可覆盖——CI（ubuntu-ohos 腿）传 ARKUI_CLT=$CLT_ROOT，本地缺省钉官方安装位
+const CLT = process.env.ARKUI_CLT || '/data/training/cli/commandline-tools-linux-x64-26.0.0.821/command-line-tools';
 const TS_PATH = path.join(
   CLT, 'sdk/default/openharmony/ets/build-tools/ets-loader/node_modules/typescript'
 );

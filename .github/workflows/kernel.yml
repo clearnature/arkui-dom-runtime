@@ -1,0 +1,34 @@
+# kernel 线独立触发（R174 全补⑤）：五语言内核契约/编译器腿已随 R120 收口，
+# 是独立产品线——不再随每次 push 跑，改手动触发 + 每周日一次兜底。
+# 编排仍在治理仓 clearnature/arkui-ci（SHA 钉死，与 ci.yml 同 ref）。
+#
+# 触发语义：workflow_dispatch（Actions 后台按钮/`gh workflow run kernel.yml`）+
+# schedule（每周日 03:26 UTC，避开整点高峰）。
+
+name: "kernel · 五语言契约与编译器（手动 + 每周）"
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "26 3 * * 0"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kernel-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  kernel-contract:
+    name: kernel-contract
+    uses: clearnature/arkui-ci/.github/workflows/kernel-contract.yml@d9184b6573b8f70e39336edf6575d14c37d529a7
+    with:
+      runner: ubuntu-26.04
+      node-version: "24"
+
+  kernel-compilers:
+    name: kernel-compilers
+    uses: clearnature/arkui-ci/.github/workflows/kernel-compilers.yml@d9184b6573b8f70e39336edf6575d14c37d529a7
+    with:
+      runner: ubuntu-26.04

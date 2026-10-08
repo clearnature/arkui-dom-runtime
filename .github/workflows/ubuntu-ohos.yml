@@ -21,9 +21,9 @@
 #   本地端到端验证（2026-10-02）：587KB modules.abc → 5.5MB out.an ✅
 #   （build/aot-local-verify.sh；shim 详细考证见 /data/training/cli/arkts-shim/README.md）
 #
-# 与本地门禁的分工：本地 11 步门禁的 gen-components --check / typecheck 依赖
-# 本地 CLT 路径——本 job 让 gen-components --check 首次在 CI 可跑；typecheck
-# 仍本地专属（TS 4.9.5 路径硬编码，见 workflow 家族头注）。
+# 与本地门禁的分工：本地门禁的 gen-components --check / typecheck 依赖本地 CLT
+# 路径——gen-components 由本 job 首次带上云；typecheck 自 R174 起也云上硬门
+# （ARKUI_CLT 覆盖路径；R168 事故：本地-only 曾让 7 个类型错从全绿 CI 滑过）。
 
 name: "ubuntu · HarmonyOS CLT 26.0.0.821（hvigorw 编译 + fixtures 漂移守门）"
 
@@ -99,6 +99,12 @@ jobs:
           done < <(grep -v '^#' tools/clt-fingerprints.tsv)
           # 行为级等价另有 fixtures 漂移守门复验（57 项归一化零 diff）
           exit $fail
+
+      - name: typecheck（R174 全补①：本地专属升为云上硬门）
+        # TS 4.9.5 从 CLT 内 ets-loader 取（ARKUI_CLT=CLT_ROOT，与本地同版本 26.0.0.821）。
+        # 背景：typecheck 曾是本地-only——R168 事故实证 7 个类型错经 docs 推送从全绿
+        # CI 滑进主干；本步让它在云上也做硬门（红线 0）。
+        run: ARKUI_CLT="$CLT_ROOT" node tools/typecheck.mjs
 
       - name: hvigorw 全量编译冒烟（BUILD SUCCESSFUL 判定）
         run: |

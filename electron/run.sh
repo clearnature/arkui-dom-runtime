@@ -242,16 +242,27 @@ run_one() {
   # ARKUI_OFFSCREEN=1：隐藏窗口的合成器不产帧，capturePage 会挂；offscreen 模式用 paint 帧截图
   # 让输出既实时透出（sed 缩进显示）、又留一份**没有缩进**的原文用于数 PASS 行：
   # 断言计数守门要的是运行期实测值，不能靠 grep test/*.html（realfs 有 28 处 check( 但只跑 21 条）。
-  local outf; outf="$(mktemp "$TMPDIR/arkui-electron-out-XXXXXX")"
-  ARKUI_TEST="$label" \
-  ARKUI_PAGE_URL="http://127.0.0.1:$port/test/$(page_of "$page").html$query" \
-  ARKUI_OFFSCREEN="${ARKUI_OFFSCREEN:-1}" \
-    "$TIMEOUT_BIN" 180 "$ELECTRON" --no-sandbox --disable-gpu \
-      ${OZONE_ARGS[@]+"${OZONE_ARGS[@]}"} "$HERE" 2>&1 \
-    | grep -v -E 'Fontconfig|libva|GLX|dbus|MESA|Mesa|vulkan|Vulkan|gbm|DRM|drm' \
-    | tee "$outf" \
-    | sed 's/^/  /'
-  local rc=${PIPESTATUS[0]}
+  local outf attempt rc; outf="$(mktemp "$TMPDIR/arkui-electron-out-XXXXXX")"
+  # R174 全补②：启动期载入族瞬态吸收（与 run.sh/ff-matrix 同签名）——页面驱动
+  # catch 把脚本载入 miss 写成 FAIL/非零退出，原判定直接收 → 载入族进一次性重跑；
+  # 确定性真 bug 第二次照红不掩盖。tee 每趟覆盖 outf（非追加）=计数只取末趟。
+  for attempt in 1 2; do
+    ARKUI_TEST="$label" \
+    ARKUI_PAGE_URL="http://127.0.0.1:$port/test/$(page_of "$page").html$query" \
+    ARKUI_OFFSCREEN="${ARKUI_OFFSCREEN:-1}" \
+      "$TIMEOUT_BIN" 180 "$ELECTRON" --no-sandbox --disable-gpu \
+        ${OZONE_ARGS[@]+"${OZONE_ARGS[@]}"} "$HERE" 2>&1 \
+      | grep -v -E 'Fontconfig|libva|GLX|dbus|MESA|Mesa|vulkan|Vulkan|gbm|DRM|drm' \
+      | tee "$outf" \
+      | sed 's/^/  /'
+    rc=${PIPESTATUS[0]}
+    [ "$rc" = 0 ] && break
+    if [ "$attempt" = 1 ] && grep -qE '抛出异常.*(is not defined|未注册的模块|SyntaxError|Unexpected token|Cannot read)' "$outf"; then
+      echo "  ⚠ 启动期载入族瞬态——重跑一次（瞬态吸收层）"
+      continue
+    fi
+    break
+  done
   # 全用例结果落盘：PERF 数字行由 stats.mjs 从 build/<case>.result.txt 采集进 §6
   mkdir -p "$ROOT/build" && cp "$outf" "$ROOT/build/$label.result.txt"
   printf '%s\t%s\n' "$label" "$(grep -cE '^[[:space:]]*PASS ' "$outf")" >> "$RUN_COUNTS"
