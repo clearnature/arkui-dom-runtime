@@ -174,12 +174,23 @@ d = sys.stdin.read()
 m = re.search(r'<div id=\"result\"[^>]*>(.*?)</div>', d, re.S)
 print(html.unescape(m.group(1)) if m else '（未取到 result 节点）')
 ")"
+    # 启动期载入族瞬态（R174 两次实录：browser-windows node26 上 timepicker
+    # '未注册的模块'、v2sem 'is not defined'——页面驱动 catch 会把它写成 FAIL 行，
+    # 原判定见 FAIL 即 break → 吸收层接不住）。仅载入族签名进重跑：确定性真 bug
+    # 第二次照红不掩盖，瞬态脚本载入 miss 失败率 1→1/2。
+    local startup_flake=0
+    printf '%s' "$result" | grep -qE '抛出异常.*(is not defined|未注册的模块|SyntaxError|Unexpected token|Cannot read)' && startup_flake=1
     if ! printf '%s' "$result" | grep -q 'running…' \
-       && printf '%s' "$result" | grep -qE 'ALL PASS|FAIL '; then break; fi
+       && printf '%s' "$result" | grep -qE 'ALL PASS|FAIL ' \
+       && [ "$startup_flake" = 0 ]; then break; fi
     # 未完成签名：既无 ALL PASS 也无 FAIL（页面挂起/中断；running… 或 STAGE 直写
     # 都会落在这档）——真实异步未赶完虚拟窗口，属瞬态而非断言失败
     if [ "$attempt" = 1 ]; then
-      echo "  ⏳ 页面未完成（真实异步未赶完虚拟窗口，$(printf '%s' "$result" | head -c 60)…）——重跑一次（瞬态吸收层）"
+      if [ "$startup_flake" = 1 ]; then
+        echo "  ⚠ 启动期载入族瞬态（$(printf '%s' "$result" | head -c 60)…）——重跑一次（瞬态吸收层）"
+      else
+        echo "  ⏳ 页面未完成（真实异步未赶完虚拟窗口，$(printf '%s' "$result" | head -c 60)…）——重跑一次（瞬态吸收层）"
+      fi
     fi
   done
   echo "$result" | sed 's/^/  /'
