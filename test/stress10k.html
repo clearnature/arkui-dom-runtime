@@ -56,9 +56,12 @@
     const single = { flushMs: P.flushMs, updateMs: P.updateMs, n: P.n };
 
     // ② 滚动跟随：跳到列表底 → 窗口滑到底（引擎 setTimeout(0) 重算，spacer 模型自锚定）
+    // R53 同款同步派发（确定性）：VTB 下 scroll 事件投递不保真（R144 rAF 同族——
+    // 只快进定时器不保真渲染管线事件；CI browser node26 腿实测窗口滞留 [0,11] 假红）
     const se = document.scrollingElement || document.documentElement;
     const scrollH0 = se.scrollHeight;
     se.scrollTop = 1e9;
+    se.dispatchEvent(new Event('scroll', { bubbles: true }));
     let r1 = performance.now();
     for (let i = 0; i < 2000; i++) { await tick(); if (root.textContent.indexOf('item 3299') >= 0) break; }
     const followPollMs = performance.now() - r1;
