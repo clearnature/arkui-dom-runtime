@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # 一条命令做完所有可自动化的验收。
 #
-#   bash tools/check-all.sh            # 全部
-#   bash tools/check-all.sh --quick    # 跳过 Electron（只跑 preflight + 生成物 + 浏览器）
+#   bash tools/check-all.sh            # 全部（PC 四引擎：browser/electron/firefox/webkit）
+#   bash tools/check-all.sh --quick    # 快验档（R176 重定义）：两核心矩阵 browser+electron，
+#                                       # 跳过 firefox/webkit 加分端——原语义"跳过 Electron"
+#                                       # 与 R174"Electron 是宿主兼容面核心"冲突，已纠正
 #
 # 设计约定：
 #   1) 成败一律看【被调用命令的退出码】，绝不用 grep/wc 数日志行。
@@ -72,19 +74,18 @@ step "typecheck" node tools/typecheck.mjs
 # ── 5. 浏览器用例 ──
 step "browser (run.sh all)" bash run.sh all
 
-# ── 6. Electron 用例 + 磁盘落盘验证 ──
-if [ "$QUICK" = "1" ]; then
-  printf '════ electron ════\n  ⏭  跳过（--quick）\n'
-  SKIPPED+=("electron (--quick)")
-else
-  step "electron (electron/run.sh all)" bash electron/run.sh all
-fi
+# ── 6. Electron 用例 + 磁盘落盘验证（快验档也跑——R176：Electron=宿主兼容面核心）──
+step "electron (electron/run.sh all)" bash electron/run.sh all
 
 # ── 6b. Firefox(Gecko) 用例（R144 第三验证端：同用例表跨引擎复跑）──
 # 兼容性加分端：主验收基准是 Electron/Chromium（docs/ARCHITECTURE §1 三层一致性）。
-# firefox 或 geckodriver 缺席时显式跳过并声明原因（同 supply 步纪律，绝不冒充通过）；
-# 驱动就位时本步自动转真（geckodriver ~3MB 二进制不入库，定位顺序见 firefox/run.sh）。
-if command -v firefox >/dev/null 2>&1 \
+# --quick 快验档跳过本步（R176：快验=两核心矩阵）；firefox 或 geckodriver 缺席时
+# 显式跳过并声明原因（同 supply 步纪律，绝不冒充通过）；驱动就位时本步自动转真。
+if [ "$QUICK" = "1" ]; then
+  printf '════ firefox (firefox/run.sh all) ════\n'
+  printf '  ⏭  跳过（--quick 快验档：只跑 browser+electron 两核心矩阵）\n'
+  SKIPPED+=("firefox (--quick)")
+elif command -v firefox >/dev/null 2>&1 \
    && { [ -n "${FF_GECKODRIVER:-}" ] || command -v geckodriver >/dev/null 2>&1 \
         || [ -x "$HOME/.local/bin/geckodriver" ] || [ -x /data/tmp/geckodriver ]; }; then
   step "firefox (firefox/run.sh all)" bash firefox/run.sh all
@@ -97,10 +98,14 @@ fi
 
 # ── 6c. WebKit 用例（R148 第四验证端：同用例表 × playwright WebKit）──
 # 兼容性加分端：主验收基准是 Electron/Chromium（docs/ARCHITECTURE §1 三层一致性）。
-# 依赖两件套都不入库（带 playwright 的 python + ~/.cache/ms-playwright 的 WebKit
-# 二进制），缺席时显式跳过并声明原因；就位时本步自动转真（见 webkit/run.sh）。
+# --quick 快验档跳过本步（R176：快验=两核心矩阵）；依赖两件套不入库（带 playwright
+# 的 python + ~/.cache/ms-playwright 的 WebKit 二进制），缺席时显式跳过并声明原因。
 WK_PY="${WK_PYTHON:-/data/tmp/wk-venv/bin/python}"
-if [ -x "$WK_PY" ] && "$WK_PY" -c "import playwright" 2>/dev/null; then
+if [ "$QUICK" = "1" ]; then
+  printf '════ webkit (webkit/run.sh all) ════\n'
+  printf '  ⏭  跳过（--quick 快验档：只跑 browser+electron 两核心矩阵）\n'
+  SKIPPED+=("webkit (--quick)")
+elif [ -x "$WK_PY" ] && "$WK_PY" -c "import playwright" 2>/dev/null; then
   step "webkit (webkit/run.sh all)" bash webkit/run.sh all
 else
   printf '════ webkit (webkit/run.sh all) ════\n'

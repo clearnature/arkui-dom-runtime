@@ -7,7 +7,7 @@
 ```bash
 cd /data/training/cli/arkui-dom-runtime
 npm run check                   # 全部验收：preflight + 生成物一致 + 浏览器 + Electron（退出码可信）
-npm run check:quick             # 跳过 Electron
+npm run check:quick             # 快验档：browser+electron 两核心（跳过 firefox/webkit）
 ./run.sh all                    # 浏览器侧：32 个用例（Chrome headless）
 ./electron/run.sh all           # Electron 侧：31 个用例 + 真实磁盘核验
 npm run stats                   # 覆盖范围统计（本文档的数字都来自它）

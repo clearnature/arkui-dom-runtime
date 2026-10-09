@@ -1799,25 +1799,25 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   fixtures 转换产物  81 个：AlphabetIndexerDemo AnimDemo AnimatorDemo AsyncIO AttrHeavyDemo BatchFuncDemo BatchInputDemo BatchLayoutDemo BatchMediaDemo BatchVerifyDemo BuiltinDemo CalendarPickerDemo Callee CanvasDemo CjkDemo DatePickerDemo Detail DrawDemo GestureDemo GestureGroupDemo GridDemo GridRowDemo Home ImageDemo Index InputDemo Layout Lazy LazyVar ListGroupDemo MeasArea MeasImage MeasNotify Measure MediaDemo MotionDemo NavBarDemo NavDemo NavShimDemo NavTransDemo NetFile NotesDetail NotesHome Observe PanelDemo PerfBigDemo PerfDemo PickerDemo PopDemo PromptAct Provide QrDemo RefreshDemo RelDemo ResourceDemo Rich RichVideoDemo ScrollDemo ShapeDemo ShowDemo SideBarDemo SmallDemo SplitDemo StepDemo Stress10kDemo Stress1kDemo SwiperDemo TabsGrid TextDemo TextMeasure TextPickerDemo TextTimeDemo TimePickerDemo TransitionDemo UiContextDemo V2 WaterFlowDemo Widgets WinSem WindowDemo XCompDemo
 
 == 性能基线（Electron 实测）==
-  首渲染            35.4 ms（33 节点：Column+Button+Text+ForEach×30）
-  最小 rerender     13.3 ms（@State 计数脏区单 Text，rAF 口径）
+  首渲染            36.1 ms（33 节点：Column+Button+Text+ForEach×30）
+  最小 rerender     18.1 ms（@State 计数脏区单 Text，rAF 口径）
   rerender 管道     1.1 ms / 1 tick（setTimeout 轮询口径，R70）
   微任务底噪        0.00 ms
   行数              31
-  剖面 R71          loadRoute 同步 7.6 ms（require 0.4）· raf1 1.0 / raf2 26.8 ms（offscreen 首帧）
-  脚本 eval         runtime 153.1 / generated 144.9 / shims 150.9 / module 150.0 ms（计时起点之前）
+  剖面 R71          loadRoute 同步 7.7 ms（require 0.3）· raf1 0.9 / raf2 27.5 ms（offscreen 首帧）
+  脚本 eval         runtime 149.5 / generated 145.2 / shims 147.2 / module 146.6 ms（计时起点之前）
   判定              框架同步构建 3.5ms 无大头；"首渲染"=脚本 eval + offscreen 首帧（非框架成本）
-  千节点 R79        首渲染同步 33.5 ms（350 节点/~3500 属性，亚线性）· 单点 flush 0.3 ms · 批量翻转 flush 3.1 ms
+  千节点 R79        首渲染同步 36.2 ms（350 节点/~3500 属性，亚线性）· 单点 flush 0.4 ms · 批量翻转 flush 4.0 ms
   规模曲线          203→4.8 / 304→11.2 / 1055→19.0 ms（创建路径亚线性）；行复用+守卫千节点级保持
-  万节点 R138/C1-v2 首渲染同步 54.5 ms（ForEach 窗口化：挂载 10 行/全量 3300 由 spacer 撑出）· 批量翻转 poll 4.9 ms / flush 3.4 ms · 单点 flush 0.2 ms
+  万节点 R138/C1-v2 首渲染同步 56.3 ms（ForEach 窗口化：挂载 10 行/全量 3300 由 spacer 撑出）· 批量翻转 poll 3.9 ms / flush 3.3 ms · 单点 flush 0.3 ms
 
 == 体积（源码，不含产物/Electron 运行时）==
   runtime          9602.6 KB
   runtime(src)     1622.1 KB
   test             9589.5 KB
-  tools            384.0 KB
-  electron(src)    181.6 KB
-  docs             1005.1 KB
+  tools            391.5 KB
+  electron(src)    182.2 KB
+  docs             1007.7 KB
   fixtures         565.2 KB
 
 == 逐文件（文档"文件职责"表的来源）==
@@ -1828,22 +1828,22 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   tools/gen-components.mjs                  7994 B  7.8 KB
   tools/serve.py                            5159 B  5.0 KB
   tools/stats.mjs                          22890 B  22.4 KB
-  tools/assert-counts.mjs                   9247 B  9.0 KB
+  tools/assert-counts.mjs                  13950 B  13.6 KB
   tools/preflight.mjs                       5573 B  5.4 KB
-  tools/check-all.sh                        8400 B  8.2 KB
+  tools/check-all.sh                        9030 B  8.8 KB
   tools/build-runtime.mjs                   5138 B  5.0 KB
-  run.sh                                   49794 B  48.6 KB
-  electron/run.sh                          28557 B  27.9 KB
+  run.sh                                   51381 B  50.2 KB
+  electron/run.sh                          29224 B  28.5 KB
   electron/main.js                         58716 B  57.3 KB
   electron/preload.js                      11432 B  11.2 KB
   package.json                              1366 B  1.3 KB
   .gitignore                                 993 B  1.0 KB
-  README.md                               158292 B  154.6 KB
+  README.md                               158342 B  154.6 KB
   THIRD-PARTY-NOTICES.md                   14233 B  13.9 KB
-  docs/ARCHITECTURE.md                    172371 B  168.3 KB
-  docs/CAPABILITY.md                       70868 B  69.2 KB
-  docs/DEVELOPING.md                       77261 B  75.5 KB
-  docs/ROADMAP.md                         309469 B  302.2 KB
+  docs/ARCHITECTURE.md                    172372 B  168.3 KB
+  docs/CAPABILITY.md                       70918 B  69.3 KB
+  docs/DEVELOPING.md                       77311 B  75.5 KB
+  docs/ROADMAP.md                         312042 B  304.7 KB
   docs/surface-measurement.md               6496 B  6.3 KB
   docs/SESSION-2026-09-20.md               12842 B  12.5 KB
   runtime/src/.mimosa                       4096 B  4.0 KB

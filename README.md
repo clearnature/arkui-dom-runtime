@@ -127,7 +127,7 @@ docs/                          ARCHITECTURE / DEVELOPING / ROADMAP / CAPABILITY
 ```bash
 # 一条命令做完所有验收（preflight + 生成物一致 + 浏览器 + Electron）
 npm run check
-npm run check:quick                # 跳过 Electron
+npm run check:quick                # 快验档：browser+electron 两核心（跳过 firefox/webkit）
 
 # 单个用例
 bash run.sh layout                 # 浏览器

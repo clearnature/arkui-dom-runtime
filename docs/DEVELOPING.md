@@ -494,7 +494,7 @@ CLT 自带 Device Emulator（`emulator/Emulator`，与 Previewer 无关——预
 ```bash
 # 1. 一条命令做完所有验收（preflight + 生成物一致 + 浏览器 + Electron + Firefox）
 npm run check          # 或 bash tools/check-all.sh（9 步；firefox/geckodriver 缺席时该步显式跳过）
-npm run check:quick    # 跳过 Electron
+npm run check:quick    # 快验档：browser+electron 两核心（跳过 firefox/webkit）
 
 # 2. 统计与文档一致（改了覆盖范围就更新 ARCHITECTURE.md §6 的引用块）
 node tools/stats.mjs

@@ -1,40 +1,40 @@
 /*
- * 断言计数守门：把 runner **实测**到的「每个用例 emit 了多少条 PASS」与文档里手写的
- * 「（N 条断言）」逐一比对。
+ * 断言计数守门（R176 起：清单单一源）：runner 实测 PASS 行数 ←→
+ * 【tools/assert-counts.expected.tsv 清单】←→ 文档「（N 条断言）」三者互证。
  *
- * 为什么需要它：文档里散落的计数一直靠人肉同步，已经漂移过两次 ——
- *   · R22 animdemo 记成 35、实际 36（2026-09-21 修）
- *   · v2 记成 26、实际 25；observe 记成 20、实际 19（同一天查出）
- * 与 gen-components --check、stats --check-doc 同构：文档里的数字必须有守卫，
- * 否则会先于代码腐烂。
+ * 为什么改（R174.1 教训）：文档曾是唯一权威源——每个用例的计数散在 README/
+ * ROADMAP/CAPABILITY/ARCHITECTURE 多处手工同步，本周 scrolldemo 一次改动要找
+ * 3 处声明（第三处靠守门报错才发现）；历史行还要「避文法改写」。现在：
+ *   · **唯一手写源 = 清单 TSV**（改计数只改它一处）；
+ *   · 文档数字=展示真值：改完清单跑 `--sync-docs` 一键回写全部声明位；
+ *   · runner 核对实测 vs 清单（分端期望仍走 --overrides 覆盖表，机制不变）；
+ *   · 守门同时核 文档 vs 清单（漂了提示跑 --sync-docs），文法纪律照旧保留。
  *
- * 为什么**不能**用 grep 数 test/*.html 里的 `check(` ：
- *   realfs.html 里 `check(` 有 28 处，但两端各只**执行** 21 条 —— 差的 7 处在互斥分支
- *   （浏览器走 localStorage 那一支、Electron 走 node-fs 那一支），静态计数会把"没跑到的
- *   断言"也算进去。**唯一权威是运行期真的 emit 出来的 PASS 行**，所以计数由 runner 落盘。
+ * 为什么不能 grep 数 test/*.html 的 `check(`：
+ *   realfs.html 里 `check(` 28 处但两端各只执行 21 条（7 处在互斥分支）。
+ *   **唯一权威是运行期真的 emit 出来的 PASS 行**，由 runner 落盘 counts.tsv。
  *
  * 用法：
- *   node tools/assert-counts.mjs --browser  <counts.tsv>               校验浏览器端
- *   node tools/assert-counts.mjs --electron <counts.tsv>               校验 Electron 端
- *   node tools/assert-counts.mjs --browser  <counts.tsv> --overrides <file>
- *   node tools/assert-counts.mjs --report   <counts.tsv>               只打印解析到的"文档声明"（查解析规则用）
+ *   node tools/assert-counts.mjs --browser   <counts.tsv> [--overrides <f>] [--label <端>]
+ *   node tools/assert-counts.mjs --electron  <counts.tsv> [--overrides <f>]
+ *   node tools/assert-counts.mjs --report    <counts.tsv>   报告清单/文档/实测三方对照
+ *   node tools/assert-counts.mjs --export                    清单 ← 文档（迁移/重建引导，一次性）
+ *   node tools/assert-counts.mjs --sync-docs                 文档 ← 清单（改计数后的回写）
  *
  *   counts.tsv 每行： <用例名>\t<实测 PASS 行数>      （由 run.sh / electron/run.sh 生成）
+ *   清单 TSV 每行：  <用例名>\t<期望数>\t<备注>        （# 注释；期望=各端统一值）
  *
- * --overrides（R144）：跨引擎矩阵用的「分端期望值表」——某些用例存在互斥条件分支，
- *   不同引擎各走一支、emit 的 PASS 数天然不同（实例：realfs 的 OPFS 探测——
- *   Chromium headless 卡 200ms 失败 / Gecko 8ms 成功，分支互斥差 1 条）。
- *   文件每行：<用例名>\t<该端期望值>\t<理由>（# 开头为注释）。命中覆盖的用例按
- *   覆盖值核对，偏差同样红——覆盖是「带理由的期望」，不是豁免；打印时显式标注。
+ * --overrides（R144，机制不变）：分端期望值表（如 realfs 20,21 时序两态皆合法），
+ *   文件每行 <用例>\t<该端期望值>\t<理由>。命中覆盖优先于清单；覆盖是「带理由的
+ *   期望」不是豁免，集合之外仍红。
  *
- * 文档声明的两种**规范写法**（改文档时照这两种写，别的写法守不住）：
- *   ① 同行：`bash run.sh <用例>` …（N 条断言…）          —— 数字与用例名必须在同一行
- *   ② 围栏块内：块内先出现 `run.sh <用例>`，块内随后的「（N 条断言）」归它
- *      （README 里 `$ bash run.sh x` 后跟 `=== ALL PASS ===（N 条断言）` 就是这种）
- * 含「条断言失败 / 条红」的行是破坏验证的**失败数**、不是总数，自动跳过。
+ * 文档声明的两种规范写法（照旧）：
+ *   ① 同行：`bash run.sh <用例>` …（N 条断言…）
+ *   ② 围栏块内：块内先点名用例，块内随后的「（N 条断言）」归它
+ *   含「条断言失败 / 条红」的行是失败数、自动跳过。
  *
- * 退出码：0 = 所有能核对的声明都一致；1 = 有漂移（逐条打印 file:line / 文档值 / 实测值）。
- * 未在本次运行中测到的用例不算错（单用例运行时只核对它自己），只计入"跳过"。
+ * 退出码：0 = 三方一致；1 = 有漂移（分区打印 + 各自修法）。
+ * 未在本次运行测到的用例不因实测缺位报错（单用例只核它自己），计入跳过。
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -44,29 +44,41 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 
 const DOCS = ['README.md', 'docs/ROADMAP.md', 'docs/ARCHITECTURE.md', 'docs/CAPABILITY.md'];
-// 用例名：`run.sh xxx` / `./run.sh xxx` / `bash run.sh xxx`
+const EXPECTED_TSV = 'tools/assert-counts.expected.tsv';
+// 用例名：`run.sh xxx` / `./run.sh xxx` / `bash run.sh xxx` / `electron/run.sh xxx`
 const CASE_RE = /(?:bash\s+|\.\/)?(?:electron\/)?run\.sh\s+([a-z][a-z0-9-]*)/g;
-// 数字必须**紧跟在**（ ( ， , * 之后才算"声明"——这样 "被 5 条断言抓住" 这类散文不会被误判成总数
+// 数字必须紧跟在（ ( ， , * 之后才算"声明"——"被 5 条断言抓住"这类散文不误判
 const NUM_RE = /[（(，,*](\d+)\s*条断言/;
-const COUNT_MEANING_RE = /条断言失败|条红|条断言被|条断言没牙齿/;   // 破坏验证的失败数，不是总数
+const COUNT_MEANING_RE = /条断言失败|条红|条断言被|条断言没牙齿/;   // 破坏验证的失败数
 
 const argv = process.argv.slice(2);
 const mode = argv[0];
-const file = argv[1];
+const file = (mode === '--browser' || mode === '--electron' || mode === '--report') ? argv[1] : null;
 let overridePath = null;
 let label = null;
 for (let i = 2; i < argv.length; i++) {
   if (argv[i] === '--overrides') { overridePath = argv[i + 1]; i++; }
   else if (argv[i] === '--label') { label = argv[i + 1]; i++; }
 }
-if (!['--browser', '--electron', '--report'].includes(mode) || !file) {
-  console.error('用法: node tools/assert-counts.mjs --browser|--electron|--report <counts.tsv> [--overrides <file>] [--label <端名>]');
+if (!['--browser', '--electron', '--report', '--sync-docs', '--export'].includes(mode)
+    || ((mode === '--browser' || mode === '--electron' || mode === '--report') && !file)) {
+  console.error('用法: node tools/assert-counts.mjs --browser|--electron|--report <counts.tsv> [--overrides <f>] [--label <端>] | --export | --sync-docs');
   process.exit(2);
 }
 
-// ── 分端期望值覆盖（R144，可选）──
-// 值域支持逗号分隔集合：`realfs\t20,21\t理由` = 20 或 21 都算过（时序敏感的互斥分支
-// 两态皆合法，实测见 firefox/assert-overrides.tsv）；集合之外的值仍然红。
+// ── 清单（R176 唯一手写权威源）──
+function loadManifest() {
+  const m = new Map();
+  if (!fs.existsSync(path.join(ROOT, EXPECTED_TSV))) return m;
+  for (const line of read(EXPECTED_TSV).split('\n')) {
+    const g = line.match(/^([a-z][a-z0-9-]*)\t(\d+)(?:\t.*)?$/);
+    if (g) m.set(g[1], Number(g[2]));
+  }
+  return m;
+}
+const manifest = loadManifest();
+
+// ── 分端期望值覆盖（R144，机制不变；可选）──
 const overrides = new Map();
 if (overridePath) {
   for (const line of fs.readFileSync(overridePath, 'utf8').split('\n')) {
@@ -77,39 +89,36 @@ if (overridePath) {
 
 // ── 实测值（runner 落盘）──
 const measured = new Map();
-for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
-  const m = line.match(/^([a-z][a-z0-9-]*)\t(\d+)\s*$/);
-  if (m) measured.set(m[1], Number(m[2]));
-}
-if (measured.size === 0) {
-  console.error(`❌ ${file} 里没有任何「<用例>\t<数>」记录（runner 没写？）`);
-  process.exit(1);
+if (file) {
+  for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
+    const m = line.match(/^([a-z][a-z0-9-]*)\t(\d+)\s*$/);
+    if (m) measured.set(m[1], Number(m[2]));
+  }
+  if (mode !== '--export' && mode !== '--sync-docs' && measured.size === 0) {
+    console.error(`❌ ${file} 里没有任何「<用例>\t<数>」记录（runner 没写？）`);
+    process.exit(1);
+  }
 }
 
-// ── 解析文档声明 ──
-// 每处声明：{ file, line, caseName, declared, how }
+// ── 解析文档声明（语法机制保留——文档=展示真值，与清单互证）──
 const decls = [];
 const ambiguous = [];
-
 for (const doc of DOCS) {
   let inFence = false;
-  let fenceCase = null;              // 围栏块内最近一次出现的用例名
+  let fenceCase = null;
   const lines = read(doc).split('\n');
   for (let i = 0; i < lines.length; i++) {
     const raw = lines[i];
     if (/^\s*```/.test(raw)) { inFence = !inFence; if (inFence) fenceCase = null; continue; }
-    // 先记用例名（`$ bash run.sh <用例>` 这种行**没有数字**，必须在数字判断之前处理，
-    // 否则块内永远记不住用例名 —— 这正是第一版实现踩的坑）
     const uniq = [...new Set([...raw.matchAll(CASE_RE)].map((m) => m[1]))];
     if (inFence && uniq.length === 1) fenceCase = uniq[0];
     const num = raw.match(NUM_RE);
     if (!num || COUNT_MEANING_RE.test(raw)) continue;
     if (uniq.length === 1) {
-      decls.push({ file: doc, line: i + 1, caseName: uniq[0], declared: Number(num[1]), how: '同行' });
+      decls.push({ file: doc, line: i, caseName: uniq[0], declared: Number(num[1]), how: '同行', num0: num.index, num1: num.index + num[0].length });
     } else if (uniq.length === 0) {
       if (inFence && fenceCase) {
-        // 围栏块内：数字这行没写用例名，沿用块内最近一次出现的用例名
-        decls.push({ file: doc, line: i + 1, caseName: fenceCase, declared: Number(num[1]), how: '块内' });
+        decls.push({ file: doc, line: i, caseName: fenceCase, declared: Number(num[1]), how: '块内', num0: num.index, num1: num.index + num[0].length });
       } else {
         ambiguous.push({ file: doc, line: i + 1, text: raw.trim(), why: '有数字但既没写用例名、也不在"块内已点名用例"的围栏里' });
       }
@@ -119,54 +128,126 @@ for (const doc of DOCS) {
   }
 }
 
-if (mode === '--report') {
-  console.log(`实测输入：${measured.size} 个用例（${file}）`);
+// ── --export：清单 ← 文档（迁移/重建引导：以当前文档声明为初始权威）──
+if (mode === '--export') {
+  const byCase = new Map();
+  const conflicts = [];
   for (const d of decls) {
+    if (byCase.has(d.caseName) && byCase.get(d.caseName) !== d.declared) {
+      conflicts.push(`${d.caseName}: 文档两处声明不一致 ${byCase.get(d.caseName)} vs ${d.declared}（${d.file}:${d.line + 1}）`);
+    }
+    byCase.set(d.caseName, d.declared);
+  }
+  if (ambiguous.length || conflicts.length) {
+    for (const a of ambiguous) console.error(`❌ 无法归类：${a.file}:${a.line + 1} ${a.why}`);
+    for (const c of conflicts) console.error('❌ ' + c);
+    console.error('   先把文档修成规范且一致的声明，再 --export');
+    process.exit(1);
+  }
+  const out = [
+    '# 断言计数期望清单（R176 起唯一手写权威源——runner 实测与文档展示都以它为准）。',
+    '# 格式：<用例名>\\t<期望 PASS 数>\\t<备注>；分端差异（如 realfs 20,21）走各端',
+    '# assert-overrides.tsv 覆盖表，机制不变。改计数：改本文件 → --sync-docs 回写文档。',
+    '# 生成：node tools/assert-counts.mjs --export（从文档声明重建；--sync-docs 反向回写）。',
+    '',
+  ];
+  for (const k of [...byCase.keys()].sort()) out.push(`${k}\t${byCase.get(k)}`);
+  fs.writeFileSync(path.join(ROOT, EXPECTED_TSV), out.join('\n') + '\n');
+  console.log(`✅ 清单已写入 ${EXPECTED_TSV}：${byCase.size} 个用例（源=文档声明）`);
+  process.exit(0);
+}
+
+// ── --sync-docs：文档 ← 清单（回写全部声明位的数字）──
+if (mode === '--sync-docs') {
+  if (manifest.size === 0) { console.error(`❌ 清单为空/缺失（${EXPECTED_TSV}）——先 --export`); process.exit(1); }
+  const perFile = new Map();
+  let changed = 0, missing = 0;
+  for (const d of decls) {
+    const want = manifest.get(d.caseName);
+    if (want === undefined) { missing++; console.error(`   ⚠ 清单缺用例 ${d.caseName}（${d.file}:${d.line + 1}）——先 --export 补齐`); continue; }
+    if (want === d.declared) continue;
+    let arr = perFile.get(d.file);
+    if (!arr) { arr = read(d.file).split('\n'); perFile.set(d.file, arr); }
+    const raw = arr[d.line];
+    // 只替换解析命中段内的【数字】——前导标点/加粗（（N / **N 等）原样保留；
+    // 历史数字在段外（如「R46 时 16；R173 扩到 **26 条断言」的 16），永不触碰
+    const span = raw.slice(d.num0, d.num1);
+    arr[d.line] = raw.slice(0, d.num0) + span.replace(/\d+/, String(want)) + raw.slice(d.num1);
+    changed++;
+  }
+  for (const [f, lines] of perFile) fs.writeFileSync(path.join(ROOT, f), lines.join('\n'));
+  console.log(`✅ 文档回写：${changed} 处声明位 ← 清单（${missing} 处清单缺位待 --export）`);
+  process.exit(missing ? 1 : 0);
+}
+
+if (mode === '--report') {
+  console.log(`实测输入：${measured.size} 个用例（${file}）；清单 ${manifest.size} 个；文档声明 ${decls.length} 处`);
+  for (const d of decls) {
+    const mv = manifest.get(d.caseName);
     const have = measured.get(d.caseName);
-    const mark = have === undefined ? '·未测' : have === d.declared ? '✅' : `❌ 实测 ${have}`;
-    console.log(`  ${mark}  ${d.caseName.padEnd(14)} 文档 ${String(d.declared).padStart(3)}  ${d.file}:${d.line}（${d.how}）`);
+    const mMark = mv === undefined ? '❌清单缺' : mv !== d.declared ? `❌清单 ${mv}` : '✅';
+    const tMark = have === undefined ? '·未测' : have === d.declared ? '=文档' : `❌实测 ${have}`;
+    console.log(`  ${mMark}  ${d.caseName.padEnd(14)} 文档 ${String(d.declared).padStart(3)}  ${tMark}  ${d.file}:${d.line + 1}`);
   }
   for (const a of ambiguous) console.log(`  ⚠️  无法归类：${a.file}:${a.line}（${a.why}）\n        ${a.text}`);
-  console.log(`合计 ${decls.length} 处声明；无法归类 ${ambiguous.length} 处`);
-  process.exit(ambiguous.length ? 1 : 0);
+  const badDocs = decls.filter((d) => manifest.get(d.caseName) !== d.declared).length;
+  console.log(`合计：文档 ${decls.length} 处；与清单不一致 ${badDocs} 处；无法归类 ${ambiguous.length} 处`);
+  process.exit(badDocs || ambiguous.length ? 1 : 0);
 }
 
+// ── runner 校验模式（--browser / --electron）──
 const end = label || (mode === '--browser' ? '浏览器' : 'Electron');
-const bad = [];
-let checked = 0, skipped = 0, overridden = 0;
+const badDocs = [];      // 文档 vs 清单（修法：--sync-docs 或改清单）
+const badMeasured = [];  // 实测 vs 清单/覆盖（修法：改清单——数字只来自运行期 PASS 行）
+const noManifest = [];   // 实测但清单未收录（与旧守门"未声明不报错"同宽：计跳过不红）
+let checkedDocs = 0, checkedMeasured = 0, overridden = 0, skippedDocs = 0;
+
+// 1) 文档 ↔ 清单
 for (const d of decls) {
-  const have = measured.get(d.caseName);
-  if (have === undefined) { skipped++; continue; }
-  checked++;
-  const expected = overrides.get(d.caseName);
-  if (expected !== undefined) {
-    overridden++;
-    if (!expected.includes(have)) bad.push({ ...d, have, declared: expected.join('|'), how: d.how + '，覆盖值' });
-  } else if (have !== d.declared) {
-    bad.push({ ...d, have });
-  }
+  const want = manifest.get(d.caseName);
+  if (want === undefined) { badDocs.push({ ...d, reason: '清单缺该用例（先 --export 补）' }); continue; }
+  checkedDocs++;
+  if (want !== d.declared) badDocs.push({ ...d, want });
 }
+// 2) 实测 ↔ 清单（覆盖优先）
+for (const [caseName, have] of measured) {
+  const ov = overrides.get(caseName);
+  if (ov !== undefined) {
+    checkedMeasured++; overridden++;
+    if (!ov.includes(have)) badMeasured.push({ caseName, have, want: ov.join('|'), via: '分端覆盖值' });
+    continue;
+  }
+  const want = manifest.get(caseName);
+  if (want === undefined) { noManifest.push(caseName); continue; }
+  checkedMeasured++;
+  if (have !== want) badMeasured.push({ caseName, have, want, via: '清单' });
+}
+skippedDocs = decls.length - checkedDocs;
 
 if (ambiguous.length) {
-  console.error(`❌ 有 ${ambiguous.length} 处「（N 条断言）」无法归类到用例 —— 守门对它们无效：`);
-  for (const a of ambiguous) {
-    console.error(`   ${a.file}:${a.line}  ${a.why}`);
-    console.error(`     ${a.text}`);
-  }
-  console.error('   修法：把这行改成规范写法（同行写 `run.sh <用例>`，或放进"块内已点名用例"的围栏里）');
+  console.error(`❌ 有 ${ambiguous.length} 处「（N 条断言）」无法归类到用例：`);
+  for (const a of ambiguous) console.error(`   ${a.file}:${a.line}  ${a.why}\n     ${a.text}`);
+  console.error('   修法：改成规范写法（同行 `run.sh <用例>`，或"块内已点名用例"的围栏里）');
 }
-
-if (bad.length) {
-  console.error(`❌ 断言计数与文档不一致（${bad.length} 处，${end}端）：`);
-  for (const b of bad) {
-    console.error(`   ${b.file}:${b.line}  用例 ${b.caseName}  文档 ${b.declared}  实测 ${b.have}（${b.how}）`);
-    console.error(`     文档原行：${read(b.file).split('\n')[b.line - 1].trim().slice(0, 120)}`);
+if (badDocs.length) {
+  console.error(`❌ 文档声明与清单不一致（${badDocs.length} 处）：`);
+  for (const b of badDocs) {
+    console.error(`   ${b.file}:${b.line + 1}  用例 ${b.caseName}  文档 ${b.declared}${b.want !== undefined ? `  清单 ${b.want}` : `  ${b.reason}`}`);
+    console.error(`     文档原行：${read(b.file).split('\n')[b.line].trim().slice(0, 120)}`);
   }
-  console.error('   修法：把文档里的数字改成实测值 —— 数字只能来自运行期 emit 的 PASS 行，不许用 grep 数 check(');
-  console.error(`   （实测值：${bad.map((b) => `${b.caseName}=${b.have}`).join(' ')}）`);
+  console.error('   修法：数字认定后改 tools/assert-counts.expected.tsv（唯一手写源），再跑 node tools/assert-counts.mjs --sync-docs 回写文档');
 }
+if (badMeasured.length) {
+  console.error(`❌ 实测计数与清单不一致（${badMeasured.length} 处，${end}端）：`);
+  for (const b of badMeasured) console.error(`   ${b.caseName}  实测 ${b.have}  期望 ${b.want}（${b.via}）`);
+  console.error('   修法：数字只能来自运行期 emit 的 PASS 行——把实测值写进清单（不许 grep 数 check(');
+  console.error(`   （实测值：${badMeasured.map((b) => `${b.caseName}=${b.have}`).join(' ')}）`);
+}
+if (badDocs.length || badMeasured.length || ambiguous.length) process.exit(1);
 
-if (bad.length || ambiguous.length) process.exit(1);
-console.log(`✅ 断言计数守门（${end}端）：核对 ${checked} 处声明，全部与实测一致`
+let tail = `✅ 断言计数守门（${end}端）：实测 ${checkedMeasured} 例核清单一致`
+  + (checkedDocs ? `；文档 ${checkedDocs} 处声明与清单一致` : '')
   + (overridden ? `（其中 ${overridden} 处按分端覆盖值核对）` : '')
-  + (skipped ? `（另有 ${skipped} 处因本次未跑该用例而跳过）` : ''));
+  + (skippedDocs ? `（另有 ${skippedDocs} 处声明的用例本次未测、跳过实测核对）` : '');
+if (noManifest.length) tail += `（清单未收录：${noManifest.join(' ')}）`;
+console.log(tail);
