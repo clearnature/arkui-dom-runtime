@@ -70,9 +70,17 @@ if (!['--browser', '--electron', '--report', '--sync-docs', '--export'].includes
 function loadManifest() {
   const m = new Map();
   if (!fs.existsSync(path.join(ROOT, EXPECTED_TSV))) return m;
-  for (const line of read(EXPECTED_TSV).split('\n')) {
-    const g = line.match(/^([a-z][a-z0-9-]*)\t(\d+)(?:\t.*)?$/);
+  // R177：Windows checkout 行尾可能是 CRLF——split(/\r?\n/) + 去行尾 \r。
+  // 实录：cb07bbb 三窗腿 160 处"清单缺该用例"（\r 使锚定正则全灭；Linux 腿同
+  // commit 全绿=排除文件缺失），旧 measured loader 用 \s*$ 恰好耐 \r 所以从未暴露。
+  for (const line of read(EXPECTED_TSV).split(/\r?\n/)) {
+    const g = line.replace(/\r$/, '').match(/^([a-z][a-z0-9-]*)\t(\d+)(?:\t.*)?$/);
     if (g) m.set(g[1], Number(g[2]));
+  }
+  if (m.size === 0) {
+    const b = fs.readFileSync(path.join(ROOT, EXPECTED_TSV));
+    console.error(`❌ 清单 0 行可解析（${EXPECTED_TSV} 存在=${true} 字节=${b.length} 首行=${JSON.stringify(b.toString('utf8').split(/\r?\n/)[0] || '')}）`);
+    process.exit(1);
   }
   return m;
 }
@@ -81,8 +89,8 @@ const manifest = loadManifest();
 // ── 分端期望值覆盖（R144，机制不变；可选）──
 const overrides = new Map();
 if (overridePath) {
-  for (const line of fs.readFileSync(overridePath, 'utf8').split('\n')) {
-    const m = line.match(/^([a-z][a-z0-9-]*)\t([\d,]+)\t/);
+  for (const line of fs.readFileSync(overridePath, 'utf8').split(/\r?\n/)) {
+    const m = line.replace(/\r$/, '').match(/^([a-z][a-z0-9-]*)\t([\d,]+)\t/);
     if (m) overrides.set(m[1], m[2].split(',').map(Number));
   }
 }
@@ -90,8 +98,8 @@ if (overridePath) {
 // ── 实测值（runner 落盘）──
 const measured = new Map();
 if (file) {
-  for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
-    const m = line.match(/^([a-z][a-z0-9-]*)\t(\d+)\s*$/);
+  for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
+    const m = line.replace(/\r$/, '').match(/^([a-z][a-z0-9-]*)\t(\d+)$/);
     if (m) measured.set(m[1], Number(m[2]));
   }
   if (mode !== '--export' && mode !== '--sync-docs' && measured.size === 0) {
