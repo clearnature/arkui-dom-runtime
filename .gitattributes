@@ -1,0 +1,7 @@
+# 结构性钉行尾（R177）：runner 镜像 autocrlf 配置漂移实录——cb07bbb 同 run 内
+# webkit-windows(LF 镜像)过、browser/firefox/electron-windows(CRLF 镜像)守门假红；
+# 解析器已耐 CRLF（31eb6ee），此处让 checkout 层面统一 LF 根除该类。
+* text=auto eol=lf
+# 第三方 vendor 保持字节原样（R33 许可原文随拷纪律）——不做任何行尾转换。
+test/vendor/** -text
+runtime/vendor/** -text
