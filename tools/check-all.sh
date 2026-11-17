@@ -5,6 +5,7 @@
 #   bash tools/check-all.sh --quick    # 快验档（R176 重定义）：两核心矩阵 browser+electron，
 #                                       # 跳过 firefox/webkit 加分端——原语义"跳过 Electron"
 #                                       # 与 R174"Electron 是宿主兼容面核心"冲突，已纠正
+#   bash tools/check-all.sh --tsc7     # 额外跑 TypeScript 7.x 并行轴（默认不跑，见 4c 步）
 #
 # 设计约定：
 #   1) 成败一律看【被调用命令的退出码】，绝不用 grep/wc 数日志行。
@@ -23,7 +24,14 @@ LOGDIR="$ROOT/build/check-logs"
 mkdir -p "$LOGDIR"
 
 QUICK=0
-[ "${1:-}" = "--quick" ] && QUICK=1
+TSC7=0
+for arg in "$@"; do
+  case "$arg" in
+    --quick) QUICK=1 ;;
+    --tsc7)  TSC7=1 ;;
+    *) printf '未知参数: %s（可用：--quick --tsc7）\n' "$arg" >&2; exit 2 ;;
+  esac
+done
 
 STEPS=()
 FAILED=()
@@ -70,6 +78,15 @@ step "stats --check-doc" node tools/stats.mjs --check-doc
 # 红线 0 错误。曾挖出 2 个真 bug（onSubmit 的 value 未定义 / v2 Event 遮蔽 DOM Event）。
 # 触发了怎么修：按报错的 文件:行 修源分片（JSDoc 断言优先，零运行时改动），别用 @ts-ignore。
 step "typecheck" node tools/typecheck.mjs
+
+# ── 4c. 类型检查 · TypeScript 7.x 并行轴（默认不跑，--tsc7 启用）──
+# TS 7 是原生（Go）编译器，官方称全量构建 8–12×；但它把 strict 默认翻成 true、并移除了
+# Closure 风格 JSDoc 函数类型 function(): T —— 口径与 4.9.5 不同，且 7.1 仍是 beta，
+# 所以只作并行轴，不替代上面那条默认门禁（extract 产物契约永远钉 4.9.5-r4）。
+# 单独跑：npm run typecheck:tsc7；二进制用 TSC7=... 指定，或 PATH 上的 7.x tsc。
+if [ "$TSC7" = "1" ]; then
+  step "typecheck (tsc7 axis)" node tools/typecheck.mjs --tsc=7
+fi
 
 # ── 5. 浏览器用例 ──
 step "browser (run.sh all)" bash run.sh all

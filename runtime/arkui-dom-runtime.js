@@ -3704,7 +3704,8 @@
       },
     };
   }
-  ViewPU.prototype.getUIContext = function () { return makeUIContext(); };
+  // 原型扩展：TS 7 不再允许给类原型挂新成员，用 any 断言把这个"类型层动作"显式声明出来
+  (/** @type {any} */ (ViewPU.prototype)).getUIContext = function () { return makeUIContext(); };
 
   // ────────────────── Tabs / TabContent（多面板切换）──────────────────
   //
@@ -17849,14 +17850,14 @@
     };
 
     // ── ArcSwiper ──
-    /** @param {any} n @param {number} i */
-    function arcSwiperShow(n, i) {
+    /** @param {any} n @param {number} i @param {string} [mode] */
+    function arcSwiperShow(n, i, mode) {
       const st = n.__arcSwiper;
       st.index = i;
       st.children.forEach((/** @type {any} */ k, /** @type {number} */ ki) => {
         k.style.display = ki === i ? 'block' : 'none';
       });
-      if (st.onIndexChange && arguments[2] !== 'silent') {
+      if (st.onIndexChange && mode !== 'silent') {
         try { st.onIndexChange(i); } catch (e) { layoutWarnings.push('ArcSwiper.onChange: ' + e.message); }
       }
     }
@@ -18462,7 +18463,7 @@
   const v2CellComputedRecs = new WeakMap();   // 依赖 cell -> Set<rec>（写路径的反向索引）
   /** @type {any} */ let v2ComputedRecording = null;   // 正在求值的 rec（真机 startRecordDependencies 窗口）
 
-  /** @param {any} inst @param {string} key @param {function(): any} fn */
+  /** @param {any} inst @param {string} key @param {() => any} fn */
   function v2ComputedRecOf(inst, key, fn) {
     let m = v2ComputedRecs.get(inst);
     if (!m) v2ComputedRecs.set(inst, (m = new Map()));

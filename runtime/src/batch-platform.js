@@ -40,14 +40,14 @@
     };
 
     // ── ArcSwiper ──
-    /** @param {any} n @param {number} i */
-    function arcSwiperShow(n, i) {
+    /** @param {any} n @param {number} i @param {string} [mode] */
+    function arcSwiperShow(n, i, mode) {
       const st = n.__arcSwiper;
       st.index = i;
       st.children.forEach((/** @type {any} */ k, /** @type {number} */ ki) => {
         k.style.display = ki === i ? 'block' : 'none';
       });
-      if (st.onIndexChange && arguments[2] !== 'silent') {
+      if (st.onIndexChange && mode !== 'silent') {
         try { st.onIndexChange(i); } catch (e) { layoutWarnings.push('ArcSwiper.onChange: ' + e.message); }
       }
     }

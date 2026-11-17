@@ -769,7 +769,8 @@
       },
     };
   }
-  ViewPU.prototype.getUIContext = function () { return makeUIContext(); };
+  // 原型扩展：TS 7 不再允许给类原型挂新成员，用 any 断言把这个"类型层动作"显式声明出来
+  (/** @type {any} */ (ViewPU.prototype)).getUIContext = function () { return makeUIContext(); };
 
   // ────────────────── Tabs / TabContent（多面板切换）──────────────────
   //

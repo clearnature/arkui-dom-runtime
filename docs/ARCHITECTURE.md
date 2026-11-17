@@ -1812,31 +1812,31 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   万节点 R138/C1-v2 首渲染同步 56.3 ms（ForEach 窗口化：挂载 10 行/全量 3300 由 spacer 撑出）· 批量翻转 poll 3.9 ms / flush 3.3 ms · 单点 flush 0.3 ms
 
 == 体积（源码，不含产物/Electron 运行时）==
-  runtime          9602.6 KB
-  runtime(src)     1622.1 KB
+  runtime          9602.8 KB
+  runtime(src)     1622.3 KB
   test             9589.5 KB
-  tools            391.5 KB
+  tools            395.3 KB
   electron(src)    182.2 KB
   docs             1007.7 KB
   fixtures         565.2 KB
 
 == 逐文件（文档"文件职责"表的来源）==
-  runtime/arkui-dom-runtime.js            1385353 B  1352.9 KB
+  runtime/arkui-dom-runtime.js            1385514 B  1353.0 KB
   runtime/generated-components.js          57617 B  56.3 KB
   runtime/ohos-shims.js                   128747 B  125.7 KB
   tools/extract.mjs                         7386 B  7.2 KB
   tools/gen-components.mjs                  7994 B  7.8 KB
   tools/serve.py                            5159 B  5.0 KB
   tools/stats.mjs                          22890 B  22.4 KB
-  tools/assert-counts.mjs                  13950 B  13.6 KB
+  tools/assert-counts.mjs                  14591 B  14.2 KB
   tools/preflight.mjs                       5573 B  5.4 KB
-  tools/check-all.sh                        9030 B  8.8 KB
+  tools/check-all.sh                        9907 B  9.7 KB
   tools/build-runtime.mjs                   5138 B  5.0 KB
   run.sh                                   51381 B  50.2 KB
   electron/run.sh                          29224 B  28.5 KB
   electron/main.js                         58716 B  57.3 KB
   electron/preload.js                      11432 B  11.2 KB
-  package.json                              1366 B  1.3 KB
+  package.json                              1424 B  1.4 KB
   .gitignore                                 993 B  1.0 KB
   README.md                               158342 B  154.6 KB
   THIRD-PARTY-NOTICES.md                   14233 B  13.9 KB
@@ -1859,7 +1859,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   runtime/src/batch-media.js               36858 B  36.0 KB
   runtime/src/batch-motion.js              25199 B  24.6 KB
   runtime/src/batch-nav.js                 30418 B  29.7 KB
-  runtime/src/batch-platform.js            30369 B  29.7 KB
+  runtime/src/batch-platform.js            30390 B  29.7 KB
   runtime/src/builtin.js                   22626 B  22.1 KB
   runtime/src/calendarpicker.js            17806 B  17.4 KB
   runtime/src/canvas.js                    10679 B  10.4 KB
@@ -1877,7 +1877,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   runtime/src/incremental.js                3155 B  3.1 KB
   runtime/src/input.js                     13931 B  13.6 KB
   runtime/src/layout.js                    22078 B  21.6 KB
-  runtime/src/main.js                     214474 B  209.4 KB
+  runtime/src/main.js                     214620 B  209.6 KB
   runtime/src/nav.js                       57837 B  56.5 KB
   runtime/src/panel.js                      5287 B  5.2 KB
   runtime/src/popup.js                      5989 B  5.8 KB
@@ -1894,7 +1894,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   runtime/src/textpicker.js                15543 B  15.2 KB
   runtime/src/texttime.js                   6976 B  6.8 KB
   runtime/src/timepicker.js                 5254 B  5.1 KB
-  runtime/src/v2.js                        45370 B  44.3 KB
+  runtime/src/v2.js                        45364 B  44.3 KB
   runtime/src/video.js                      5358 B  5.2 KB
   runtime/src/waterflow.js                 19823 B  19.4 KB
   fixtures/pages/AlphabetIndexerDemo.ts     3960 B  3.9 KB

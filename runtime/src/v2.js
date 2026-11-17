@@ -75,7 +75,7 @@
   const v2CellComputedRecs = new WeakMap();   // 依赖 cell -> Set<rec>（写路径的反向索引）
   /** @type {any} */ let v2ComputedRecording = null;   // 正在求值的 rec（真机 startRecordDependencies 窗口）
 
-  /** @param {any} inst @param {string} key @param {function(): any} fn */
+  /** @param {any} inst @param {string} key @param {() => any} fn */
   function v2ComputedRecOf(inst, key, fn) {
     let m = v2ComputedRecs.get(inst);
     if (!m) v2ComputedRecs.set(inst, (m = new Map()));
