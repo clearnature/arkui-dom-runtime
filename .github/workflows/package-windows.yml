@@ -48,6 +48,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
+      - name: TypeScript 7（extract 转译引擎）
+        run: bash tools/ci-provision-ts7.sh
       - name: 产物抽取（两套驱动全量趟——electron 侧模块驱动期才抽取，缺了包内页面 404）
         env:
           NODE: node

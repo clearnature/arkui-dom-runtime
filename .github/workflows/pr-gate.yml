@@ -66,6 +66,8 @@ jobs:
             test -s "kernel/$k" || { echo "❌ 缺 kernel/$k"; exit 1; }
           done
           echo "✅ 5 内核 .so 齐备"
+      - name: TypeScript 7（extract 转译引擎）
+        run: bash tools/ci-provision-ts7.sh
       - name: Index 抽取冒烟
         run: |
           mkdir -p build

@@ -24,7 +24,7 @@ concurrency:
 jobs:
   browser:
     name: browser@26.04
-    uses: clearnature/arkui-ci/.github/workflows/browser.yml@aab1bd5041c8fdd37526b62a869e37b9d8965add
+    uses: clearnature/arkui-ci/.github/workflows/browser.yml@1dbc0ed914583c6cc8d7c42ea5210afec40e3172
     with:
       runner: ubuntu-26.04
       node-version: "24"
@@ -35,7 +35,7 @@ jobs:
 
   firefox:
     name: firefox@26.04
-    uses: clearnature/arkui-ci/.github/workflows/firefox.yml@aab1bd5041c8fdd37526b62a869e37b9d8965add
+    uses: clearnature/arkui-ci/.github/workflows/firefox.yml@1dbc0ed914583c6cc8d7c42ea5210afec40e3172
     with:
       runner: ubuntu-26.04
       node-version: "24"
@@ -46,7 +46,7 @@ jobs:
 
   webkit:
     name: webkit@26.04
-    uses: clearnature/arkui-ci/.github/workflows/webkit.yml@aab1bd5041c8fdd37526b62a869e37b9d8965add
+    uses: clearnature/arkui-ci/.github/workflows/webkit.yml@1dbc0ed914583c6cc8d7c42ea5210afec40e3172
     with:
       runner: ubuntu-26.04
       node-version: "24"
@@ -57,20 +57,20 @@ jobs:
 
   electron:
     name: electron@26.04
-    uses: clearnature/arkui-ci/.github/workflows/electron-realtime.yml@aab1bd5041c8fdd37526b62a869e37b9d8965add
+    uses: clearnature/arkui-ci/.github/workflows/electron-realtime.yml@1dbc0ed914583c6cc8d7c42ea5210afec40e3172
     with:
       runner: ubuntu-26.04
       node-version: "24"
 
   kernel-contract:
     name: kernel-contract@26.04
-    uses: clearnature/arkui-ci/.github/workflows/kernel-contract.yml@aab1bd5041c8fdd37526b62a869e37b9d8965add
+    uses: clearnature/arkui-ci/.github/workflows/kernel-contract.yml@1dbc0ed914583c6cc8d7c42ea5210afec40e3172
     with:
       runner: ubuntu-26.04
       node-version: "24"
 
   kernel-compilers:
     name: kernel-compilers@26.04
-    uses: clearnature/arkui-ci/.github/workflows/kernel-compilers.yml@aab1bd5041c8fdd37526b62a869e37b9d8965add
+    uses: clearnature/arkui-ci/.github/workflows/kernel-compilers.yml@1dbc0ed914583c6cc8d7c42ea5210afec40e3172
     with:
       runner: ubuntu-26.04

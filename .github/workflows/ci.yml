@@ -32,7 +32,7 @@ jobs:
   browser:
     if: github.event_name != 'pull_request' || github.event.label.name == 'ci/full'
     name: browser (node 26)
-    uses: clearnature/arkui-ci/.github/workflows/browser.yml@d9184b6573b8f70e39336edf6575d14c37d529a7
+    uses: clearnature/arkui-ci/.github/workflows/browser.yml@1dbc0ed914583c6cc8d7c42ea5210afec40e3172
     with:
       # U26 迁移（2026-10-19 ubuntu-latest 迁 26；六腿 26.04 全量验证 run 37136198612 全绿）
       runner: ubuntu-26.04
@@ -46,7 +46,7 @@ jobs:
   browser-windows:
     if: github.event_name != 'pull_request' || github.event.label.name == 'ci/full'
     name: browser-windows (node 26)
-    uses: clearnature/arkui-ci/.github/workflows/browser-windows.yml@d9184b6573b8f70e39336edf6575d14c37d529a7
+    uses: clearnature/arkui-ci/.github/workflows/browser-windows.yml@1dbc0ed914583c6cc8d7c42ea5210afec40e3172
     with:
       # Windows runner 计费 2×：先单 node 版本（Windows 特有差异与 node 无关）
       node-version: "26"
@@ -60,7 +60,7 @@ jobs:
   electron:
     if: github.event_name != 'pull_request' || github.event.label.name == 'ci/full'
     name: electron (node 26)
-    uses: clearnature/arkui-ci/.github/workflows/electron-realtime.yml@d9184b6573b8f70e39336edf6575d14c37d529a7
+    uses: clearnature/arkui-ci/.github/workflows/electron-realtime.yml@1dbc0ed914583c6cc8d7c42ea5210afec40e3172
     with:
       # U26 迁移（2026-10-19 ubuntu-latest 迁 26；六腿 26.04 全量验证 run 37136198612 全绿）
       runner: ubuntu-26.04
@@ -69,7 +69,7 @@ jobs:
   firefox:
     if: github.event_name != 'pull_request' || github.event.label.name == 'ci/full'
     name: firefox (node 26)
-    uses: clearnature/arkui-ci/.github/workflows/firefox.yml@d9184b6573b8f70e39336edf6575d14c37d529a7
+    uses: clearnature/arkui-ci/.github/workflows/firefox.yml@1dbc0ed914583c6cc8d7c42ea5210afec40e3172
     with:
       # U26 迁移（2026-10-19 ubuntu-latest 迁 26；六腿 26.04 全量验证 run 37136198612 全绿）
       runner: ubuntu-26.04
@@ -85,7 +85,7 @@ jobs:
   electron-windows:
     if: github.event_name != 'pull_request' || github.event.label.name == 'ci/full'
     name: electron-windows (node 26)
-    uses: clearnature/arkui-ci/.github/workflows/electron-windows.yml@d9184b6573b8f70e39336edf6575d14c37d529a7
+    uses: clearnature/arkui-ci/.github/workflows/electron-windows.yml@1dbc0ed914583c6cc8d7c42ea5210afec40e3172
     with:
       node-version: "26"
       test-command: bash electron/run.sh all
@@ -96,7 +96,7 @@ jobs:
   firefox-windows:
     if: github.event_name != 'pull_request' || github.event.label.name == 'ci/full'
     name: firefox-windows (node 26)
-    uses: clearnature/arkui-ci/.github/workflows/firefox-windows.yml@d9184b6573b8f70e39336edf6575d14c37d529a7
+    uses: clearnature/arkui-ci/.github/workflows/firefox-windows.yml@1dbc0ed914583c6cc8d7c42ea5210afec40e3172
     with:
       node-version: "26"
       test-command: bash firefox/run.sh all
@@ -107,7 +107,7 @@ jobs:
   webkit-windows:
     if: github.event_name != 'pull_request' || github.event.label.name == 'ci/full'
     name: webkit-windows (node 26)
-    uses: clearnature/arkui-ci/.github/workflows/webkit-windows.yml@d9184b6573b8f70e39336edf6575d14c37d529a7
+    uses: clearnature/arkui-ci/.github/workflows/webkit-windows.yml@1dbc0ed914583c6cc8d7c42ea5210afec40e3172
     with:
       node-version: "26"
       test-command: bash webkit/run.sh all
@@ -118,7 +118,7 @@ jobs:
   webkit:
     if: github.event_name != 'pull_request' || github.event.label.name == 'ci/full'
     name: webkit (node 26)
-    uses: clearnature/arkui-ci/.github/workflows/webkit.yml@d9184b6573b8f70e39336edf6575d14c37d529a7
+    uses: clearnature/arkui-ci/.github/workflows/webkit.yml@1dbc0ed914583c6cc8d7c42ea5210afec40e3172
     with:
       # U26 迁移（2026-10-19 ubuntu-latest 迁 26；六腿 26.04 全量验证 run 37136198612 全绿）
       runner: ubuntu-26.04

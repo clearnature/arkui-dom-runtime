@@ -57,6 +57,8 @@ jobs:
           curl -fsSL --retry 3 -o "$HOME/.cache/electron/electron-v44.2.0-linux-x64.zip" \
             https://github.com/electron/electron/releases/download/v44.2.0/electron-v44.2.0-linux-x64.zip
           ls -lh "$HOME/.cache/electron/electron-v44.2.0-linux-x64.zip"
+      - name: TypeScript 7（extract 转译引擎）
+        run: bash tools/ci-provision-ts7.sh
       - name: 产物抽取（两套驱动全量趟——electron 侧模块驱动期才抽取，缺了包内页面 404）
         env:
           NODE: node

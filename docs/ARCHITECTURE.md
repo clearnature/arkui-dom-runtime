@@ -1799,23 +1799,23 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   fixtures 转换产物  81 个：AlphabetIndexerDemo AnimDemo AnimatorDemo AsyncIO AttrHeavyDemo BatchFuncDemo BatchInputDemo BatchLayoutDemo BatchMediaDemo BatchVerifyDemo BuiltinDemo CalendarPickerDemo Callee CanvasDemo CjkDemo DatePickerDemo Detail DrawDemo GestureDemo GestureGroupDemo GridDemo GridRowDemo Home ImageDemo Index InputDemo Layout Lazy LazyVar ListGroupDemo MeasArea MeasImage MeasNotify Measure MediaDemo MotionDemo NavBarDemo NavDemo NavShimDemo NavTransDemo NetFile NotesDetail NotesHome Observe PanelDemo PerfBigDemo PerfDemo PickerDemo PopDemo PromptAct Provide QrDemo RefreshDemo RelDemo ResourceDemo Rich RichVideoDemo ScrollDemo ShapeDemo ShowDemo SideBarDemo SmallDemo SplitDemo StepDemo Stress10kDemo Stress1kDemo SwiperDemo TabsGrid TextDemo TextMeasure TextPickerDemo TextTimeDemo TimePickerDemo TransitionDemo UiContextDemo V2 WaterFlowDemo Widgets WinSem WindowDemo XCompDemo
 
 == 性能基线（Electron 实测）==
-  首渲染            36.1 ms（33 节点：Column+Button+Text+ForEach×30）
-  最小 rerender     18.1 ms（@State 计数脏区单 Text，rAF 口径）
-  rerender 管道     1.1 ms / 1 tick（setTimeout 轮询口径，R70）
+  首渲染            35.3 ms（33 节点：Column+Button+Text+ForEach×30）
+  最小 rerender     9.7 ms（@State 计数脏区单 Text，rAF 口径）
+  rerender 管道     1.0 ms / 1 tick（setTimeout 轮询口径，R70）
   微任务底噪        0.00 ms
   行数              31
-  剖面 R71          loadRoute 同步 7.7 ms（require 0.3）· raf1 0.9 / raf2 27.5 ms（offscreen 首帧）
-  脚本 eval         runtime 149.5 / generated 145.2 / shims 147.2 / module 146.6 ms（计时起点之前）
+  剖面 R71          loadRoute 同步 7.5 ms（require 0.2）· raf1 0.2 / raf2 27.6 ms（offscreen 首帧）
+  脚本 eval         runtime 152.0 / generated 145.9 / shims 150.1 / module 149.3 ms（计时起点之前）
   判定              框架同步构建 3.5ms 无大头；"首渲染"=脚本 eval + offscreen 首帧（非框架成本）
-  千节点 R79        首渲染同步 36.2 ms（350 节点/~3500 属性，亚线性）· 单点 flush 0.4 ms · 批量翻转 flush 4.0 ms
+  千节点 R79        首渲染同步 32.9 ms（350 节点/~3500 属性，亚线性）· 单点 flush 0.2 ms · 批量翻转 flush 2.8 ms
   规模曲线          203→4.8 / 304→11.2 / 1055→19.0 ms（创建路径亚线性）；行复用+守卫千节点级保持
-  万节点 R138/C1-v2 首渲染同步 56.3 ms（ForEach 窗口化：挂载 10 行/全量 3300 由 spacer 撑出）· 批量翻转 poll 3.9 ms / flush 3.3 ms · 单点 flush 0.3 ms
+  万节点 R138/C1-v2 首渲染同步 56.4 ms（ForEach 窗口化：挂载 10 行/全量 3300 由 spacer 撑出）· 批量翻转 poll 4.5 ms / flush 3.1 ms · 单点 flush 0.2 ms
 
 == 体积（源码，不含产物/Electron 运行时）==
   runtime          9602.8 KB
   runtime(src)     1622.3 KB
   test             9589.5 KB
-  tools            395.3 KB
+  tools            402.2 KB
   electron(src)    182.2 KB
   docs             1007.7 KB
   fixtures         565.2 KB
@@ -1824,7 +1824,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   runtime/arkui-dom-runtime.js            1385514 B  1353.0 KB
   runtime/generated-components.js          57617 B  56.3 KB
   runtime/ohos-shims.js                   128747 B  125.7 KB
-  tools/extract.mjs                         7386 B  7.2 KB
+  tools/extract.mjs                        12628 B  12.3 KB
   tools/gen-components.mjs                  7994 B  7.8 KB
   tools/serve.py                            5159 B  5.0 KB
   tools/stats.mjs                          22890 B  22.4 KB
