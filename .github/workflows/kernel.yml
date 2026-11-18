@@ -22,13 +22,13 @@ concurrency:
 jobs:
   kernel-contract:
     name: kernel-contract
-    uses: clearnature/arkui-ci/.github/workflows/kernel-contract.yml@1dbc0ed914583c6cc8d7c42ea5210afec40e3172
+    uses: clearnature/arkui-ci/.github/workflows/kernel-contract.yml@c8d4da4bbe289e2d0799d89673006b1354f16190
     with:
       runner: ubuntu-26.04
       node-version: "24"
 
   kernel-compilers:
     name: kernel-compilers
-    uses: clearnature/arkui-ci/.github/workflows/kernel-compilers.yml@1dbc0ed914583c6cc8d7c42ea5210afec40e3172
+    uses: clearnature/arkui-ci/.github/workflows/kernel-compilers.yml@c8d4da4bbe289e2d0799d89673006b1354f16190
     with:
       runner: ubuntu-26.04
