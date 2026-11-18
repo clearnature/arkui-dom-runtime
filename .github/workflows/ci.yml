@@ -19,7 +19,15 @@ on:
     branches: [main, ci]
   pull_request:
     types: [labeled]
-  workflow_dispatch: {}
+  # 手动触发用于验证治理仓（arkui-ci）改动是否真能在 runner 上跑通——
+  # 治理仓 13 个工作流全是 workflow_call，开 PR/合并都不会跑任何 job。
+  # legs 按逗号分隔精确匹配 job id（逗号包边避免 browser 误匹配 browser-windows）。
+  workflow_dispatch:
+    inputs:
+      legs:
+        description: '要跑的腿（逗号分隔）。可用：browser,browser-windows,electron,firefox,electron-windows,firefox-windows,webkit-windows,webkit；all=全跑'
+        required: false
+        default: 'browser,browser-windows'
 
 permissions:
   contents: read
@@ -30,7 +38,11 @@ concurrency:
 
 jobs:
   browser:
-    if: github.event_name != 'pull_request' || github.event.label.name == 'ci/full'
+    if: >-
+      (github.event_name != 'pull_request' || github.event.label.name == 'ci/full')
+      && (github.event_name != 'workflow_dispatch'
+          || contains(format('{0}', inputs.legs), 'all')
+          || contains(format(',{0},', inputs.legs), ',browser,'))
     name: browser (node 26)
     uses: clearnature/arkui-ci/.github/workflows/browser.yml@c8d4da4bbe289e2d0799d89673006b1354f16190
     with:
@@ -44,7 +56,11 @@ jobs:
         build/assert-counts-browser.tsv
 
   browser-windows:
-    if: github.event_name != 'pull_request' || github.event.label.name == 'ci/full'
+    if: >-
+      (github.event_name != 'pull_request' || github.event.label.name == 'ci/full')
+      && (github.event_name != 'workflow_dispatch'
+          || contains(format('{0}', inputs.legs), 'all')
+          || contains(format(',{0},', inputs.legs), ',browser-windows,'))
     name: browser-windows (node 26)
     uses: clearnature/arkui-ci/.github/workflows/browser-windows.yml@c8d4da4bbe289e2d0799d89673006b1354f16190
     with:
@@ -58,7 +74,11 @@ jobs:
         build/assert-counts-browser.tsv
 
   electron:
-    if: github.event_name != 'pull_request' || github.event.label.name == 'ci/full'
+    if: >-
+      (github.event_name != 'pull_request' || github.event.label.name == 'ci/full')
+      && (github.event_name != 'workflow_dispatch'
+          || contains(format('{0}', inputs.legs), 'all')
+          || contains(format(',{0},', inputs.legs), ',electron,'))
     name: electron (node 26)
     uses: clearnature/arkui-ci/.github/workflows/electron-realtime.yml@c8d4da4bbe289e2d0799d89673006b1354f16190
     with:
@@ -67,7 +87,11 @@ jobs:
       node-version: "26"
 
   firefox:
-    if: github.event_name != 'pull_request' || github.event.label.name == 'ci/full'
+    if: >-
+      (github.event_name != 'pull_request' || github.event.label.name == 'ci/full')
+      && (github.event_name != 'workflow_dispatch'
+          || contains(format('{0}', inputs.legs), 'all')
+          || contains(format(',{0},', inputs.legs), ',firefox,'))
     name: firefox (node 26)
     uses: clearnature/arkui-ci/.github/workflows/firefox.yml@c8d4da4bbe289e2d0799d89673006b1354f16190
     with:
@@ -83,7 +107,11 @@ jobs:
   # Windows runner 计费 2×；webkit-windows 口径=Win32 口味 WebKit（第三种
   # WebKit，与 WebKitGTK 不互推）。首跑按 T3 纪律：目标是诊断透出。
   electron-windows:
-    if: github.event_name != 'pull_request' || github.event.label.name == 'ci/full'
+    if: >-
+      (github.event_name != 'pull_request' || github.event.label.name == 'ci/full')
+      && (github.event_name != 'workflow_dispatch'
+          || contains(format('{0}', inputs.legs), 'all')
+          || contains(format(',{0},', inputs.legs), ',electron-windows,'))
     name: electron-windows (node 26)
     uses: clearnature/arkui-ci/.github/workflows/electron-windows.yml@c8d4da4bbe289e2d0799d89673006b1354f16190
     with:
@@ -94,7 +122,11 @@ jobs:
         build/assert-counts-electron.tsv
 
   firefox-windows:
-    if: github.event_name != 'pull_request' || github.event.label.name == 'ci/full'
+    if: >-
+      (github.event_name != 'pull_request' || github.event.label.name == 'ci/full')
+      && (github.event_name != 'workflow_dispatch'
+          || contains(format('{0}', inputs.legs), 'all')
+          || contains(format(',{0},', inputs.legs), ',firefox-windows,'))
     name: firefox-windows (node 26)
     uses: clearnature/arkui-ci/.github/workflows/firefox-windows.yml@c8d4da4bbe289e2d0799d89673006b1354f16190
     with:
@@ -105,7 +137,11 @@ jobs:
         build/ff-matrix.log
 
   webkit-windows:
-    if: github.event_name != 'pull_request' || github.event.label.name == 'ci/full'
+    if: >-
+      (github.event_name != 'pull_request' || github.event.label.name == 'ci/full')
+      && (github.event_name != 'workflow_dispatch'
+          || contains(format('{0}', inputs.legs), 'all')
+          || contains(format(',{0},', inputs.legs), ',webkit-windows,'))
     name: webkit-windows (node 26)
     uses: clearnature/arkui-ci/.github/workflows/webkit-windows.yml@c8d4da4bbe289e2d0799d89673006b1354f16190
     with:
@@ -116,7 +152,11 @@ jobs:
         build/wk-matrix.log
 
   webkit:
-    if: github.event_name != 'pull_request' || github.event.label.name == 'ci/full'
+    if: >-
+      (github.event_name != 'pull_request' || github.event.label.name == 'ci/full')
+      && (github.event_name != 'workflow_dispatch'
+          || contains(format('{0}', inputs.legs), 'all')
+          || contains(format(',{0},', inputs.legs), ',webkit,'))
     name: webkit (node 26)
     uses: clearnature/arkui-ci/.github/workflows/webkit.yml@c8d4da4bbe289e2d0799d89673006b1354f16190
     with:
