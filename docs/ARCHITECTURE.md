@@ -1815,7 +1815,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   runtime          9602.8 KB
   runtime(src)     1622.3 KB
   test             9589.5 KB
-  tools            402.2 KB
+  tools            403.2 KB
   electron(src)    182.2 KB
   docs             1007.7 KB
   fixtures         565.2 KB
@@ -1824,7 +1824,7 @@ DOM 操作削减、布局批处理、脏区最小更新（中间态模板编译�
   runtime/arkui-dom-runtime.js            1385514 B  1353.0 KB
   runtime/generated-components.js          57617 B  56.3 KB
   runtime/ohos-shims.js                   128747 B  125.7 KB
-  tools/extract.mjs                        12628 B  12.3 KB
+  tools/extract.mjs                        13707 B  13.4 KB
   tools/gen-components.mjs                  7994 B  7.8 KB
   tools/serve.py                            5159 B  5.0 KB
   tools/stats.mjs                          22890 B  22.4 KB

@@ -44,7 +44,7 @@ jobs:
           || contains(format('{0}', inputs.legs), 'all')
           || contains(format(',{0},', inputs.legs), ',browser,'))
     name: browser (node 26)
-    uses: clearnature/arkui-ci/.github/workflows/browser.yml@c8d4da4bbe289e2d0799d89673006b1354f16190
+    uses: clearnature/arkui-ci/.github/workflows/browser.yml@7b4868c4c57cf4efadc3796d177fde496ed80c60
     with:
       # U26 迁移（2026-10-19 ubuntu-latest 迁 26；六腿 26.04 全量验证 run 37136198612 全绿）
       runner: ubuntu-26.04
@@ -62,7 +62,7 @@ jobs:
           || contains(format('{0}', inputs.legs), 'all')
           || contains(format(',{0},', inputs.legs), ',browser-windows,'))
     name: browser-windows (node 26)
-    uses: clearnature/arkui-ci/.github/workflows/browser-windows.yml@c8d4da4bbe289e2d0799d89673006b1354f16190
+    uses: clearnature/arkui-ci/.github/workflows/browser-windows.yml@7b4868c4c57cf4efadc3796d177fde496ed80c60
     with:
       # Windows runner 计费 2×：先单 node 版本（Windows 特有差异与 node 无关）
       node-version: "26"
@@ -80,7 +80,7 @@ jobs:
           || contains(format('{0}', inputs.legs), 'all')
           || contains(format(',{0},', inputs.legs), ',electron,'))
     name: electron (node 26)
-    uses: clearnature/arkui-ci/.github/workflows/electron-realtime.yml@c8d4da4bbe289e2d0799d89673006b1354f16190
+    uses: clearnature/arkui-ci/.github/workflows/electron-realtime.yml@7b4868c4c57cf4efadc3796d177fde496ed80c60
     with:
       # U26 迁移（2026-10-19 ubuntu-latest 迁 26；六腿 26.04 全量验证 run 37136198612 全绿）
       runner: ubuntu-26.04
@@ -93,7 +93,7 @@ jobs:
           || contains(format('{0}', inputs.legs), 'all')
           || contains(format(',{0},', inputs.legs), ',firefox,'))
     name: firefox (node 26)
-    uses: clearnature/arkui-ci/.github/workflows/firefox.yml@c8d4da4bbe289e2d0799d89673006b1354f16190
+    uses: clearnature/arkui-ci/.github/workflows/firefox.yml@7b4868c4c57cf4efadc3796d177fde496ed80c60
     with:
       # U26 迁移（2026-10-19 ubuntu-latest 迁 26；六腿 26.04 全量验证 run 37136198612 全绿）
       runner: ubuntu-26.04
@@ -113,7 +113,7 @@ jobs:
           || contains(format('{0}', inputs.legs), 'all')
           || contains(format(',{0},', inputs.legs), ',electron-windows,'))
     name: electron-windows (node 26)
-    uses: clearnature/arkui-ci/.github/workflows/electron-windows.yml@c8d4da4bbe289e2d0799d89673006b1354f16190
+    uses: clearnature/arkui-ci/.github/workflows/electron-windows.yml@7b4868c4c57cf4efadc3796d177fde496ed80c60
     with:
       node-version: "26"
       test-command: bash electron/run.sh all
@@ -128,7 +128,7 @@ jobs:
           || contains(format('{0}', inputs.legs), 'all')
           || contains(format(',{0},', inputs.legs), ',firefox-windows,'))
     name: firefox-windows (node 26)
-    uses: clearnature/arkui-ci/.github/workflows/firefox-windows.yml@c8d4da4bbe289e2d0799d89673006b1354f16190
+    uses: clearnature/arkui-ci/.github/workflows/firefox-windows.yml@7b4868c4c57cf4efadc3796d177fde496ed80c60
     with:
       node-version: "26"
       test-command: bash firefox/run.sh all
@@ -143,7 +143,7 @@ jobs:
           || contains(format('{0}', inputs.legs), 'all')
           || contains(format(',{0},', inputs.legs), ',webkit-windows,'))
     name: webkit-windows (node 26)
-    uses: clearnature/arkui-ci/.github/workflows/webkit-windows.yml@c8d4da4bbe289e2d0799d89673006b1354f16190
+    uses: clearnature/arkui-ci/.github/workflows/webkit-windows.yml@7b4868c4c57cf4efadc3796d177fde496ed80c60
     with:
       node-version: "26"
       test-command: bash webkit/run.sh all
@@ -158,7 +158,7 @@ jobs:
           || contains(format('{0}', inputs.legs), 'all')
           || contains(format(',{0},', inputs.legs), ',webkit,'))
     name: webkit (node 26)
-    uses: clearnature/arkui-ci/.github/workflows/webkit.yml@c8d4da4bbe289e2d0799d89673006b1354f16190
+    uses: clearnature/arkui-ci/.github/workflows/webkit.yml@7b4868c4c57cf4efadc3796d177fde496ed80c60
     with:
       # U26 迁移（2026-10-19 ubuntu-latest 迁 26；六腿 26.04 全量验证 run 37136198612 全绿）
       runner: ubuntu-26.04

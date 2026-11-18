@@ -58,7 +58,10 @@ if (ENGINE !== '7' && ENGINE !== '4') {
 const isTs7Pkg = (p) => !!p && fs.existsSync(path.join(p, 'dist/api/sync/api.js'));
 
 function globalRoot(cmd) {
-  const r = spawnSync(cmd, ['root', '-g'], { encoding: 'utf8' });
+  // Windows 上 npm/pnpm 是 .cmd 垫片，不加 shell 会 ENOENT（2026-11-18 CI 实测：
+  // browser-windows 腿工具链步成功打印了 tsc 7.1.0-beta，但这里探不到 → 产物全失败）
+  const r = spawnSync(cmd, ['root', '-g'],
+    { encoding: 'utf8', shell: process.platform === 'win32' });
   if (r.status !== 0) return null;
   const base = (r.stdout || '').trim();
   return base || null;
@@ -86,6 +89,25 @@ function resolveTs7Pkg() {
   } catch { /* 本项目零依赖，通常解析不到；不视为错误 */ }
   const hit = cands.find(isTs7Pkg);
   if (hit) return hit;
+
+  // 不依赖 spawn 的兜底根：Windows runner 的 npm 全局前缀通常是 %APPDATA%\npm 或 C:\npm，
+  // Unix 则是与 node 可执行文件同级的 lib/node_modules。spawn 失败时这些仍能命中。
+  const fallbackRoots = [];
+  if (process.env.npm_config_prefix) {
+    fallbackRoots.push(path.join(process.env.npm_config_prefix, 'node_modules'));
+  }
+  if (process.platform === 'win32') {
+    if (process.env.APPDATA) fallbackRoots.push(path.join(process.env.APPDATA, 'npm', 'node_modules'));
+    fallbackRoots.push('C:\\npm\\node_modules');
+  } else {
+    fallbackRoots.push(path.join(path.dirname(process.execPath), '..', 'lib', 'node_modules'));
+    fallbackRoots.push('/usr/local/lib/node_modules');
+  }
+  for (const base of fallbackRoots) {
+    const pkg = typescriptUnder(base);
+    if (pkg) return pkg;
+  }
+
   for (const cmd of ['npm', 'pnpm']) {
     const pkg = typescriptUnder(globalRoot(cmd));
     if (pkg) return pkg;
